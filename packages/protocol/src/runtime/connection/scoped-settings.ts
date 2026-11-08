@@ -1,5 +1,4 @@
-import { mergeLatest, pendingLatest } from '@dovo/durable-connections'
-import { Schema } from 'effect'
+import { Schema, Struct } from 'effect'
 import { mutableStruct } from '../../shared/schema.js'
 import { mergeResources } from '../../shared/resources.js'
 import {
@@ -74,8 +73,155 @@ export function sharedProjectKey(repository: Repository | undefined) {
     ? `project:${repository.gitIdentity}`
     : undefined
 }
-export const pendingSharedSettings = pendingLatest<SharedSettingsEntry>
-export const mergeSharedSettings = mergeLatest<SharedSettingsEntry>
+type Revision = Pick<SharedSettingsEntry, 'updatedAt' | 'changeId'>
+const categories = Struct.keys(scopedSettingsValueSchema.fields)
+const newerEntry = (entry: Revision | undefined, current: Revision | undefined) =>
+  !!entry &&
+  (!current ||
+    entry.updatedAt > current.updatedAt ||
+    (entry.updatedAt === current.updatedAt && entry.changeId > current.changeId))
+
+/** Categories an older runtime drops on decode; comparing them would resend forever. */
+export const projectOrganizationCategories = ['projectPinned', 'projectArchived'] as const
+export function pendingSharedSettings(
+  shared: readonly SharedSettingsEntry[],
+  known: readonly SharedSettingsEntry[],
+  unsupported: readonly (keyof ScopedSettingsValue)[] = [],
+) {
+  const byKey = new Map(known.map((entry) => [entry.key, entry]))
+  const compared = categories.filter((key) => !unsupported.includes(key))
+  return shared.filter((entry) => {
+    const current = byKey.get(entry.key)
+    return (
+      !current ||
+      compared.some((key) =>
+        newerEntry(categoryRevision(entry, key), categoryRevision(current, key)),
+      )
+    )
+  })
+}
+function categoryRevision(entry: SharedSettingsEntry, key: keyof ScopedSettingsValue) {
+  return entry.revisions
+    ? entry.revisions[key]
+    : { updatedAt: entry.updatedAt, changeId: entry.changeId }
+}
+
+/** Stamp only edited categories. Unchanged and removed values keep their own causal history. */
+export function updateSharedSettingsEntry(
+  key: string,
+  previous: SharedSettingsEntry | undefined,
+  value: ScopedSettingsValue,
+  revision: Revision,
+): SharedSettingsEntry {
+  return {
+    key,
+    ...revision,
+    value,
+    revisions: Object.fromEntries(
+      categories.flatMap((category) => {
+        const next =
+          JSON.stringify(previous?.value[category]) !== JSON.stringify(value[category])
+            ? revision
+            : previous
+              ? categoryRevision(previous, category)
+              : undefined
+        return next ? [[category, next] as const] : []
+      }),
+    ),
+  }
+}
+export function mergeSharedSettings(...sources: readonly (readonly SharedSettingsEntry[])[]) {
+  const values = new Map<string, SharedSettingsEntry>()
+  for (const source of sources)
+    for (const entry of source) {
+      const current = values.get(entry.key)
+      if (!current || (!entry.revisions && !current.revisions)) {
+        if (newerEntry(entry, current)) values.set(entry.key, entry)
+        continue
+      }
+      const newest = newerEntry(entry, current) ? entry : current
+      const winners = categories.map(
+        (key) =>
+          [
+            key,
+            newerEntry(categoryRevision(entry, key), categoryRevision(current, key))
+              ? entry
+              : current,
+          ] as const,
+      )
+      values.set(entry.key, {
+        key: entry.key,
+        updatedAt: newest.updatedAt,
+        changeId: newest.changeId,
+        value: Object.fromEntries(
+          winners
+            .filter(([key, winner]) => winner.value[key] !== undefined)
+            .map(([key, winner]) => [key, winner.value[key]]),
+        ),
+        revisions: Object.fromEntries(
+          winners.flatMap(([key, winner]) => {
+            const revision = categoryRevision(winner, key)
+            return revision ? [[key, revision] as const] : []
+          }),
+        ),
+      })
+    }
+  return [...values.values()].sort((a, b) => a.key.localeCompare(b.key))
+}
+
+/** Caller supplies only provider-confirmed aliases; arbitrary remote retargets are never aliases. */
+export function canonicalSharedSettings(
+  shared: SharedSettingsEntry[],
+  canonicalize: (identity: string) => string,
+) {
+  let changed = false
+  const entries = shared.map((entry) => {
+    const key = entry.key.startsWith('project:')
+      ? `project:${canonicalize(entry.key.slice(8))}`
+      : entry.key
+    if (key === entry.key) return entry
+    changed = true
+    return { ...entry, key }
+  })
+  return changed ? mergeSharedSettings(entries) : shared
+}
+export type ProjectOrganizationChange = Pick<
+  ScopedSettingsValue,
+  'projectPinned' | 'projectArchived'
+>
+/**
+ * Confirmed Git identities share pin/archive across paired computers; local-only projects keep
+ * them on their own computer. Both use the category CAS of the scoped settings save route.
+ */
+export function projectOrganizationScope(repository: Repository) {
+  return {
+    scope: sharedProjectKey(repository) ? ('project' as const) : ('environment-project' as const),
+    repositoryId: repository.id,
+  }
+}
+export function projectOrganizationSave(
+  repository: Repository,
+  current: ScopedSettingsValue,
+  change: ProjectOrganizationChange,
+) {
+  return {
+    ...projectOrganizationScope(repository),
+    projectKey: sharedProjectKey(repository),
+    before: current,
+    after: { ...current, ...change },
+  }
+}
+/** Explains why pin/archive cannot be changed for this copy, if anything blocks it. */
+export function projectOrganizationBlocked(
+  repository: Repository,
+  supported: boolean | undefined,
+): string | undefined {
+  if (repository.kind === 'scratch') return 'Conversations without a project cannot be organized.'
+  if (!supported) return 'Update this computer to pin or archive projects.'
+  if (repository.gitIdentityError)
+    return 'Reconnect this checkout to confirm its Git remote before pinning or archiving.'
+  return undefined
+}
 export function settingsAtScope(
   runtime: RuntimeDefaults | undefined,
   repository: Repository | undefined,
@@ -84,6 +230,8 @@ export function settingsAtScope(
   if (scope === 'environment') return environmentSettings(runtime)
   if (scope === 'environment-project')
     return {
+      projectPinned: repository?.pinned,
+      projectArchived: repository?.archived,
       taskDefaults: repository?.taskDefaults,
       taskBehavior: repository?.taskBehavior,
       resources: repository?.resources,
@@ -100,10 +248,10 @@ export const settingsScopes: readonly SettingsScope[] = [
   'environment-project',
 ]
 export const settingsScopeLabels: Record<SettingsScope, string> = {
-  global: 'All machines & projects',
-  environment: 'Machine',
+  global: 'All computers & projects',
+  environment: 'Computer',
   project: 'Project',
-  'environment-project': 'Project on machine',
+  'environment-project': 'Project on computer',
 }
 
 export function settingsScopeSummary(
@@ -115,30 +263,30 @@ export function settingsScopeSummary(
   switch (scope) {
     case 'global':
       return {
-        title: 'All projects on all machines',
+        title: 'All projects on all computers',
         description:
-          'Defaults for all projects on all machines. More-specific overrides keep their own values.',
-        storage: 'Shared across paired machines',
+          'Defaults for all projects on all computers. More-specific overrides keep their own values.',
+        storage: 'Shared across paired computers',
       }
     case 'environment':
       return {
         title: `${computer} defaults`,
         description:
-          'Defaults for projects on this machine. Project defaults override machine defaults.',
+          'Defaults for projects on this computer. Project defaults override computer defaults.',
         storage: `Saved on ${computer}`,
       }
     case 'project':
       return {
         title: `${project} project defaults`,
         description:
-          'Defaults for this project across machines. Project-on-machine overrides keep their own values.',
-        storage: 'Shared across paired machines',
+          'Defaults for this project across computers. Project-on-computer overrides keep their own values.',
+        storage: 'Shared across paired computers',
       }
     case 'environment-project':
       return {
         title: `${project} on ${computer}`,
         description:
-          'Changes apply only to this project on this machine. This is the most specific level.',
+          'Changes apply only to this project on this computer. This is the most specific level.',
         storage: `Saved on ${computer}`,
       }
   }
@@ -309,13 +457,21 @@ export function settingsProjectChoices(
   sources: readonly SettingsTargetSource[],
   environmentId: string,
 ) {
-  const projects = new Map<string, { id: string; name: string }>()
+  const projects = new Map<string, { id: string; name: string; archived: boolean }>()
   for (const source of sources) {
     if (environmentId && source.profile.id !== environmentId) continue
     for (const repository of source.snapshot?.workspace.repositories ?? []) {
       if (!environmentId && !repository.gitIdentity) continue
       const id = settingsProjectId(repository, source.profile.id)
-      if (!projects.has(id)) projects.set(id, { id, name: projectDisplayName(repository) })
+      const current = projects.get(id)
+      // Archived projects stay configurable here; a copy still in use keeps the project open.
+      if (current) current.archived &&= !!repository.archived
+      else
+        projects.set(id, {
+          id,
+          name: projectDisplayName(repository),
+          archived: !!repository.archived,
+        })
     }
   }
   return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -454,13 +610,13 @@ export type SettingsChange = { key: string; label: string; before: string; after
 const changeLabels: Record<string, string> = {
   inactiveDays: 'Days of inactivity before settling',
   archiveAfterSettledDays: 'Days in Settled before archiving',
-  autoArchiveSettled: 'Auto-archive settled tasks',
+  autoArchiveSettled: 'Auto-archive settled threads',
   continueAfterRestart: 'Continue after restarts',
-  settleMerged: 'Auto-settle merged tasks',
-  settleClosed: 'Auto-settle closed tasks',
-  settleInactive: 'Auto-settle inactive tasks',
-  quotaResume: 'Auto-resume limited tasks',
-  quotaSnooze: 'Snooze limited tasks',
+  settleMerged: 'Auto-settle merged threads',
+  settleClosed: 'Auto-settle closed threads',
+  settleInactive: 'Auto-settle inactive threads',
+  quotaResume: 'Auto-resume limited threads',
+  quotaSnooze: 'Snooze limited threads',
   defaultServerId: 'Default computer',
   modelSelection: 'Model selection',
   agentId: 'Agent',

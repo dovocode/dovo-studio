@@ -5,10 +5,10 @@ import { chromium } from './browser/harness.mjs'
 const mocks = {
   '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
   './pull-link-actions': `export const PullLinkActions=()=>null;`,
-  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol'; const store={workspace:{tasks:[]},connected:true,request:async()=>({ok:true})}; export const useWorkspace=()=>store; export const useStudioHost=()=>({}); export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens',themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';export const completedStreamingText=text=>text;`,
+  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol'; const store={workspace:{tasks:[]},connected:true,request:async()=>({ok:true})}; export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>({...store,connected:window.fixtureConnected!==false}); export const useStudioHost=()=>({}); export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens',themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';export const completedStreamingText=text=>text;`,
   '@dovo/studio-ui': `export {cn} from '../studio-ui/src/lib/utils';export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';export {FileTypeIcon} from '../studio-ui/src/file-tree';export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';import React from 'react';export * as ContextMenu from '@radix-ui/react-context-menu';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=Conversation;export const ConversationHistory=Conversation;export const Message=({children,id})=><div id={id}>{children}</div>;export const MessageContent=Conversation;export const MessageResponse=({children})=>{window.markdownRenders++;return <p>{children}</p>};export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=Button;`,
   './deferred-turn': `export const DeferredTurn=({children})=>children();`,
-  './task-activity': `import {useSyncExternalStore} from 'react';import {createRecentTools} from '@dovo/protocol';const project=createRecentTools();const listeners=new Set();let tools=[];window.updateTools=next=>{tools=project(next);for(const listener of listeners)listener()};const subscribe=listener=>{listeners.add(listener);return()=>listeners.delete(listener)};export const useTaskActivity=()=>({tools:useSyncExternalStore(subscribe,()=>tools),error:''});export const TaskActivity=()=>null;`,
+  './task-activity': `import {useSyncExternalStore} from 'react';import {createRecentTools} from '@dovo/protocol';const project=createRecentTools();const listeners=new Set();let tools=[];window.updateTools=next=>{tools=project(next);for(const listener of listeners)listener()};const subscribe=listener=>{listeners.add(listener);return()=>listeners.delete(listener)};export const useTaskActivity=()=>({tools:useSyncExternalStore(subscribe,()=>tools),error:''});export const TaskActivity=({working})=>working?<p role='status'>Working</p>:null;`,
 }
 for (const path of [
   './turn-checkpoint',
@@ -37,7 +37,7 @@ import {createRoot} from 'react-dom/client';import {useState} from 'react';impor
 window.markdownRenders=0;window.timelineCalls=0;
 const messages=Array.from({length:500},(_,index)=>({id:String(index),role:index%2?'assistant':'user',text:'Message '+index}));
 const turns=messages.filter(m=>m.role==='assistant').map((m,index)=>({id:'turn-'+index,assistantId:m.id,status:index===249?'running':'completed',startedAt:'2026-10-02T12:00:00Z',finishedAt:index===249?undefined:'2026-10-02T12:00:01Z'}));
-function App(){const [reveal,setReveal]=useState();window.reveal=id=>setReveal('message-thread-'+id);const [task,setTask]=useState({id:'thread',status:'running',messages,turns});window.stream=()=>setTask(old=>({...old,messages:old.messages.map((message,index)=>index===499?{...message,text:message.text+'x'}:message)}));window.complete=()=>setTask(old=>({...old,status:'completed',turns:old.turns.map(turn=>turn.status==='running'?{...turn,status:'completed'}:turn)}));return <ChatThread task={task} revealMessage={reveal} onRevealHandled={()=>setReveal(undefined)}/>;}
+function App(){const [reveal,setReveal]=useState();window.reveal=id=>setReveal('message-thread-'+id);const [task,setTask]=useState({id:'thread',status:'running',messages,turns});window.setFeedbackConnected=connected=>{window.fixtureConnected=connected;setTask(old=>({...old}))};window.feedbackCase=mode=>setTask(old=>({...old,status:mode==='done'?'completed':'running',turns:mode==='assistant'?turns:[]}));window.stream=()=>setTask(old=>({...old,messages:old.messages.map((message,index)=>index===499?{...message,text:message.text+'x'}:message)}));window.complete=()=>setTask(old=>({...old,status:'completed',turns:old.turns.map(turn=>turn.status==='running'?{...turn,status:'completed'}:turn)}));return <ChatThread task={task} revealMessage={reveal} onRevealHandled={()=>setReveal(undefined)}/>;}
 createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -184,6 +184,26 @@ try {
   if (await page.evaluate(() => window.jumps.at(-1) !== 'message-thread-477'))
     throw new Error('Global search jumped back to the previous in-thread match')
   console.log('Explicit message reveals override in-thread search without jumping back.')
+  await page.evaluate(() => {
+    window.updateTools([])
+    window.feedbackCase('waiting')
+  })
+  await page.getByRole('status').filter({ hasText: 'Working' }).waitFor()
+  await page.evaluate(() => window.feedbackCase('assistant'))
+  await page.getByRole('status').filter({ hasText: 'Working' }).waitFor({ state: 'detached' })
+  if ((await page.getByText('Working', { exact: true }).count()) !== 1)
+    throw new Error('The running assistant must own the single Working indicator.')
+  await page.evaluate(() => window.feedbackCase('waiting'))
+  await page.getByRole('status').filter({ hasText: 'Working' }).waitFor()
+  await page.evaluate(() => window.setFeedbackConnected(false))
+  await page.getByRole('status').filter({ hasText: 'Working' }).waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setFeedbackConnected(true))
+  await page.getByRole('status').filter({ hasText: 'Working' }).waitFor()
+  await page.evaluate(() => window.feedbackCase('done'))
+  await page.getByText('Working', { exact: true }).waitFor({ state: 'detached' })
+  console.log(
+    'Working feedback covers missing current turns, hands off to the assistant, and clears on completion.',
+  )
   if (errors.length) throw new Error(errors.join('\n'))
 } finally {
   await browser.close()

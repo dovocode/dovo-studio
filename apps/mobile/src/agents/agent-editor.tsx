@@ -1,4 +1,6 @@
 import { SettingsSaveBar } from '../screens/settings-save-bar'
+import { SecretEnvironmentEditor } from './secret-environment-editor'
+import { secretReferenceIssue, responses } from '@dovo/protocol'
 import { settingsChanges } from '@dovo/protocol'
 import { useSettingsDraft } from '../runtime/preferences/settings-target'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
@@ -38,7 +40,7 @@ export function AgentEditor({
 }) {
   const { styles } = useTheme()
 
-  const { connected, profile, snapshot } = useRuntime(),
+  const { connected, profile, snapshot, call } = useRuntime(),
     { busy, error, act } = useAction(),
     [draft, setDraft] = useApplicationState(original)
   const [showConnection, setShowConnection] = useApplicationState(false)
@@ -61,6 +63,8 @@ export function AgentEditor({
       ])
   }
   const save = async () => {
+    const secretIssue = secretReferenceIssue(draft.envSecrets)
+    if (secretIssue) throw new Error(secretIssue)
     const issue = permissionPolicyUIIssue(draft, snapshot?.permissionPolicySupported === true)
     if (issue) throw new Error(issue)
     const valid = decode(agentSchema, {
@@ -104,6 +108,33 @@ export function AgentEditor({
         <AcpRegistry agent={draft} onChange={setDraft} showRegistry={false} />
       )}
       <ModelSettings key={draft.provider} agent={draft} onChange={setDraft} disabled={busy} />
+      {(draft.provider === 'claude' || draft.provider === 'codex') && (
+        <>
+          <Choice
+            label="Cloud integrations"
+            disabled={busy}
+            value={
+              draft.cloudIntegrations === undefined ? 'default' : String(draft.cloudIntegrations)
+            }
+            items={[
+              { id: 'default', name: 'Provider default' },
+              { id: 'true', name: 'Enabled' },
+              { id: 'false', name: 'Disabled' },
+            ]}
+            onChange={(value) =>
+              setDraft({
+                ...draft,
+                cloudIntegrations: value === 'default' ? undefined : value === 'true',
+              })
+            }
+          />
+          <Text style={styles.muted}>
+            Use apps already connected to your {draft.provider === 'claude' ? 'Claude' : 'ChatGPT'}{' '}
+            account, such as Google Drive or Slack. Requires account sign-in on the computer running
+            the task. Provider restrictions and tool approvals still apply.
+          </Text>
+        </>
+      )}
       <Choice
         label="Access mode"
         disabled={busy}
@@ -233,6 +264,16 @@ export function AgentEditor({
               Saved as readable configuration. Keep secrets in the server's environment. Claude
               flags use --name or --name=value.
             </Text>
+            {snapshot?.secretReferencesSupported && (
+              <SecretEnvironmentEditor
+                value={draft.envSecrets}
+                onChange={(envSecrets) => setDraft({ ...draft, envSecrets })}
+                disabled={busy || !connected}
+                onRefresh={async () => {
+                  await call('/api/agents/secrets/refresh', {}, responses.ok)
+                }}
+              />
+            )}
           </>
         </View>
       )}

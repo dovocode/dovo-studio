@@ -6,9 +6,10 @@ export async function fetchPullHead(
   cwd: string,
   source: NonNullable<Task['pullRequest']>,
   key: string,
+  signal?: AbortSignal,
 ) {
   const ref = `refs/dovo/pull-tasks/${key}`
-  await git.fetchPull(cwd, source.repositoryUrl, source.number, ref, source)
+  await git.fetchPull(cwd, source.repositoryUrl, source.number, ref, source, signal)
   const sha = (await git.command(cwd, ['rev-parse', '--verify', ref])).trim()
   if (sha !== source.headSha)
     throw new HttpError(

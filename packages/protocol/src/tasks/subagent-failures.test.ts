@@ -51,6 +51,30 @@ it('resolves direct links from persisted parent identity without a cached parent
     taskParentReference(
       {
         ...task,
+        sideThread: {
+          parentTaskId: 'owner',
+          objective: '',
+          contextMessageCount: 0,
+          parentHistoryRevision: 0,
+          contextHash: '',
+          source: 'head',
+          permissionCeiling: { provider: 'codex', permission: 'ask' },
+        },
+      },
+      'profile',
+      [{ ...task, id: 'owner', title: 'Owner' }],
+      'identity',
+    ),
+  ).toEqual({
+    runtimeId: 'profile',
+    runtimeIdentity: 'identity',
+    threadId: 'owner',
+    title: 'Owner',
+  })
+  expect(
+    taskParentReference(
+      {
+        ...task,
         spawnParent: { runtimeId: 'parent-identity', threadId: 'owner', title: 'Coordinator' },
       },
       'child-profile',

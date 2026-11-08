@@ -70,8 +70,17 @@ Project fallback icon colours and initials use canonical Git identity, so differ
 checkouts on different computers look the same. Uploaded project icons also synchronize through
 shared project settings; existing local uploads are promoted when the runtime knows their Git
 identity. Reset records a shared tombstone so an older local upload cannot return. Detected images
-still come from checkout files. Projects without a Git identity keep local icons and
-repository-specific fallback colours.
+still come from checkout files; **Share detected icon** adopts that image as the shared choice. The
+detector checks bounded common PNG, ICO and SVG paths, including public/static assets. Projects
+without a Git identity keep local icons and repository-specific fallback colours.
+
+Project appearance settings on desktop and mobile include **Shared project name**. Saving it changes
+the display label on paired computers with the same remote, while retaining each checkout's local
+name and path. **Use local name** resets that shared label. Removing a local clone keeps shared
+metadata for other computers. A temporary Git lookup failure preserves the last confirmed name and
+icon/reset for presentation only; it does not authorize executable settings or PR operations. Legacy
+local icons migrate only after identity verification and are then removed locally. Retargeting a
+checkout never promotes the previous project's image under the new remote.
 
 Project identity uses the existing Git origin identity normalization, including SSH/HTTPS
 equivalents. Forks remain separate. If there is no origin, only an unambiguous remote identity is
@@ -83,9 +92,17 @@ Shared settings are persisted on runtimes and cached by desktop/mobile clients. 
 reconcile newer shared entries across their paired runtimes. An offline environment receives updates
 when a client connects it again; runtimes do not contact each other or use an external relay. Reset
 entries keep their revision so an old offline copy cannot resurrect deleted overrides. Concurrent
-edits to the same shared scope resolve by revision and change ID; stale saves on a runtime return a
-conflict instead of overwriting newer data. Older runtimes do not receive unsupported settings
-writes and need an update to expose these editors.
+edits to different categories merge independently, including resets. Concurrent edits within one
+category resolve by revision and change ID; stale saves on a runtime return a conflict instead of
+overwriting newer data. Older runtimes do not receive unsupported settings writes and need an update
+to expose these editors.
+
+Category revisions are additive wire metadata; legacy entries retain their whole-entry revision as
+the baseline. Older clients/runtimes that strip category revisions still use whole-entry merging;
+upgrade all participating runtimes and clients to preserve independent offline edits end to end.
+Known GitHub Enterprise hosts normalize repository path case consistently after configuration or
+successful account verification. Existing settings keys follow those confirmed aliases. Arbitrary
+self-hosted Git paths, SSH aliases and custom ports are not globally equated.
 
 Literal MCP credentials remain private on the environment that stores them. Global and shared
 project MCP entries must use host environment-variable references; use environment-specific entries

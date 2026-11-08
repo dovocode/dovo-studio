@@ -22,7 +22,7 @@ export function MessageContent({ className, ...props }: HTMLAttributes<HTMLDivEl
   return (
     <div
       className={cn(
-        'flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-2.5 group-[.is-user]:text-foreground',
+        'dovo-message-content flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:px-4 group-[.is-user]:py-2.5 group-[.is-user]:text-foreground',
         className,
       )}
       {...props}

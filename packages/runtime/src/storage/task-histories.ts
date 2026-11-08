@@ -31,12 +31,26 @@ const itemSizes = new WeakMap<object, number>()
 function itemBytes(item: Message | Turn) {
   let size = itemSizes.get(item)
   if (size !== undefined) return size
-  if ('role' in item) size = 256 + item.text.length * 2 + (item.attachments?.length ?? 0) * 256
+  if ('role' in item)
+    size =
+      256 +
+      (item.text.length +
+        (item.file?.length ?? 0) +
+        (item.diffComment?.excerpt.length ?? 0) +
+        (item.diffComment?.body.length ?? 0)) *
+        2 +
+      (item.textBreaks?.length ?? 0) * 8 +
+      (item.attachments?.length ?? 0) * 256
   else {
     size = 512
     for (const checkpoint of [item.checkpoint, ...(item.checkpoint?.linked ?? [])])
       for (const file of checkpoint?.files ?? [])
-        size += (file.path.length + file.before.length + file.after.length) * 2
+        size +=
+          (file.path.length +
+            file.before.length +
+            file.after.length +
+            (file.diskContents?.length ?? 0)) *
+          2
   }
   itemSizes.set(item, size)
   return size

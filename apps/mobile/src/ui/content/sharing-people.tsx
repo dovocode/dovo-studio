@@ -3,6 +3,7 @@ import { Alert, View } from 'react-native'
 import { useSharingPeople, type SharingPeople } from '@dovo/studio-core'
 import type { PeopleAction } from '@dovo/protocol'
 import { useMobileAccount } from '../../runtime/connection/account-provider'
+import { usePreviewActive } from '../../tasks/preview/use-preview-active'
 import { Action } from '../controls/action'
 import { Field } from '../controls/field'
 import { Choice } from '../controls/choice'
@@ -10,8 +11,9 @@ import { Text } from './text'
 import { useTheme } from '../theme'
 
 export function SharingPeoplePanel() {
+  const active = usePreviewActive()
   const account = useMobileAccount(),
-    people = useSharingPeople(account.client)
+    people = useSharingPeople(account.client, active)
   return <SharingPeopleManager people={people} userId={account.directory?.user.id ?? ''} />
 }
 export function SharingPeopleManager({

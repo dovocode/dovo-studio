@@ -7,6 +7,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
+  McpOverAcpProvider,
 } from '@agentclientprotocol/sdk/unstable'
 import type {
   InitializeResponse,
@@ -53,7 +54,9 @@ export function openAcpConnection(
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', onStderr)
   } else child.stderr.resume()
+  const mcp = new McpOverAcpProvider()
   const app = acpClient({ name: 'dovo-studio' })
+    .onRequest(methods.client.mcp.message, mcp.handleRequest)
     .onRequest(methods.client.session.requestPermission, ({ params }) =>
       client.requestPermission(params),
     )
@@ -97,7 +100,9 @@ export function openAcpConnection(
       new ReadableStream<Uint8Array>({
         start: (controller) => {
           child.stdout.on('data', (chunk: Buffer) => {
-            if (!inputClosed) controller.enqueue(new Uint8Array(chunk))
+            // Buffer is already a Uint8Array; copying each stdout chunk doubles transient
+            // allocation for large ACP messages before the SDK's framing buffer sees it.
+            if (!inputClosed) controller.enqueue(chunk)
           })
           child.stdout.on('end', () => {
             if (!inputClosed) controller.close()
@@ -147,6 +152,7 @@ export function openAcpConnection(
   signal?.addEventListener('abort', abort, { once: true })
   return {
     rpc,
+    mcp,
     signal: active.signal,
     closed: active.closed,
     exited,

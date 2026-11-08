@@ -4,6 +4,11 @@ export const providers: Record<
   { name: string; short: string; description: string }
 > = {
   codex: { name: 'Codex App Server', short: 'Codex', description: 'Local app-server process' },
+  pi: {
+    name: 'Pi',
+    short: 'Pi',
+    description: 'Imported sessions; built-in tools require full access',
+  },
   opencode: { name: 'OpenCode Serve', short: 'OpenCode', description: 'HTTP server connection' },
   vibe: { name: 'Mistral Vibe App Server', short: 'Vibe', description: 'Local app-server process' },
   claude: { name: 'Claude Agent SDK', short: 'Claude', description: 'Runtime-hosted SDK' },

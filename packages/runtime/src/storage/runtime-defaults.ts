@@ -43,7 +43,12 @@ export class RuntimeDefaults {
   /** Accepted shared versions survive rapid edits and restarts before a peer can connect. */
   private rememberShared(entries: readonly SharedSettingsEntry[]) {
     for (const entry of entries) {
-      const id = JSON.stringify([entry.key, entry.updatedAt, entry.changeId])
+      const id = JSON.stringify([
+        entry.key,
+        entry.updatedAt,
+        entry.changeId,
+        ...(entry.revisions ? [entry.revisions] : []),
+      ])
       const previous = this.db
         .prepare('SELECT value FROM shared_state_versions WHERE id=?')
         .pluck()

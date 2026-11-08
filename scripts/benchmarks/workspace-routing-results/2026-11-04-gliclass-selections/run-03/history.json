@@ -1,0 +1,356 @@
+[
+  {
+    "epoch": 1,
+    "correct": 1512,
+    "total": 1531,
+    "accuracy": 0.9875898105813194,
+    "confusion": {
+      "browser": {
+        "browser": 266,
+        "terminal": 0,
+        "thread": 15
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 262,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 789,
+        "total": 806
+      },
+      "profile": {
+        "correct": 145,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "project": {
+        "correct": 200,
+        "total": 200
+      },
+      "model": {
+        "correct": 203,
+        "total": 205
+      }
+    },
+    "mistakes": [
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:30:2"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:75:0"
+      }
+    ],
+    "loss": 0.1055292537587809
+  },
+  {
+    "epoch": 2,
+    "correct": 1507,
+    "total": 1531,
+    "accuracy": 0.984323971260614,
+    "confusion": {
+      "browser": {
+        "browser": 267,
+        "terminal": 0,
+        "thread": 14
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 262,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 790,
+        "total": 806
+      },
+      "profile": {
+        "correct": 144,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "project": {
+        "correct": 199,
+        "total": 200
+      },
+      "model": {
+        "correct": 199,
+        "total": 205
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:25:0"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:30:2"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Tell me about Orchid Server, without changing anything",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:20:5"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:85:2"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Juniper 2, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:45:3"
+      },
+      {
+        "input": "Tell me about Support, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:115:0"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Fable 5, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:70:0"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:75:0"
+      }
+    ],
+    "loss": 0.11389404815063149
+  }
+]

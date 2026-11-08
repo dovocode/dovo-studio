@@ -4,6 +4,11 @@ import { Schema } from 'effect'
 import { threadWindowTargetSchema } from '../../thread-window.js'
 import { browserTabLifecycleFields } from './browser-tab-lifecycle.js'
 import { connectionSchema } from '../connection/runtime.js'
+import {
+  browserElementPointSchema,
+  type BrowserElement,
+  type BrowserElementCapture,
+} from './browser-element.js'
 export function previewUrl(input: string, runtimeAddress?: string): string {
   const text = input.trim()
   if (
@@ -124,6 +129,7 @@ export const previewResultSchema = mutableStruct({
 })
 export const browserWorkspaceTabSchema = mutableStruct({
   ...browserTabLifecycleFields,
+  previewOf: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   id: maxValue(minValue(Schema.String, 1), 200),
   url: maxValue(Schema.String, 8192),
   title: maxValue(Schema.String, 4096),
@@ -169,8 +175,78 @@ export type BrowserPermissionSetting = typeof browserPermissionSettingSchema.Typ
 export type BrowserSitePermissions = {
   origin: string
   permissions: Record<BrowserSitePermission, BrowserPermissionSetting>
+  /** Permissions requested by this origin, including saved choices from earlier versions. */
+  requested?: BrowserSitePermission[]
+}
+const browserWorkspaceStateFields = {
+  tabs: mutableArray(
+    mutableStruct({
+      key: maxValue(minValue(Schema.String, 1), 500),
+      tab: browserWorkspaceTabSchema,
+    }),
+  ).pipe(Schema.check(Schema.isMinLength(1)), Schema.check(Schema.isMaxLength(100))),
+  activeId: maxValue(minValue(Schema.String, 1), 200),
+}
+export type BrowserWorkspaceState = {
+  tabs: { key: string; tab: BrowserWorkspaceTab }[]
+  activeId: string
 }
 export const browserCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('element-snapshot'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+  mutableStruct({
+    action: Schema.Literal('element-inspect'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    ...browserElementPointSchema.fields,
+  }),
+  mutableStruct({
+    action: Schema.Literals(['sync-tabs', 'detach-tabs']),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    persisted: Schema.optional(Schema.Boolean),
+    ...browserWorkspaceStateFields,
+  }),
+  mutableStruct({
+    action: Schema.Literal('zoom'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    direction: Schema.Literals(['in', 'out', 'reset']),
+  }),
+  mutableStruct({
+    action: Schema.Literals(['print', 'save-pdf']),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+  mutableStruct({
+    action: Schema.Literal('downloads'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
+    operation: Schema.Literals([
+      'list',
+      'pause',
+      'resume',
+      'cancel',
+      'retry',
+      'open',
+      'reveal',
+      'folder',
+    ]),
+    id: Schema.optional(
+      Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+    ),
+  }),
+  mutableStruct({
+    action: Schema.Literal('find'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    text: maxValue(Schema.String, 1000),
+    regex: Schema.Boolean,
+    matchCase: Schema.Boolean,
+    direction: Schema.optional(Schema.Literals(['next', 'previous'])),
+  }),
+  mutableStruct({
+    action: Schema.Literal('stop-find'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    focus: Schema.optional(Schema.Boolean),
+  }),
   mutableStruct({
     action: Schema.Literal('open-tab'),
     key: maxValue(minValue(Schema.String, 1), 500),
@@ -179,12 +255,13 @@ export const browserCommandSchema = Schema.Union([
   mutableStruct({
     action: Schema.Literal('keep-awake'),
     key: maxValue(minValue(Schema.String, 1), 500),
-    enabled: Schema.Boolean,
+    /** Omitted follows the website default; false explicitly permits sleeping. */
+    enabled: Schema.optional(Schema.Boolean),
     url: maxValue(minValue(Schema.String, 1), 8192),
     profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
   }),
   mutableStruct({
-    action: Schema.Literal('browser-windows'),
+    action: Schema.Literals(['browser-windows', 'focus-detached-browser']),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
   mutableStruct({
@@ -228,9 +305,12 @@ export const browserCommandSchema = Schema.Union([
       Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
     ),
     taskId: Schema.optional(Schema.String),
+    /** Shared Browser workspace tab identity, so agents can address this exact tab. */
+    tabId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
     agentAccess: Schema.optional(Schema.Boolean),
     /** Shared Browser activity only: queue new-tab requests, allow popups and forward tab shortcuts. */
     workspaceBrowser: Schema.optional(Schema.Boolean),
+    keepAwake: Schema.optional(Schema.Boolean),
     key: maxValue(minValue(Schema.String, 1), 500),
     url: urlSchema(),
     viewport: Schema.optional(
@@ -352,6 +432,7 @@ export const browserCommandSchema = Schema.Union([
       'media-status',
       /** Active media/sharing tab keys; never drains page-created tab events. */
       'tab-activity',
+      'sleep',
       'focus-tab',
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),
@@ -361,6 +442,11 @@ export const browserCommandSchema = Schema.Union([
         Schema.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
       ),
     ),
+  }),
+  mutableStruct({
+    action: Schema.Literal('set-audio-muted'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    muted: Schema.Boolean,
   }),
   /** Trusted Studio registers remote workspace tabs as potential sharing sources. */
   mutableStruct({
@@ -450,6 +536,19 @@ export type BrowserCapture = {
   unresponsive?: boolean
 }
 export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
+export type BrowserDownloadItem = {
+  id: number
+  url: string
+  filename: string
+  state: 'in_progress' | 'complete' | 'interrupted'
+  paused: boolean
+  canResume: boolean
+  bytesReceived: number
+  totalBytes: number
+  exists: boolean
+  error?: string
+}
+export type BrowserFindResult = { active: number; total: number; error?: string; limited?: boolean }
 export type BrowserCallTab = {
   key: string
   title: string
@@ -459,6 +558,20 @@ export type BrowserCallTab = {
   pictureInPicture: boolean
 }
 export type BrowserFrame = { key: string; url: string; image: string }
+/** Live native tab state; never persisted with the browser library. */
+export type BrowserTabState = {
+  key: string
+  url: string
+  title: string
+  badge?: number | 'unread'
+  audible: boolean
+  muted: boolean
+  camera: boolean
+  microphone: boolean
+  screenSharing: boolean
+  /** An agent CDP client is currently connected to this tab. */
+  agent?: boolean
+}
 export type BrowserFrameBridge = (
   key: string,
   listener: (frame: BrowserFrame) => void,
@@ -469,10 +582,18 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       title?: string
       cdp?: string
       image?: string
+      elementCapture?: BrowserElementCapture
+      element?: BrowserElement
       selection?: string
       favicon?: string | null
       faviconUpdates?: { key: string; url: string; favicon: string | null }[]
+      tabStates?: BrowserTabState[]
+      zoomFactor?: number
+      downloads?: BrowserDownloadItem[]
+      find?: BrowserFindResult
+      documentRevision?: number
       sitePermissions?: BrowserSitePermissions
+      focusedWindowId?: number
       windows?: { id: number; title: string }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]
       /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */
@@ -512,6 +633,8 @@ export const desktopBrowserHostSchema = mutableStruct({
   targets: mutableArray(
     mutableStruct({
       taskId: Schema.String,
+      /** Browser workspace tab ID when `taskId` is the shared-browser scope. */
+      tabId: Schema.optional(Schema.String),
       profileId: Schema.String,
       endpoint: Schema.String.pipe(
         Schema.check(
@@ -620,7 +743,7 @@ export type BrowserExtensionBridge = (
 
 export const browserContextActionSchema = mutableStruct({
   key: maxValue(minValue(Schema.String, 1), 500),
-  action: Schema.Literals(['selection', 'page']),
+  action: Schema.Literals(['selection', 'page', 'find', 'close-find']),
   text: maxValue(Schema.String, 32000),
   url: maxValue(Schema.String, 4096),
   title: maxValue(Schema.String, 500),

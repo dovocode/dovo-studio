@@ -14,9 +14,11 @@ import {
 export function TaskWaitingPanel({
   taskId,
   panel = false,
+  active = true,
   onPullLink,
 }: {
   taskId: string
+  active?: boolean
   panel?: boolean
   onPullLink?: (url: string) => boolean
 }) {
@@ -37,6 +39,7 @@ export function TaskWaitingPanel({
     connected,
     read,
     JSON.stringify([activeRuntimeId, connection]),
+    active,
   )
   const watchingUrls = new Set(data?.dependencies.map((item) => item.url))
   const related = panel ? (data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []) : []
@@ -127,8 +130,9 @@ export function TaskWaitingPanel({
               title={[
                 item.pausedReason ?? item.status,
                 `Last check ${new Date(item.checkedAt).toLocaleString()}`,
-                item.lastSuccessAt &&
-                  `Last successful poll ${new Date(item.lastSuccessAt).toLocaleString()}`,
+                item.lastSuccessAt
+                  ? `Last successful poll ${new Date(item.lastSuccessAt).toLocaleString()}`
+                  : item.kind === 'pipeline' && 'No recorded successful poll',
                 item.error,
               ]
                 .filter(Boolean)
@@ -192,13 +196,6 @@ export function TaskWaitingPanel({
               {panel && !item.pausedReason && (
                 <span className="pr-1 text-[10px] text-muted-foreground">
                   {item.status.replaceAll('_', ' ')}
-                </span>
-              )}
-              {panel && item.kind === 'pipeline' && (
-                <span className="pr-1 text-[10px] text-muted-foreground">
-                  {item.lastSuccessAt
-                    ? `Last successful poll ${new Date(item.lastSuccessAt).toLocaleString()}`
-                    : 'No recorded successful poll'}
                 </span>
               )}
               {item.pausedReason && <span className="px-1 text-muted-foreground">Paused</span>}

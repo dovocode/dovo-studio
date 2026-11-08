@@ -382,7 +382,7 @@ export default function ArtifactsScreen() {
         renderItem={({ item }) => (
           <View
             style={{
-              borderRadius: 16,
+              borderRadius: 12,
               borderWidth: highContrast ? 1 : StyleSheet.hairlineWidth,
               borderColor: colors.border,
               backgroundColor: colors.surface,

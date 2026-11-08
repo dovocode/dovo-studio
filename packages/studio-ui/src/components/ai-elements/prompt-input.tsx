@@ -32,6 +32,7 @@ export function PromptInputTextarea({
           event.key !== 'Enter' ||
           event.shiftKey ||
           event.nativeEvent.isComposing ||
+          event.keyCode === 229 ||
           // Settings → General → Send messages with ⌘/Ctrl+Enter: plain Enter adds a line.
           (sendWith === 'mod-enter' && !event.metaKey && !event.ctrlKey)
         )

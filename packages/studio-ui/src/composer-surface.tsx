@@ -1,5 +1,5 @@
 import { useAppPreferences } from '@dovo/studio-core'
-import type { ComponentProps, ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react'
 import { ArrowUp, LoaderCircle } from 'lucide-react'
 import {
   PromptInput,
@@ -15,19 +15,180 @@ import { cn } from './lib/utils'
 export function ComposerSurface({
   children,
   controls,
+  leadingActions,
   actions,
   error,
   collapsed = false,
+  compact = false,
   className,
   ...props
 }: ComponentProps<typeof PromptInput> & {
   controls: ReactNode
+  leadingActions?: ReactNode
   actions: ReactNode
   error?: string
   collapsed?: boolean
+  compact?: boolean
 }) {
+  const surface = useRef<HTMLFormElement>(null)
+  const animateLayout = useRef<(() => void) | undefined>(undefined)
+  useLayoutEffect(() => {
+    const form = surface.current
+    if (!form?.closest('.task-composer') || collapsed) return
+    const elements = () => [
+      form,
+      ...form.querySelectorAll<HTMLElement>(
+        ':scope > textarea, :scope > [data-composer-input], [data-composer-leading], [data-composer-controls], [data-composer-actions], [data-composer-footer] button',
+      ),
+    ]
+    const measure = () =>
+      elements().map((element) => ({
+        element,
+        bounds: element.getBoundingClientRect(),
+        // Inputs animate their padding and height: a textarea, or a rich editor's host.
+        padding:
+          element.tagName === 'TEXTAREA' || element.hasAttribute('data-composer-input')
+            ? getComputedStyle(element).padding
+            : undefined,
+        parent: element.matches('button')
+          ? element.closest<HTMLElement>(
+              '[data-composer-leading], [data-composer-controls], [data-composer-actions]',
+            )
+          : form,
+      }))
+    const isIdle = () => form.hasAttribute('data-idle')
+    let idle = isIdle()
+    let previous = measure()
+    let animations: Animation[] = []
+    // Animate the layout change without scaling text or icons. Natural content sizing still
+    // owns the expanded height, and an interrupted transition starts from its current frame.
+    const updateLayout = () => {
+      const nextIdle = isIdle()
+      if (idle !== nextIdle) {
+        idle = nextIdle
+        // Read the current visual frame before cancelling an in-flight transition.
+        // ResizeObserver may still hold the previous frame when focus changes again.
+        if (animations.some((animation) => animation.playState === 'running')) previous = measure()
+        animations.forEach((animation) => animation.cancel())
+        const next = measure()
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          const timing = { duration: 280, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+          const previousSurface = previous[0].bounds
+          const nextSurface = next[0].bounds
+          form.setAttribute('data-layout-animating', '')
+          animations = next.map(({ element, bounds, padding, parent }, index) => {
+            if (index === 0)
+              return element.animate(
+                [{ height: `${previousSurface.height}px` }, { height: `${nextSurface.height}px` }],
+                timing,
+              )
+            const previousElement = previous.find((entry) => entry.element === element)
+            const before = previousElement?.bounds
+            if (!before?.width || !bounds.width)
+              return element.animate(
+                [
+                  { opacity: 0, transform: 'translateY(6px)' },
+                  { opacity: 1, transform: 'translateY(0)' },
+                ],
+                timing,
+              )
+            // Children move relative to their animated toolbar group, so model/effort and
+            // wrapped actions do not jump inside a group that is itself moving.
+            const previousParent =
+              previous.find((entry) => entry.element === parent)?.bounds ?? previousSurface
+            const nextParent = next.find((entry) => entry.element === parent)?.bounds ?? nextSurface
+            const x = before.x - previousParent.x - (bounds.x - nextParent.x)
+            const y = before.y - previousParent.y - (bounds.y - nextParent.y)
+            return element.animate(
+              [
+                {
+                  transform: `translate(${x}px, ${y}px)`,
+                  padding: previousElement?.padding,
+                  height: padding ? `${before.height}px` : undefined,
+                  minHeight: padding ? `${before.height}px` : undefined,
+                  maxHeight: padding ? `${Math.max(before.height, bounds.height)}px` : undefined,
+                },
+                {
+                  transform: 'translate(0, 0)',
+                  padding,
+                  height: padding ? `${bounds.height}px` : undefined,
+                  minHeight: padding ? `${bounds.height}px` : undefined,
+                  maxHeight: padding ? `${Math.max(before.height, bounds.height)}px` : undefined,
+                },
+              ],
+              timing,
+            )
+          })
+          const surfaceAnimation = animations[0]
+          surfaceAnimation.onfinish = () => {
+            if (animations[0] !== surfaceAnimation) return
+            form.removeAttribute('data-layout-animating')
+            previous = measure()
+          }
+        } else {
+          form.removeAttribute('data-layout-animating')
+        }
+      }
+      previous = measure()
+    }
+    animateLayout.current = updateLayout
+    let frame: number | undefined
+    const scheduleMeasurement = () => {
+      frame ??= requestAnimationFrame(() => {
+        frame = undefined
+        updateLayout()
+      })
+    }
+    // A model label or toolbar can resize without changing the form's dimensions. Keep the
+    // animation baseline current for those changes, without reading layout on unrelated renders.
+    const observer = new ResizeObserver(scheduleMeasurement)
+    const observed = new Set<HTMLElement>()
+    const observeElements = () => {
+      const current = new Set(elements())
+      for (const element of observed) {
+        if (current.has(element)) continue
+        observer.unobserve(element)
+        observed.delete(element)
+      }
+      for (const element of current) {
+        if (observed.has(element)) continue
+        observed.add(element)
+        observer.observe(element)
+      }
+    }
+    observeElements()
+    const mutations = new MutationObserver((records) => {
+      const structureChanged = records.some(
+        (record) =>
+          record.type === 'childList' &&
+          [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element),
+      )
+      if (structureChanged) observeElements()
+      // React can rewrite an unchanged textarea defaultValue on every render. Text-only
+      // mutations need no measurement: ResizeObserver catches any resulting size change.
+      if (structureChanged || records.some((record) => record.type === 'attributes'))
+        scheduleMeasurement()
+    })
+    mutations.observe(form, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'hidden'],
+    })
+    return () => {
+      mutations.disconnect()
+      observer.disconnect()
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      form.removeAttribute('data-layout-animating')
+      animations.forEach((animation) => animation.cancel())
+      animateLayout.current = undefined
+    }
+  }, [collapsed])
+  useLayoutEffect(() => animateLayout.current?.(), [compact, collapsed])
   return (
     <PromptInput
+      ref={surface}
+      data-idle={compact || undefined}
       className={cn(
         'studio-composer relative z-10 mx-auto overflow-visible max-w-[var(--chat-max)] rounded-xl border-border/70 bg-card shadow-none',
         collapsed && 'max-h-12 overflow-hidden',
@@ -36,11 +197,25 @@ export function ComposerSurface({
       {...props}
     >
       {children}
-      <PromptInputFooter className="flex-wrap items-center gap-1.5 px-2.5 pb-2 pt-1">
-        <PromptInputTools className="min-w-[min(100%,18rem)] flex-1 flex-wrap gap-0.5">
+      <PromptInputFooter
+        data-composer-footer=""
+        className="flex-wrap items-center gap-1.5 px-2.5 pb-2 pt-1"
+      >
+        {leadingActions && (
+          <div data-composer-leading="" className="flex shrink-0 items-center gap-1">
+            {leadingActions}
+          </div>
+        )}
+        <PromptInputTools
+          data-composer-controls=""
+          className="min-w-[min(100%,18rem)] flex-1 flex-wrap gap-0.5"
+        >
           {controls}
         </PromptInputTools>
-        <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
+        <div
+          data-composer-actions=""
+          className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2"
+        >
           {actions}
         </div>
       </PromptInputFooter>
@@ -56,13 +231,18 @@ export function ComposerSurface({
 export function ComposerTextarea({
   value,
   hidden,
+  preview = true,
   className,
   ...props
-}: ComponentProps<typeof PromptInputTextarea> & { value: string; hidden?: boolean }) {
+}: ComponentProps<typeof PromptInputTextarea> & {
+  value: string
+  hidden?: boolean
+  preview?: boolean
+}) {
   const { markdownComposerPreview } = useAppPreferences()
   return (
     <>
-      {!hidden && markdownComposerPreview && value.trim() && (
+      {!hidden && preview && markdownComposerPreview && value.trim() && (
         <div
           aria-label="Formatted message preview"
           className="max-h-40 overflow-y-auto border-b px-4 py-3 text-sm"
@@ -105,6 +285,7 @@ export function ComposerWorkspaceBar({ className, ...props }: ComponentProps<'di
     <div
       role="group"
       aria-label="Project and checkout"
+      data-composer-workspace=""
       className={cn(
         'relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1 pt-3.5 text-muted-foreground',
         className,

@@ -8,7 +8,7 @@ import {
   checkOutcome,
   maxValue,
   minValue,
-  mutableStruct,
+  strictStruct,
   pullReferencesInText,
   resolveTaskAgent,
   verifyPullUrl,
@@ -24,7 +24,7 @@ import {
   watchAccountRepositoryId,
 } from './watch-repository.js'
 
-export const pullRequestWatchRequestSchema = mutableStruct({
+export const pullRequestWatchRequestSchema = strictStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
   parentRunId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   action: Schema.Literals(['watch', 'status', 'stop']),

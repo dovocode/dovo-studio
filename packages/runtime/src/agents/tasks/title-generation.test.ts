@@ -9,6 +9,7 @@ import { WorkspaceStore } from '../../storage/workspace'
 import { AgentRegistry } from '../configuration/registry'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout'
 import { TitleGeneration } from './title-generation'
+import { WorkspaceRouter } from './workspace-router'
 import { decode, taskSchema } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import type { AgentAdapter, AgentRun } from '../execution/types'
@@ -34,6 +35,62 @@ function setup(checkouts?: ConstructorParameters<typeof TitleGeneration>[3]) {
   const titles = new TitleGeneration(db, store, registry, checkouts)
   return { db, store, registry, titles }
 }
+it.each(['browser', 'terminal', 'thread'] as const)(
+  'routes workspace input to %s without title settings or a provider',
+  async (mode) => {
+    const s = setup()
+    const route = vi
+      .spyOn(WorkspaceRouter.prototype, 'route')
+      .mockResolvedValue({ mode, reason: 'GLiClass suggestion' })
+    const provider = vi.spyOn(s.registry, 'get')
+    try {
+      expect(s.titles.read().model).toBe('')
+      expect(await runClientEffect(s.titles.routeWorkspaceEffect({ text: 'pnpm test' }))).toEqual({
+        mode,
+        reason: 'GLiClass suggestion',
+      })
+      expect(route).toHaveBeenCalledWith('pnpm test', {})
+      expect(provider).not.toHaveBeenCalled()
+      expect(s.store.get().tasks).toEqual([])
+    } finally {
+      route.mockRestore()
+      provider.mockRestore()
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)
+it('generates a title from attachment metadata without inventing message text', async () => {
+  const s = setup()
+  let captured: AgentRun | undefined
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      captured = run
+      run.onText('Review screenshot')
+    },
+  })
+  try {
+    s.titles.save({ agentId: 'harness', model: 'title-model' })
+    const attachment = {
+      id: '8cf51548-a817-44fd-802f-1d22cb814101',
+      name: 'dashboard.png',
+      mime: 'image/png',
+      size: 123,
+    }
+    expect(await s.titles.generate({ text: '', attachments: [attachment] })).toEqual({
+      title: 'Review screenshot',
+    })
+    expect(captured?.prompt).toContain('dashboard.png')
+    expect(captured?.prompt).toContain('image/png')
+    await expect(s.titles.generate({ text: '  ' })).rejects.toThrow(/Provide text or attachments/)
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
 it('persists independent title settings and generates using a temporary read-only session', async () => {
   const s = setup()
   let captured: AgentRun | undefined
@@ -719,6 +776,27 @@ it('continues in General without calling a utility model when there are no disco
       autoProject: undefined,
       linkedCheckouts: [],
     })
+    expect(get).not.toHaveBeenCalled()
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+it('leaves archived projects out of automatic Scope choices', async () => {
+  const s = autoFixture()
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repository) =>
+      repository.kind === 'scratch' ? repository : { ...repository, archived: true },
+    ),
+  }))
+  const get = vi.spyOn(s.registry, 'get')
+  try {
+    const result = await runClientEffect(
+      s.titles.selectProjectsEffect({ id: 'auto', text: 'Fix the billing API' }),
+    )
+    expect(result).toMatchObject({ repositoryId: 'scratch', linkedCheckouts: [] })
     expect(get).not.toHaveBeenCalled()
   } finally {
     await s.titles.dispose()

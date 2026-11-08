@@ -43,78 +43,545 @@ function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
     recovered: () => recovered,
   }
 }
-
-it('stops a frozen run without reading, replaying or discarding an unrelated blocked journal', async () => {
-  const old = {
-    id: 'blocked',
-    path: '/api/tasks/message',
-    method: 'POST' as const,
-    input: { id: 'other', messageId: 'message', text: 'Keep this' },
-    blocked: true,
-  }
-  const f = fixture([old])
-  const read = vi.spyOn(f.storage, 'read').mockRejectedValue(new Error('Storage unavailable'))
-  const ids: Array<string | null> = []
+it('saves offline messages without network, deduplicates retries and delivers in order after restart', async () => {
+  const f = fixture()
+  const network = vi.fn<typeof fetch>()
+  vi.stubGlobal('fetch', network)
+  const first = { id: 'task', messageId: 'first', text: 'Hello' }
+  const second = { id: 'task', messageId: 'second', text: 'Next', queueOnly: true }
+  for (const input of [first, first, second])
+    expect(
+      await run(f.queue.enqueueEffect(connection, '/api/tasks/message', input, responses.ok)),
+    ).toMatchObject({ _tag: 'Success', success: { ok: true, pending: true } })
+  expect(network).not.toHaveBeenCalled()
+  expect(f.stored()).toHaveLength(2)
+  const reopened = f.restart()
+  await run(reopened.restoreEffect(connection))
+  expect(reopened.status(connection).pending).toBe(2)
+  const delivered: unknown[] = []
+  network.mockImplementation(async (url, init) => {
+    if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+    if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body')
+    delivered.push(JSON.parse(init.body))
+    return Response.json({ ok: true })
+  })
+  expect((await run(reopened.recoverEffect(connection)))._tag).toBe('Success')
+  expect(delivered).toEqual([first, second])
+  expect(f.stored()).toEqual([])
+})
+it('accepts another local send while the sender waits for a response, without losing either command', async () => {
+  const f = fixture()
+  const first = { id: 'task', messageId: 'first', text: 'Hello' }
+  await run(f.queue.enqueueEffect(connection, '/api/tasks/message', first, responses.ok))
+  let started!: () => void, release!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const response = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const delivered: string[] = []
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async (url, init) => {
-      expect(urlPath(url)).toBe(`${connection.address}/api/tasks/cancel`)
-      expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toEqual({
-        id: 'task',
-        runId: 'attempt',
-      })
-      ids.push(new Headers(init?.headers).get('X-Dovo-Mutation-Id'))
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body')
+      const input = JSON.parse(init.body)
+      delivered.push(input.messageId)
+      if (input.messageId === 'first') {
+        started()
+        await response
+      }
       return Response.json({ ok: true })
     }),
   )
-  const stop = () =>
-    Effect.runPromise(
-      f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task', runId: 'attempt' }, ok),
-    )
-  await stop()
-  await stop()
-  expect(ids[0]).toMatch(/^[a-f0-9]{64}$/)
-  expect(ids[1]).toBe(ids[0])
-  expect(read).not.toHaveBeenCalled()
-  expect(f.stored()).toEqual([old])
+  const recovery = run(f.queue.recoverEffect(connection))
+  await waiting
+  try {
+    const second = { id: 'task', messageId: 'second', text: 'Next' }
+    expect(
+      (await run(f.queue.enqueueEffect(connection, '/api/tasks/message', second, responses.ok)))
+        ._tag,
+    ).toBe('Success')
+    expect(f.stored()).toHaveLength(2)
+  } finally {
+    release()
+  }
+  expect((await recovery)._tag).toBe('Success')
+  expect(delivered).toEqual(['first', 'second'])
+  expect(f.stored()).toEqual([])
 })
-
-it('does not hold Stop behind an in-flight journal request or save an offline Stop for later', async () => {
+it('keeps one durable send identity when a title preview changes before a UI retry', async () => {
   const f = fixture()
-  let release!: () => void
-  const gate = new Promise<void>((resolve) => {
-    release = resolve
+  const input = {
+    id: 'task',
+    messageId: 'first',
+    text: 'Hello',
+    initialTitle: { before: 'New task', after: 'Hello' },
+  }
+  expect(
+    (await run(f.queue.enqueueEffect(connection, '/api/tasks/message', input, responses.ok)))._tag,
+  ).toBe('Success')
+  expect(
+    (
+      await run(
+        f.queue.enqueueEffect(
+          connection,
+          '/api/tasks/message',
+          { ...input, initialTitle: { before: 'Hello', after: 'Hello' } },
+          responses.ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Success')
+  expect(f.stored()).toHaveLength(1)
+  expect(f.stored()[0]?.input).toEqual(input)
+  expect(
+    (
+      await run(
+        f.queue.enqueueEffect(
+          connection,
+          '/api/tasks/message',
+          { ...input, text: 'Different' },
+          responses.ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Failure')
+  expect(f.stored()).toHaveLength(1)
+})
+it('preserves drafts on local storage failure and refuses deferred run-specific sends', async () => {
+  const f = fixture()
+  const network = vi.fn<typeof fetch>()
+  vi.stubGlobal('fetch', network)
+  for (const input of [
+    { id: 'task', messageId: 'first', text: 'Hello', sendNow: true },
+    { id: 'task', messageId: 'first', text: 'Hello', runId: 'old-run' },
+  ])
+    expect(
+      (await run(f.queue.enqueueEffect(connection, '/api/tasks/message', input, responses.ok)))
+        ._tag,
+    ).toBe('Failure')
+  vi.spyOn(f.storage, 'update').mockRejectedValueOnce(new Error('Disk full'))
+  expect(
+    (
+      await run(
+        f.queue.enqueueEffect(
+          connection,
+          '/api/tasks/message',
+          { id: 'task', messageId: 'first', text: 'Hello' },
+          responses.ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Failure')
+  expect(f.stored()).toEqual([])
+  expect(network).not.toHaveBeenCalled()
+})
+it('restores offline thread creation as a presentation overlay without changing the snapshot', async () => {
+  const f = fixture()
+  const task = decode(taskSchema, {
+    id: 'new-thread',
+    files: [],
+    example: false,
+    title: 'Offline thread',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    draft: '',
+    messages: [],
+    status: 'draft',
+    execution: 'worktree',
+    createdAt: new Date().toISOString(),
   })
-  let entered!: () => void
-  const sending = new Promise<void>((resolve) => {
-    entered = resolve
+  expect(
+    (
+      await run(
+        f.queue.enqueueEffect(
+          connection,
+          '/api/workspace',
+          { collection: 'tasks', id: task.id, create: task, changes: {} },
+          workspacePatchResultSchema,
+          'PATCH',
+        ),
+      )
+    )._tag,
+  ).toBe('Success')
+  const reopened = f.restart()
+  await run(reopened.restoreEffect(connection))
+  const tasks: (typeof task)[] = []
+  expect(reopened.pendingTasks(connection, tasks)).toEqual([task])
+  expect(tasks).toEqual([])
+  const network = vi.fn<typeof fetch>(async (url) =>
+    Response.json(
+      urlPath(url).endsWith('/status')
+        ? { version: 1, workspaceMutations: 1 }
+        : { revision: 2, reconciled: true },
+    ),
+  )
+  vi.stubGlobal('fetch', network)
+  expect((await run(reopened.recoverEffect(connection)))._tag).toBe('Success')
+  expect(f.stored()).toHaveLength(1)
+  expect(reopened.status(connection).pending).toBe(0)
+  // A crash after host acceptance, before the offline cache write, keeps the new thread.
+  const crashed = f.restart()
+  await run(crashed.restoreEffect(connection))
+  expect(crashed.pendingTasks(connection, [])).toEqual([task])
+  await run(crashed.recoverEffect(connection))
+  expect((await run(crashed.taskCreationsCachedEffect(connection, [task])))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+})
+it('keeps uncertain attachment payloads through reconnect and ordinary journal discard', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    queuedMessageId: 'queued-message',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  const requests: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      const path = urlPath(url)
+      requests.push(path)
+      return Response.json(
+        path.endsWith('/status')
+          ? { version: 1 }
+          : path.endsWith('/upload-handled')
+            ? { handled: true }
+            : { ok: true },
+      )
+    }),
+  )
+  expect((await run(f.queue.stageAttachmentEffect(connection, upload, false)))._tag).toBe('Success')
+  expect((await run(f.queue.stageAttachmentEffect(connection, upload, false)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([
+    expect.objectContaining({
+      id: upload.id,
+      input: upload,
+      path: '/api/attachments/recoverable-upload',
+    }),
+  ])
+  const reopened = f.restart()
+  expect((await run(reopened.recoverEffect(connection)))._tag).toBe('Success')
+  expect(requests.some((path) => path.includes('/api/attachments/'))).toBe(false)
+  expect(reopened.attachmentUploads(connection)).toHaveLength(1)
+  expect(reopened.status(connection).error).toBe('Saved attachments need review.')
+  expect((await run(reopened.discardEffect(connection)))._tag).toBe('Success')
+  expect(f.stored()[0]?.input).toEqual(upload)
+  expect((await run(reopened.finishAttachmentEffect(connection, upload.id)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+})
+it('checks the durable attachment journal after restart and propagates read failures', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+    detached: true,
+  }
+  expect(await run(f.queue.attachmentPendingEffect(connection, upload.id))).toMatchObject({
+    _tag: 'Success',
+    success: false,
+  })
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  expect(await run(f.restart().attachmentPendingEffect(connection, upload.id))).toMatchObject({
+    _tag: 'Success',
+    success: true,
+  })
+  vi.spyOn(f.storage, 'read').mockRejectedValueOnce(new Error('storage unavailable'))
+  expect((await run(f.queue.attachmentPendingEffect(connection, upload.id)))._tag).toBe('Failure')
+})
+it('journals uploads before dispatch and reads a committed receipt instead of replaying on review', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  const receipt = {
+    attachment: { id: upload.id, name: upload.name, mime: 'text/plain', size: 5 },
+    revision: 3,
+  }
+  let sends = 0
+  let payloadAtDispatch: unknown
+  let errorAtDispatch: string | null | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      const path = urlPath(url)
+      if (path.endsWith('/status')) return Response.json({ version: 1, attachmentUploads: 2 })
+      if (path.endsWith('/upload-receipt')) return Response.json({ receipt, available: true })
+      if (path.endsWith('/recoverable-upload')) {
+        sends++
+        payloadAtDispatch = f.stored()[0]?.input
+        errorAtDispatch = f.queue.status(connection).error
+        throw new TypeError('lost response')
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    }),
+  )
+  expect((await run(f.queue.requestAttachmentEffect(connection, upload, false)))._tag).toBe(
+    'Failure',
+  )
+  const reopened = f.restart()
+  const result = await run(reopened.retryAttachmentAfterReviewEffect(connection, upload.id))
+  expect(result).toMatchObject({ _tag: 'Success', success: receipt })
+  expect(payloadAtDispatch).toEqual(upload)
+  expect(errorAtDispatch).toBeNull()
+  expect(f.queue.status(connection).error).toBe('Saved attachments need review.')
+  expect(sends).toBe(1)
+  expect(f.stored()[0]?.input).toEqual(upload)
+})
+it('does not show review for an upload while it is still in flight', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+    detached: true,
+  }
+  let release: (() => void) | undefined
+  let dispatched: (() => void) | undefined
+  const started = new Promise<void>((resolve) => {
+    dispatched = resolve
   })
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async (url) => {
-      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
-      if (urlPath(url).endsWith('/api/tasks/message')) {
-        entered()
-        await gate
-        return Response.json({ ok: true })
-      }
-      throw new TypeError('Network unavailable')
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, attachmentUploads: 2 })
+      dispatched?.()
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return Response.json({
+        attachment: { id: upload.id, name: upload.name, mime: 'text/plain', size: 5 },
+        revision: 1,
+      })
     }),
   )
-  const message = run(
-    f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'm' }, ok),
-  )
-  try {
-    await sending
-    const stopped = await run(
-      f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task', runId: 'attempt' }, ok),
-    )
-    expect(stopped._tag).toBe('Failure')
-    expect(f.stored().map((item) => item.path)).toEqual(['/api/tasks/message'])
-  } finally {
-    release()
-    await message
+  const pending = run(f.queue.requestAttachmentEffect(connection, upload, false))
+  await started
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
+  expect(f.queue.status(connection).error).toBeNull()
+  expect(f.queue.status(connection).pending).toBe(0)
+  expect(f.queue.attachmentUploads(connection)).toEqual([])
+  release?.()
+  expect((await pending)._tag).toBe('Success')
+})
+it('does not acknowledge when local journal removal fails', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
   }
+  const requests: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      const path = urlPath(url)
+      requests.push(path)
+      return Response.json(path.endsWith('/upload-handled') ? { handled: true } : { ok: true })
+    }),
+  )
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  const update = f.storage.update
+  f.storage.update = async () => {
+    throw new Error('Storage failed')
+  }
+  expect((await run(f.queue.finishAttachmentEffect(connection, upload.id)))._tag).toBe('Failure')
+  expect(f.stored()[0]?.input).toEqual(upload)
+  expect(requests.some((path) => path.endsWith('/acknowledge-upload'))).toBe(false)
+  f.storage.update = update
+  expect((await run(f.queue.finishAttachmentEffect(connection, upload.id)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+})
+it('preserves acknowledgement payload and retries it after restart', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  let online = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      const path = urlPath(url)
+      if (path.endsWith('/status')) return Response.json({ version: 1 })
+      if (path.endsWith('/upload-handled')) return Response.json({ handled: true })
+      if (path.endsWith('/acknowledge-upload')) {
+        if (!online) throw new TypeError('lost acknowledgement response')
+        return Response.json({ ok: true })
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    }),
+  )
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  expect((await run(f.queue.finishAttachmentEffect(connection, upload.id)))._tag).toBe('Failure')
+  expect(f.stored()).toEqual([
+    {
+      id: upload.id,
+      path: '/api/attachments/acknowledge-upload',
+      method: 'POST',
+      input: upload,
+      attachmentReplacement: false,
+    },
+  ])
+  const reopened = f.restart()
+  online = true
+  expect((await run(reopened.recoverEffect(connection)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+})
+it('retains acknowledgement payload when the destination disappears before retirement', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  let checks = 0
+  let acknowledgements = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      const path = urlPath(url)
+      if (path.endsWith('/status')) return Response.json({ version: 1 })
+      if (path.endsWith('/upload-handled')) return Response.json({ handled: ++checks === 1 })
+      if (path.endsWith('/acknowledge-upload')) acknowledgements++
+      return Response.json({ ok: true })
+    }),
+  )
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  expect((await run(f.queue.finishAttachmentEffect(connection, upload.id)))._tag).toBe('Failure')
+  expect(f.stored()[0]?.input).toEqual(upload)
+  expect(acknowledgements).toBe(0)
+  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Failure')
+  expect(f.stored()[0]?.input).toEqual(upload)
+  expect(acknowledgements).toBe(0)
+})
+it('preserves the journal and rejects a receipt for another attachment', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () =>
+      Response.json({
+        available: true,
+        receipt: {
+          attachment: {
+            id: 'c22b7703-e0a7-4f59-ab87-703ef50e824c',
+            name: upload.name,
+            mime: 'text/plain',
+            size: 5,
+          },
+          revision: 3,
+        },
+      }),
+    ),
+  )
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  const result = await run(f.queue.retryAttachmentAfterReviewEffect(connection, upload.id))
+  expect(result._tag).toBe('Failure')
+  expect(f.stored()[0]?.input).toEqual(upload)
+})
+it('retains a queued upload until its saved destination confirms membership', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    queuedMessageId: 'message',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  let handled = false
+  let acknowledgements = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/upload-handled')) return Response.json({ handled })
+      acknowledgements++
+      return Response.json({ ok: true })
+    }),
+  )
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  expect((await run(f.queue.finishAttachmentEffect(connection, upload.id)))._tag).toBe('Failure')
+  expect(f.stored()[0]?.input).toEqual(upload)
+  expect(acknowledgements).toBe(0)
+  handled = true
+  expect((await run(f.queue.finishAttachmentEffect(connection, upload.id)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+  expect(acknowledgements).toBe(1)
+})
+it('never replays an unavailable committed receipt', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  const requests: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      requests.push(urlPath(url))
+      return Response.json({
+        available: false,
+        receipt: {
+          attachment: { id: upload.id, name: upload.name, mime: 'text/plain', size: 5 },
+          revision: 3,
+        },
+      })
+    }),
+  )
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  expect((await run(f.queue.retryAttachmentAfterReviewEffect(connection, upload.id)))._tag).toBe(
+    'Failure',
+  )
+  expect(f.stored()[0]?.input).toEqual(upload)
+  expect(requests).toHaveLength(1)
+  expect(requests[0]).toContain('/upload-receipt')
+})
+it('retains the upload until the runtime durably fences explicit discard', async () => {
+  const f = fixture()
+  const upload = {
+    id: '3e222e4e-63dc-40d0-b0cb-6d1bc3b9ead4',
+    taskId: 'task',
+    name: 'file.txt',
+    data: 'aGVsbG8=',
+  }
+  let online = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      expect(urlPath(url)).toContain('/abandon-upload')
+      if (!online) throw new TypeError('lost response')
+      return Response.json({ ok: true })
+    }),
+  )
+  await run(f.queue.stageAttachmentEffect(connection, upload, false))
+  expect((await run(f.queue.discardAttachmentEffect(connection, upload.id)))._tag).toBe('Failure')
+  expect(f.stored()[0]?.input).toEqual(upload)
+  online = true
+  expect((await run(f.restart().discardAttachmentEffect(connection, upload.id)))._tag).toBe(
+    'Success',
+  )
+  expect(f.stored()).toEqual([])
 })
 it('retires a safely rejected checklist clear so newer progress can be reviewed and cleared', async () => {
   const f = fixture()
@@ -231,6 +698,40 @@ it('recovers body interruption and retires receipts only after durable journal r
   expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Success')
   expect(f.stored()).toEqual([])
   expect(acknowledgements).toEqual([[]])
+})
+it('finishes durable actions and releases the queue while receipt cleanup is waiting', async () => {
+  const f = fixture()
+  let release!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const acknowledgements: MutationOutbox[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, acknowledgements: true })
+      if (urlPath(url).endsWith('/acknowledge')) {
+        acknowledgements.push(f.stored())
+        await waiting
+      }
+      return Response.json({ ok: true })
+    }),
+  )
+  try {
+    for (const id of ['first', 'second']) {
+      expect(
+        await run(
+          f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id, action: 'archive' }, ok),
+        ),
+      ).toMatchObject({ _tag: 'Success', success: { ok: true } })
+      expect(f.stored()).toEqual([])
+    }
+    await vi.waitFor(() => expect(acknowledgements).toHaveLength(2))
+    expect(acknowledgements).toEqual([[], []])
+  } finally {
+    release()
+  }
 })
 it('persists before sending and recovers a lost response with the same action ID after restart', async () => {
   const f = fixture(),
@@ -1465,6 +1966,41 @@ function renewalFixture() {
   }
 }
 
+it('does not admit a late send into credentials being replaced', async () => {
+  const f = renewalFixture()
+  let entered!: () => void, release!: () => void
+  const committing = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const transfer = run(
+    f.queue.renewConnectionEffect(
+      f.previous,
+      f.next,
+      Effect.promise(async () => {
+        entered()
+        await waiting
+      }),
+    ),
+  )
+  await committing
+  const admission = run(
+    f.queue.enqueueEffect(
+      f.previous,
+      '/api/tasks/message',
+      { id: 'task', messageId: 'late', text: 'Keep my draft' },
+      responses.ok,
+    ),
+  )
+  release()
+  expect((await transfer)._tag).toBe('Success')
+  expect((await admission)._tag).toBe('Failure')
+  expect(f.journals.get(f.next.token)?.map((item) => item.id)).toEqual([f.message.id, f.action.id])
+  expect(f.journals.has(f.previous.token)).toBe(false)
+})
+
 it('renews access with durable actions, recovers messages once and requires consent for uncertain commands', async () => {
   const f = renewalFixture(),
     commit = vi.fn<() => void>()
@@ -1642,6 +2178,210 @@ it('keeps a temporary Connect lease rejection recoverable without blocking the s
   valid = true
   await Effect.runPromise(f.queue.recoverEffect(connection))
   expect(f.stored()).toEqual([])
+})
+
+it('recovers an uncertain duplicate after remount using the original copy and receipt IDs', async () => {
+  const f = fixture()
+  const delivered: Array<{ receipt: string | null; input: unknown }> = []
+  let loseResponse = true
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1, queueMutations: 1 })
+      if (typeof init?.body !== 'string') throw new Error('Expected JSON body')
+      delivered.push({
+        receipt: new Headers(init.headers).get('X-Dovo-Mutation-Id'),
+        input: JSON.parse(init.body),
+      })
+      expect(f.stored()).toHaveLength(1)
+      if (loseResponse) throw new TypeError('Response lost after the copy was committed')
+      return Response.json({ ok: true })
+    }),
+  )
+  const input = {
+    id: 'task',
+    action: 'duplicate',
+    messageId: 'source',
+    duplicateMessageId: 'original-copy',
+  }
+  expect(
+    (await run(f.queue.requestEffect(connection, '/api/tasks/queue', input, responses.queueAction)))
+      ._tag,
+  ).toBe('Failure')
+  expect(f.stored()).toHaveLength(1)
+  loseResponse = false
+  const reopened = f.restart()
+  expect(
+    await run(
+      reopened.requestEffect(
+        connection,
+        '/api/tasks/queue',
+        { ...input, duplicateMessageId: 'candidate-after-remount' },
+        responses.queueAction,
+      ),
+    ),
+  ).toMatchObject({ _tag: 'Success', success: { ok: true, recovered: true } })
+  expect(delivered.length).toBeGreaterThanOrEqual(2)
+  expect(
+    delivered.every(
+      (command) =>
+        command.receipt === 'operation-1' &&
+        JSON.stringify(command.input) === JSON.stringify(input),
+    ),
+  ).toBe(true)
+  expect(f.stored()).toEqual([])
+  const next = { ...input, duplicateMessageId: 'intentional-second-copy' }
+  expect((await run(reopened.requestEffect(connection, '/api/tasks/queue', next, ok)))._tag).toBe(
+    'Success',
+  )
+  expect(delivered.at(-1)).toEqual({ receipt: 'operation-2', input: next })
+})
+
+it('settles a rejected stale queue move without blocking subsequent user actions', async () => {
+  const f = fixture()
+  let rejectMove = true
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1, queueMutations: 1 })
+      return rejectMove
+        ? Response.json({ error: 'The queue changed', mutationRejected: true }, { status: 409 })
+        : Response.json({ ok: true })
+    }),
+  )
+  const input = {
+    id: 'task',
+    action: 'move',
+    messageId: 'b',
+    beforeMessageId: 'a',
+    expectedMessageIds: ['a', 'b'],
+  }
+  expect((await run(f.queue.requestEffect(connection, '/api/tasks/queue', input, ok)))._tag).toBe(
+    'Failure',
+  )
+  expect(f.stored()).toEqual([])
+  expect(f.queue.status(connection).error).toBeNull()
+  rejectMove = false
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/queue',
+          { ...input, expectedMessageIds: ['a', 'c', 'b'] },
+          ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Success')
+})
+
+it('keeps foreground queue controls compatible with hosts without queue receipts', async () => {
+  const f = fixture()
+  const commands: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      expect(new Headers(init?.headers).has('X-Dovo-Mutation-Id')).toBe(false)
+      commands.push(urlPath(url))
+      return Response.json({ ok: true })
+    }),
+  )
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/queue',
+          { id: 'task', action: 'duplicate', messageId: 'a', duplicateMessageId: 'b' },
+          ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Success')
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(connection, '/api/tasks/queue', { id: 'task', action: 'resume' }, ok),
+      )
+    )._tag,
+  ).toBe('Success')
+  expect(f.stored()).toEqual([])
+  expect(commands).toHaveLength(2)
+})
+
+it('stops a frozen run without reading, replaying or discarding an unrelated blocked journal', async () => {
+  const old = {
+    id: 'blocked',
+    path: '/api/tasks/message',
+    method: 'POST' as const,
+    input: { id: 'other', messageId: 'message', text: 'Keep this' },
+    blocked: true,
+  }
+  const f = fixture([old])
+  const read = vi.spyOn(f.storage, 'read').mockRejectedValue(new Error('Storage unavailable'))
+  const ids: Array<string | null> = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      expect(urlPath(url)).toBe(`${connection.address}/api/tasks/cancel`)
+      expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toEqual({
+        id: 'task',
+        runId: 'attempt',
+      })
+      ids.push(new Headers(init?.headers).get('X-Dovo-Mutation-Id'))
+      return Response.json({ ok: true })
+    }),
+  )
+  const stop = () =>
+    Effect.runPromise(
+      f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task', runId: 'attempt' }, ok),
+    )
+  await stop()
+  await stop()
+  expect(ids[0]).toMatch(/^[a-f0-9]{64}$/)
+  expect(ids[1]).toBe(ids[0])
+  expect(read).not.toHaveBeenCalled()
+  expect(f.stored()).toEqual([old])
+})
+
+it('does not hold Stop behind an in-flight journal request or save an offline Stop for later', async () => {
+  const f = fixture()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let entered!: () => void
+  const sending = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      if (urlPath(url).endsWith('/api/tasks/message')) {
+        entered()
+        await gate
+        return Response.json({ ok: true })
+      }
+      throw new TypeError('Network unavailable')
+    }),
+  )
+  const message = run(
+    f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'm' }, ok),
+  )
+  try {
+    await sending
+    const stopped = await run(
+      f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task', runId: 'attempt' }, ok),
+    )
+    expect(stopped._tag).toBe('Failure')
+    expect(f.stored().map((item) => item.path)).toEqual(['/api/tasks/message'])
+  } finally {
+    release()
+    await message
+  }
 })
 
 it('retries only the selected renewed action and keeps its neighbors under review', async () => {

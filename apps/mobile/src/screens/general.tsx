@@ -1,11 +1,13 @@
+import { SnoozeSchedule } from './snooze-schedule'
 import { SettingsScrollView } from './settings-search'
 import { router } from 'expo-router'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { View } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
 import { getAvailableVoicesAsync, type Voice } from 'expo-speech'
-import { taskGroupOptions, taskSortOptions } from '@dovo/protocol'
+import { dictationLanguages, taskGroupOptions, taskSortOptions } from '@dovo/protocol'
 import {
   updateMobilePreferences,
   useMobilePreferences,
@@ -17,6 +19,64 @@ import { Text } from '../ui/content/text'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { SettingsGroup, SettingsRow, SettingsSwitchRow } from './settings-group'
 import { Field } from '../ui/controls/field'
+import { SettingsAction as Action } from './settings-controls'
+import {
+  defaultTaskSnoozeMinutes,
+  formatTaskSnoozeMinutes,
+  parseTaskSnoozeMinutes,
+} from '@dovo/protocol'
+
+function SnoozeDurations({ minutes }: { minutes: number[] }) {
+  const saved = formatTaskSnoozeMinutes(minutes)
+  const [text, setText] = useState(saved)
+  const [error, setError] = useState('')
+  const { styles } = useTheme()
+  useEffect(() => {
+    setText(saved)
+    setError('')
+  }, [saved])
+  return (
+    <View style={{ gap: 8, padding: 12 }}>
+      <Field
+        label="Snooze durations"
+        value={text}
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={(value) => {
+          setText(value)
+          setError('')
+        }}
+        placeholder="15m, 1h, 4h, 1d"
+      />
+      <Action
+        label="Save snooze durations"
+        disabled={text === saved}
+        onPress={() => {
+          try {
+            updateMobilePreferences({ taskSnoozeMinutes: parseTaskSnoozeMinutes(text) })
+            setError('')
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause))
+          }
+        }}
+      />
+      <Action
+        secondary
+        label="Reset snooze durations"
+        onPress={() => {
+          updateMobilePreferences({ taskSnoozeMinutes: [...defaultTaskSnoozeMinutes] })
+          setText(formatTaskSnoozeMinutes(defaultTaskSnoozeMinutes))
+          setError('')
+        }}
+      />
+      {error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      )}
+    </View>
+  )
+}
 
 function BrowserCleanupMinutes({
   label,
@@ -30,19 +90,21 @@ function BrowserCleanupMinutes({
   const [text, setText] = useState(String(value))
   useEffect(() => setText(String(value)), [value])
   return (
-    <Field
-      label={label}
-      value={text}
-      keyboardType="number-pad"
-      onChangeText={(text) => {
-        setText(text)
-        if (/^\d+$/.test(text)) {
-          const minutes = Number(text)
-          if (minutes <= 525600) onSave(minutes)
-        }
-      }}
-      onBlur={() => setText(String(value))}
-    />
+    <View style={{ padding: 12 }}>
+      <Field
+        label={label}
+        value={text}
+        keyboardType="number-pad"
+        onChangeText={(text) => {
+          setText(text)
+          if (/^\d+$/.test(text)) {
+            const minutes = Number(text)
+            if (minutes <= 525600) onSave(minutes)
+          }
+        }}
+        onBlur={() => setText(String(value))}
+      />
+    </View>
   )
 }
 
@@ -133,7 +195,7 @@ export default function GeneralScreen() {
       </SettingsGroup>
       <SettingsGroup
         title="Experimental"
-        footer="Browser tabs stay on this device. Remote tabs use their selected paired computer."
+        footer="Browser tabs stay on this device. Terminals run on paired computers and use their session recovery. Unified mixes threads, pages and standalone terminals."
       >
         <SettingsSwitchRow
           label="Enable experimental Browser"
@@ -142,6 +204,32 @@ export default function GeneralScreen() {
             updateMobilePreferences({ browserWorkspaceEnabled })
           }
         />
+        <SettingsSwitchRow
+          label="Enable Terminal workspace"
+          value={preferences.terminalWorkspaceEnabled}
+          onValueChange={(terminalWorkspaceEnabled) =>
+            updateMobilePreferences({ terminalWorkspaceEnabled })
+          }
+        />
+        <SettingsSwitchRow
+          label="Enable experimental Unified"
+          value={preferences.unifiedWorkspaceEnabled}
+          onValueChange={(unifiedWorkspaceEnabled) =>
+            updateMobilePreferences({
+              unifiedWorkspaceEnabled,
+              ...(unifiedWorkspaceEnabled ? {} : { unifiedWorkspaceActive: false }),
+            })
+          }
+        />
+        {preferences.unifiedWorkspaceEnabled && (
+          <SettingsSwitchRow
+            label="Hide normal modes in Unified"
+            value={preferences.hideNormalWorkspaceModes}
+            onValueChange={(hideNormalWorkspaceModes) =>
+              updateMobilePreferences({ hideNormalWorkspaceModes })
+            }
+          />
+        )}
       </SettingsGroup>
       <SettingsGroup title="Related settings">
         <SettingsRow
@@ -236,6 +324,13 @@ export function TaskPreferencesScreen() {
         />
       </SettingsGroup>
       <SettingsGroup
+        title="Snoozing"
+        footer="Enter 1–12 durations separated by commas, in menu order: m for minutes, h for hours, d for days or w for weeks. Existing snoozed threads keep their wake-up time."
+      >
+        <SnoozeSchedule schedule={preferences.taskSnoozeSchedule} ready={preferences.ready} />
+        <SnoozeDurations minutes={preferences.taskSnoozeMinutes} />
+      </SettingsGroup>
+      <SettingsGroup
         title="Confirmations"
         footer="Archived tasks can always be restored from Settings → Archived tasks. Stopping pauses queued messages."
       >
@@ -287,7 +382,7 @@ export function ConversationSettingsScreen() {
     <LocalSettingsPage title="Conversation">
       <SettingsGroup
         title="Conversation"
-        footer="Whether commands, edits and searches in each turn start open or folded. Tool call details show output and full inputs only when enabled. The screen stays on only while you have a running task open."
+        footer="Turn off Minimal composer to always show the full composer. Tool activity controls whether commands, edits and searches start open or folded. Tool call details show output and full inputs only when enabled. The screen stays on only while you have a running task open."
       >
         <SettingsSwitchRow
           first
@@ -315,6 +410,21 @@ export function ConversationSettingsScreen() {
           label="Show tool call details"
           value={preferences.showToolDetails}
           onValueChange={(showToolDetails) => updateMobilePreferences({ showToolDetails })}
+        />
+        <SettingsSwitchRow
+          label="Minimal composer"
+          value={preferences.minimalComposer}
+          onValueChange={(minimalComposer) => updateMobilePreferences({ minimalComposer })}
+        />
+        <SettingsSwitchRow
+          label="Show Plan button"
+          value={preferences.showPlanButton}
+          onValueChange={(showPlanButton) => updateMobilePreferences({ showPlanButton })}
+        />
+        <SettingsSwitchRow
+          label="Show context usage"
+          value={preferences.showContextUsage}
+          onValueChange={(showContextUsage) => updateMobilePreferences({ showContextUsage })}
         />
         <SettingsSwitchRow
           label="Keep the screen on while a task runs"
@@ -391,9 +501,10 @@ export function SpeechSettingsScreen() {
           value={preferences.dictationLanguage}
           items={[
             { id: '', name: 'Automatic' },
-            ...[...recognitionLanguages]
-              .sort()
-              .map((language) => ({ id: language, name: language })),
+            ...[...recognitionLanguages].sort().map((language) => ({
+              id: language,
+              name: dictationLanguages.find(([code]) => code === language)?.[1] ?? language,
+            })),
           ]}
           onChange={(dictationLanguage) => updateMobilePreferences({ dictationLanguage })}
         />

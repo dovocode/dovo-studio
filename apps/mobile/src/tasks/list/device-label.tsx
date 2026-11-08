@@ -1,5 +1,4 @@
 import { View } from 'react-native'
-import { Text } from '../../ui/content/text'
 import type { Task, RuntimeIcon as RuntimeIconName } from '@dovo/protocol'
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import { useTheme } from '../../ui/theme'
@@ -8,18 +7,14 @@ export function DeviceLabel({
   task,
   runtimeHost,
   runtimeIcon,
-  compact = false,
-  fontSize = 12,
-  flexible = false,
+  size = 12,
 }: {
   task: Task
   runtimeIcon?: RuntimeIconName
   runtimeHost?: string
-  compact?: boolean
-  fontSize?: number
-  flexible?: boolean
+  size?: number
 }) {
-  const { colors, styles } = useTheme()
+  const { colors } = useTheme()
 
   const turn = task.turns?.at(-1)
   const host = runtimeHost ?? turn?.runtimeHost
@@ -32,19 +27,10 @@ export function DeviceLabel({
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
-        flexShrink: 1,
-        flex: flexible ? 1 : undefined,
-        minWidth: 0,
+        flexShrink: 0,
       }}
     >
-      <RuntimeIcon icon={runtimeIcon} size={compact ? fontSize : 13} color={colors.muted} />
-      <Text
-        numberOfLines={compact ? 1 : 2}
-        style={[styles.muted, { flexShrink: 1 }, compact && { fontSize, lineHeight: fontSize + 4 }]}
-      >
-        {compact ? (host ?? 'Unknown device') : label}
-      </Text>
+      <RuntimeIcon icon={runtimeIcon} size={size} color={colors.muted} />
     </View>
   )
 }

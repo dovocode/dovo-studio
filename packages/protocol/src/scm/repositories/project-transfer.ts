@@ -87,7 +87,7 @@ export const projectTransferSchema = mutableStruct({
 })
 export type ProjectTransfer = typeof projectTransferSchema.Type
 export const projectTransferTargetsSchema = mutableArray(
-  mutableStruct({ id: text(), name: text() }),
+  mutableStruct({ id: text(), name: text(), directSupported: Schema.optional(Schema.Boolean) }),
 )
 export const projectTransferEntrySchema = mutableStruct({
   path: text(4096),

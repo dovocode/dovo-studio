@@ -1,3 +1,7 @@
+import {
+  claudeEffectiveEnvironment,
+  claudeSubscriptionEnvironment,
+} from '../configuration/claude-settings.js'
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -199,8 +203,8 @@ async function claudeLogin(agent: Agent) {
     throw new Error(
       'Claude resets are unavailable on macOS because its login is stored in Keychain.',
     )
-  const env = processEnvironment(agent.env)
-  if (env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY)
+  const env = claudeEffectiveEnvironment(agent.env, undefined, agent.args)
+  if (!claudeSubscriptionEnvironment(env))
     throw new Error(
       'Banked resets require a Claude subscription login, rather than an API key or proxy.',
     )

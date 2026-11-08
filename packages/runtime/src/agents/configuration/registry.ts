@@ -1,4 +1,6 @@
 import { homedir } from 'node:os'
+import type { ManagedPolicy } from '../../policy/managed-policy.js'
+import { SecretReferences } from './secret-references.js'
 import { join } from 'node:path'
 import { Effect } from 'effect'
 import { runtimeOperation, runtimeFailure } from '../../errors.js'
@@ -11,15 +13,21 @@ const expandHome = (path: string) =>
   path === '~' ? homedir() : path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
 
 export class AgentRegistry {
+  readonly secretReferences = new SecretReferences()
+  get secretGeneration() {
+    return this.secretReferences.generation
+  }
   private adapters = new Map<Agent['provider'], AgentAdapter>()
   readonly host = new ExtensionHost()
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private acpLaunch?: (id: string) => AcpLaunch,
+    private policy?: ManagedPolicy,
   ) {
     const providers = [
       ['vibe', () => import('../providers/vibe/vibe.js').then((m) => m.createVibeAdapter())],
       ['codex', () => import('../providers/codex/codex.js').then((m) => m.createCodexAdapter())],
+      ['pi', () => import('../providers/pi/pi.js').then((m) => m.createPiAdapter())],
       [
         'opencode',
         () => import('../providers/opencode/opencode.js').then((m) => m.createOpenCodeAdapter()),
@@ -64,6 +72,7 @@ export class AgentRegistry {
       })
   }
   configure<T extends AgentDiscovery>(agent: T): T {
+    agent = this.policy?.configure(agent) ?? agent
     if (agent.provider === 'cursor') return { ...agent, endpoint: '' }
     return {
       ...agent,
@@ -72,17 +81,20 @@ export class AgentRegistry {
       (agent.provider === 'codex' ||
         agent.provider === 'claude' ||
         agent.provider === 'hermes' ||
+        agent.provider === 'pi' ||
         agent.provider === 'vibe')
         ? {
             env: {
               ...agent.env,
-              [agent.provider === 'vibe'
-                ? 'VIBE_HOME'
-                : agent.provider === 'hermes'
-                  ? 'HERMES_HOME'
-                  : agent.provider === 'codex'
-                    ? 'CODEX_HOME'
-                    : 'CLAUDE_CONFIG_DIR']: expandHome(agent.configDirectory),
+              [agent.provider === 'pi'
+                ? 'PI_CODING_AGENT_DIR'
+                : agent.provider === 'vibe'
+                  ? 'VIBE_HOME'
+                  : agent.provider === 'hermes'
+                    ? 'HERMES_HOME'
+                    : agent.provider === 'codex'
+                      ? 'CODEX_HOME'
+                      : 'CLAUDE_CONFIG_DIR']: expandHome(agent.configDirectory),
             },
           }
         : {}),
@@ -93,6 +105,9 @@ export class AgentRegistry {
           (agent.provider === 'opencode' ? '' : this.settings()[agent.provider]),
       ),
     }
+  }
+  authorize(agent: Agent) {
+    return this.policy?.agent(agent) ?? agent
   }
   launch(agent: AgentDiscovery): AcpLaunch | undefined {
     if (agent.provider !== 'acp' || !agent.acpInstallationId) return undefined
@@ -120,19 +135,33 @@ export class AgentRegistry {
                 id: string,
                 sessionId: string | undefined,
                 cwd?: string,
-              ) => readNativeThread(this.configure(agent), id, sessionId, cwd),
+              ) =>
+                this.secretReferences
+                  .resolve(this.configure(agent))
+                  .then((resolved) => readNativeThread(resolved, id, sessionId, cwd)),
             }
           : {}),
-        run: (run) =>
-          adapter.run({
-            ...run,
-            agent: this.configure(run.agent),
-            acpLaunch: this.launch(run.agent),
-          }),
-        probe: (agent) => adapter.probe(this.configure(agent), this.launch(agent)),
+        run: async (run) => {
+          const managed = this.policy?.agent(run.agent) ?? run.agent
+          const agent = await this.secretReferences.resolve(this.configure(managed), run.signal)
+          return adapter.run({ ...run, agent, acpLaunch: this.launch(agent) })
+        },
+        probe: (agent) => {
+          const configured = this.configure(agent)
+          this.launch(configured)
+          return this.secretReferences
+            .resolve(configured)
+            .then((resolved) => adapter.probe(resolved, this.launch(resolved)))
+        },
         ...(models
           ? {
-              models: (agent: AgentDiscovery) => models(this.configure(agent), this.launch(agent)),
+              models: (agent: AgentDiscovery) => {
+                const configured = this.configure(agent)
+                this.launch(configured)
+                return this.secretReferences
+                  .resolve(configured)
+                  .then((resolved) => models(resolved, this.launch(resolved)))
+              },
             }
           : {}),
       } satisfies AgentAdapter
@@ -151,10 +180,11 @@ export class AgentRegistry {
     if (failures.length) throw new AggregateError(failures, 'Could not release task providers')
   }
   async dispose() {
+    const secrets = await Promise.allSettled([this.secretReferences.close()])
     const adapters = [...this.adapters.values()]
     const results = await Promise.allSettled(adapters.map(async (adapter) => adapter.dispose?.()))
     const host = await Promise.allSettled([this.host.dispose()])
-    const failures = [...results, ...host].flatMap((result) =>
+    const failures = [...secrets, ...results, ...host].flatMap((result) =>
       result.status === 'rejected' ? [result.reason] : [],
     )
     if (failures.length) throw new AggregateError(failures, 'Could not close all agent providers')

@@ -1,6 +1,14 @@
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { decode, addRepositorySchema } from '@dovo/protocol'
+import {
+  decode,
+  addRepositorySchema,
+  initializeScopedSettings,
+  mergeSharedSettings,
+  settingsAtScope,
+  sharedProjectEntry,
+  type Repository,
+} from '@dovo/protocol'
 import { repositoryPath } from './paths.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, realpath } from 'node:fs/promises'
@@ -74,7 +82,10 @@ export function addRepositoryEffect(s: Services, value: unknown) {
       })
       // Deduplicate only after inspection, including concurrent registration of the same checkout.
       const existing = s.store.get().repositories.find((repo) => repo.path === checkout.path)
-      if (existing) return existing
+      if (existing) {
+        unarchiveProject(s, existing)
+        return s.store.get().repositories.find((repo) => repo.id === existing.id) ?? existing
+      }
       const repository = {
         id: randomUUID(),
         name: input.name,
@@ -98,4 +109,35 @@ export function addRepositoryEffect(s: Services, value: unknown) {
 }
 export function addRepository(s: Services, value: unknown) {
   return runClientEffect(addRepositoryEffect(s, value))
+}
+/** Adding an archived folder again brings it back; threads and settings were never removed. */
+function unarchiveProject(s: Services, repository: Repository) {
+  if (repository.archived)
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) =>
+        repo.id === repository.id ? { ...repo, archived: false } : repo,
+      ),
+    }))
+  const current = s.defaults.get()
+  const scoped = initializeScopedSettings(current)
+  const runtime = { ...current, scopedSettings: scoped }
+  if (!settingsAtScope(runtime, repository, 'project').projectArchived) return
+  const entry = sharedProjectEntry(
+    runtime,
+    repository,
+    { projectArchived: false },
+    {
+      updatedAt: Math.max(Date.now(), ...scoped.shared.map((item) => item.updatedAt + 1)),
+      changeId: randomUUID(),
+    },
+  )
+  if (entry)
+    s.defaults.save(
+      {
+        ...current,
+        scopedSettings: { ...scoped, shared: mergeSharedSettings(scoped.shared, [entry]) },
+      },
+      false,
+    )
 }

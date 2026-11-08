@@ -15,6 +15,7 @@ import type { Schema } from 'effect'
 import type { Services } from '../../services.js'
 import type { Activity } from '../../storage/activity.js'
 import { runtimeSnapshot } from './runtime-snapshot.js'
+import { memoryAttribution } from '../../diagnostics/memory-attribution.js'
 import { snapshotTag } from './body.js'
 
 type ActivityEvent = Schema.Schema.Type<typeof activitySchema>['events'][number]
@@ -27,6 +28,7 @@ type Client = {
   heartbeat: number
   resuming: boolean
   bufferLimit: number
+  sequence: number
 }
 type View = {
   id: string
@@ -229,6 +231,7 @@ class RuntimeSync {
       heartbeat: Date.now(),
       resuming: false,
       bufferLimit: 16 * 1024 * 1024,
+      sequence: 0,
     }
     current.clients.add(client)
     // Retain a bounded replay cache for reconnects, without holding inactive device histories forever.
@@ -265,6 +268,14 @@ class RuntimeSync {
                 settledLimit,
               )
               if (nextView !== current) {
+                // The view's current snapshot is a valid predecessor only when
+                // this client was sent that exact cursor. A lagging client rebases.
+                const previous =
+                  input.selectionDelta && client.ready && client.sequence === current.sequence
+                    ? current.snapshot
+                    : undefined
+                const previousEpoch = current.epoch
+                const base = client.sequence
                 client.ready = false
                 this.leave(current, client)
                 current = nextView
@@ -276,14 +287,27 @@ class RuntimeSync {
                 if (current.snapshot && current.tag)
                   this.send(
                     client,
-                    JSON.stringify({
-                      type: 'snapshot',
-                      epoch: current.epoch,
-                      sequence: current.sequence,
-                      tag: current.tag,
-                      snapshot: current.snapshot,
-                    } satisfies SyncFrame),
+                    JSON.stringify(
+                      previous
+                        ? ({
+                            type: 'selection',
+                            previousEpoch,
+                            base,
+                            epoch: current.epoch,
+                            sequence: current.sequence,
+                            tag: current.tag,
+                            delta: snapshotDelta(previous, current.snapshot, compact, fieldUpdates),
+                          } satisfies SyncFrame)
+                        : ({
+                            type: 'snapshot',
+                            epoch: current.epoch,
+                            sequence: current.sequence,
+                            tag: current.tag,
+                            snapshot: current.snapshot,
+                          } satisfies SyncFrame),
+                    ),
                   )
+                client.sequence = current.sequence
                 client.ready = true
               }
             }
@@ -355,6 +379,7 @@ class RuntimeSync {
             } satisfies SyncFrame),
           )
           client.ready = true
+          client.sequence = current.sequence
           client.resuming = false
           client.heartbeat = Date.now()
           clearTimeout(timeout)
@@ -394,6 +419,36 @@ class RuntimeSync {
       return
     }
     client.socket.send(wire)
+  }
+  private writable(client: Client) {
+    // Bound queued live traffic to a small window. A single baseline/frame may be
+    // larger; wait for it to drain instead of piling updates behind it or reconnecting.
+    return client.socket.readyState === WebSocket.OPEN && client.socket.bufferedAmount < 64 * 1024
+  }
+  private catchUp(view: View, client: Client) {
+    if (client.sequence === view.sequence || !this.writable(client)) return
+    const replay = view.history.filter((item) => item.sequence > client.sequence)
+    if (replay[0]?.sequence === client.sequence + 1) {
+      for (const item of replay) {
+        if (!this.writable(client)) break
+        this.send(client, item.wire)
+        client.sequence = item.sequence
+      }
+    } else if (view.snapshot && view.tag) {
+      // A healthy peer may have advanced a shared view past the bounded replay cache.
+      // Rebase only that lagging client; never send a delta with a missing predecessor.
+      this.send(
+        client,
+        JSON.stringify({
+          type: 'snapshot',
+          epoch: view.epoch,
+          sequence: view.sequence,
+          tag: view.tag,
+          snapshot: view.snapshot,
+        } satisfies SyncFrame),
+      )
+      client.sequence = view.sequence
+    }
   }
   private refresh(view: View, signature?: string): Promise<void> {
     if (view.pending) return view.pending
@@ -437,18 +492,20 @@ class RuntimeSync {
       projection = {
         signature,
         checked: Date.now(),
-        pending: Effect.runPromise(
-          runtimeSnapshot(
-            s,
-            { id: 'owner', owner: true },
-            false,
-            view.taskIds,
-            view.pagedHistory,
-            view.settledLimit,
+        pending: memoryAttribution(s).measure('sync snapshot', () =>
+          Effect.runPromise(
+            runtimeSnapshot(
+              s,
+              { id: 'owner', owner: true },
+              false,
+              view.taskIds,
+              view.pagedHistory,
+              view.settledLimit,
+            ),
+            {
+              signal: this.controller.signal,
+            },
           ),
-          {
-            signal: this.controller.signal,
-          },
         ),
       }
       this.projections.set(key, projection)
@@ -479,19 +536,29 @@ class RuntimeSync {
     view.snapshot = next
     view.tag = tag
     if (!previous) return
-    const wire = JSON.stringify({
-      type: 'delta',
-      epoch: view.epoch,
-      sequence: view.sequence,
-      base,
-      tag,
-      delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates),
-    } satisfies SyncFrame)
+    const wire = memoryAttribution(s).measure('sync delta', () =>
+      JSON.stringify({
+        type: 'delta',
+        epoch: view.epoch,
+        sequence: view.sequence,
+        base,
+        tag,
+        delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates),
+      } satisfies SyncFrame),
+    )
     view.history.push({ sequence: view.sequence, wire })
     view.bytes += wire.length * 2
     while (view.history.length > 256 || view.bytes > 4 * 1024 * 1024)
       view.bytes -= view.history.shift()!.wire.length * 2
-    for (const client of view.clients) if (client.ready) this.send(client, wire)
+    for (const client of view.clients) {
+      if (!client.ready) continue
+      if (client.sequence === base && this.writable(client)) {
+        // The latest delta can exceed the replay budget. Healthy clients can still
+        // consume it directly, without downloading an even larger full baseline.
+        this.send(client, wire)
+        client.sequence = view.sequence
+      } else this.catchUp(view, client)
+    }
   }
   private async tick() {
     if (this.busy) {
@@ -510,12 +577,17 @@ class RuntimeSync {
             client.socket.close(1008, 'Device authentication required')
           continue
         }
+        // Coalesce state changes while every reader is backed up. The next writable
+        // tick builds one delta from the last published state to the latest workspace.
+        if (![...view.clients].some((client) => client.ready && this.writable(client))) continue
         try {
           await this.refresh(view, signature)
           if (this.controller.signal.aborted) return
           for (const client of view.clients) {
-            if (!client.ready) continue
+            if (!client.ready || !this.writable(client)) continue
+            this.catchUp(view, client)
             for (const [scope, previous] of client.scopes) {
+              if (!this.writable(client)) break
               const cached = this.activityScopes.get(scope)
               if (!cached) continue
               const revision = cached.watch.revision()
@@ -568,14 +640,14 @@ class RuntimeSync {
               client.activityVersions.set(scope, revision)
             }
             // Application-level heartbeat works in both browser and React Native sockets.
-            if (Date.now() - client.heartbeat >= 15000) {
+            if (this.writable(client) && Date.now() - client.heartbeat >= 15000) {
               client.heartbeat = Date.now()
               this.send(
                 client,
                 JSON.stringify({
                   type: 'heartbeat',
                   epoch: view.epoch,
-                  sequence: view.sequence,
+                  sequence: client.sequence,
                 } satisfies SyncFrame),
               )
             }

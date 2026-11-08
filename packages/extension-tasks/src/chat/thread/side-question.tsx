@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { memo, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Schema } from 'effect'
 import { ArrowUp, CornerDownLeft, MoreHorizontal, Plus, RotateCcw } from 'lucide-react'
 import { mutableStruct } from '@dovo/protocol'
-import { useWorkspace, type Task } from '@dovo/studio-core'
+import { sameWorkspaceFields, useWorkspaceSelector, type Task } from '@dovo/studio-core'
+import { useCommittedCallback } from '../../detail/use-committed-callback'
+import { selectConversationConnection } from './workspace-selection'
 import {
   Button,
   Conversation,
@@ -28,6 +30,8 @@ import { TaskMessageResponse } from './task-message-response'
 const answerSchema = mutableStruct({ answer: Schema.String })
 const savedSchema = mutableStruct({ id: Schema.String })
 
+const noDrafts: Record<string, string> = {}
+
 /** Saved side conversations stay separate from the thread's coding-agent session. */
 export function SideQuestion({
   task,
@@ -42,12 +46,49 @@ export function SideQuestion({
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
   onAddToComposer: (text: string) => void
 }) {
-  const { request, connected } = useWorkspace()
+  // Streamed main-thread replies replace the task object. The side chat renders only its own
+  // fields with stable callbacks, so those replies do not re-render its answers.
+  const updateDrafts = useCommittedCallback(setDrafts)
+  const addToComposer = useCommittedCallback(onAddToComposer)
+  return (
+    <SideQuestionView
+      taskId={task.id}
+      sideChats={task.sideChats}
+      readOnly={!!task.archived || !!task.archivedAt}
+      drafts={Object.keys(drafts).length ? drafts : noDrafts}
+      setDrafts={updateDrafts}
+      onAddToComposer={addToComposer}
+      selectedChatId={selectedChatId}
+    />
+  )
+}
+
+const SideQuestionView = memo(function SideQuestionView({
+  taskId,
+  sideChats,
+  readOnly,
+  onAddToComposer,
+  drafts,
+  setDrafts,
+  selectedChatId,
+}: {
+  taskId: string
+  sideChats: Task['sideChats']
+  readOnly: boolean
+  selectedChatId?: string
+  drafts: Record<string, string>
+  setDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  onAddToComposer: (text: string) => void
+}) {
+  const { request, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [selected, setSelected] = useState(selectedChatId ?? '')
   useEffect(() => {
     if (selectedChatId) setSelected(selectedChatId)
   }, [selectedChatId])
-  const chats = task.sideChats ?? []
+  const chats = sideChats ?? []
   const chat = chats.find((item) => item.id === selected) ?? chats[0]
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<Record<string, boolean>>({})
@@ -68,8 +109,7 @@ export function SideQuestion({
       for (const item of acknowledged) delete next[item.id]
       return next
     })
-  }, [task.sideChats, setDrafts])
-  const readOnly = !!task.archived || !!task.archivedAt
+  }, [sideChats, setDrafts])
   const disabled = !connected || readOnly || busy
   const asking =
     !!chat && (!!pending[chat.id] || chat.messages.some((item) => item.status === 'pending'))
@@ -93,7 +133,7 @@ export function SideQuestion({
   }
   const create = () =>
     void perform(async () => {
-      const result = await request('/api/tasks/side-chat/save', { id: task.id }, savedSchema)
+      const result = await request('/api/tasks/side-chat/save', { id: taskId }, savedSchema)
       setSelected(result.id)
     })
   const ask = async () => {
@@ -105,7 +145,7 @@ export function SideQuestion({
     setAskErrors((current) => ({ ...current, [chatId]: '' }))
     setSavedDraft('')
     try {
-      await request('/api/tasks/side-chat/ask', { id: task.id, chatId, question }, answerSchema)
+      await request('/api/tasks/side-chat/ask', { id: taskId, chatId, question }, answerSchema)
       setDrafts((current) => ({ ...current, [chatId]: '' }))
     } catch (cause) {
       setAskErrors((current) => ({
@@ -131,14 +171,14 @@ export function SideQuestion({
           )
             await request(
               '/api/tasks/side-chat/save',
-              { id: task.id, chatId: item.id, draft },
+              { id: taskId, chatId: item.id, draft },
               savedSchema,
             )
         }
       onAddToComposer(text)
     })
   return (
-    <section aria-label="Side chats" className="flex min-h-0 flex-1 flex-col">
+    <section aria-label="Read-only side chats" className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           {chat ? (
@@ -155,15 +195,15 @@ export function SideQuestion({
               </SelectContent>
             </Select>
           ) : (
-            <h2 className="text-sm font-medium">Side chats</h2>
+            <h2 className="text-sm font-medium">Read-only chat</h2>
           )}
         </div>
         <Button
           size="icon"
           variant="ghost"
           disabled={disabled || chats.length >= 20}
-          aria-label="New side chat"
-          title="New side chat"
+          aria-label="New read-only chat"
+          title="New read-only chat"
           onClick={create}
         >
           <Plus className="size-4" />
@@ -206,7 +246,7 @@ export function SideQuestion({
         )}
       </div>
       <p className="px-4 py-2 text-xs text-muted-foreground">
-        Uses this thread and reads its checkout. Your coding agent keeps working.
+        Reads this thread and its checkout without changing files. Your coding agent keeps working.
       </p>
       <Conversation
         key={chat?.id ?? 'empty'}
@@ -223,7 +263,7 @@ export function SideQuestion({
               </p>
               <Button variant="outline" size="sm" disabled={disabled} onClick={create}>
                 <Plus className="size-4" />
-                New side chat
+                New read-only chat
               </Button>
             </div>
           )}
@@ -252,7 +292,7 @@ export function SideQuestion({
               </div>
               {entry.answer && (
                 <div className="space-y-1 text-sm">
-                  <TaskMessageResponse onUseTemplate={onAddToComposer} taskId={task.id}>
+                  <TaskMessageResponse onUseTemplate={onAddToComposer} taskId={taskId}>
                     {entry.answer}
                   </TaskMessageResponse>
                   <Button
@@ -344,7 +384,7 @@ export function SideQuestion({
                   void perform(async () => {
                     await request(
                       '/api/tasks/side-chat/save',
-                      { id: task.id, chatId: chat.id, draft: question },
+                      { id: taskId, chatId: chat.id, draft: question },
                       savedSchema,
                     )
                     setSavedDraft(chat.id)
@@ -398,7 +438,7 @@ export function SideQuestion({
                 await request(
                   '/api/tasks/side-chat/save',
                   {
-                    id: task.id,
+                    id: taskId,
                     chatId: chat.id,
                     ...(dialog === 'delete' ? { remove: true } : { title: title.trim() }),
                   },
@@ -448,4 +488,4 @@ export function SideQuestion({
       </Dialog>
     </section>
   )
-}
+})

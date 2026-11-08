@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
 import { WebSocket } from 'ws'
 import { startRuntime } from '../index'
+import * as sessionCookies from '../previews/browser-session-cookies'
 import { RemoteBrowsers } from '../previews/browser'
 import { SocketTickets } from './support/socket-tickets'
 import { decodeBrowserFrame, remoteBrowserMessageSchema } from '@dovo/protocol'
@@ -603,7 +604,7 @@ it('isolates remote tabs, binds their tickets to the task, and closes only the r
   ])
   const profiles = [
     { id: 'default', name: 'Default' },
-    { id: 'work', name: 'Remote Work' },
+    { id: 'work', name: 'Remote Work', keepSessionCookies: true },
   ]
   expect((await catalog('save', profiles)).status).toBe(200)
   expect((await (await catalog('read')).json()).profiles).toEqual(profiles)
@@ -761,33 +762,65 @@ it.each([true, false])(
   },
 )
 
-it('hides shared workspace browser sessions and rejects Studio access before any close mutation', async () => {
+it('exposes shared workspace sessions to Studio Tools but hides private tabs before any mutation', async () => {
   const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
   const { browsers, sessions, owners } = browserFixture()
-  const shared = selectionSession()
-  const thread = selectionSession()
-  sessions.set('shared', Promise.resolve(shared))
-  owners.set('shared', STUDIO_BROWSER_SCOPE)
+  const shared = {
+    ...selectionSession(),
+    queue: Promise.resolve(),
+    queued: 0,
+    listeners: new Set(),
+  }
+  const priv = selectionSession()
+  const thread = {
+    ...selectionSession(),
+    queue: Promise.resolve(),
+    queued: 0,
+    listeners: new Set(),
+  }
+  const sharedResource = JSON.stringify([STUDIO_BROWSER_SCOPE, 'tab-1', 'work'])
+  const privateResource = JSON.stringify([
+    STUDIO_BROWSER_SCOPE,
+    'tab-private',
+    'private-123e4567-e89b-12d3-a456-426614174000',
+  ])
+  sessions.set(sharedResource, Promise.resolve(shared))
+  owners.set(sharedResource, STUDIO_BROWSER_SCOPE)
+  sessions.set(privateResource, Promise.resolve(priv))
+  owners.set(privateResource, STUDIO_BROWSER_SCOPE)
   sessions.set('thread', Promise.resolve(thread))
   owners.set('thread', 'task')
+  Object.defineProperty(browsers, 'scheduleState', { value: () => {} })
   expect(await browsers.studioList()).toEqual([
-    { id: 'thread', taskId: 'task', url: 'http://lan.local/', title: 'LAN page' },
+    {
+      id: 'workspace:tab-1',
+      kind: 'workspace',
+      tabId: 'tab-1',
+      profileId: 'work',
+      url: 'http://lan.local/',
+      title: 'LAN page',
+    },
+    { id: 'thread', kind: 'thread', taskId: 'task', url: 'http://lan.local/', title: 'LAN page' },
   ])
-  expect(shared.page.title).not.toHaveBeenCalled()
-  await expect(browsers.studioLogs('shared')).rejects.toMatchObject({ status: 403 })
+  expect(priv.page.title).not.toHaveBeenCalled()
+  expect(await browsers.studioLogs('workspace:tab-1')).toEqual({ entries: shared.logs })
   expect(await browsers.studioLogs('thread')).toEqual({ entries: thread.logs })
-  const close = vi.spyOn(browsers, 'close')
+  await expect(browsers.studioLogs('workspace:tab-private')).rejects.toMatchObject({ status: 403 })
+  const close = vi.spyOn(browsers, 'close').mockResolvedValue()
   const authorize = vi.fn<() => void>()
   for (const action of ['snapshot', 'close'] as const)
     await expect(
-      browsers.agentCommand('task', { action }, authorize, 'shared'),
+      browsers.agentCommand('task', { action }, authorize, 'workspace:tab-private'),
     ).rejects.toMatchObject({ status: 403 })
-  expect(authorize).toHaveBeenCalledTimes(2)
   expect(close).not.toHaveBeenCalled()
-  expect(shared.page.close).not.toHaveBeenCalled()
-  expect(shared.release).not.toHaveBeenCalled()
-  expect(sessions.has('shared')).toBe(true)
-  expect(owners.get('shared')).toBe(STUDIO_BROWSER_SCOPE)
+  expect(priv.page.close).not.toHaveBeenCalled()
+  expect(priv.release).not.toHaveBeenCalled()
+  expect(sessions.has(privateResource)).toBe(true)
+  await expect(
+    browsers.agentCommand('task', { action: 'close' }, authorize, 'workspace:tab-1'),
+  ).resolves.toEqual({ ok: true })
+  expect(close).toHaveBeenCalledWith(sharedResource)
+  expect(owners.get(sharedResource)).toBe(STUDIO_BROWSER_SCOPE)
 })
 
 it('clamps selection results at the runtime boundary and treats nonstrings as empty', async () => {
@@ -860,8 +893,17 @@ it('bounds the entire selection operation, including frame evaluation and title 
 })
 
 it('keeps same-named shared and thread profiles in separate persistent directories and contexts', async () => {
+  const restoreCookies = vi
+    .spyOn(sessionCookies, 'restoreBrowserSessionCookies')
+    .mockResolvedValue()
+  const saveCookies = vi.spyOn(sessionCookies, 'saveBrowserSessionCookies').mockResolvedValue()
   const { browsers } = browserFixture()
+  Object.defineProperty(browsers, 'browserProfiles', {
+    value: () => [{ id: 'work', name: 'Work', keepSessionCookies: true }],
+  })
   const context = () => ({
+    isClosed: () => false,
+    newPage: async () => ({}),
     pages: () => [],
     route: vi.fn<() => Promise<void>>(async () => {}),
     close: vi.fn<() => Promise<void>>(async () => {}),
@@ -886,6 +928,11 @@ it('keeps same-named shared and thread profiles in separate persistent directori
       '/runtime/browser.profiles/work',
       '/runtime/browser.profiles/browser-workspace.profiles/work',
     ])
+    expect(restoreCookies).toHaveBeenCalledWith(threadContext, '/runtime/browser.profiles/work')
+    expect(restoreCookies).toHaveBeenCalledWith(
+      workspaceContext,
+      '/runtime/browser.profiles/browser-workspace.profiles/work',
+    )
     expect(thread.context).toBe(threadContext)
     expect(shared.context).toBe(workspaceContext)
     expect(shared.context).not.toBe(thread.context)
@@ -894,6 +941,10 @@ it('keeps same-named shared and thread profiles in separate persistent directori
     expect(workspaceContext.close).not.toHaveBeenCalled()
     await sharedAgain.release()
     expect(workspaceContext.close).toHaveBeenCalledOnce()
+    expect(saveCookies).toHaveBeenCalledWith(
+      workspaceContext,
+      '/runtime/browser.profiles/browser-workspace.profiles/work',
+    )
     expect(threadContext.close).not.toHaveBeenCalled()
   } finally {
     await Promise.all([thread.release(), shared.release(), sharedAgain.release()])
@@ -945,4 +996,91 @@ it('ignores text evaluation failures only for frames that detached after the foc
   // A live-frame error must not silently fall through to another page's selection.
   expect(main.evaluate).toHaveBeenCalledTimes(1)
   expect(session.page.title).toHaveBeenCalledOnce()
+})
+
+it('acknowledges scoped file transfers, hides internal errors and rechecks ownership after queued IO', async () => {
+  const { randomUUID } = await import('node:crypto')
+  const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
+  vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
+  const disconnect = vi.spyOn(RemoteBrowsers.prototype, 'disconnectUploads').mockResolvedValue()
+  const token = 'browser-upload-test-owner-token-with-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  const deviceToken = 'browser-upload-test-device-token-with-32-characters'
+  const device = runtime.services.devices.add('Upload phone', deviceToken)
+  const ticket = runtime.services.browserTickets.issue(
+    deviceToken,
+    'upload-tab',
+    STUDIO_BROWSER_SCOPE,
+  )
+  const socket = new WebSocket(`ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}`)
+  cleanups.unshift(async () => {
+    socket.terminate()
+  })
+  const messages: unknown[] = []
+  socket.on('message', (raw) => {
+    const bytes = Array.isArray(raw)
+      ? Buffer.concat(raw)
+      : Buffer.isBuffer(raw)
+        ? raw
+        : Buffer.from(raw)
+    messages.push(JSON.parse(bytes.toString()))
+  })
+  await once(socket, 'open')
+  let delivered = 0
+  const upload = vi
+    .spyOn(RemoteBrowsers.prototype, 'upload')
+    .mockImplementation(async (_id, _command, authorize) => {
+      authorize()
+      delivered++
+    })
+  const chooserId = randomUUID()
+  const first = {
+    type: 'fileUploadStart',
+    requestId: randomUUID(),
+    chooserId,
+    name: 'fixture.csv',
+    mimeType: 'text/csv',
+    size: 3,
+  }
+  socket.send(JSON.stringify(first))
+  await vi.waitFor(() =>
+    expect(messages).toContainEqual({ type: 'fileUploadAck', requestId: first.requestId }),
+  )
+  expect(upload).toHaveBeenCalledWith('upload-tab', first, expect.any(Function))
+  expect(delivered).toBe(1)
+  upload.mockImplementationOnce(async () => {
+    throw new Error('/private/runtime/upload/fixture.csv')
+  })
+  const failed = { ...first, requestId: randomUUID() }
+  socket.send(JSON.stringify(failed))
+  await vi.waitFor(() =>
+    expect(messages).toContainEqual({
+      type: 'fileUploadAck',
+      requestId: failed.requestId,
+      error: 'Could not transfer the selected file. Open the upload control and try again.',
+    }),
+  )
+  expect(JSON.stringify(messages)).not.toContain('/private/runtime/')
+  let finishIO: () => void = () => {
+    throw new Error('Upload IO was not initialized')
+  }
+  const io = new Promise<void>((resolve) => {
+    finishIO = resolve
+  })
+  upload.mockImplementationOnce(async (_id, _command, authorize) => {
+    await io
+    authorize()
+    delivered++
+  })
+  socket.send(JSON.stringify({ ...first, requestId: randomUUID() }))
+  await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(3))
+  const closed = once(socket, 'close')
+  runtime.services.devices.revoke(device)
+  await closed
+  finishIO()
+  await vi.waitFor(() =>
+    expect(disconnect).toHaveBeenCalledWith('upload-tab', upload.mock.calls[2][2]),
+  )
+  expect(delivered).toBe(1)
 })

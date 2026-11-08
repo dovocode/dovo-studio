@@ -5,6 +5,7 @@ import { availableParallelism } from 'node:os'
 import { join, resolve, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { archiveTool } from './archive-tool.mjs'
 
 const revision = '692350def1edea35a616b652255a8be70a168d37'
 const archiveHash = '4854e9d73e49f36b4cf79f9ddecc78cd07ea2bb574b879c29e2e565bf4a72e3c'
@@ -162,7 +163,7 @@ export async function prepareDictationEngine(root) {
     throw new Error('Dictation source integrity check failed.')
   const archive = join(directory, 'source.tar.gz')
   await writeFile(archive, bytes)
-  execFileSync('tar', ['-xzf', archive, '-C', directory], { stdio: 'inherit' })
+  execFileSync(archiveTool(), ['-xzf', archive, '-C', directory], { stdio: 'inherit' })
   // Add Dovo's pipe consumer to the extracted, integrity-checked upstream project.
   const cmakePath = (path) => path.replaceAll('\\', '/')
   const cmake = join(source, 'CMakeLists.txt')

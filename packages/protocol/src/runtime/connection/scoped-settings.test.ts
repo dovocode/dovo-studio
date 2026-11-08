@@ -4,6 +4,7 @@ import { defaultTaskHarness, type Repository, type SharedSettingsEntry } from '.
 import { runtimeDefaultsSchema, resolveTaskDefaults } from './runtime-setup'
 import {
   pendingSharedSettings,
+  projectOrganizationCategories,
   scopeEditorValue,
   mergeSharedSettings,
   resolveScopedSettings,
@@ -11,6 +12,8 @@ import {
   sharedProjectKey,
   taskBehaviorOrigin,
   resourceOrigin,
+  updateSharedSettingsEntry,
+  canonicalSharedSettings,
 } from './scoped-settings'
 import { resourceSettingsSchema } from '../../shared/resources'
 
@@ -27,6 +30,69 @@ const entry = (
   setupCommand: string,
   changeId = 'a',
 ): SharedSettingsEntry => ({ key, updatedAt, changeId, value: { taskDefaults: { setupCommand } } })
+
+it('merges independent offline categories in both orders and syncs equal-header partial histories', () => {
+  const base = entry('project:host/team/app', 1, 'old')
+  const icon = updateSharedSettingsEntry(
+    base.key,
+    base,
+    { ...base.value, projectIcon: 'data:image/png;base64,YQ==' },
+    { updatedAt: 2, changeId: 'icon' },
+  )
+  const defaults = updateSharedSettingsEntry(
+    base.key,
+    base,
+    { taskDefaults: { setupCommand: 'new' } },
+    { updatedAt: 3, changeId: 'defaults' },
+  )
+  const [merged] = mergeSharedSettings([icon], [defaults])
+  expect(merged.value).toEqual({
+    projectIcon: 'data:image/png;base64,YQ==',
+    taskDefaults: { setupCommand: 'new' },
+  })
+  expect(mergeSharedSettings([defaults], [icon])).toEqual([merged])
+  expect(pendingSharedSettings([merged], [defaults])).toEqual([merged])
+  expect(pendingSharedSettings([defaults], [merged])).toEqual([])
+  expect(mergeSharedSettings([merged], [icon], [base])).toEqual([merged])
+})
+
+it('retains category reset tombstones when unrelated offline edits arrive later', () => {
+  const base = entry('global', 1, 'old')
+  const reset = updateSharedSettingsEntry('global', base, {}, { updatedAt: 2, changeId: 'reset' })
+  const rename = updateSharedSettingsEntry(
+    'global',
+    base,
+    { ...base.value, projectName: 'Customer Portal' },
+    { updatedAt: 3, changeId: 'name' },
+  )
+  const [merged] = mergeSharedSettings([reset], [rename])
+  expect(merged.value).toEqual({ projectName: 'Customer Portal' })
+  expect(mergeSharedSettings([merged], [base])[0].value).toEqual(merged.value)
+})
+it('merges only provider-confirmed identity aliases without changing category revisions', () => {
+  const name = updateSharedSettingsEntry(
+    'project:github.internal/Team/App',
+    undefined,
+    { projectName: 'Customer Portal' },
+    { updatedAt: 2, changeId: 'name' },
+  )
+  const defaults = updateSharedSettingsEntry(
+    'project:github.internal/team/app',
+    undefined,
+    { taskDefaults: { setupCommand: 'pnpm install' } },
+    { updatedAt: 3, changeId: 'defaults' },
+  )
+  const sensitive = entry('project:git.internal/Team/App', 1, 'case-sensitive')
+  const shared = canonicalSharedSettings([name, defaults, sensitive], (identity) =>
+    identity.startsWith('github.internal/') ? identity.toLowerCase() : identity,
+  )
+  expect(shared).toHaveLength(2)
+  expect(shared.find((entry) => entry.key === defaults.key)?.value).toEqual({
+    projectName: 'Customer Portal',
+    taskDefaults: { setupCommand: 'pnpm install' },
+  })
+  expect(shared.find((entry) => entry.key === sensitive.key)).toBe(sensitive)
+})
 
 it('resolves all four scopes field by field, including explicit empty commands and false flags', () => {
   const runtime = decode(runtimeDefaultsSchema, {
@@ -215,7 +281,9 @@ it('selects one settings layer and shares project identity across computers with
   }
   const sources = [mac, linux, empty]
   const projectId = settingsProjectId(project, 'mac')
-  expect(settingsProjectChoices(sources, '')).toEqual([{ id: projectId, name: project.name }])
+  expect(settingsProjectChoices(sources, '')).toEqual([
+    { id: projectId, name: project.name, archived: false },
+  ])
   expect(
     resolveSettingsTarget(sources, { environmentId: '', projectId: '' }, 'empty'),
   ).toMatchObject({ scope: 'global', source: empty })
@@ -247,7 +315,7 @@ it('selects one settings layer and shares project identity across computers with
     },
   }
   expect(settingsProjectChoices([generalSource], 'linux')).toEqual([
-    { id: settingsProjectId(local, 'linux'), name: 'General' },
+    { id: settingsProjectId(local, 'linux'), name: 'No Project', archived: false },
   ])
   expect(
     resolveSettingsTarget([localSource], {
@@ -351,7 +419,7 @@ it('reviews scoped edits as labeled values without confusing explicit inheritanc
   ).toEqual([
     {
       key: 'taskBehavior.quotaResume',
-      label: 'Auto-resume limited tasks',
+      label: 'Auto-resume limited threads',
       before: 'Off',
       after: 'On',
     },
@@ -361,4 +429,36 @@ it('reviews scoped edits as labeled values without confusing explicit inheritanc
   ])
   for (const value of ['', '1', '365']) expect(validSettingsDays(value)).toBe(true)
   for (const value of ['0', '366', '-1', '1.5', 'abc']) expect(validSettingsDays(value)).toBe(false)
+})
+
+it('skips project organization categories for runtimes that cannot store them', () => {
+  const revision = { updatedAt: 2, changeId: 'pin' }
+  const known: SharedSettingsEntry = {
+    key: 'project:github.com/team/app',
+    updatedAt: 1,
+    changeId: 'old',
+    value: {},
+    revisions: {},
+  }
+  const pinned: SharedSettingsEntry = {
+    ...known,
+    ...revision,
+    value: { projectPinned: true },
+    revisions: { projectPinned: revision },
+  }
+  expect(pendingSharedSettings([pinned], [known])).toEqual([pinned])
+  expect(pendingSharedSettings([pinned], [known], projectOrganizationCategories)).toEqual([])
+})
+
+it('marks a settings project archived only when every copy is archived', async () => {
+  const { settingsProjectChoices } = await import('./scoped-settings')
+  const source = (id: string, archived: boolean) => ({
+    profile: { id },
+    connected: true,
+    snapshot: { workspace: { repositories: [{ ...project, id, archived }] } },
+  })
+  expect(settingsProjectChoices([source('a', true), source('b', true)], '')[0].archived).toBe(true)
+  expect(settingsProjectChoices([source('a', true), source('b', false)], '')[0].archived).toBe(
+    false,
+  )
 })

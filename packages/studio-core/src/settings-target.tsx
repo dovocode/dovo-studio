@@ -1,13 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { resolveSettingsTarget, type SettingsTarget } from '@dovo/protocol'
+import { useConfirmation } from './confirmation'
 import { useApplicationState } from './runtime/application-state'
 import { useWorkspace } from './workspace/provider'
 import { useRuntimeSources } from './workspace/runtime-sources'
 
 const Context = createContext<{
   target: SettingsTarget
-  setTarget: (target: SettingsTarget) => boolean
-  confirmNavigation: () => boolean
+  setTarget: (target: SettingsTarget) => Promise<boolean>
+  confirmNavigation: () => Promise<boolean>
   registerDraft: (id: symbol, dirty: boolean, saving: boolean) => () => void
 } | null>(null)
 export function SettingsTargetProvider({ children }: { children: ReactNode }) {
@@ -24,19 +25,38 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
       drafts.current.delete(id)
     }
   }, [])
-  const confirmNavigation = useCallback(() => {
+  const confirm = useConfirmation()
+  const attempt = useRef(0)
+  const confirmNavigation = useCallback(async () => {
+    const decision = ++attempt.current
+    const current = currentTarget.current
     const values = [...drafts.current.values()]
-    return (
-      !values.some((draft) => draft.saving) &&
-      (!values.some((draft) => draft.dirty) || window.confirm('Discard unsaved settings changes?'))
+    if (values.some((draft) => draft.saving)) return false
+    if (
+      values.some((draft) => draft.dirty) &&
+      !(await confirm({
+        title: 'Discard unsaved settings changes?',
+        description: 'Your edits will be lost when you leave these settings.',
+        confirmLabel: 'Discard changes',
+        destructive: true,
+      }))
     )
-  }, [])
+      return false
+    return (
+      decision === attempt.current &&
+      currentTarget.current === current &&
+      ![...drafts.current.values()].some((draft) => draft.saving)
+    )
+  }, [confirm])
   const setTarget = useCallback(
-    (next: SettingsTarget) => {
+    async (next: SettingsTarget) => {
       const current = currentTarget.current
-      if (next.environmentId === current.environmentId && next.projectId === current.projectId)
+      if (next.environmentId === current.environmentId && next.projectId === current.projectId) {
+        attempt.current++
         return true
-      if (!confirmNavigation()) return false
+      }
+      if (!(await confirmNavigation())) return false
+      currentTarget.current = next
       updateTarget(next)
       return true
     },
@@ -62,9 +82,10 @@ export function useSettingsDraft(dirty: boolean, saving = false) {
     return () => window.removeEventListener('beforeunload', protect)
   }, [dirty])
 }
+const allowSettingsNavigation = async () => true
 export function useConfirmSettingsNavigation() {
   const context = useContext(Context)
-  return context?.confirmNavigation ?? (() => true)
+  return context?.confirmNavigation ?? allowSettingsNavigation
 }
 /** Scoped controls can also render outside the settings area, where there is no target to move. */
 export function useOptionalSettingsTarget() {

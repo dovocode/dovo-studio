@@ -1,3 +1,4 @@
+import { AgentSideChats } from './agent-side-chats'
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Alert, View } from 'react-native'
 import { Effect, Schema } from 'effect'
@@ -14,18 +15,42 @@ import { useTheme } from '../../../ui/theme'
 import { useTaskConversation } from '../state/provider'
 const savedSchema = mutableStruct({ id: Schema.String })
 const answerSchema = mutableStruct({ answer: Schema.String })
-export function SideQuestion({
+type SideQuestionProps = {
+  task: Task
+  selectedChatId?: string
+  onClose: () => void
+  drafts: Record<string, string>
+  setDrafts: Dispatch<SetStateAction<Record<string, string>>>
+}
+export function SideQuestion(props: SideQuestionProps) {
+  const [readOnly, setReadOnly] = useState(!!props.selectedChatId)
+  useEffect(() => {
+    if (props.selectedChatId) setReadOnly(true)
+  }, [props.selectedChatId])
+  return readOnly ? (
+    <ReadOnlySideQuestion {...props} onAgents={() => setReadOnly(false)} />
+  ) : (
+    <AgentSideChats
+      task={props.task}
+      onClose={props.onClose}
+      onReadOnly={() => setReadOnly(true)}
+    />
+  )
+}
+function ReadOnlySideQuestion({
   task,
   onClose,
   drafts,
   setDrafts,
   selectedChatId,
+  onAgents,
 }: {
   task: Task
   selectedChatId?: string
   onClose: () => void
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  onAgents: () => void
 }) {
   const { styles } = useTheme()
 
@@ -36,13 +61,23 @@ export function SideQuestion({
   const [askErrors, setAskErrors] = useState<Record<string, string>>({})
   const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState('')
-  const [selected, setSelected] = useState(selectedChatId ?? '')
+  const [selection, setSelection] = useState({ id: selectedChatId ?? '', request: selectedChatId })
+  const selected =
+    selectedChatId && selectedChatId !== selection.request ? selectedChatId : selection.id
   useEffect(() => {
-    if (selectedChatId) setSelected(selectedChatId)
-  }, [selectedChatId])
+    if (selectedChatId && selectedChatId !== selection.request)
+      setSelection({ id: selectedChatId, request: selectedChatId })
+  }, [selectedChatId, selection.request])
+  const selectChat = (id: string) => setSelection({ id, request: selectedChatId })
   const pendingRequests = useRef(new Set<string>())
   const chats = task.sideChats ?? []
-  const chat = chats.find((item) => item.id === selected) ?? chats[0]
+  const seenChatIds = useRef(new Set<string>())
+  useEffect(() => {
+    for (const item of chats) seenChatIds.current.add(item.id)
+  }, [task.sideChats])
+  const selectedChat = chats.find((item) => item.id === selected)
+  const awaitingChat = !!selected && !selectedChat && !seenChatIds.current.has(selected)
+  const chat = selectedChat ?? (awaitingChat ? undefined : chats[0])
   const asking =
     !!chat && (!!pending[chat.id] || chat.messages.some((item) => item.status === 'pending'))
   const question = chat ? (drafts[chat.id] ?? chat.draft) : ''
@@ -62,7 +97,7 @@ export function SideQuestion({
   }
   return (
     <Sheet
-      title="Side chats"
+      title="Read-only chat"
       onClose={onClose}
       busy={busy}
       footer={
@@ -128,7 +163,11 @@ export function SideQuestion({
         </>
       }
     >
-      <Text style={styles.muted}>Saved with this thread. Ask without interrupting its agent.</Text>
+      <Action secondary label="Agent side chats" onPress={onAgents} />
+      <Text style={styles.muted}>
+        Ask about this thread and its checkout without changing files. Your coding agent keeps
+        working.
+      </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {!!chats.length && (
           <Choice
@@ -137,21 +176,22 @@ export function SideQuestion({
             compact
             value={chat?.id ?? ''}
             items={chats.map((item) => ({ id: item.id, name: item.title }))}
-            onChange={setSelected}
+            onChange={selectChat}
           />
         )}
         <Action
-          label="New side chat"
+          label="New read-only chat"
           disabled={disabled}
           onPress={() =>
             act(() =>
               callEffect('/api/tasks/side-chat/save', { id: task.id }, savedSchema).pipe(
-                Effect.tap((result) => Effect.sync(() => setSelected(result.id))),
+                Effect.tap((result) => Effect.sync(() => selectChat(result.id))),
               ),
             )
           }
         />
       </View>
+      {awaitingChat && <Text style={styles.muted}>Loading side chat…</Text>}
       {chat && (
         <Action
           secondary

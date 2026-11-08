@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { agentHookSchema, agentHookEventChoices } from '@dovo/protocol'
 import {
   resolveScopedSettings,
@@ -70,11 +71,13 @@ function ComputerResources({
   )
   return (
     <div className="space-y-3">
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Entries set at {settingsScopeLabels[selectedScope]} replace inherited entries with the same
-        name. Reset an override to use the inherited one again. MCP credentials shared across
-        computers must reference environment variables on each computer.
-      </p>
+      <Disclosure title="How resource overrides work">
+        <p className="mt-2">
+          Entries set at {settingsScopeLabels[selectedScope]} replace inherited entries with the
+          same name. Reset an override to use the inherited one again. MCP credentials shared across
+          computers must reference environment variables on each computer.
+        </p>
+      </Disclosure>
       {!scopes.length && (
         <p className="rounded-md border p-4 text-xs text-muted-foreground">
           Add a project or custom agent to manage its resources.
@@ -94,24 +97,25 @@ function ComputerResources({
             ? `${settingsScopeLabels[scope]}${repository ? ` · ${repository.name}` : ''}`
             : undefined
         return (
-          <details
+          <Disclosure
             key={`${collection}:${scope ?? 'agent'}:${item.id}`}
-            className="rounded-lg border"
             open={(!!scope && !namedAgentId) || total > 0 || undefined}
+            title={
+              <>
+                {title}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {[
+                    where,
+                    count(resources.mcpServers.length, 'MCP server'),
+                    count(resources.skills.length, 'skill'),
+                    count(resources.hooks?.length ?? 0, 'hook'),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </>
+            }
           >
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-              {title}
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                {[
-                  where,
-                  count(resources.mcpServers.length, 'MCP server'),
-                  count(resources.skills.length, 'skill'),
-                  count(resources.hooks?.length ?? 0, 'hook'),
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
-            </summary>
             <ResourceScopeView
               collection={collection}
               id={item.id}
@@ -119,7 +123,7 @@ function ComputerResources({
               namedAgentId={namedAgentId}
               repositoryId={repository?.id}
             />
-          </details>
+          </Disclosure>
         )
       })}
     </div>
@@ -277,7 +281,7 @@ function ResourceScopeView({
   const origin = (kind: 'mcpServers' | 'skills' | 'hooks', name: string): SettingOrigin['source'] =>
     resourceOrigin(snapshot?.defaults, repository, settingsScope ?? 'environment', kind, name)
   return (
-    <div className="space-y-4 px-4 pb-4">
+    <div className="space-y-4">
       {!scope ? (
         <p className="text-sm text-muted-foreground">
           Add a project or custom agent to manage its resources.
@@ -588,7 +592,7 @@ export function HookSettings({
   return (
     <ResourceSection
       title="Agent loop hooks"
-      description="Commands run in the task checkout with JSON event context on stdin. Tool lifecycle hooks observe execution across harnesses; permission-request hooks can deny approval. Failed after-turn checks trigger up to two repair turns."
+      description="Commands run in the thread checkout with JSON event context on stdin. Tool lifecycle hooks observe execution across harnesses; permission-request hooks can deny approval. Failed after-turn checks trigger up to two repair turns."
       actions={
         <Button
           size="sm"
@@ -663,7 +667,7 @@ export function HookSettings({
       {draft && (
         <form
           aria-label={previousName ? `Edit hook ${previousName}` : 'New hook'}
-          className="space-y-4 border-t bg-muted/20 p-4"
+          className="space-y-4 border-t border-border/50 py-4"
           onSubmit={(event) => {
             event.preventDefault()
             void save()
@@ -777,8 +781,8 @@ function ResourceSection({
 }) {
   const id = useId()
   return (
-    <section aria-labelledby={id} className="overflow-hidden rounded-lg border bg-card">
-      <div className="flex flex-wrap items-start justify-between gap-3 p-4">
+    <section aria-labelledby={id} className="min-w-0 border-b border-border/50 pb-1">
+      <div className="flex flex-wrap items-start justify-between gap-3 py-3">
         <div className="min-w-0 flex-1 basis-60">
           <h3 id={id} className="text-sm font-medium">
             {title}
@@ -787,7 +791,7 @@ function ResourceSection({
         </div>
         <div className="flex flex-wrap items-center gap-2">{actions}</div>
       </div>
-      {empty && <p className="border-t px-4 py-3 text-xs text-muted-foreground">{empty}</p>}
+      {empty && <p className="py-3 text-xs text-muted-foreground">{empty}</p>}
       {children}
     </section>
   )
@@ -821,7 +825,7 @@ function ResourceRow({
   onRemove: () => void
 }) {
   return (
-    <div className="flex items-center gap-3 border-t px-4 py-3">
+    <div className="flex items-center gap-3 border-t border-border/50 py-3">
       <Switch
         aria-label={`Enable ${kind} ${name}`}
         checked={enabled}
@@ -890,7 +894,7 @@ function InheritedRow({
   onOverride: () => void
 }) {
   return (
-    <div className="flex items-center gap-3 border-t bg-muted/20 px-4 py-3">
+    <div className="flex items-center gap-3 border-t border-border/50 py-3">
       <div className="min-w-0 flex-1">
         <p className="break-words text-sm text-muted-foreground">
           {name}

@@ -4,7 +4,9 @@ import {
   BROWSER_PERMISSION_PRELOAD,
   BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD,
 } from './browser-permission-preload.js'
+import { installVideoPipTracking } from './browser-video-pip.js'
 import { DOCUMENT_PIP_PRELOAD } from './browser-document-pip.js'
+import { BROWSER_TAB_ACTIVITY_PRELOAD } from './browser-tab-activity.js'
 import {
   commonBrowserPermission,
   commonBrowserPermissionAllowed,
@@ -76,13 +78,11 @@ const MAX_PENDING_PER_WINDOW = 6
  */
 const PRELOAD = `const { contextBridge, ipcRenderer } = require('electron')
   contextBridge.executeInMainWorld({
-    func: (report) => {
-      const add = EventTarget.prototype.addEventListener
-      const apply = Reflect.apply
-      for (const [name, active] of [['enterpictureinpicture', true], ['leavepictureinpicture', false]])
-        apply(add, document, [name, (event) => { if (event.isTrusted) report(active) }, true])
-    },
-    args: [(active) => ipcRenderer.send('browser:video-pip', active)],
+    func: ${installVideoPipTracking.toString()},
+    args: [
+      (active) => ipcRenderer.send('browser:video-pip', active),
+      () => ipcRenderer.send('browser:video-pip-return'),
+    ],
   })
 if (process.isMainFrame) {
   // Keep the native Notification API and the website's own click handlers intact.
@@ -343,6 +343,7 @@ export function createBrowserMedia(host: MediaHost) {
       path,
       PRELOAD +
         DOCUMENT_PIP_PRELOAD +
+        BROWSER_TAB_ACTIVITY_PRELOAD +
         BROWSER_PERMISSION_PRELOAD +
         BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD,
     )
@@ -457,10 +458,12 @@ export function createBrowserMedia(host: MediaHost) {
         if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
         // This permits opening a chooser, not access to any device. The separate device
         // permission handler only accepts the exact devices selected by this website.
-        if (browserDevicePermission(permission))
+        if (browserDevicePermission(permission)) {
+          browserPermissions(profileId).recordRequest(origin, permission)
           return callback(
             browserPermissions(profileId).site(origin).permissions[permission] !== 'block',
           )
+        }
         if (commonBrowserPermission(permission)) {
           void requestCommonBrowserPermission(
             contents,
@@ -494,6 +497,7 @@ export function createBrowserMedia(host: MediaHost) {
           return
         }
         if (permission === 'notifications') {
+          browserPermissions(profileId).recordRequest(origin, 'notifications')
           const saved = browserPermissions(profileId).notification(origin)
           if (saved !== undefined) return callback(saved)
           add({
@@ -513,6 +517,11 @@ export function createBrowserMedia(host: MediaHost) {
         if (permission === 'display-capture') return callback(true)
         const types = permission === 'media' ? mediaTypes(details) : undefined
         if (!types) return callback(false)
+        browserPermissions(profileId).recordRequest(
+          origin,
+          ...(types.audio ? ['microphone' as const] : []),
+          ...(types.video ? ['camera' as const] : []),
+        )
         const settings = browserPermissions(profileId).site(origin).permissions
         if (
           (types.audio && settings.microphone === 'block') ||

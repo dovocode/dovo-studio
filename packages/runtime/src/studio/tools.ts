@@ -17,6 +17,8 @@ import {
   inheritedPermissionPolicy,
   narrowerPermissionLimits,
   changeAgentProvider,
+  studioReference,
+  studioReferenceId,
   permissionPolicyIssue,
   supportsAccess,
   studioToolSettings,
@@ -34,9 +36,22 @@ import { patchWorkspace } from '../http/endpoints/workspace-patch.js'
 import { taskLifecycle } from '../http/endpoints/agents-routes.js'
 import { runtimeDiagnostics } from '../http/diagnostics.js'
 import { agentBrowserCommandSchema } from '../previews/agent-browser.js'
+import {
+  DESKTOP_BROWSER_PREFIX,
+  desktopBrowserCommand,
+  desktopBrowserList,
+} from '../previews/desktop-browser.js'
 import { studioSessions } from './ui-sessions.js'
 
 export type StudioPolicy = Pick<RunPolicy, 'permissions' | 'readOnly' | 'studioTools'>
+
+const safeReference = (s: Services, kind: 'thread' | 'browser', id: string) => {
+  try {
+    return studioReference(s.runtimeId, kind, id)
+  } catch {
+    return undefined
+  }
+}
 
 export function requireStudioPart(s: Services, part: string, policy?: StudioPolicy) {
   const enabled = enabledStudioTools(s.preferences.get())
@@ -122,7 +137,15 @@ export async function studioTool(
     requireStudioPart(s, part, policy)
   }
   check()
-  const input = decode(Schema.Record(Schema.String, Schema.Unknown), value)
+  const decoded = decode(Schema.Record(Schema.String, Schema.Unknown), value)
+  // Accept a pasted unified Studio reference wherever a bare ID is expected.
+  const stripped =
+    (part === 'threads' || part === 'browsers') && typeof decoded.id === 'string'
+      ? studioReferenceId(decoded.id, part === 'threads' ? 'thread' : 'browser')
+      : undefined
+  const input =
+    stripped !== undefined && stripped !== decoded.id ? { ...decoded, id: stripped } : decoded
+  if (input !== decoded) value = input
   if (policy?.readOnly && !studioReadAction(part, input.action))
     throw new HttpError(403, 'This agent has read-only Studio Tools access')
   const workspace = s.store.get()
@@ -185,6 +208,7 @@ export async function studioTool(
         .slice(index + 1, index + 51)
         .map(({ id, title, status, repositoryId, agentId, archivedAt, error }) => ({
           id,
+          reference: safeReference(s, 'thread', id),
           title,
           status,
           repositoryId,
@@ -482,14 +506,36 @@ export async function studioTool(
       mutableStruct({ action: Schema.String, id: Schema.optional(Schema.String) }),
       value,
     )
-    if (command.action === 'list') return { sessions: await s.browsers.studioList() }
+    const referenceFor = (id: string) =>
+      id.startsWith('[') ? undefined : safeReference(s, 'browser', id)
+    if (command.action === 'list') {
+      const [runtimeSessions, desktopSessions] = await Promise.all([
+        s.browsers.studioList(),
+        desktopBrowserList(),
+      ])
+      return {
+        sessions: [...runtimeSessions, ...desktopSessions].map((session) => {
+          const reference = referenceFor(session.id)
+          return reference ? { ...session, reference } : session
+        }),
+      }
+    }
     if (command.action === 'open') {
       const { url } = decode(mutableStruct({ url: Schema.optional(Schema.String) }), value)
       const id = `studio-browser:${taskId}:${randomUUID()}`
       await s.browsers.open(id, taskId, randomUUID(), url, true)
-      return { id, ...(await s.browsers.agentCommand(taskId, { action: 'snapshot' }, check, id)) }
+      return {
+        id,
+        reference: referenceFor(id),
+        ...(await s.browsers.agentCommand(taskId, { action: 'snapshot' }, check, id)),
+      }
     }
     if (!command.id) throw new HttpError(400, 'Choose a browser session ID from list or open')
+    if (command.id.startsWith(DESKTOP_BROWSER_PREFIX)) {
+      if (command.action === 'logs')
+        return { entries: [], note: 'Console logs are not captured for desktop browser tabs.' }
+      return desktopBrowserCommand(command.id, decode(agentBrowserCommandSchema, value), check)
+    }
     if (command.action === 'logs') return s.browsers.studioLogs(command.id)
     return s.browsers.agentCommand(
       taskId,

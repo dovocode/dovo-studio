@@ -31,11 +31,11 @@ release. The Release workflow produces:
 | Windows  | x64           | NSIS EXE installer     | Azure Artifact Signing            |
 | Linux    | x64, ARM64    | DEB, RPM, AppImage     | Unsigned                          |
 
-Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64. Windows builds are
-temporarily paused in CI, so current nightlies contain macOS and Linux packages. Generated mise
-definitions include Windows only when the release contains its server archive. Each desktop build
-uses its native runner and Node 24, packages its matching SQLite/PTY dependencies, and smoke-tests
-the bundled runtime and terminal. AppImage uses architecture-specific Linux update metadata. DEB/RPM
+Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64. Windows checks,
+packaging and signing run on Windows x64; Windows ARM64 builds are disabled. Generated mise
+definitions include Windows when the release contains its server archive. Each desktop build uses
+its native runner and Node 24, packages its matching SQLite/PTY dependencies, and smoke-tests the
+bundled runtime and terminal. AppImage uses architecture-specific Linux update metadata. DEB/RPM
 users install a new package through their package manager; Check for Updates opens the release
 download page. Artifacts are not a promise of compatibility with every historical
 Debian/Fedora/CentOS release.
@@ -70,6 +70,18 @@ Check runs the full build, lint, typechecks and test suite on Linux, with separa
 native/process tests. New pushes cancel superseded Check runs. Release jobs install and build once
 per native platform, deploy one private production runtime, then package desktop and server in
 parallel. The extracted Windows server still exercises setup, start, status and stop.
+
+On macOS, up to four independent binaries sign concurrently within each nesting level, with children
+completed before enclosing bundles and the root app signed last. The pinned `@electron/osx-sign`
+patch serializes `Contents/MacOS` executables so bundle inspection cannot race temporary signing
+files, deduplicates framework symlink aliases and waits for in-flight signatures before reporting a
+failure or allowing builder retries. Identity selection, entitlements, timestamps, hardened runtime
+and strict verification stay with the existing signer. Notarization and stapling follow successful
+signing. The temporary notarization ZIP uses compression level 1 to reduce local compression time;
+distributed ZIP/DMG compression is unchanged. After stapling, the mise archive runs alongside DMG
+and update ZIP creation. Release summaries separately time notarization signature checks, ZIP
+creation, upload plus Apple processing, and stapling. Apple processing and upload remain one timed
+command; these timings do not imply control over Apple's queue or a guaranteed release speedup.
 
 Both workflows cache the pnpm package store and registry metadata. Metadata entries refresh daily;
 frozen-lockfile supply-chain checks remain enabled. Release jobs also cache Node headers and
@@ -106,9 +118,8 @@ OS and architecture. Append `--dir` for an unpacked build. Linux packaging requi
 tools. Only macOS publishing with `--publish` requires a Developer ID identity and notarization
 credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
 allow those runner labels. Local Windows builds remain unsigned. Release Windows apps and installers
-are signed on Windows x64 after native builds, including ARM64; update hashes are generated
-afterward. Signing establishes publisher identity, but does not guarantee that SmartScreen will
-never prompt.
+are built and signed on Windows x64; update hashes are generated afterward. Signing establishes
+publisher identity, but does not guarantee that SmartScreen will never prompt.
 
 To reproduce the shared release staging locally, set `DOVO_PREPARED_RUNTIME` to a new absolute
 directory, run `pnpm run package:prepare-runtime`, then `pnpm run package:platform` with the same
@@ -118,10 +129,10 @@ it is private staging within one build, rather than a persistent dependency cach
 
 The signed macOS job uses macOS 26 and Xcode 26.2 for the Icon Composer asset. Its preflight
 compiles the real icon and verifies both `Assets.car` and the legacy `.icns` output; checking the
-compiler version alone does not detect incompatible host frameworks. The pnpm patch for
-`app-builder-lib@26.15.3` fixes its signing keychain permissions command to use the generated
-keychain password rather than the certificate-export password. Keep the signing regression test when
-replacing the patch with an upstream fix.
+compiler version alone does not detect incompatible host frameworks. `app-builder-lib@26.18.0`
+includes the upstream signing fix that uses the generated keychain password for permissions rather
+than the certificate-export password. The local backport is retired; the signing regression test
+continues to verify this behavior.
 
 On macOS, local packaging uses an available Developer ID Application identity so updates keep the
 same Keychain identity. Set `CSC_NAME` to select a specific identity. Without one, local builds fall
@@ -249,7 +260,7 @@ References: [Expo Widgets](https://docs.expo.dev/versions/latest/sdk/widgets/),
 ## Homebrew and mise
 
 The release workflow builds standalone server archives for macOS arm64, Linux arm64/x64 and Windows
-arm64/x64, with Node 24 and native dependencies included. Windows archives are ZIPs with a
+x64, with Node 24 and native dependencies included. Windows archives are ZIPs with a
 `bin/dovo-server.cmd` launcher; macOS/Linux use tar.gz. Linux archives are built on Ubuntu 24.04
 (glibc); Alpine/musl is not supported. Agent CLIs and Git remain host tools, so existing signed-in
 accounts and project directories work.

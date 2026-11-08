@@ -1,4 +1,5 @@
 import type { TaskEntry } from './task-collection'
+import { taskSearchHit, taskSearchNeedle } from '@dovo/protocol'
 
 /** Letters of the query in order, like "fxlg" for "Fix login"; undefined when they do not all
  * appear. Lower is better: earlier and tighter matches win. */
@@ -49,10 +50,10 @@ export function mergeMessageResults(hits: readonly MessageHit[], limit = 50) {
     .slice(0, limit)
 }
 
-/** Messages containing the query (case-insensitive), newest tasks first, with a snippet
+/** Messages containing every query term, newest tasks first, with a snippet
  * centred on the match. */
 export function messageResults(entries: readonly TaskEntry[], query: string, limit = 50) {
-  const needle = query.trim().toLowerCase()
+  const needle = taskSearchNeedle(query)
   if (needle.length < 2) return []
   const hits: MessageHit[] = []
   const ordered = [...entries].sort((a, b) =>
@@ -60,15 +61,13 @@ export function messageResults(entries: readonly TaskEntry[], query: string, lim
   )
   for (const entry of ordered)
     for (const message of [...entry.task.messages].reverse()) {
-      const index = message.text.toLowerCase().indexOf(needle)
-      if (index < 0) continue
-      const start = Math.max(0, index - 60)
-      const end = Math.min(message.text.length, index + needle.length + 100)
+      const hit = taskSearchHit(entry.task.id, message, needle)
+      if (!hit) continue
       hits.push({
         entry,
         messageId: message.id,
         role: message.role,
-        snippet: `${start ? '…' : ''}${message.text.slice(start, end).replace(/\s+/g, ' ').trim()}${end < message.text.length ? '…' : ''}`,
+        snippet: hit.snippet,
       })
       if (hits.length >= limit) return hits
     }

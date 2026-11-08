@@ -1,6 +1,7 @@
 import { AppToolViews, appViewTools } from './views.js'
 import { startPolling } from '@dovo/client-runtime'
 import { runtimeOperation } from '../errors.js'
+import { processEnvironment } from '../process.js'
 import { randomBytes, randomUUID, createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
@@ -61,10 +62,18 @@ type Session = {
   transport: Transport
   tools: Tool[]
   key: string
+  taskId: string
+  server: string
   toolsDirty: boolean
+  /** Outstanding leases; only unleased sessions may be retired. */
   busy: number
   lastUsed: number
+  closed: boolean
 }
+type Reservation = { opening: Promise<Session>; waiters: number }
+const MAX_SESSIONS = 64
+/** Idle upstream sessions close on the next reconcile and reconnect lazily on demand. */
+export const MCP_SESSION_IDLE_MS = 10 * 60_000
 type Scope = {
   taskId: string
   server: McpServer
@@ -80,8 +89,10 @@ const fingerprint = (server: McpServer) =>
 /** Owns upstream MCP connections; provider proxies never receive their credentials. */
 export class McpApps {
   private views = new AppToolViews()
-  private sessions = new Map<string, Promise<Session>>()
+  private sessions = new Map<string, Reservation>()
   private resolved = new Map<string, Session>()
+  private closing = new Map<string, Promise<void>>()
+  private capacity = MAX_SESSIONS
   private polling?: ReturnType<typeof startPolling>
   start() {
     this.polling ??= startPolling(
@@ -208,125 +219,183 @@ export class McpApps {
       sandboxMode: agent.sandboxMode,
     }
   }
-  private async connect(scope: Scope): Promise<Session> {
+  /** Synchronously returns the key's reservation, evicting an unprotected idle session at capacity. */
+  private reserve(scope: Scope): Reservation {
     if (this.stopped) throw new HttpError(503, 'MCP bridge is stopping')
     const key = `${scope.taskId}:${fingerprint(scope.server)}:${scope.cwd}`
     const cached = this.sessions.get(key)
     if (cached) return cached
-    if (this.sessions.size >= 64) {
+    const prerequisites: Promise<void>[] = []
+    const closing = this.closing.get(key)
+    if (closing) prerequisites.push(closing)
+    if (this.sessions.size >= this.capacity) {
+      const tasks = new Map(this.store.get().tasks.map((task) => [task.id, task]))
       const idle = [...this.resolved.values()]
-        .filter((session) => !session.busy)
+        .filter(
+          (session) => this.idle(session) && !this.protects(session, tasks.get(session.taskId)),
+        )
         .sort((a, b) => a.lastUsed - b.lastUsed)[0]
       if (!idle)
         throw new HttpError(429, 'All MCP connections are busy; try again when a tool finishes')
-      this.sessions.delete(idle.key)
-      this.resolved.delete(idle.key)
-      await idle.client.close()
-      await idle.transport.close()
+      prerequisites.push(this.retire(idle))
     }
-    const opening = (async () => {
-      const client = new Client(
-        { name: 'dovo-studio', version: '1.0.0' },
-        {
-          capabilities: {
-            extensions: {
-              'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] },
-            },
+    const reservation: Reservation = {
+      opening: this.open(scope, key, prerequisites),
+      waiters: 0,
+    }
+    this.sessions.set(key, reservation)
+    reservation.opening.catch(() => {
+      // Callers own the connection error; only the failed reservation is released here.
+      if (this.sessions.get(key) === reservation) this.sessions.delete(key)
+    })
+    return reservation
+  }
+  private async open(scope: Scope, key: string, prerequisites: Promise<void>[]) {
+    // Never run two upstream processes for one key, or exceed capacity while an eviction closes.
+    await Promise.all(prerequisites)
+    if (this.stopped) throw new HttpError(503, 'MCP bridge is stopping')
+    const client = new Client(
+      { name: 'dovo-studio', version: '1.0.0' },
+      {
+        capabilities: {
+          extensions: {
+            'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] },
           },
         },
-      )
-      const config = scope.server
-      let transport: Transport =
-        config.transport === 'stdio'
-          ? new StdioClientTransport({
-              command: config.command,
-              args: config.args,
-              env: {
-                ...Object.fromEntries(
-                  Object.entries(process.env).filter(
-                    (entry): entry is [string, string] => typeof entry[1] === 'string',
-                  ),
+      },
+    )
+    const config = scope.server
+    let transport: Transport =
+      config.transport === 'stdio'
+        ? new StdioClientTransport({
+            command: config.command,
+            args: config.args,
+            env: {
+              ...Object.fromEntries(
+                Object.entries(processEnvironment()).filter(
+                  (entry): entry is [string, string] => typeof entry[1] === 'string',
                 ),
-                ...mcpServerEnvironment(config),
-              },
-              cwd: scope.cwd,
-              stderr: 'pipe',
-            })
-          : new StreamableHTTPClientTransport(
-              new URL(config.url),
-              mcpHttpOptions(mcpHeaders(config)),
-            )
-      if (transport instanceof StdioClientTransport) transport.stderr?.on('data', () => {})
-      const timeout = AbortSignal.any([this.controller.signal, AbortSignal.timeout(30_000)])
-      try {
-        try {
-          await client.connect(transport, { signal: timeout })
-        } catch (error) {
-          // Older MCP servers expose SSE, not Streamable HTTP. Do not retry auth failures.
-          await transport.close()
-          if (
-            config.transport !== 'http' ||
-            !(error instanceof StreamableHTTPError) ||
-            ![404, 405, 406].includes(error.code ?? 0)
-          )
-            throw error
-          transport = new SSEClientTransport(
-            new URL(config.url),
-            mcpHttpOptions(mcpHeaders(config)),
-          )
-          await client.connect(transport, { signal: timeout })
-        }
-        const tools: Tool[] = []
-        let cursor: string | undefined
-        const cursors = new Set<string>()
-        if (client.getServerCapabilities()?.tools)
-          do {
-            const page = await client.listTools({ cursor }, { signal: timeout })
-            tools.push(...page.tools)
-            if (tools.length > 2000) throw new HttpError(413, 'MCP server exposes too many tools')
-            cursor = page.nextCursor
-            if (cursor && cursors.has(cursor))
-              throw new HttpError(502, 'MCP server repeated its tool cursor')
-            if (cursor) cursors.add(cursor)
-          } while (cursor)
-        client.onclose = () => {
-          if (this.sessions.get(key) === opening) this.sessions.delete(key)
-          this.resolved.delete(key)
-        }
-        const session = {
-          client,
-          transport,
-          tools,
-          key,
-          toolsDirty: false,
-          busy: 0,
-          lastUsed: Date.now(),
-        }
-        this.resolved.set(key, session)
-        client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
-          session.toolsDirty = true
-          this.changed(scope)
-        })
-        client.setNotificationHandler(ResourceListChangedNotificationSchema, () =>
-          this.changed(scope),
-        )
-        client.setNotificationHandler(PromptListChangedNotificationSchema, () =>
-          this.changed(scope),
-        )
-        return session
-      } catch (error) {
-        await client.close()
-        await transport.close()
-        throw error
-      }
-    })()
-    this.sessions.set(key, opening)
+              ),
+              ...mcpServerEnvironment(config),
+            },
+            cwd: scope.cwd,
+            stderr: 'pipe',
+          })
+        : new StreamableHTTPClientTransport(new URL(config.url), mcpHttpOptions(mcpHeaders(config)))
+    if (transport instanceof StdioClientTransport) transport.stderr?.on('data', () => {})
+    const timeout = AbortSignal.any([this.controller.signal, AbortSignal.timeout(30_000)])
     try {
-      return await opening
+      try {
+        await client.connect(transport, { signal: timeout })
+      } catch (error) {
+        // Older MCP servers expose SSE, not Streamable HTTP. Do not retry auth failures.
+        await transport.close()
+        if (
+          config.transport !== 'http' ||
+          !(error instanceof StreamableHTTPError) ||
+          ![404, 405, 406].includes(error.code ?? 0)
+        )
+          throw error
+        transport = new SSEClientTransport(new URL(config.url), mcpHttpOptions(mcpHeaders(config)))
+        await client.connect(transport, { signal: timeout })
+      }
+      const tools: Tool[] = []
+      let cursor: string | undefined
+      const cursors = new Set<string>()
+      if (client.getServerCapabilities()?.tools)
+        do {
+          const page = await client.listTools({ cursor }, { signal: timeout })
+          tools.push(...page.tools)
+          if (tools.length > 2000) throw new HttpError(413, 'MCP server exposes too many tools')
+          cursor = page.nextCursor
+          if (cursor && cursors.has(cursor))
+            throw new HttpError(502, 'MCP server repeated its tool cursor')
+          if (cursor) cursors.add(cursor)
+        } while (cursor)
+      const session: Session = {
+        client,
+        transport,
+        tools,
+        key,
+        taskId: scope.taskId,
+        server: config.name,
+        toolsDirty: false,
+        busy: 0,
+        lastUsed: Date.now(),
+        closed: false,
+      }
+      if (this.stopped) throw new HttpError(503, 'MCP bridge is stopping')
+      // Synchronous through registration: the transport cannot close before the hook exists.
+      client.onclose = () => void this.retire(session)
+      if (!client.transport) throw new HttpError(502, 'MCP server disconnected')
+      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+        session.toolsDirty = true
+        this.changed(scope)
+      })
+      client.setNotificationHandler(ResourceListChangedNotificationSchema, () =>
+        this.changed(scope),
+      )
+      client.setNotificationHandler(PromptListChangedNotificationSchema, () => this.changed(scope))
+      this.resolved.set(key, session)
+      return session
     } catch (error) {
-      if (this.sessions.get(key) === opening) this.sessions.delete(key)
+      await this.close(client, transport)
       throw error
     }
+  }
+  /** Leases count from reservation, so retirement cannot slip between connect and use. */
+  private async lease(scope: Scope): Promise<Session> {
+    const reservation = this.reserve(scope)
+    reservation.waiters++
+    let session: Session
+    try {
+      session = await reservation.opening
+    } finally {
+      reservation.waiters--
+    }
+    // Only a dead connection or disposal retires a reserved session.
+    if (session.closed) throw new HttpError(503, 'MCP server disconnected; try again')
+    session.busy++
+    return session
+  }
+  private release(session: Session) {
+    session.busy--
+    session.lastUsed = Date.now()
+  }
+  private idle(session: Session) {
+    return !session.busy && !this.sessions.get(session.key)?.waiters
+  }
+  private protects(session: Session, task: { status: string } | undefined) {
+    return task?.status === 'running' || this.views.attached(session.taskId, session.server)
+  }
+  /** Synchronously forgets a session and tracks its close; a replacement is never removed. */
+  private retire(session: Session) {
+    if (session.closed) return this.closing.get(session.key) ?? Promise.resolve()
+    session.closed = true
+    if (this.resolved.get(session.key) === session) {
+      this.resolved.delete(session.key)
+      this.sessions.delete(session.key)
+    }
+    const previous = this.closing.get(session.key)
+    const closed = this.close(session.client, session.transport)
+    const tracked = previous ? Promise.all([previous, closed]).then(() => {}) : closed
+    this.closing.set(session.key, tracked)
+    void tracked.then(() => {
+      if (this.closing.get(session.key) === tracked) this.closing.delete(session.key)
+    })
+    return tracked
+  }
+  /** Closes both ends and reports failures here, so waiters can rely on settlement. */
+  private async close(client: Client, transport: Transport) {
+    for (const step of [() => client.close(), () => transport.close()])
+      try {
+        await step()
+      } catch (error) {
+        console.error(
+          'MCP session close failed',
+          error instanceof Error ? error.message : String(error),
+        )
+      }
   }
   authenticateProxy(token: string) {
     const scope = this.scopes.get(token)
@@ -361,15 +430,14 @@ export class McpApps {
     signal = this.controller.signal,
     authorize: () => void = () => {},
   ) {
-    const session = await this.connect(scope)
-    session.busy++
+    const session = await this.lease(scope)
     try {
       return await this.performRpc(session, scope, method, params, ui, signal, authorize)
     } finally {
-      session.busy--
-      session.lastUsed = Date.now()
+      this.release(session)
     }
   }
+  /** The returned session stays leased; callers must release it. */
   private async feedTool(
     taskId: string,
     server: string,
@@ -396,24 +464,29 @@ export class McpApps {
       throw new HttpError(409, 'MCP configuration changed; preview and approve again')
     authorize()
     signal.throwIfAborted()
-    const session = await this.connect(scope)
-    // Recheck the upstream declaration before every background read, even without notifications.
-    session.toolsDirty = true
-    await this.rpc(scope, 'tools/list', {}, true, signal, authorize)
-    const tool = session.tools.find((tool) => tool.name === name)
-    if (
-      !tool ||
-      tool.annotations?.readOnlyHint !== true ||
-      tool.annotations.destructiveHint === true
-    )
-      throw new HttpError(
-        403,
-        'Data feeds require a tool explicitly declared read-only and non-destructive',
+    const session = await this.lease(scope)
+    try {
+      // Recheck the upstream declaration before every background read, even without notifications.
+      session.toolsDirty = true
+      await this.performRpc(session, scope, 'tools/list', {}, true, signal, authorize)
+      const tool = session.tools.find((tool) => tool.name === name)
+      if (
+        !tool ||
+        tool.annotations?.readOnlyHint !== true ||
+        tool.annotations.destructiveHint === true
       )
-    const key = scopeKey + ':' + createHash('sha256').update(JSON.stringify(tool)).digest('hex')
-    if (expected && expected !== key)
-      throw new HttpError(409, 'MCP tool changed; preview and approve again')
-    return { scope, session, tool, key }
+        throw new HttpError(
+          403,
+          'Data feeds require a tool explicitly declared read-only and non-destructive',
+        )
+      const key = scopeKey + ':' + createHash('sha256').update(JSON.stringify(tool)).digest('hex')
+      if (expected && expected !== key)
+        throw new HttpError(409, 'MCP tool changed; preview and approve again')
+      return { scope, session, tool, key }
+    } catch (error) {
+      this.release(session)
+      throw error
+    }
   }
   async feedCatalog(taskId: string, signal: AbortSignal, authorize: () => void) {
     const task = this.store.taskSummary(taskId),
@@ -435,17 +508,21 @@ export class McpApps {
       authorize()
       signal.throwIfAborted()
       const scope = this.current(taskId, server.name),
-        session = await this.connect(scope)
-      session.toolsDirty = true
-      await this.rpc(scope, 'tools/list', {}, true, signal, authorize)
-      for (const tool of session.tools)
-        if (tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true)
-          tools.push({
-            server: server.name,
-            tool: tool.name,
-            description: tool.description ?? '',
-            inputSchema: tool.inputSchema,
-          })
+        session = await this.lease(scope)
+      try {
+        session.toolsDirty = true
+        await this.performRpc(session, scope, 'tools/list', {}, true, signal, authorize)
+        for (const tool of session.tools)
+          if (tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true)
+            tools.push({
+              server: server.name,
+              tool: tool.name,
+              description: tool.description ?? '',
+              inputSchema: tool.inputSchema,
+            })
+      } finally {
+        this.release(session)
+      }
       if (tools.length > 500) throw new HttpError(413, 'Too many read-only tools')
     }
     return { tools }
@@ -465,15 +542,16 @@ export class McpApps {
       authorize,
       expected,
     )
-    if (expected && expected !== key)
-      throw new HttpError(409, 'MCP tool or configuration changed; preview and approve again')
-    const validation = new AjvJsonSchemaValidator().getValidator(tool.inputSchema)(query.arguments)
-    if (!validation.valid)
-      throw new HttpError(400, 'Arguments do not match the MCP tool input schema')
-    authorize()
-    signal.throwIfAborted()
-    session.busy++
     try {
+      if (expected && expected !== key)
+        throw new HttpError(409, 'MCP tool or configuration changed; preview and approve again')
+      const validation = new AjvJsonSchemaValidator().getValidator(tool.inputSchema)(
+        query.arguments,
+      )
+      if (!validation.valid)
+        throw new HttpError(400, 'Arguments do not match the MCP tool input schema')
+      authorize()
+      signal.throwIfAborted()
       const result = CallToolResultSchema.parse(
         await session.client.callTool({ name: tool.name, arguments: query.arguments }, undefined, {
           signal,
@@ -509,8 +587,7 @@ export class McpApps {
         throw new HttpError(413, 'Select a JSON field smaller than 256 KB')
       return { fingerprint: key, data: JSON.parse(encoded) as unknown }
     } finally {
-      session.busy--
-      session.lastUsed = Date.now()
+      this.release(session)
     }
   }
   async feedCheck(
@@ -520,7 +597,7 @@ export class McpApps {
     signal: AbortSignal,
     authorize: () => void,
   ) {
-    const { key } = await this.feedTool(
+    const { session, key } = await this.feedTool(
       taskId,
       query.server,
       query.tool,
@@ -528,6 +605,7 @@ export class McpApps {
       authorize,
       expected,
     )
+    this.release(session)
     if (key !== expected)
       throw new HttpError(409, 'MCP tool or configuration changed; preview and approve again')
   }
@@ -978,26 +1056,27 @@ export class McpApps {
   }
   async reconcile() {
     const tasks = new Map(this.store.get().tasks.map((task) => [task.id, task]))
-    const invalid = new Set<string>()
     for (const [token, scope] of this.scopes) {
       const task = tasks.get(scope.taskId)
       if (task && !task.archived && !task.archivedAt && task.status !== 'done') continue
       this.scopes.delete(token)
       this.cancelTask(scope.taskId)
-      invalid.add(`${scope.taskId}:${fingerprint(scope.server)}:${scope.cwd}`)
     }
-    for (const key of this.resolved.keys()) {
-      const task = tasks.get(key.slice(0, key.indexOf(':')))
-      if (!task || task.archived || task.archivedAt || task.status === 'done') invalid.add(key)
+    // Retire synchronously, then await closes, so no lease can interleave with the selection.
+    const now = Date.now(),
+      closing: Promise<void>[] = []
+    for (const session of [...this.resolved.values()]) {
+      if (!this.idle(session)) continue
+      const task = tasks.get(session.taskId)
+      if (!task || task.archived || task.archivedAt || task.status === 'done') {
+        closing.push(this.retire(session))
+        continue
+      }
+      // Running turns and open views keep their session; idle time starts once they end.
+      if (this.protects(session, task)) session.lastUsed = now
+      else if (now - session.lastUsed >= MCP_SESSION_IDLE_MS) closing.push(this.retire(session))
     }
-    for (const key of invalid) {
-      const session = this.resolved.get(key)
-      if (!session || session.busy) continue
-      this.sessions.delete(key)
-      this.resolved.delete(key)
-      await session.client.close()
-      await session.transport.close()
-    }
+    await Promise.all(closing)
     for (const row of this.db.prepare('SELECT DISTINCT task_id FROM mcp_apps').all()) {
       const id = object(row).task_id
       if (typeof id !== 'string' || tasks.has(id)) continue
@@ -1016,15 +1095,10 @@ export class McpApps {
     this.stopped = true
     this.controller.abort()
     await this.polling?.stop()
-    await Promise.allSettled(
-      [...this.sessions.values()].map(async (opening) => {
-        const session = await opening
-        await session.client.close()
-        await session.transport.close()
-      }),
-    )
-    this.resolved.clear()
-    this.sessions.clear()
+    // Opening errors belong to their callers; disposal only needs them settled.
+    await Promise.allSettled([...this.sessions.values()].map(({ opening }) => opening))
+    for (const session of [...this.resolved.values()]) void this.retire(session)
+    while (this.closing.size) await Promise.all(this.closing.values())
     this.scopes.clear()
     this.actions.clear()
   }

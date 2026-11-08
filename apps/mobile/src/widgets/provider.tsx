@@ -1,14 +1,15 @@
 import { useApplicationState } from '../runtime/state/application-state'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import { aggregateRuntimeTasks } from '@dovo/protocol'
 import { useAppActive } from '../runtime/state/app-active'
-import { useRuntime } from '../runtime/connection/provider'
+import { useRuntimeSelector } from '../runtime/connection/provider'
+import { selectTaskSurfaces, sameTaskSurfaces } from '../runtime/connection/task-surfaces'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 
 export function TaskWidgetProvider({ children }: { children: ReactNode }) {
-  const { overviews } = useRuntime()
+  const { overviews } = useRuntimeSelector(selectTaskSurfaces, sameTaskSurfaces)
   const { widgetUpdates } = useMobilePreferences()
   const active = useAppActive()
   const [supported] = useApplicationState(
@@ -24,16 +25,28 @@ export function TaskWidgetProvider({ children }: { children: ReactNode }) {
     waiting: 0,
     items: [],
   })
-  const rows = (
-    active && supported && widgetUpdates ? aggregateRuntimeTasks(overviews, Date.now(), true) : []
+  const rows = useMemo(
+    () =>
+      (active && supported && widgetUpdates
+        ? aggregateRuntimeTasks(overviews, Date.now(), true)
+        : []
+      )
+        .filter(
+          (row) =>
+            !row.task.archived &&
+            !row.task.archivedAt &&
+            (row.task.status === 'running' || row.needsInput),
+        )
+        // Use creation order within each priority so text timestamps cannot reshuffle the widget.
+        .sort(
+          (a, b) =>
+            Number(b.needsInput) - Number(a.needsInput) ||
+            Number(!!b.task.pinned) - Number(!!a.task.pinned) ||
+            b.task.createdAt.localeCompare(a.task.createdAt) ||
+            a.key.localeCompare(b.key),
+        ),
+    [active, supported, widgetUpdates, overviews],
   )
-    .filter(
-      (row) =>
-        !row.task.archived &&
-        !row.task.archivedAt &&
-        (row.task.status === 'running' || row.needsInput),
-    )
-    .sort((a, b) => Number(b.needsInput) - Number(a.needsInput))
   latest.current = {
     running: rows.filter((row) => row.task.status === 'running').length,
     waiting: rows.filter((row) => row.needsInput).length,

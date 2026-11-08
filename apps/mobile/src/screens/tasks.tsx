@@ -5,6 +5,7 @@ import {
   supportsSettledSummaryPaging,
 } from '@dovo/protocol'
 import { useTaskSearch } from '../tasks/list/use-task-search'
+import { WorkspaceModes } from '../workspace/workspace-modes'
 import { EmptyState } from '../ui/content/empty-state'
 import { useTaskPanes } from '../shell/task-panes'
 import { contentColumn } from '../ui/layout/content-column'
@@ -21,6 +22,7 @@ import { useForegroundInterval } from '../runtime/state/app-active'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import {
   updateMobilePreferences,
+  setMobileThreadSectionCollapsed,
   useCarMode,
   useMobilePreferences,
 } from '../runtime/preferences/app-preferences'
@@ -79,7 +81,7 @@ import { useTheme } from '../ui/theme'
 type TaskListItem =
   | { kind: 'history'; count: number }
   | { kind: 'group'; key: string; name: string; count: number }
-  | { kind: 'task'; entry: RuntimeTask }
+  | { kind: 'task'; entry: RuntimeTask; section?: string }
 const sortOptions = taskSortOptions.filter((option) => option.id !== 'status')
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
   const { colors, styles } = useTheme()
@@ -246,6 +248,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 projectMembers.has(runtimeResourceKey(runtimeId, task.repositoryId))))) &&
           (archived ? !!task.archivedAt : !task.archivedAt) &&
           (!car ||
+            task.pinned ||
             (!task.archived &&
               !isSnoozed(task, now) &&
               (!task.waitingForFeedback || taskIsWorking(task) || needsInput))) &&
@@ -269,6 +272,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       .sort((a, b) => {
         if (archived)
           return (
+            Number(!!b.task.pinned) - Number(!!a.task.pinned) ||
             (b.task.archivedAt ?? '').localeCompare(a.task.archivedAt ?? '') ||
             a.key.localeCompare(b.key)
           )
@@ -294,13 +298,26 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         (group) => group.key,
         preferences.threadSectionOrder,
       ).flatMap((section, index) => {
-        if (section.key !== 'active' || grouping === 'project') return section.items
-        if (index === 0) return section.items.filter((item) => item.kind === 'task')
-        return collapsed.has('active')
-          ? section.items.filter((item) => item.kind === 'group')
-          : section.items
+        const items = section.items.map((item): TaskListItem =>
+          item.kind === 'task' ? { ...item, section: section.key } : item,
+        )
+        if (section.key !== 'active' || grouping === 'project') return items
+        if (index === 0 && !collapsed.has('active'))
+          return items.filter((item) => item.kind === 'task')
+        return collapsed.has('active') ? items.filter((item) => item.kind === 'group') : items
       })
-    const attention = tasks.filter(({ task, needsInput }) => needsInput && !task.archived)
+    const pinned = tasks.filter(({ task }) => task.pinned)
+    const pinnedItems: TaskListItem[] = pinned.length
+      ? [
+          { kind: 'group', key: 'pinned', name: 'Pinned', count: pinned.length },
+          ...(collapsed.has('pinned')
+            ? []
+            : pinned.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+        ]
+      : []
+    const attention = tasks.filter(
+      ({ task, needsInput }) => !task.pinned && needsInput && !task.archived,
+    )
     const attentionItems: TaskListItem[] = attention.length
       ? [
           { kind: 'group', key: 'needs-input', name: 'Needs input', count: attention.length },
@@ -311,6 +328,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       : []
     const active = tasks.filter(
       ({ task, needsInput }) =>
+        !task.pinned &&
         !needsInput &&
         !task.archived &&
         !isSnoozed(task, now) &&
@@ -331,6 +349,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       : []
     const waiting = tasks.filter(
       ({ task, needsInput }) =>
+        !task.pinned &&
         task.waitingForFeedback &&
         !taskIsWorking(task) &&
         !needsInput &&
@@ -346,9 +365,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ]
       : []
     const snoozed = tasks.filter(
-      ({ task, needsInput }) => !needsInput && !task.archived && isSnoozed(task, now),
+      ({ task, needsInput }) =>
+        !task.pinned && !needsInput && !task.archived && isSnoozed(task, now),
     )
-    const settled = tasks.filter(({ task }) => task.archived)
+    const settled = tasks.filter(({ task }) => !task.pinned && task.archived)
     const snoozedItems: TaskListItem[] = snoozed.length
       ? [
           { kind: 'group', key: 'snoozed', name: 'Snoozed', count: snoozed.length },
@@ -391,6 +411,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           ]
         : []
     const otherSections = [
+      { key: 'pinned', items: pinnedItems },
       { key: 'needs-input', items: attentionItems },
       { key: 'working', items: workingItems },
       { key: 'waiting', items: waitingItems },
@@ -412,10 +433,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       ])
     const groups: { key: string; name: string; tasks: RuntimeTask[] }[] = []
     if (grouping === 'status') {
-      groups.push(
-        { key: 'pinned', name: 'Pinned', tasks: unsettled.filter(({ task }) => task.pinned) },
-        { key: 'active', name: 'Open', tasks: unsettled.filter(({ task }) => !task.pinned) },
-      )
+      groups.push({
+        key: 'active',
+        name: 'Open',
+        tasks: unsettled.filter(({ task }) => !task.pinned),
+      })
     } else {
       const identities = new Map(
         projectGroups.flatMap((group) =>
@@ -423,7 +445,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             ({ runtimeId, repository }) =>
               [
                 runtimeResourceKey(runtimeId, repository.id),
-                { key: group.key, name: repository.kind === 'scratch' ? 'General' : group.name },
+                { key: group.key, name: repository.kind === 'scratch' ? 'No Project' : group.name },
               ] as const,
           ),
         ),
@@ -481,13 +503,17 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     ['settled', 'snoozed', 'working', 'waiting', 'needs-input', 'active'].includes(key)
       ? key
       : `${grouping}:${key}`
-  const collapsedHeaders = listItems.filter(
-    (item): item is Extract<TaskListItem, { kind: 'group' }> =>
-      item.kind === 'group' && collapsed.has(sectionKey(item.key)),
-  )
-  const expandedItems = listItems.filter(
-    (item) => item.kind !== 'group' || !collapsed.has(sectionKey(item.key)),
-  )
+  // Only trailing collapsed sections can move to the bottom without changing their order.
+  let footerStart = listItems.length
+  while (footerStart > 0) {
+    const item = listItems[footerStart - 1]
+    if (item.kind !== 'group' || !collapsed.has(sectionKey(item.key))) break
+    footerStart--
+  }
+  const expandedItems = listItems.slice(0, footerStart)
+  const collapsedHeaders = listItems
+    .slice(footerStart)
+    .filter((item): item is Extract<TaskListItem, { kind: 'group' }> => item.kind === 'group')
   const renderSectionHeader = (item: Extract<TaskListItem, { kind: 'group' }>) => (
     <Pressable
       accessibilityRole="button"
@@ -496,38 +522,44 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         expanded: !collapsed.has(sectionKey(item.key)),
       }}
       onPress={() => {
-        const next = new Set(collapsed)
         const key = sectionKey(item.key)
-        if (next.has(key)) next.delete(key)
-        else {
-          next.add(key)
-          if (key === 'settled') {
-            setShowAllSettled(false)
-            setSettledLimit(settledSummaryPageSize)
-          }
+        const closing = !collapsed.has(key)
+        setMobileThreadSectionCollapsed(key, closing)
+        if (closing && key === 'settled') {
+          setShowAllSettled(false)
+          setSettledLimit(settledSummaryPageSize)
         }
-        updateMobilePreferences({ collapsedThreadSections: [...next] })
       }}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        minHeight: 44,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+      }}
     >
       <Icon
         name={collapsed.has(sectionKey(item.key)) ? 'next' : 'down'}
         size={12}
         color={colors.muted}
       />
-      <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontWeight: '600' }]}>
+      <Text
+        numberOfLines={1}
+        style={[styles.muted, { flexShrink: 1, fontSize: 12, fontWeight: '500' }]}
+      >
         {item.name}
       </Text>
-      <Text style={styles.muted}>{item.count}</Text>
+      <Text style={[styles.muted, { fontSize: 11 }]}>{item.count}</Text>
     </Pressable>
   )
   const bulk = async (
     action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete',
-    hours?: number,
+    until?: string,
   ) => {
     const chosen = allTasks.filter((item) => !item.task.replica && selected.has(item.key))
     if (!chosen.length || bulkBusy) return
-    if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
+    if (action === 'snooze' && until === undefined) throw new Error('Choose a snooze duration.')
     setBulkBusy(true)
     try {
       for (const item of chosen) {
@@ -544,8 +576,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           const field = action === 'pin' ? 'pinned' : 'snoozedUntil'
           const before =
             action === 'pin' ? (item.task.pinned ?? null) : (item.task.snoozedUntil ?? null)
-          const after =
-            action === 'pin' ? true : new Date(Date.now() + (hours ?? 0) * 3600000).toISOString()
+          const after = action === 'pin' ? true : until!
           await readRuntime(
             profile,
             '/api/workspace',
@@ -569,7 +600,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   }
   const chooseBulk = (action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete') => {
     if (action === 'snooze')
-      return chooseSnoozeDuration('Snooze selected threads', (hours) => void bulk(action, hours))
+      return chooseSnoozeDuration('Snooze selected threads', (until) => void bulk(action, until))
     if (action === 'delete')
       Alert.alert(
         'Delete selected threads?',
@@ -680,12 +711,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               ]
         }
       />
+      {!car && !archived && <WorkspaceModes mode="tasks" />}
       {!car && (
         <View style={{ ...contentColumn.collection, paddingHorizontal: 16, paddingBottom: 8 }}>
           <SearchField
             inputRef={searchInput}
             label={archived ? 'Search archived tasks' : 'Search tasks'}
             placeholder="Search threads"
+            style={{ fontSize: 15 }}
             clearButtonMode="while-editing"
             returnKeyType="search"
             value={search}
@@ -868,7 +901,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             )}
           </View>
         }
-        renderItem={({ item }) =>
+        renderItem={({ item, index }) =>
           item.kind === 'history' ? (
             <Action
               label={
@@ -895,25 +928,28 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             renderSectionHeader(item)
           ) : (
             <View
-              style={
+              style={[
+                !archived &&
+                  (index === 0 || expandedItems[index - 1]?.kind === 'group') && { paddingTop: 4 },
                 archived
                   ? {
                       backgroundColor:
                         selecting && selected.has(item.entry.key)
                           ? colors.elevated
-                          : colors.surface,
-                      borderRadius: 24,
+                          : colors.background,
+                      borderRadius: 12,
                       overflow: 'hidden',
                       marginBottom: 12,
                       padding: 4,
                     }
                   : selecting && selected.has(item.entry.key)
                     ? { backgroundColor: colors.elevated, borderRadius: 10 }
-                    : undefined
-              }
+                    : undefined,
+              ]}
             >
               <TaskListRow
                 density={preferences.threadDensity ?? 'compact'}
+                hideStatusLabel={item.section === 'working' || item.section === 'waiting'}
                 row={rowData.get(item.entry.key)!.row}
                 needsInput={item.entry.needsInput}
                 thread={tree.nodes.get(item.entry.key)}

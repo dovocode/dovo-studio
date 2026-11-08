@@ -235,7 +235,7 @@ function WindowsRuntimeControl({
     }
   }
   return (
-    <article className="space-y-3 rounded-md border p-4" aria-label="Windows execution environment">
+    <article className="studio-settings-group space-y-3" aria-label="Windows execution environment">
       <h2 className="text-sm font-medium">Run locally with Native Windows or WSL</h2>
       <p className="text-sm text-muted-foreground">
         Choose where your projects, agents, Git and terminals run. Each environment keeps its own
@@ -344,15 +344,10 @@ export function WindowsRuntimeGate({ children }: { children: ReactNode }) {
     let disposed = false
     void api
       .read()
-      .then(async (raw) => {
+      .then((raw) => {
         const status = decode(windowsRuntimeStatusSchema, raw)
-        if (status.configured) {
-          const connection = decodeResult(connectionSchema, await api.connection())
-          if (!connection.success)
-            throw new Error(
-              'The desktop returned invalid runtime connection details. Restart Dovo Studio and retry.',
-            )
-        }
+        // The workspace restores cached content while its provider validates and connects
+        // to the selected runtime. Only first-time execution-environment setup gates it.
         if (!disposed) {
           setReady(status.configured)
           setChecked(true)

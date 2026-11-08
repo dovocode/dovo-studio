@@ -1,5 +1,5 @@
 import { Effect } from 'effect'
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import {
   assignRemoteSources,
   forgeSourceIdentitySchema,
@@ -197,6 +197,8 @@ export function useSourceReaders<T extends Source>(
   active = true,
 ) {
   const { activeRuntimeId } = useWorkspace()
+  const discoveryRefresh = useRef<() => void>(() => {})
+  const refresh = useCallback(() => discoveryRefresh.current(), [])
   const identityRevision = useSyncExternalStore(subscribe, () => revision)
   const sourcesKey = JSON.stringify(allSources.map((source) => [source.scope, source.connected]))
   useEffect(() => {
@@ -226,7 +228,9 @@ export function useSourceReaders<T extends Source>(
       )
     })
     const polling = startPolling(load, { interval: 30000, onError: () => {} })
+    discoveryRefresh.current = polling.refresh
     return () => {
+      discoveryRefresh.current = () => {}
       stopped = true
       void polling.stop()
     }
@@ -238,6 +242,7 @@ export function useSourceReaders<T extends Source>(
         origins: new Map(allSources.map((source) => [remote(source), source])),
         destinations: new Map<string, string>(),
         unavailable: new Set<string>(),
+        refresh,
       }
     const originIdentity = origin ? identities.get(origin.scope) : undefined
     const previous = assignments.get(namespace) ?? {
@@ -313,8 +318,9 @@ export function useSourceReaders<T extends Source>(
       ),
       destinations,
       unavailable: new Set([...owners.keys()].filter((key) => !selectedRemotes.has(key))),
+      refresh,
     }
-  }, [allSources, namespace, identityRevision, enabled, allowHandoff])
+  }, [allSources, namespace, identityRevision, enabled, allowHandoff, refresh])
 }
 
 /** Reading may use a same-account alternate; cached data and all mutations keep

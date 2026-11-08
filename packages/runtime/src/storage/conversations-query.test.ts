@@ -30,6 +30,9 @@ it('preserves substring search through trigram narrowing, quotes, wildcards and 
       'abc--bcd',
       'actual abcd',
       'ÄRGER İSTANBUL',
+      'Café has an open door',
+      'A cafe open late',
+      'ﬃ cafe\u0301 🐱',
       'quoted "needle" and %_ wildcard',
       'prefix 🐱🐶🐭 suffix',
     ]),
@@ -46,6 +49,12 @@ it('preserves substring search through trigram narrowing, quotes, wildcards and 
       '🐱🐶🐭',
       'ab',
       'absent',
+      'open café',
+      '"cafe open"',
+      'late "cafe open"',
+      'ffi cafe',
+      'e',
+      '""',
     ])
       expect(
         conversations.search(

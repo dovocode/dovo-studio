@@ -1,19 +1,93 @@
 import { setImmediate } from 'node:timers/promises'
 import { readOpenCodeUsage } from './usage-opencode.js'
 import { createReadStream } from 'node:fs'
+import { createZstdDecompress } from 'node:zlib'
+import { pipeline } from 'node:stream/promises'
 import { readdir, open, realpath, type FileHandle } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { type Agent, type UsageRecord } from '@dovo/protocol'
 import { processEnvironment } from '../process.js'
+const retainedSize = (value: unknown) => JSON.stringify(value).length * 2
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {}
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
-type ParserState = { session: string; model: string; lastTotal?: number; lastTotalAt?: string }
+const codexCounters = [
+  'input_tokens',
+  'cached_input_tokens',
+  'cache_write_input_tokens',
+  'output_tokens',
+  'reasoning_output_tokens',
+  'total_tokens',
+] as const
+type CodexCounter = (typeof codexCounters)[number]
+type CodexUsage = Record<CodexCounter, number>
+type CodexTotal = Partial<CodexUsage> & { total_tokens: number }
+function codexTotal(value: Record<string, unknown>): CodexTotal | undefined {
+  if (typeof value.total_tokens !== 'number') return
+  const counters: Partial<CodexUsage> = {}
+  for (const key of codexCounters) {
+    const counter = value[key]
+    if (counter === undefined) continue
+    if (typeof counter !== 'number' || !Number.isSafeInteger(counter) || counter < 0) return
+    counters[key] = counter
+  }
+  const {
+    input_tokens: input,
+    output_tokens: output,
+    cached_input_tokens: cached,
+    cache_write_input_tokens: cacheWrite,
+    reasoning_output_tokens: reasoning,
+  } = counters
+  // An impossible snapshot cannot establish a baseline: doing so can make all
+  // subsequent real counters look stale and suppress the rest of a session.
+  if (
+    (input !== undefined && output !== undefined && input + output !== value.total_tokens) ||
+    (input !== undefined && input > value.total_tokens) ||
+    (output !== undefined && output > value.total_tokens) ||
+    (cached ?? 0) + (cacheWrite ?? 0) > (input ?? value.total_tokens) ||
+    (reasoning !== undefined && reasoning > (output ?? value.total_tokens))
+  )
+    return
+  return { ...counters, total_tokens: value.total_tokens }
+}
+function codexUsage(value: Record<string, unknown>): CodexUsage | undefined {
+  if (typeof value.input_tokens !== 'number' || typeof value.output_tokens !== 'number') return
+  const counters = codexTotal({
+    cached_input_tokens: 0,
+    cache_write_input_tokens: 0,
+    reasoning_output_tokens: 0,
+    total_tokens: value.input_tokens + value.output_tokens,
+    ...value,
+  })
+  if (!counters) return
+  const usage: CodexUsage = {
+    input_tokens: value.input_tokens,
+    output_tokens: value.output_tokens,
+    cached_input_tokens: counters.cached_input_tokens ?? 0,
+    cache_write_input_tokens: counters.cache_write_input_tokens ?? 0,
+    reasoning_output_tokens: counters.reasoning_output_tokens ?? 0,
+    total_tokens: counters.total_tokens,
+  }
+  if (
+    usage.total_tokens !== usage.input_tokens + usage.output_tokens ||
+    usage.cached_input_tokens + usage.cache_write_input_tokens > usage.input_tokens ||
+    usage.reasoning_output_tokens > usage.output_tokens
+  )
+    return
+  return usage
+}
+type ParserState = {
+  session: string
+  model: string
+  lastTotal?: CodexTotal
+  lastUsage?: CodexUsage
+  lastTotalAt?: string
+}
 function createTranscriptUsage(
   provider: 'codex' | 'claude',
   fallbackSession: string,
@@ -27,14 +101,23 @@ function createTranscriptUsage(
   let session = initial?.session ?? fallbackSession,
     model = initial?.model ?? ''
   let lastTotal = initial?.lastTotal
+  let lastUsage = initial?.lastUsage
   let lastTotalAt = initial?.lastTotalAt
   let invalidTotalAt: number | undefined
+  const issues = new Map<string, number>()
+  const notices = () => [...issues].filter(([, at]) => at >= since).map(([notice]) => notice)
   return {
     accept(line: unknown) {
       const value = record(line),
         payload = record(value.payload)
-      if (provider === 'codex' && value.type === 'session_meta' && typeof payload.id === 'string')
+      if (provider === 'codex' && value.type === 'session_meta' && typeof payload.id === 'string') {
+        if (session !== payload.id) {
+          lastTotal = undefined
+          lastUsage = undefined
+          lastRowId = undefined
+        }
         session = payload.id
+      }
       if (
         provider === 'codex' &&
         value.type === 'turn_context' &&
@@ -47,23 +130,88 @@ function createTranscriptUsage(
       if (provider === 'codex') {
         if (value.type !== 'event_msg' || payload.type !== 'token_count') return
         const info = record(payload.info),
-          total = record(info.total_token_usage),
-          usage = record(info.last_token_usage)
-        const duplicate = typeof total.total_tokens === 'number' && total.total_tokens === lastTotal
+          rawTotal = record(info.total_token_usage),
+          total = codexTotal(rawTotal),
+          usage = codexUsage(record(info.last_token_usage))
+        const inconsistent = () =>
+          issues.set(
+            'codex: skipped inconsistent token counters in CLI history.',
+            Date.parse(timestamp),
+          )
+        if (Object.keys(rawTotal).length && !total) {
+          inconsistent()
+          return
+        }
+        // A request-only event does not establish a new billable request, even
+        // before the first baseline. Its paired notification may arrive later.
+        if (!total) {
+          if (usage)
+            issues.set(
+              'codex: excluded CLI records without cumulative token counters; usage may be incomplete.',
+              Date.parse(timestamp),
+            )
+          return
+        }
+        const previousTotal = lastTotal,
+          acceptedUsage = lastUsage
+        // A stale snapshot must never move the baseline backwards.
+        if (
+          total &&
+          previousTotal &&
+          codexCounters.some((key) => {
+            const previous = previousTotal[key],
+              current = total[key]
+            return previous !== undefined && current !== undefined && current < previous
+          })
+        )
+          return
+        const duplicate =
+          !!total &&
+          !!previousTotal &&
+          codexCounters.every((key) => total[key] === previousTotal[key])
         if (duplicate && !lastRowId) return
         if (!duplicate) {
-          lastTotal = typeof total.total_tokens === 'number' ? total.total_tokens : undefined
+          lastTotal = total
           lastTotalAt = timestamp
           lastRowId = undefined
         }
-        if (typeof usage.input_tokens !== 'number' || typeof usage.output_tokens !== 'number') {
-          if (!duplicate && typeof lastTotal === 'number')
+        if (!usage) {
+          // Codex can repeat a cumulative snapshot with zero request counters and a
+          // context-size total. It contains no new billable usage; keep the accepted row.
+          if (duplicate) return
+          inconsistent()
+          if (!duplicate && lastTotal)
             invalidTotalAt = Math.min(invalidTotalAt ?? Infinity, Date.parse(timestamp))
           return
         }
-        const cacheRead = count(usage.cached_input_tokens),
-          input = Math.max(0, count(usage.input_tokens) - cacheRead),
-          output = count(usage.output_tokens)
+        if (
+          duplicate &&
+          (!acceptedUsage || codexCounters.some((key) => usage[key] !== acceptedUsage[key]))
+        )
+          return
+        if (
+          !duplicate &&
+          total &&
+          codexCounters.some((key) => {
+            const current = total[key],
+              previous = previousTotal?.[key]
+            if (current === undefined) return false
+            return previous === undefined ? current < usage[key] : current - previous !== usage[key]
+          })
+        ) {
+          inconsistent()
+          invalidTotalAt = Math.min(invalidTotalAt ?? Infinity, Date.parse(timestamp))
+          return
+        }
+        if (!total || codexCounters.some((key) => total[key] === undefined))
+          issues.set(
+            'codex: CLI history has partial token counters; reconciliation is limited.',
+            Date.parse(timestamp),
+          )
+        const cacheRead = usage.cached_input_tokens,
+          cacheWrite = usage.cache_write_input_tokens,
+          input = usage.input_tokens - cacheRead - cacheWrite,
+          output = usage.output_tokens
         const id = createHash('sha256')
           .update(JSON.stringify([session, total, usage, timestamp]))
           .digest('hex')
@@ -81,8 +229,8 @@ function createTranscriptUsage(
             startedAt: timestamp,
             finishedAt: timestamp,
             status: 'completed',
-            tokens: input + output + cacheRead,
-            tokenUsage: { input, output, cacheRead, cacheWrite: 0 },
+            tokens: input + output + cacheRead + cacheWrite,
+            tokenUsage: { input, output, cacheRead, cacheWrite },
           },
         }
         if (duplicate && lastRowId) {
@@ -97,6 +245,7 @@ function createTranscriptUsage(
         } else {
           rows.set(id, row)
           lastRowId = id
+          lastUsage = usage
         }
       } else {
         if (value.type !== 'assistant') return
@@ -154,20 +303,36 @@ function createTranscriptUsage(
       if (lastRowId && rows.has(lastRowId)) lastTotalAt = rows.get(lastRowId)!.turn.startedAt
       if (lastTotalAt && Date.parse(lastTotalAt) < since) {
         lastTotal = undefined
+        lastUsage = undefined
         lastRowId = undefined
       }
     },
-    preview(line: unknown): UsageRecord[] {
+    preview(line: unknown): { records: UsageRecord[]; notices: string[] } {
       const preview = createTranscriptUsage(provider, fallbackSession, since, {
         session,
         model,
         lastTotal,
+        lastUsage,
         lastTotalAt,
       })
       preview.accept(line)
-      return preview.records()
+      return { records: preview.records(), notices: preview.notices() }
+    },
+    retainedBytes: (limit: number) => {
+      let bytes = 0
+      for (const row of rows.values()) {
+        bytes += retainedSize(row)
+        if (bytes > limit) return bytes
+      }
+      for (const copies of duplicates.values())
+        for (const row of copies) {
+          bytes += retainedSize(row)
+          if (bytes > limit) return bytes
+        }
+      return bytes
     },
     records: (): UsageRecord[] => [...rows.values()],
+    notices,
   }
 }
 export function transcriptUsage(
@@ -179,12 +344,16 @@ export function transcriptUsage(
   for (const line of lines) parser.accept(line)
   return parser.records()
 }
-async function* files(directory: string): AsyncGenerator<string> {
+async function* files(directory: string, compressed: boolean): AsyncGenerator<string> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.isSymbolicLink()) continue
     const path = join(directory, entry.name)
-    if (entry.isDirectory()) yield* files(path)
-    else if (entry.isFile() && entry.name.endsWith('.jsonl')) yield path
+    if (entry.isDirectory()) yield* files(path, compressed)
+    else if (
+      entry.isFile() &&
+      (entry.name.endsWith('.jsonl') || (compressed && entry.name.endsWith('.jsonl.zst')))
+    )
+      yield path
   }
 }
 type TranscriptScan = {
@@ -198,6 +367,10 @@ type TranscriptScan = {
   suffix: Buffer
   parser: ReturnType<typeof createTranscriptUsage>
   trailing: Buffer[]
+  trailingBytes: number
+  droppingLine: boolean
+  oversized: boolean
+  retainedBytes: number
   incomplete: boolean
 }
 async function sample(file: FileHandle, position: number, length: number) {
@@ -216,7 +389,111 @@ function acceptText(scan: TranscriptScan, text: string) {
     scan.incomplete = true
   }
 }
-async function appendTranscript(file: FileHandle, scan: TranscriptScan, size: number) {
+/** Recognize only the canonical Codex envelope, before any unbounded message content.
+ * Unknown layouts and usage-bearing events still report the size limit. */
+function irrelevantCodexRow(prefix: string) {
+  const envelope =
+    /^\s*\{\s*(?:"timestamp"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*)?(?:"ordinal"\s*:\s*\d+\s*,\s*)?"type"\s*:\s*"(response_item|event_msg|compacted)"\s*,\s*"payload"\s*:\s*/.exec(
+      prefix,
+    )
+  if (!envelope) return false
+  if (envelope[1] === 'response_item' || envelope[1] === 'compacted') return true
+  return /^\{\s*"type"\s*:\s*"(?:item_completed|agent_message|agent_reasoning|user_message)"\s*[,}]/.test(
+    prefix.slice(envelope[0].length),
+  )
+}
+function appendLine(scan: TranscriptScan, chunk: Buffer, limit: number) {
+  if (scan.droppingLine) return
+  if (scan.trailingBytes + chunk.length > limit) {
+    // Inspect a bounded header, never parse or retain the oversized message body.
+    const irrelevant =
+      scan.provider === 'codex' &&
+      irrelevantCodexRow(
+        Buffer.concat(
+          [...scan.trailing, chunk],
+          Math.min(scan.trailingBytes + chunk.length, 4096),
+        ).toString('utf8'),
+      )
+    scan.trailing = []
+    scan.trailingBytes = 0
+    scan.droppingLine = true
+    if (!irrelevant) scan.oversized = true
+    return
+  }
+  if (chunk.length) {
+    // Own just these bytes; a small tail must not retain the entire stream chunk.
+    scan.trailing.push(Buffer.from(chunk))
+    scan.trailingBytes += chunk.length
+  }
+}
+// Node's zstd stream currently accepts truncated frames. Check framing incrementally
+// so an unfinished archive cannot silently become a successful cached scan.
+async function* completeZstdFrames(input: AsyncIterable<unknown>) {
+  let stage: 'magic' | 'descriptor' | 'block' | 'skipSize' = 'magic'
+  let pending = Buffer.alloc(0),
+    skip = 0,
+    checksum = false,
+    frames = 0
+  for await (const chunk of input) {
+    if (!Buffer.isBuffer(chunk)) throw new Error('Unexpected archive encoding')
+    let at = 0
+    while (at < chunk.length) {
+      if (skip) {
+        const length = Math.min(skip, chunk.length - at)
+        skip -= length
+        at += length
+        continue
+      }
+      const needed = stage === 'descriptor' ? 1 : stage === 'block' ? 3 : 4
+      const length = Math.min(needed - pending.length, chunk.length - at)
+      pending = Buffer.concat([pending, chunk.subarray(at, at + length)])
+      at += length
+      if (pending.length < needed) continue
+      if (stage === 'magic') {
+        const magic = pending.readUInt32LE()
+        if (magic === 0xfd2fb528) stage = 'descriptor'
+        else if ((magic & 0xfffffff0) === 0x184d2a50) stage = 'skipSize'
+        else throw new Error('Invalid zstd frame')
+      } else if (stage === 'skipSize') {
+        skip = pending.readUInt32LE()
+        stage = 'magic'
+        frames++
+      } else if (stage === 'descriptor') {
+        const descriptor = pending[0]
+        const single = !!(descriptor & 32)
+        checksum = !!(descriptor & 4)
+        skip =
+          (single ? 0 : 1) +
+          [0, 1, 2, 4][descriptor & 3] +
+          [single ? 1 : 0, 2, 4, 8][descriptor >>> 6]
+        stage = 'block'
+      } else {
+        const header = pending.readUIntLE(0, 3)
+        const kind = (header >>> 1) & 3
+        if (kind === 3) throw new Error('Invalid zstd block')
+        const last = !!(header & 1)
+        skip = kind === 1 ? 1 : header >>> 3
+        if (last) {
+          skip += checksum ? 4 : 0
+          stage = 'magic'
+          frames++
+        }
+      }
+      pending = Buffer.alloc(0)
+    }
+    yield chunk
+  }
+  if (skip || pending.length || stage !== 'magic' || !frames)
+    throw new Error('Incomplete zstd frame')
+}
+async function appendTranscript(
+  file: FileHandle,
+  scan: TranscriptScan,
+  size: number,
+  lineBytes: number,
+  compressed: boolean,
+) {
+  if (compressed && !size) throw new Error('Incomplete zstd frame')
   if (size <= scan.size) return
   let scanned = 0
   let bytes = scan.size
@@ -227,25 +504,80 @@ async function appendTranscript(file: FileHandle, scan: TranscriptScan, size: nu
     start: scan.size,
     end: size - 1,
   })
-  for await (const chunk of stream) {
-    if (!Buffer.isBuffer(chunk)) throw new Error('Unexpected transcript stream encoding')
-    bytes += chunk.length
-    let start = 0
-    for (let i = 0; i < chunk.length; i++) {
-      if (chunk[i] !== 10 && chunk[i] !== 13) continue
-      scan.trailing.push(chunk.subarray(start, i))
-      acceptText(scan, Buffer.concat(scan.trailing).toString('utf8'))
-      scan.trailing = []
-      start = i + 1
-      if (++scanned % 256 === 0) await setImmediate()
+  const consume = async (input: AsyncIterable<unknown>) => {
+    for await (const chunk of input) {
+      if (!Buffer.isBuffer(chunk)) throw new Error('Unexpected transcript stream encoding')
+      bytes += chunk.length
+      let start = 0
+      for (let i = 0; i < chunk.length; i++) {
+        if (chunk[i] !== 10 && chunk[i] !== 13) continue
+        appendLine(scan, chunk.subarray(start, i), lineBytes)
+        if (!scan.droppingLine) acceptText(scan, Buffer.concat(scan.trailing).toString('utf8'))
+        scan.trailing = []
+        scan.trailingBytes = 0
+        scan.droppingLine = false
+        start = i + 1
+        if (++scanned % 256 === 0) await setImmediate()
+      }
+      if (start < chunk.length) appendLine(scan, chunk.subarray(start), lineBytes)
     }
-    if (start < chunk.length) scan.trailing.push(chunk.subarray(start))
   }
-  if (bytes !== size) throw new Error('Transcript changed during scan')
+  if (compressed) await pipeline(stream, completeZstdFrames, createZstdDecompress(), consume)
+  else await consume(stream)
+  if ((compressed ? stream.bytesRead : bytes) !== size)
+    throw new Error('Transcript changed during scan')
   scan.size = size
 }
 /** Cached per-file scans run only on the explicit usage path, never during chat streaming. */
+type TranscriptLimits = {
+  lineBytes: number
+  cacheBytes: number
+  files: number
+  resultBytes: number
+  idleMs: number
+}
 export class UsageTranscripts {
+  constructor(
+    private readonly limits: TranscriptLimits = {
+      lineBytes: 4 * 1024 * 1024,
+      cacheBytes: 32 * 1024 * 1024,
+      files: 128,
+      resultBytes: 8 * 1024 * 1024,
+      idleMs: 300_000,
+    },
+  ) {}
+  private expiry?: ReturnType<typeof setTimeout>
+  private lastRead = 0
+  private expire() {
+    this.cache.clear()
+    this.completed = undefined
+  }
+  private scheduleExpiry() {
+    if (!this.cache.size && !this.completed) return
+    this.expiry = setTimeout(() => {
+      this.expiry = undefined
+      this.expire()
+    }, this.limits.idleMs)
+    this.expiry.unref()
+  }
+  private retain(path: string, scan: TranscriptScan) {
+    const resident = this.cache.delete(path)
+    scan.retainedBytes =
+      scan.parser.retainedBytes(this.limits.cacheBytes) + scan.trailingBytes + 1024
+    if (scan.retainedBytes > this.limits.cacheBytes) return
+    let bytes = scan.retainedBytes
+    for (const entry of this.cache.values()) bytes += entry.retainedBytes
+    // A sequential full-directory walk must not evict every resident just before reusing it
+    // on the next refresh. Admit new files only into spare space; grown residents may evict.
+    if (!resident && (this.cache.size >= this.limits.files || bytes > this.limits.cacheBytes))
+      return
+    this.cache.set(path, scan)
+    for (const [key, entry] of this.cache) {
+      if (this.cache.size <= this.limits.files && bytes <= this.limits.cacheBytes) break
+      this.cache.delete(key)
+      bytes -= entry.retainedBytes
+    }
+  }
   private readonly cache = new Map<string, TranscriptScan>()
   private pending?: Promise<{ records: UsageRecord[]; notices: string[] }>
   private pendingKey?: string
@@ -292,8 +624,14 @@ export class UsageTranscripts {
       await this.pending
       return this.read(agents, knownSessions, force)
     }
-    if (!force && this.completed?.key === key && Date.now() - this.completed.at < 300000)
+    clearTimeout(this.expiry)
+    if (Date.now() - this.lastRead >= this.limits.idleMs) this.expire()
+    this.lastRead = Date.now()
+    if (!force && this.completed?.key === key && Date.now() - this.completed.at < 300000) {
+      this.scheduleExpiry()
       return this.completed.result
+    }
+    this.completed = undefined
     this.pendingKey = key
     this.pending = (async () => {
       const records = new Map<string, UsageRecord>(),
@@ -315,17 +653,22 @@ export class UsageTranscripts {
                 records.set(`opencode:${row.turn.id}`, row)
             continue
           }
-          for await (const path of files(canonical)) {
+          for await (const path of files(canonical, provider === 'codex')) {
             scannedFiles.add(path)
             try {
               const file = await open(path, 'r')
               let rows: UsageRecord[]
               try {
                 const info = await file.stat()
+                const compressed = path.endsWith('.jsonl.zst')
                 let scan = this.cache.get(path)
                 if (
                   scan &&
                   (scan.parser.requiresRescan(since) ||
+                    (compressed &&
+                      (info.size !== scan.size ||
+                        info.mtimeMs !== scan.mtime ||
+                        info.ctimeMs !== scan.ctime)) ||
                     scan.provider !== provider ||
                     scan.device !== info.dev ||
                     scan.inode !== info.ino ||
@@ -354,13 +697,21 @@ export class UsageTranscripts {
                   ctime: info.ctimeMs,
                   prefix: Buffer.alloc(0),
                   suffix: Buffer.alloc(0),
-                  parser: createTranscriptUsage(provider, path, since),
+                  parser: createTranscriptUsage(
+                    provider,
+                    compressed ? path.slice(0, -4) : path,
+                    since,
+                  ),
                   trailing: [],
+                  trailingBytes: 0,
+                  droppingLine: false,
+                  oversized: false,
+                  retainedBytes: 0,
                   incomplete: false,
                 }
                 scan.parser.advance(since)
                 const changed = scan.size !== info.size || !scan.prefix.length
-                await appendTranscript(file, scan, info.size)
+                await appendTranscript(file, scan, info.size, this.limits.lineBytes, compressed)
                 if (changed) {
                   scan.prefix = await sample(file, 0, Math.min(info.size, 256))
                   scan.suffix = await sample(
@@ -368,6 +719,15 @@ export class UsageTranscripts {
                     Math.max(0, info.size - 256),
                     Math.min(info.size, 256),
                   )
+                }
+                if (compressed) {
+                  const current = await file.stat()
+                  if (
+                    current.size !== info.size ||
+                    current.mtimeMs !== info.mtimeMs ||
+                    current.ctimeMs !== info.ctimeMs
+                  )
+                    throw new Error('Transcript changed during scan')
                 }
                 scan.mtime = info.mtimeMs
                 scan.ctime = info.ctimeMs
@@ -379,17 +739,24 @@ export class UsageTranscripts {
                   try {
                     value = JSON.parse(Buffer.concat(scan.trailing).toString('utf8'))
                   } catch {
+                    if (compressed) scan.incomplete = true
                     // A partial final line belongs to the next refresh.
                   }
                   if (value !== undefined) {
                     const preview = scan.parser.preview(value)
-                    const ids = new Set(preview.map((row) => row.turn.id))
-                    rows = rows.filter((row) => !ids.has(row.turn.id)).concat(preview)
+                    const ids = new Set(preview.records.map((row) => row.turn.id))
+                    rows = rows.filter((row) => !ids.has(row.turn.id)).concat(preview.records)
+                    notices.push(...preview.notices)
                   }
                 }
+                notices.push(...scan.parser.notices())
                 if (scan.incomplete)
                   notices.push(`${provider}: skipped an incomplete transcript row.`)
-                this.cache.set(path, scan)
+                if (scan.oversized)
+                  notices.push(
+                    `${provider}: skipped a transcript row exceeding ${this.limits.lineBytes} bytes; usage may be incomplete.`,
+                  )
+                this.retain(path, scan)
               } finally {
                 await file.close()
               }
@@ -412,11 +779,17 @@ export class UsageTranscripts {
     })()
     try {
       const result = await this.pending
-      this.completed = { at: Date.now(), key, result }
+      let resultBytes = retainedSize(result.notices)
+      for (const row of result.records) {
+        resultBytes += retainedSize(row)
+        if (resultBytes > this.limits.resultBytes) break
+      }
+      if (resultBytes <= this.limits.resultBytes) this.completed = { at: Date.now(), key, result }
       return result
     } finally {
       this.pending = undefined
       this.pendingKey = undefined
+      this.scheduleExpiry()
     }
   }
 }

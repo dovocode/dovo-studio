@@ -1,0 +1,1961 @@
+{
+  "onnxruntime": {
+    "common": "1.23.2",
+    "node": "1.23.2"
+  },
+  "platform": "linux",
+  "architecture": "x64",
+  "peakRssKiB": 883296,
+  "cases": 216,
+  "correct": 205,
+  "tokenizerMismatches": 0,
+  "changedPredictions": [],
+  "medianMs": 143.0710100000033,
+  "p95Ms": 184.8944819999997,
+  "observations": [
+    {
+      "input": "APP_ENV=staging security find-identity -v",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 237.96660199999997,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "https://portal.larch.app/#overview",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 124.05116499999997,
+      "maxLogitDifference": 0.00000286102294921875
+    },
+    {
+      "input": "What information is on http://health.birch.org/help?",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 134.4094120000001,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "Wat betekent de uitvoer van ffmpeg -i input.mov output.mp4?",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 136.4055199999998,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "git show HEAD:package.json | tee /tmp/workspace.log",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 137.88505499999997,
+      "maxLogitDifference": 0.00000286102294921875
+    },
+    {
+      "input": "I'd like to open localhost:4629/?view=home",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 132.05796400000008,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "ifconfig en0",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 179.7173150000001,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "http://quartz.tools",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 137.35226599999987,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "https://localhost:3317/settings?tab=terminal",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 132.82806000000005,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "I'd like to open https://quartz.app/docs",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 127.22663999999986,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "open http://studio.lan:8176 in a browser",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 138.11912900000016,
+      "maxLogitDifference": 9.5367431640625e-7
+    },
+    {
+      "input": "Suggest an alternative to ssh-keygen -lf ~/.ssh/id_ed25519.pub",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 129.48162599999978,
+      "maxLogitDifference": 0.00000286102294921875
+    },
+    {
+      "input": "Warum schlägt convert input.jpg output.webp fehl?",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 123.95611499999995,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "http://quartz.tools/#overview",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 141.11990100000003,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "http://localhost:3317/#overview",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 143.54222299999992,
+      "maxLogitDifference": 0.00000476837158203125
+    },
+    {
+      "input": "ansible-playbook deploy.yml --check 2>&1",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 135.9323999999997,
+      "maxLogitDifference": 0.0000019073486328125
+    },
+    {
+      "input": "Computer: Satellite Laptop\nProject: Aurora Notes\nCommand: git log -39 --oneline",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 140.69684000000007,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Warum schlägt gh run view --log-failed fehl?",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 140.18687799999998,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "Help: opencode --continue isn't working",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 157.18458499999997,
+      "maxLogitDifference": 0.000049591064453125
+    },
+    {
+      "input": "fzf --preview 'cat {}' | tee /tmp/workspace.log",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 153.17171499999995,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "https://health.birch.org/settings?tab=terminal",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 159.5815550000002,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "load dovocode.com/?view=home",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 163.79905199999985,
+      "maxLogitDifference": 0.00005340576171875
+    },
+    {
+      "input": "https://lab.internal:9988/api/v2/check?command=echo%20hi",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 142.6926440000002,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "APP_ENV=staging ansible-playbook deploy.yml --check",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 150.56133900000032,
+      "maxLogitDifference": 0.00000286102294921875
+    },
+    {
+      "input": "Use Sol 6.1 on Satellite Laptop in project Helix Terminal to fix the startup crash",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 165.04441700000007,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "gh pr list --state open 2>&1",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 193.97300799999994,
+      "maxLogitDifference": 0.0000019073486328125
+    },
+    {
+      "input": "quartz.tools/settings?tab=terminal",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 153.22136000000046,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "APP_ENV=staging zellij attach work",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 145.23074499999984,
+      "maxLogitDifference": 0.00001621246337890625
+    },
+    {
+      "input": "Walk me through using pnpm dlx create-vite@latest demo",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 168.6904569999997,
+      "maxLogitDifference": 0.0000019073486328125
+    },
+    {
+      "input": "http://portal.larch.app/settings?tab=terminal",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 161.45195500000045,
+      "maxLogitDifference": 0.00000476837158203125
+    },
+    {
+      "input": "az account show\n# inspect the result",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 140.06997899999988,
+      "maxLogitDifference": 0.00000286102294921875
+    },
+    {
+      "input": "load dovocode.com",
+      "task": "destination",
+      "expected": "browser",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 213.5078110000004,
+      "maxLogitDifference": 0.0002181529998779297
+    },
+    {
+      "input": "Use Helios Mini on Atlas Workstation in project Larch Calendar to fix the startup crash",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 170.0882529999999,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "ansible-playbook deploy.yml --check",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 163.56729600000017,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "echo 'http://lab.internal:9988/help'",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "terminal",
+      "actual": "terminal",
+      "ms": 135.04784699999982,
+      "maxLogitDifference": 0.00001049041748046875
+    },
+    {
+      "input": "load localhost:4629/?view=home",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 157.77009199999975,
+      "maxLogitDifference": 0.00001239776611328125
+    },
+    {
+      "input": "I'd like to open docs.aurora.io",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 157.32598700000017,
+      "maxLogitDifference": 0.000035762786865234375
+    },
+    {
+      "input": "Find out whether https://quartz.tools/help supports passkeys",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 163.78884499999913,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "https://health.birch.org/api/v2/check?command=echo%20hi",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 165.7909410000002,
+      "maxLogitDifference": 0.00000286102294921875
+    },
+    {
+      "input": "open dovocode.com/docs#install and explain its design",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 158.68359400000008,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "I'm asking about Aurora PC, not selecting it",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 147.1866540000001,
+      "maxLogitDifference": 0.00002002716064453125
+    },
+    {
+      "input": "For this request, switch to computer Dune Server",
+      "task": "runtime",
+      "expected": "runtime:test:76:3",
+      "python": "runtime:test:76:3",
+      "actual": "runtime:test:76:3",
+      "ms": 127.10258299999987,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "I'm asking about Helix Build Host, not selecting it",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 134.25039099999958,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "What is the difference between Mac Studio and another option?",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 120.45527899999979,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Use Fable 5.1 on Satellite Laptop in project Aurora Notes to fix the startup crash",
+      "task": "runtime",
+      "expected": "runtime:test:scene:12:2",
+      "python": "runtime:test:scene:12:2",
+      "actual": "runtime:test:scene:12:2",
+      "ms": 140.2729989999998,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "Computer: Atlas Workstation\nProject: Helix Terminal\nCommand: git log -30 --oneline",
+      "task": "runtime",
+      "expected": "runtime:test:scene:29:1",
+      "python": "runtime:test:scene:29:1",
+      "actual": "runtime:test:scene:29:1",
+      "ms": 131.86363299999994,
+      "maxLogitDifference": 0.00000858306884765625
+    },
+    {
+      "input": "For this request, switch to computer Atlas Workstation",
+      "task": "runtime",
+      "expected": "runtime:test:64:0",
+      "python": "runtime:test:64:0",
+      "actual": "runtime:test:64:0",
+      "ms": 121.00213500000064,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "open https://quartz.app/docs/workspace?item=34 in the Documentation browser profile on Dune Server",
+      "task": "runtime",
+      "expected": "runtime:test:scene:34:3",
+      "python": "runtime:test:scene:34:3",
+      "actual": "runtime:test:scene:34:3",
+      "ms": 157.12770600000022,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "The target machine is Dune Server; open a terminal",
+      "task": "runtime",
+      "expected": "runtime:test:47:0",
+      "python": "runtime:test:47:0",
+      "actual": "runtime:test:47:0",
+      "ms": 138.8953900000006,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "open dovocode.com/workspace?item=28 in the Shopping browser profile on Helix Build Host",
+      "task": "runtime",
+      "expected": "runtime:test:scene:28:0",
+      "python": "runtime:test:scene:28:0",
+      "actual": "runtime:test:scene:28:0",
+      "ms": 146.99149600000055,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "Computer: Atlas Workstation\nProject: Atlas Payments\nCommand: git log -6 --oneline",
+      "task": "runtime",
+      "expected": "runtime:test:scene:5:2",
+      "python": "runtime:test:scene:5:2",
+      "actual": "runtime:test:scene:5:2",
+      "ms": 138.8679859999993,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "Use Sol 6.1 on Mac Studio in project Dovo Studio to fix the startup crash",
+      "task": "runtime",
+      "expected": "runtime:test:scene:9:2",
+      "python": "runtime:test:scene:9:2",
+      "actual": "runtime:test:scene:9:2",
+      "ms": 145.30394799999885,
+      "maxLogitDifference": 0.000008106231689453125
+    },
+    {
+      "input": "For this request, switch to computer Dune Server",
+      "task": "runtime",
+      "expected": "runtime:test:103:3",
+      "python": "runtime:test:103:3",
+      "actual": "runtime:test:103:3",
+      "ms": 132.1209600000002,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "What information is on https://camera.local:8087/help?",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 135.86168700000053,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Run the work from the paired Aurora PC computer",
+      "task": "runtime",
+      "expected": "runtime:test:72:0",
+      "python": "runtime:test:72:0",
+      "actual": "runtime:test:72:0",
+      "ms": 135.7388519999986,
+      "maxLogitDifference": 0.00001621246337890625
+    },
+    {
+      "input": "Computer: Dune Server\nProject: Larch Calendar\nCommand: git log -18 --oneline",
+      "task": "runtime",
+      "expected": "runtime:test:scene:17:0",
+      "python": "runtime:test:scene:17:0",
+      "actual": "runtime:test:scene:17:0",
+      "ms": 140.20531599999958,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Use Fable 5.1 on Helix Build Host in project Aurora Notes to fix the startup crash",
+      "task": "runtime",
+      "expected": "runtime:test:scene:3:0",
+      "python": "runtime:test:scene:3:0",
+      "actual": "runtime:test:scene:3:0",
+      "ms": 153.44409199999973,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Use Granite 4.2 on Helix Build Host in project Quartz Analytics to fix the startup crash",
+      "task": "runtime",
+      "expected": "runtime:test:scene:6:1",
+      "python": "runtime:test:scene:6:1",
+      "actual": "runtime:test:scene:6:1",
+      "ms": 154.22555199999988,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Computer: Helix Build Host\nProject: Dovo Studio\nCommand: git log -15 --oneline",
+      "task": "runtime",
+      "expected": "runtime:test:scene:14:2",
+      "python": "runtime:test:scene:14:2",
+      "actual": "runtime:test:scene:14:2",
+      "ms": 143.75665600000139,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Run the work from the paired Helix Build Host computer",
+      "task": "runtime",
+      "expected": "runtime:test:51:0",
+      "python": "runtime:test:51:0",
+      "actual": "runtime:test:51:0",
+      "ms": 149.0003889999989,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "open docs.aurora.io/workspace?item=16 in the Development browser profile on Helix Build Host",
+      "task": "runtime",
+      "expected": "runtime:test:scene:16:1",
+      "python": "runtime:test:scene:16:1",
+      "actual": "runtime:test:scene:16:1",
+      "ms": 153.12090700000044,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Run the work from the paired Satellite Laptop computer",
+      "task": "runtime",
+      "expected": "runtime:test:129:0",
+      "python": "runtime:test:129:0",
+      "actual": "runtime:test:129:0",
+      "ms": 141.40391400000044,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Run the work from the paired Satellite Laptop computer",
+      "task": "runtime",
+      "expected": "runtime:test:69:1",
+      "python": "runtime:test:69:1",
+      "actual": "runtime:test:69:1",
+      "ms": 155.38659000000007,
+      "maxLogitDifference": 0.00001049041748046875
+    },
+    {
+      "input": "Warum schlägt gcloud projects list fehl?",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 147.93351099999927,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "For this request, switch to computer Aurora PC",
+      "task": "runtime",
+      "expected": "runtime:test:1:1",
+      "python": "runtime:test:1:1",
+      "actual": "runtime:test:1:1",
+      "ms": 164.5889329999991,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "The target machine is Satellite Laptop; open a terminal",
+      "task": "runtime",
+      "expected": "runtime:test:41:4",
+      "python": "runtime:test:41:4",
+      "actual": "runtime:test:41:4",
+      "ms": 154.66196300000047,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "For this request, switch to computer Dune Server",
+      "task": "runtime",
+      "expected": "runtime:test:118:1",
+      "python": "runtime:test:118:1",
+      "actual": "runtime:test:118:1",
+      "ms": 144.11748099999932,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "Run the work from the paired Satellite Laptop computer",
+      "task": "runtime",
+      "expected": "runtime:test:78:3",
+      "python": "runtime:test:78:3",
+      "actual": "runtime:test:78:3",
+      "ms": 155.51048400000036,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "The target machine is Satellite Laptop; open a terminal",
+      "task": "runtime",
+      "expected": "runtime:test:17:2",
+      "python": "runtime:test:17:2",
+      "actual": "runtime:test:17:2",
+      "ms": 151.9149780000007,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "I'm asking about Satellite Laptop, not selecting it",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 172.63597300000038,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "The target machine is Mac Studio; open a terminal",
+      "task": "runtime",
+      "expected": "runtime:test:29:2",
+      "python": "runtime:test:29:2",
+      "actual": "runtime:test:29:2",
+      "ms": 150.300432,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "For this request, switch to computer Moon Laptop",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 140.25666099999944,
+      "maxLogitDifference": 0.00005054473876953125
+    },
+    {
+      "input": "open dovocode.com/workspace?item=22 in the Private browser profile on Mac Studio",
+      "task": "runtime",
+      "expected": "runtime:test:scene:22:0",
+      "python": "runtime:test:scene:22:0",
+      "actual": "runtime:test:scene:22:0",
+      "ms": 145.42489999999998,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Run the work from the paired Atlas Workstation computer",
+      "task": "runtime",
+      "expected": "runtime:test:57:2",
+      "python": "runtime:test:57:2",
+      "actual": "runtime:test:57:2",
+      "ms": 140.7622819999997,
+      "maxLogitDifference": 0.0000209808349609375
+    },
+    {
+      "input": "Can you explain a screenshot that mentions Helix Build Host?",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 134.55823799999962,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "The target machine is Satellite Laptop; open a terminal",
+      "task": "runtime",
+      "expected": "runtime:test:38:3",
+      "python": "runtime:test:38:3",
+      "actual": "runtime:test:38:3",
+      "ms": 131.3987699999998,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "The target machine is Mac Studio; open a terminal",
+      "task": "runtime",
+      "expected": "runtime:test:62:0",
+      "python": "runtime:test:62:0",
+      "actual": "runtime:test:62:0",
+      "ms": 121.29175899999973,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Computer: Mac Studio\nProject: Aurora Notes\nCommand: git log -9 --oneline",
+      "task": "runtime",
+      "expected": "runtime:test:scene:8:2",
+      "python": "runtime:test:scene:8:2",
+      "actual": "runtime:test:scene:8:2",
+      "ms": 133.78714299999956,
+      "maxLogitDifference": 0.000012874603271484375
+    },
+    {
+      "input": "Can you explain a screenshot that mentions Mac Studio?",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 141.33020399999987,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "Run the work from the paired Atlas Workstation computer",
+      "task": "runtime",
+      "expected": "runtime:test:48:1",
+      "python": "runtime:test:48:1",
+      "actual": "runtime:test:48:1",
+      "ms": 122.9318230000008,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "What is the difference between Granite 4.2 and another option?",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 140.67194299999937,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Use Fable 5.1 on Satellite Laptop in project Aurora Notes to fix the startup crash",
+      "task": "model",
+      "expected": "model:test:scene:12:3",
+      "python": "model:test:scene:12:3",
+      "actual": "model:test:scene:12:3",
+      "ms": 140.86468800000148,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "I'm asking about Wonder-full 1.0, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 148.30719900000076,
+      "maxLogitDifference": 0.00002193450927734375
+    },
+    {
+      "input": "Let model Fable 5.1 handle the code review",
+      "task": "model",
+      "expected": "model:test:118:1",
+      "python": "model:test:118:1",
+      "actual": "model:test:118:1",
+      "ms": 121.30991899999935,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "For this request, switch to Helios Mini",
+      "task": "model",
+      "expected": "model:test:89:1",
+      "python": "model:test:89:1",
+      "actual": "model:test:89:1",
+      "ms": 124.90389099999993,
+      "maxLogitDifference": 0.00001239776611328125
+    },
+    {
+      "input": "I'm asking about Opus 5.5, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 129.79180799999995,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "For this request, switch to Sol 6.1",
+      "task": "model",
+      "expected": "model:test:71:1",
+      "python": "model:test:71:1",
+      "actual": "model:test:71:1",
+      "ms": 114.15241700000115,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Ask Sol 6.1 to look at the patch",
+      "task": "model",
+      "expected": "model:test:87:0",
+      "python": "model:test:87:0",
+      "actual": "model:test:87:0",
+      "ms": 134.61274500000036,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "Can you explain a screenshot that mentions Altair Pro?",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 140.33668399999988,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Let model Opus 5.5 handle the code review",
+      "task": "model",
+      "expected": "model:test:97:1",
+      "python": "model:test:97:1",
+      "actual": "model:test:97:1",
+      "ms": 186.15838199999962,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "For this request, switch to Wonder-full 1.0",
+      "task": "model",
+      "expected": "model:test:32:2",
+      "python": "model:test:32:2",
+      "actual": "model:test:32:2",
+      "ms": 149.41104000000087,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Let model Opus 5.5 handle the code review",
+      "task": "model",
+      "expected": "model:test:76:0",
+      "python": "model:test:76:0",
+      "actual": "model:test:76:0",
+      "ms": 155.83086100000037,
+      "maxLogitDifference": 0.00001811981201171875
+    },
+    {
+      "input": "Use Granite 4.2 on Aurora PC in project Atlas Payments to fix the startup crash",
+      "task": "model",
+      "expected": "model:test:scene:39:0",
+      "python": "model:test:scene:39:0",
+      "actual": "model:test:scene:39:0",
+      "ms": 172.2616479999997,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "Use Helios Mini on Atlas Workstation in project Larch Calendar to fix the startup crash",
+      "task": "model",
+      "expected": "model:test:scene:33:2",
+      "python": "model:test:scene:33:2",
+      "actual": "model:test:scene:33:2",
+      "ms": 177.46357800000078,
+      "maxLogitDifference": 0.000010013580322265625
+    },
+    {
+      "input": "Ask Fable 5.1 to look at the patch",
+      "task": "model",
+      "expected": "model:test:96:2",
+      "python": "model:test:96:2",
+      "actual": "model:test:96:2",
+      "ms": 180.44038700000056,
+      "maxLogitDifference": 0.000009059906005859375
+    },
+    {
+      "input": "Let model Wonder-full 1.0 handle the code review",
+      "task": "model",
+      "expected": "model:test:4:0",
+      "python": "model:test:4:0",
+      "actual": "model:test:4:0",
+      "ms": 186.98165399999925,
+      "maxLogitDifference": 0.00001239776611328125
+    },
+    {
+      "input": "recovery-helper restore --session last\n# inspect the result",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 187.31692799999837,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "Use Helios Mini on Aurora PC in project Aurora Notes to fix the startup crash",
+      "task": "model",
+      "expected": "model:test:scene:0:0",
+      "python": "model:test:scene:0:0",
+      "actual": "model:test:scene:0:0",
+      "ms": 185.5014970000011,
+      "maxLogitDifference": 0.000018596649169921875
+    },
+    {
+      "input": "Ask Helios Mini to look at the patch",
+      "task": "model",
+      "expected": "model:test:69:3",
+      "python": "model:test:69:3",
+      "actual": "model:test:69:3",
+      "ms": 153.64800400000058,
+      "maxLogitDifference": 0.00002384185791015625
+    },
+    {
+      "input": "For this request, switch to Helios Mini",
+      "task": "model",
+      "expected": "model:test:68:1",
+      "python": "model:test:68:1",
+      "actual": "model:test:68:1",
+      "ms": 169.77286000000095,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "Ask Altair Pro to look at the patch",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 174.60348899999917,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Ask Sol 6.1 to look at the patch",
+      "task": "model",
+      "expected": "model:test:51:1",
+      "python": "model:test:51:1",
+      "actual": "model:test:51:1",
+      "ms": 188.3742940000011,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "Ask Granite 4.2 to look at the patch",
+      "task": "model",
+      "expected": "model:test:117:0",
+      "python": "model:test:117:0",
+      "actual": "model:test:117:0",
+      "ms": 189.5568060000005,
+      "maxLogitDifference": 0.00001239776611328125
+    },
+    {
+      "input": "Help: ip addr show isn't working",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 187.1832259999992,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Ask Wonder-full 1.0 to look at the patch",
+      "task": "model",
+      "expected": "model:test:12:1",
+      "python": "model:test:12:1",
+      "actual": "model:test:12:1",
+      "ms": 150.9335200000005,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "launchctl print gui/501 | tee /tmp/workspace.log",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 159.6387340000001,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "http://10.97.4.6:5512/#overview",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 150.52837100000033,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Ask Wonder-full 1.0 to look at the patch",
+      "task": "model",
+      "expected": "model:test:129:0",
+      "python": "model:test:129:0",
+      "actual": "model:test:129:0",
+      "ms": 139.83618600000045,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Can you explain a screenshot that mentions Sol 6.1?",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 140.95967499999824,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "Use Sol 6.1 on Satellite Laptop in project Helix Terminal to fix the startup crash",
+      "task": "model",
+      "expected": "model:test:scene:36:0",
+      "python": "model:test:scene:36:0",
+      "actual": "model:test:scene:36:0",
+      "ms": 141.64383400000224,
+      "maxLogitDifference": 0.000007152557373046875
+    },
+    {
+      "input": "Ask Wonder-full 1.0 to look at the patch",
+      "task": "model",
+      "expected": "model:test:18:1",
+      "python": "model:test:18:1",
+      "actual": "model:test:18:1",
+      "ms": 154.1949629999981,
+      "maxLogitDifference": 0.00000667572021484375
+    },
+    {
+      "input": "What is the difference between Granite 4.2 and another option?",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 148.61538799999835,
+      "maxLogitDifference": 0.000004172325134277344
+    },
+    {
+      "input": "Please continue the work",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 121.23884800000087,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Use Helios Mini on Dune Server in project Dovo Studio to fix the startup crash",
+      "task": "model",
+      "expected": "model:test:scene:24:2",
+      "python": "model:test:scene:24:2",
+      "actual": "model:test:scene:24:2",
+      "ms": 145.149895999999,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Let model Helios Mini handle the code review",
+      "task": "model",
+      "expected": "model:test:67:1",
+      "python": "model:test:67:1",
+      "actual": "model:test:67:1",
+      "ms": 164.78877699999794,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "For this request, switch to Granite 4.2",
+      "task": "model",
+      "expected": "model:test:101:5",
+      "python": "model:test:101:5",
+      "actual": "model:test:101:5",
+      "ms": 184.8944819999997,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "For this request, switch to Helios Mini",
+      "task": "model",
+      "expected": "model:test:8:1",
+      "python": "model:test:8:1",
+      "actual": "model:test:8:1",
+      "ms": 127.42809399999896,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Let model Sol 6.1 handle the code review",
+      "task": "model",
+      "expected": "model:test:52:0",
+      "python": "model:test:52:0",
+      "actual": "model:test:52:0",
+      "ms": 137.19464900000094,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "I'm asking about Fable 5.1, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 143.55436700000064,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Let model Altair Pro handle the code review",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 116.70204000000012,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "Computer: Mac Studio\nProject: Aurora Notes\nCommand: git log -45 --oneline",
+      "task": "project",
+      "expected": "project:test:scene:44:0",
+      "python": "project:test:scene:44:0",
+      "actual": "project:test:scene:44:0",
+      "ms": 143.85642599999846,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "The target repository is Tundra Cloud; improve startup",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 139.1460079999997,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "For this request, switch to project Aurora Notes",
+      "task": "project",
+      "expected": "project:test:58:0",
+      "python": "project:test:58:0",
+      "actual": "project:test:58:0",
+      "ms": 136.02766899999915,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "What is the difference between Aurora Notes and another option?",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 138.46636299999955,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Use Helios Mini on Dune Server in project Dovo Studio to fix the startup crash",
+      "task": "project",
+      "expected": "project:test:scene:24:2",
+      "python": "project:test:scene:24:2",
+      "actual": "project:test:scene:24:2",
+      "ms": 149.1098380000003,
+      "maxLogitDifference": 0.000005245208740234375
+    },
+    {
+      "input": "Use my home directory for this session",
+      "task": "project",
+      "expected": "none",
+      "python": "none",
+      "actual": "none",
+      "ms": 138.9956600000005,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "I'm asking about Tundra Cloud, not selecting it",
+      "task": "project",
+      "expected": "keep",
+      "python": "none",
+      "actual": "none",
+      "ms": 148.25436099999934,
+      "maxLogitDifference": 0.00001049041748046875
+    },
+    {
+      "input": "I'm asking about Dovo Studio, not selecting it",
+      "task": "project",
+      "expected": "keep",
+      "python": "none",
+      "actual": "none",
+      "ms": 150.04514299999937,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "I'm asking about Dovo Studio, not selecting it",
+      "task": "project",
+      "expected": "keep",
+      "python": "none",
+      "actual": "none",
+      "ms": 143.0710100000033,
+      "maxLogitDifference": 0.00002956390380859375
+    },
+    {
+      "input": "Computer: Mac Studio\nProject: Larch Calendar\nCommand: git log -36 --oneline",
+      "task": "project",
+      "expected": "project:test:scene:35:0",
+      "python": "project:test:scene:35:0",
+      "actual": "project:test:scene:35:0",
+      "ms": 140.80283099999724,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "The target repository is Larch Calendar; improve startup",
+      "task": "project",
+      "expected": "project:test:74:2",
+      "python": "project:test:74:2",
+      "actual": "project:test:74:2",
+      "ms": 139.93352700000105,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Computer: Dune Server\nProject: Aurora Notes\nCommand: git log -42 --oneline",
+      "task": "project",
+      "expected": "project:test:scene:41:3",
+      "python": "project:test:scene:41:3",
+      "actual": "project:test:scene:41:3",
+      "ms": 149.89529799999946,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Computer: Atlas Workstation\nProject: Atlas Payments\nCommand: git log -6 --oneline",
+      "task": "project",
+      "expected": "project:test:scene:5:3",
+      "python": "project:test:scene:5:3",
+      "actual": "project:test:scene:5:3",
+      "ms": 143.50417800000287,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "What is the difference between Helix Terminal and another option?",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 141.10457400000087,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Use Granite 4.2 on Aurora PC in project Atlas Payments to fix the startup crash",
+      "task": "project",
+      "expected": "project:test:scene:39:3",
+      "python": "project:test:scene:39:3",
+      "actual": "project:test:scene:39:3",
+      "ms": 150.276084000001,
+      "maxLogitDifference": 0.000008016824722290039
+    },
+    {
+      "input": "The target repository is Aurora Notes; improve startup",
+      "task": "project",
+      "expected": "project:test:53:1",
+      "python": "project:test:53:1",
+      "actual": "project:test:53:1",
+      "ms": 143.44167800000287,
+      "maxLogitDifference": 0.000019073486328125
+    },
+    {
+      "input": "Make this change within project Atlas Payments",
+      "task": "project",
+      "expected": "project:test:81:0",
+      "python": "project:test:81:0",
+      "actual": "project:test:81:0",
+      "ms": 138.10448700000052,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "I'm asking about Quartz Analytics, not selecting it",
+      "task": "project",
+      "expected": "keep",
+      "python": "none",
+      "actual": "none",
+      "ms": 139.05265399999917,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Make this change within project Dovo Studio",
+      "task": "project",
+      "expected": "project:test:48:0",
+      "python": "project:test:48:0",
+      "actual": "project:test:48:0",
+      "ms": 133.14680900000167,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Use my home directory for this session",
+      "task": "project",
+      "expected": "none",
+      "python": "none",
+      "actual": "none",
+      "ms": 146.32478700000138,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "Can you explain a screenshot that mentions Helix Terminal?",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 167.72435300000143,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "For this request, switch to project Aurora Notes",
+      "task": "project",
+      "expected": "project:test:76:1",
+      "python": "project:test:76:1",
+      "actual": "project:test:76:1",
+      "ms": 137.78405900000143,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "The target repository is Dovo Studio; improve startup",
+      "task": "project",
+      "expected": "project:test:29:1",
+      "python": "project:test:29:1",
+      "actual": "project:test:29:1",
+      "ms": 147.08166999999958,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Use Granite 4.2 on Helix Build Host in project Quartz Analytics to fix the startup crash",
+      "task": "project",
+      "expected": "project:test:scene:6:1",
+      "python": "project:test:scene:6:1",
+      "actual": "project:test:scene:6:1",
+      "ms": 152.0052429999996,
+      "maxLogitDifference": 0.00000476837158203125
+    },
+    {
+      "input": "For this request, switch to project Atlas Payments",
+      "task": "project",
+      "expected": "project:test:79:0",
+      "python": "project:test:79:0",
+      "actual": "project:test:79:0",
+      "ms": 167.55330099999992,
+      "maxLogitDifference": 0.00000858306884765625
+    },
+    {
+      "input": "For this request, switch to project Tundra Cloud",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 146.36755500000072,
+      "maxLogitDifference": 0.000004291534423828125
+    },
+    {
+      "input": "Make this change within project Quartz Analytics",
+      "task": "project",
+      "expected": "project:test:9:1",
+      "python": "project:test:9:1",
+      "actual": "project:test:9:1",
+      "ms": 149.24687899999844,
+      "maxLogitDifference": 0.000035762786865234375
+    },
+    {
+      "input": "Make this change within project Larch Calendar",
+      "task": "project",
+      "expected": "project:test:102:2",
+      "python": "project:test:102:2",
+      "actual": "project:test:102:2",
+      "ms": 147.70873299999948,
+      "maxLogitDifference": 0.00002002716064453125
+    },
+    {
+      "input": "Make this change within project Larch Calendar",
+      "task": "project",
+      "expected": "project:test:6:1",
+      "python": "project:test:6:1",
+      "actual": "project:test:6:1",
+      "ms": 158.5343520000024,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "I'm asking about Quartz Analytics, not selecting it",
+      "task": "project",
+      "expected": "keep",
+      "python": "none",
+      "actual": "none",
+      "ms": 168.04794500000207,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "The target repository is Helix Terminal; improve startup",
+      "task": "project",
+      "expected": "project:test:86:2",
+      "python": "project:test:86:2",
+      "actual": "project:test:86:2",
+      "ms": 156.8301539999993,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "For this request, switch to project Helix Terminal",
+      "task": "project",
+      "expected": "project:test:64:4",
+      "python": "project:test:64:4",
+      "actual": "project:test:64:4",
+      "ms": 179.86154400000305,
+      "maxLogitDifference": 0.000015735626220703125
+    },
+    {
+      "input": "Computer: Satellite Laptop\nProject: Aurora Notes\nCommand: git log -39 --oneline",
+      "task": "project",
+      "expected": "project:test:scene:38:1",
+      "python": "project:test:scene:38:1",
+      "actual": "project:test:scene:38:1",
+      "ms": 147.45665200000076,
+      "maxLogitDifference": 0.000015020370483398438
+    },
+    {
+      "input": "lab.internal:9988/docs/getting-started",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 152.80515600000217,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Suggest an alternative to pi -p 'describe the files'",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 148.88653400000112,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Make this change within project Larch Calendar",
+      "task": "project",
+      "expected": "project:test:114:1",
+      "python": "project:test:114:1",
+      "actual": "project:test:114:1",
+      "ms": 136.45252299999993,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "The target repository is Atlas Payments; improve startup",
+      "task": "project",
+      "expected": "project:test:116:0",
+      "python": "project:test:116:0",
+      "actual": "project:test:116:0",
+      "ms": 135.83256299999994,
+      "maxLogitDifference": 0.000009775161743164062
+    },
+    {
+      "input": "For this request, switch to project Aurora Notes",
+      "task": "project",
+      "expected": "project:test:4:2",
+      "python": "project:test:4:2",
+      "actual": "project:test:4:2",
+      "ms": 141.9448369999991,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "gh pr list --state open | tee /tmp/workspace.log",
+      "task": "project",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 145.7526340000004,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Use Granite 4.2 on Atlas Workstation in project Aurora Notes to fix the startup crash",
+      "task": "project",
+      "expected": "project:test:scene:21:1",
+      "python": "project:test:scene:21:1",
+      "actual": "project:test:scene:21:1",
+      "ms": 141.51836800000092,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Bring up http://10.34.78.16:7781 under browser profile Documentation",
+      "task": "profile",
+      "expected": "profile:test:123:0",
+      "python": "profile:test:123:0",
+      "actual": "profile:test:123:0",
+      "ms": 116.31448900000032,
+      "maxLogitDifference": 0.000010013580322265625
+    },
+    {
+      "input": "herdr resume demo\n# inspect the result",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 107.69396599999891,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "For this page use the Development profile: https://quartz.app/docs",
+      "task": "profile",
+      "expected": "profile:test:82:1",
+      "python": "profile:test:82:1",
+      "actual": "profile:test:82:1",
+      "ms": 130.6078529999977,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "For this page use the Social profile: localhost:4629",
+      "task": "profile",
+      "expected": "profile:test:79:2",
+      "python": "profile:test:79:2",
+      "actual": "profile:test:79:2",
+      "ms": 117.69084099999964,
+      "maxLogitDifference": 0.000005245208740234375
+    },
+    {
+      "input": "For this page use the Documentation profile: https://quartz.app/docs",
+      "task": "profile",
+      "expected": "profile:test:76:0",
+      "python": "profile:test:76:0",
+      "actual": "profile:test:76:0",
+      "ms": 115.61999699999797,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "I'm asking about Social, not selecting it",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 111.38163200000054,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "open https://quartz.app/docs/workspace?item=31 in the Documentation browser profile on Atlas Workstation",
+      "task": "profile",
+      "expected": "profile:test:scene:31:1",
+      "python": "profile:test:scene:31:1",
+      "actual": "profile:test:scene:31:1",
+      "ms": 127.79792499999894,
+      "maxLogitDifference": 0.00002288818359375
+    },
+    {
+      "input": "Bring up dovocode.com under browser profile Family",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 113.62884899999699,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "The browser profile should be Private; load localhost:4629",
+      "task": "profile",
+      "expected": "profile:test:71:4",
+      "python": "profile:test:71:4",
+      "actual": "profile:test:71:4",
+      "ms": 133.82835400000113,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "open dovocode.com/workspace?item=28 in the Shopping browser profile on Helix Build Host",
+      "task": "profile",
+      "expected": "profile:test:scene:28:1",
+      "python": "profile:test:scene:28:1",
+      "actual": "profile:test:scene:28:1",
+      "ms": 124.05192700000043,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "The browser profile should be Social; load docs.aurora.io",
+      "task": "profile",
+      "expected": "profile:test:2:1",
+      "python": "profile:test:2:1",
+      "actual": "profile:test:2:1",
+      "ms": 121.18667300000016,
+      "maxLogitDifference": 0.00002288818359375
+    },
+    {
+      "input": "The browser profile should be Social; load http://10.34.78.16:7781",
+      "task": "profile",
+      "expected": "profile:test:74:0",
+      "python": "profile:test:74:0",
+      "actual": "profile:test:74:0",
+      "ms": 130.3233509999991,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "netstat -an | tee /tmp/workspace.log",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 115.49423200000092,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "The browser profile should be Documentation; load http://10.34.78.16:7781",
+      "task": "profile",
+      "expected": "profile:test:68:0",
+      "python": "profile:test:68:0",
+      "actual": "profile:test:68:0",
+      "ms": 130.57401799999934,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "For this page use the Social profile: docs.aurora.io",
+      "task": "profile",
+      "expected": "profile:test:67:1",
+      "python": "profile:test:67:1",
+      "actual": "profile:test:67:1",
+      "ms": 113.77556999999797,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "The browser profile should be Work; load dovocode.com",
+      "task": "profile",
+      "expected": "profile:test:104:3",
+      "python": "profile:test:104:3",
+      "actual": "profile:test:104:3",
+      "ms": 114.52131799999916,
+      "maxLogitDifference": 0.000019073486328125
+    },
+    {
+      "input": "The browser profile should be Private; load https://quartz.app/docs",
+      "task": "profile",
+      "expected": "profile:test:53:0",
+      "python": "profile:test:53:0",
+      "actual": "profile:test:53:0",
+      "ms": 110.06120400000145,
+      "maxLogitDifference": 0.000006198883056640625
+    },
+    {
+      "input": "The browser profile should be Private; load http://10.34.78.16:7781",
+      "task": "profile",
+      "expected": "profile:test:26:1",
+      "python": "profile:test:26:1",
+      "actual": "profile:test:26:1",
+      "ms": 118.98982899999828,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "The browser profile should be Social; load http://10.34.78.16:7781",
+      "task": "profile",
+      "expected": "profile:test:86:2",
+      "python": "profile:test:86:2",
+      "actual": "profile:test:86:2",
+      "ms": 125.02681200000006,
+      "maxLogitDifference": 0.00000667572021484375
+    },
+    {
+      "input": "The browser profile should be Development; load localhost:4629",
+      "task": "profile",
+      "expected": "profile:test:17:2",
+      "python": "profile:test:17:2",
+      "actual": "profile:test:17:2",
+      "ms": 120.29235899999912,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "I'm asking about Shopping, not selecting it",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 134.51497500000187,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "For this page use the Shopping profile: http://10.34.78.16:7781",
+      "task": "profile",
+      "expected": "profile:test:4:1",
+      "python": "profile:test:4:1",
+      "actual": "profile:test:4:1",
+      "ms": 129.09220600000117,
+      "maxLogitDifference": 0.00000858306884765625
+    },
+    {
+      "input": "The browser profile should be Shopping; load docs.aurora.io",
+      "task": "profile",
+      "expected": "profile:test:83:3",
+      "python": "profile:test:83:3",
+      "actual": "profile:test:83:3",
+      "ms": 130.1900480000004,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "For this page use the Development profile: http://studio.lan:8176",
+      "task": "profile",
+      "expected": "profile:test:64:2",
+      "python": "profile:test:64:2",
+      "actual": "profile:test:64:2",
+      "ms": 130.4294809999992,
+      "maxLogitDifference": 0.000010967254638671875
+    },
+    {
+      "input": "For this page use the Documentation profile: docs.aurora.io",
+      "task": "profile",
+      "expected": "profile:test:16:2",
+      "python": "profile:test:16:2",
+      "actual": "profile:test:16:2",
+      "ms": 125.81185600000026,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "Bring up docs.aurora.io under browser profile Shopping",
+      "task": "profile",
+      "expected": "profile:test:9:1",
+      "python": "profile:test:9:1",
+      "actual": "profile:test:9:1",
+      "ms": 138.69722999999794,
+      "maxLogitDifference": 0.00005245208740234375
+    },
+    {
+      "input": "For this page use the Development profile: docs.aurora.io",
+      "task": "profile",
+      "expected": "profile:test:19:0",
+      "python": "profile:test:19:0",
+      "actual": "profile:test:19:0",
+      "ms": 146.55230400000073,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "ifconfig en0\n# inspect the result",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 136.7250729999978,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "Can you explain a screenshot that mentions Private?",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 128.7439729999969,
+      "maxLogitDifference": 0.00000762939453125
+    },
+    {
+      "input": "open http://studio.lan:8176/workspace?item=1 in the Documentation browser profile on Aurora PC",
+      "task": "profile",
+      "expected": "profile:test:scene:1:0",
+      "python": "profile:test:scene:1:0",
+      "actual": "profile:test:scene:1:0",
+      "ms": 139.92689800000153,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "What is the difference between Development and another option?",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 131.9834719999999,
+      "maxLogitDifference": 0.0000133514404296875
+    },
+    {
+      "input": "For this page use the Development profile: https://quartz.app/docs",
+      "task": "profile",
+      "expected": "profile:test:124:1",
+      "python": "profile:test:124:1",
+      "actual": "profile:test:124:1",
+      "ms": 129.22109999999884,
+      "maxLogitDifference": 0.0000152587890625
+    },
+    {
+      "input": "Bring up http://10.34.78.16:7781 under browser profile Work",
+      "task": "profile",
+      "expected": "profile:test:12:5",
+      "python": "profile:test:12:5",
+      "actual": "profile:test:12:5",
+      "ms": 152.37516700000197,
+      "maxLogitDifference": 0.000011444091796875
+    },
+    {
+      "input": "Bring up https://quartz.app/docs under browser profile Development",
+      "task": "profile",
+      "expected": "profile:test:87:2",
+      "python": "profile:test:87:2",
+      "actual": "profile:test:87:2",
+      "ms": 150.58908800000063,
+      "maxLogitDifference": 0.000010013580322265625
+    },
+    {
+      "input": "Bring up localhost:4629 under browser profile Documentation",
+      "task": "profile",
+      "expected": "profile:test:69:0",
+      "python": "profile:test:69:0",
+      "actual": "profile:test:69:0",
+      "ms": 118.2230180000006,
+      "maxLogitDifference": 0.000003814697265625
+    },
+    {
+      "input": "health.birch.org/download/tool.tar.gz",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 134.37775700000202,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "I'm asking about Work, not selecting it",
+      "task": "profile",
+      "expected": "default",
+      "python": "default",
+      "actual": "default",
+      "ms": 124.31755300000077,
+      "maxLogitDifference": 0.0000171661376953125
+    },
+    {
+      "input": "The browser profile should be Social; load localhost:4629",
+      "task": "profile",
+      "expected": "profile:test:38:2",
+      "python": "profile:test:38:2",
+      "actual": "profile:test:38:2",
+      "ms": 150.03289000000223,
+      "maxLogitDifference": 0.000008106231689453125
+    },
+    {
+      "input": "The browser profile should be Shopping; load docs.aurora.io",
+      "task": "profile",
+      "expected": "profile:test:128:1",
+      "python": "profile:test:128:1",
+      "actual": "profile:test:128:1",
+      "ms": 155.21702799999912,
+      "maxLogitDifference": 0.00000667572021484375
+    },
+    {
+      "input": "For this page use the Private profile: http://studio.lan:8176",
+      "task": "profile",
+      "expected": "profile:test:13:4",
+      "python": "profile:test:13:4",
+      "actual": "profile:test:13:4",
+      "ms": 179.94779500000004,
+      "maxLogitDifference": 0.000009059906005859375
+    },
+    {
+      "input": "herdr resume demo",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 204.93524400000024,
+      "maxLogitDifference": 0.00003898143768310547
+    },
+    {
+      "input": "I'm asking about Sol 6.1, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "model:test:100:0",
+      "actual": "model:test:100:0",
+      "ms": 159.45194899999842,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "zellij attach work",
+      "task": "destination",
+      "expected": "terminal",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 149.7022700000016,
+      "maxLogitDifference": 0.000007867813110351562
+    },
+    {
+      "input": "I'm asking about Sol 6.1, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "model:test:65:1",
+      "actual": "model:test:65:1",
+      "ms": 132.7553200000002,
+      "maxLogitDifference": 0.000015735626220703125
+    },
+    {
+      "input": "I'm asking about Sol 6.1, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "model:test:25:1",
+      "actual": "model:test:25:1",
+      "ms": 133.61902199999895,
+      "maxLogitDifference": 0.00000667572021484375
+    },
+    {
+      "input": "I'm asking about Helios Mini, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 173.11978300000192,
+      "maxLogitDifference": 0.000019073486328125
+    },
+    {
+      "input": "Help: nc -vz 10.11.12.13 443 isn't working",
+      "task": "destination",
+      "expected": "thread",
+      "python": "thread",
+      "actual": "thread",
+      "ms": 153.81701299999986,
+      "maxLogitDifference": 0.000087738037109375
+    },
+    {
+      "input": "I'm asking about Fable 5.1, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 156.2635859999973,
+      "maxLogitDifference": 0.00001049041748046875
+    },
+    {
+      "input": "I'd like to open dovocode.com",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 145.65865699999995,
+      "maxLogitDifference": 0.0000095367431640625
+    },
+    {
+      "input": "I'm asking about Fable 5.1, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 128.4490560000013,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "I'm asking about Granite 4.2, not selecting it",
+      "task": "model",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 134.30546200000026,
+      "maxLogitDifference": 0.00002002716064453125
+    },
+    {
+      "input": "I'd like to open localhost:4629",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 137.94937600000048,
+      "maxLogitDifference": 0.000025272369384765625
+    },
+    {
+      "input": "I'd like to open http://studio.lan:8176",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 155.76672699999835,
+      "maxLogitDifference": 0.00001621246337890625
+    },
+    {
+      "input": "I'd like to open dovocode.com/?view=home",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 155.8404969999974,
+      "maxLogitDifference": 0.0000057220458984375
+    },
+    {
+      "input": "I'd like to open http://studio.lan:8176/?view=home",
+      "task": "destination",
+      "expected": "browser",
+      "python": "browser",
+      "actual": "browser",
+      "ms": 165.42922100000214,
+      "maxLogitDifference": 0.000006198883056640625
+    },
+    {
+      "input": "Run the work from the paired Moon Laptop computer",
+      "task": "runtime",
+      "expected": "keep",
+      "python": "keep",
+      "actual": "keep",
+      "ms": 167.0938700000006,
+      "maxLogitDifference": 0.0000247955322265625
+    }
+  ]
+}

@@ -42,6 +42,12 @@ pnpm install
 pnpm dev:desktop
 ```
 
+Installation prepares shared runtime assets only. Mobile bundles and native Markdown grammars are
+prepared by the mobile start/build commands; unchanged mobile bundles reuse their import-graph
+cache. Before running an individual browser check, install managed Chromium with
+`pnpm exec playwright install chromium` (`--with-deps chromium` on Linux when needed).
+`pnpm test:browser` includes that browser installation step.
+
 For the public brand website, run `pnpm dev:site` (http://localhost:3001). See
 [the site README](apps/site/README.md) for static deployment instructions.
 
@@ -90,8 +96,10 @@ conventions. The [architecture guide](docs/architecture.md) explains package own
 ## Verify changes
 
 ```sh
-pnpm verify
+pnpm verify:ci
 ```
 
-This runs typechecking, tests, lint, and builds. See [the full product guide](docs/product-guide.md)
-for focused checks and platform smoke-test commands.
+This runs builds, lint, typechecking, tests, CI script regressions, runtime/mobile validation and
+all browser suites. `pnpm verify` runs the core build/lint/typecheck/test checks. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for system dependencies and the additional platform-specific CI
+checks, and [the full product guide](docs/product-guide.md) for focused checks.

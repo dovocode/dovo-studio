@@ -24,6 +24,19 @@ function setup() {
   })
   return { db, store, pulls, cache }
 }
+it('invalidates every destination alias, including URL and worktree views with distinct bindings', async () => {
+  const { db, pulls, store } = setup()
+  const cache = new PullCache(db, pulls, store, async (cwd) => `binding:${cwd}`)
+  cleanup.push(() => cache.dispose())
+  const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  for (const cwd of ['/repo', '/worktree', 'https://github.com/team/app'])
+    await cache.list(cwd, 'open', 1)
+  expect(load).toHaveBeenCalledTimes(3)
+  cache.invalidateAll()
+  const rows = db.prepare('SELECT value FROM pull_cache').all()
+  expect(rows).toHaveLength(3)
+  for (const row of rows) expect(row).toEqual({ value: expect.stringContaining('"stale":true') })
+})
 it('shares PR feedback across worktrees and accounts correctly, invalidates it on actions and coalesces refreshes', async () => {
   const { cache, pulls, db, store } = setup()
   const detail: PullDetail = {
@@ -222,6 +235,30 @@ it('does not bypass freshness when background watching follows a foreground refr
   await cache.list('/repo', 'open', 1)
   await vi.advanceTimersByTimeAsync(30000)
   expect(load).toHaveBeenCalledTimes(1)
+})
+
+it('fetches again when explicit refresh arrives during an older background read', async () => {
+  const { cache, pulls } = setup()
+  let finish: (value: { pulls: []; page: number; hasMore: boolean }) => void = () => {
+    throw new Error('Not started')
+  }
+  const load = vi
+    .spyOn(pulls, 'list')
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    .mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  const background = cache.list('/repo', 'open', 1)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+  const forced = cache.list('/repo', 'open', 1, true)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  finish({ pulls: [], page: 1, hasMore: true })
+  expect((await background).hasMore).toBe(true)
+  expect((await forced).hasMore).toBe(false)
+  expect(load).toHaveBeenCalledTimes(2)
 })
 
 it('persists mutation invalidation without discarding cached data or its fetched time', async () => {
@@ -585,6 +622,76 @@ it('caches PR sections independently, coalesces concurrent reads, and scopes the
   await vi.waitFor(() => expect(section).toHaveBeenCalledTimes(8))
 })
 
+it.each(['status', 'checks'] as const)(
+  'revalidates live %s on polls from read start and backs off failures',
+  async (kind) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-31T00:00:00Z'))
+    const { cache, pulls } = setup()
+    const detail: PullDetail = {
+      pull: {
+        number: 7,
+        title: 'Pending',
+        url: 'https://github.com/a/b/pull/7',
+        repositoryUrl: 'https://github.com/a/b',
+        state: 'open',
+        draft: false,
+        author: 'dev',
+        updatedAt: '',
+        head: 'feature',
+        base: 'main',
+        labels: [],
+        headSha: 'a'.repeat(40),
+        baseSha: 'b'.repeat(40),
+        body: '',
+        additions: 0,
+        deletions: 0,
+        changedFiles: 0,
+        mergeable: true,
+        reviewers: [],
+        assignees: [],
+      },
+      comments: [],
+      files: [],
+      checks: [],
+      warnings: [],
+    }
+    const load = vi.spyOn(pulls, 'section').mockResolvedValue(detail)
+    const read = () => Effect.runPromise(cache.sectionEffect('/repo', 7, kind))
+    await read()
+    vi.setSystemTime(Date.now() + 5_000)
+    expect((await read()).pull.title).toBe('Pending')
+    expect(load).toHaveBeenCalledTimes(1)
+    vi.setSystemTime(Date.now() + 5_000)
+    let finish: ((value: PullDetail) => void) | undefined
+    load.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const first = read()
+    const second = read()
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    expect(load).toHaveBeenCalledTimes(2)
+    vi.setSystemTime(Date.now() + 12_000)
+    finish!({ ...detail, pull: { ...detail.pull, title: 'Complete' } })
+    const [result, shared] = await Promise.all([first, second])
+    expect(result.pull.title).toBe('Complete')
+    expect(shared.pull.title).toBe('Complete')
+    expect(result.cachedAt).toBe(new Date().toISOString())
+    load.mockRejectedValueOnce(new Error('Offline'))
+    expect(await read()).toMatchObject({ stale: true, refreshError: 'Offline' })
+    expect(load).toHaveBeenCalledTimes(3)
+    vi.setSystemTime(Date.now() + 5_000)
+    expect(await read()).toMatchObject({ stale: true, refreshError: 'Offline' })
+    expect(load).toHaveBeenCalledTimes(3)
+    vi.setSystemTime(Date.now() + 55_000)
+    await read()
+    expect(load).toHaveBeenCalledTimes(4)
+  },
+)
+
 it('migrates persisted checkout aliases so writes invalidate pre-upgrade caches', async () => {
   const { db, store, pulls, cache } = setup()
   vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
@@ -665,4 +772,68 @@ it('backs off confirmed missing PRs per account while allowing explicit refresh 
   account = 'two'
   await expect(cache.status('/repo', 142)).rejects.toThrow('Missing PR')
   expect(load).toHaveBeenCalledTimes(3)
+})
+
+it('does not reconcile an older full-detail fetch after newer changes finished', async () => {
+  const { db, store, pulls } = setup()
+  const detail: PullDetail = {
+    pull: {
+      number: 7,
+      title: 'PR',
+      url: 'https://github.com/a/b/pull/7',
+      repositoryUrl: 'https://github.com/a/b',
+      state: 'open',
+      draft: false,
+      author: 'dev',
+      updatedAt: '',
+      head: 'feature',
+      base: 'main',
+      labels: [],
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      body: '',
+      additions: 1,
+      deletions: 0,
+      changedFiles: 1,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    },
+    comments: [],
+    checks: [],
+    files: [],
+    warnings: [],
+  }
+  let finish!: (value: PullDetail) => void
+  const full = vi.spyOn(pulls, 'detail').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  vi.spyOn(pulls, 'section').mockResolvedValue({
+    ...detail,
+    pull: { ...detail.pull, headSha: 'c'.repeat(40) },
+  })
+  const reconciled: string[] = []
+  const cache = new PullCache(
+    db,
+    pulls,
+    store,
+    async () => 'same-account',
+    (value) => {
+      reconciled.push(value.pull.headSha)
+    },
+  )
+  cleanup.push(() => cache.dispose())
+  const pending = cache.detail('/repo', 7, true)
+  await vi.waitFor(() => expect(full).toHaveBeenCalledTimes(1))
+  await Effect.runPromise(cache.sectionEffect('/repo', 7, 'changes', true))
+  finish(detail)
+  await pending
+  expect(reconciled).toEqual(['c'.repeat(40)])
+  // A later-started fetch may advance the revision normally.
+  full.mockResolvedValue(detail)
+  await cache.detail('/repo', 7, true)
+  expect(reconciled).toEqual(['c'.repeat(40), 'a'.repeat(40)])
 })

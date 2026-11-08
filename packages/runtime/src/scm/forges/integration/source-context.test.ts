@@ -54,6 +54,49 @@ it('shares verification across concurrent reads and repositories while isolating
   expect((await f.verify()).readerIdentity).not.toBe(first.readerIdentity)
   expect(f.user).toHaveBeenCalledTimes(2)
 })
+it.each(['token', 'environment'] as const)(
+  'captures %s provenance with the verified login before dispatch',
+  async (credential) => {
+    const db = openDatabase(':memory:')
+    cleanup.push(() => db.close())
+    const connections = new ForgeConnections(db)
+    const git = new GitService()
+    const environmentName = 'DOVO_GITHUB_ACCESS_TEST_TOKEN'
+    const previous = process.env[environmentName]
+    process.env[environmentName] = 'environment-test-secret'
+    cleanup.push(() => {
+      if (previous === undefined) delete process.env[environmentName]
+      else process.env[environmentName] = previous
+    })
+    const selected = connections.save({
+      name: 'Selected source',
+      provider: 'github',
+      baseUrl: 'https://github.com',
+      credential,
+      ...(credential === 'token' ? { token: 'saved-test-secret' } : { tokenEnv: environmentName }),
+    })
+    vi.spyOn(git, 'githubAccount').mockResolvedValue(
+      JSON.stringify({ id: 42, login: 'verified-login' }),
+    )
+    const scope = await verifySourceContext(
+      git,
+      connections,
+      '/repo',
+      'team/project',
+      'github.com',
+      selected,
+      'binding',
+      () => {},
+    )
+    expect(scope.github?.access).toEqual({
+      host: 'github.com',
+      repository: 'team/project',
+      login: 'verified-login',
+      source: credential === 'token' ? 'settings' : 'environment',
+    })
+    expect(JSON.stringify(scope.github?.access)).not.toContain('test-secret')
+  },
+)
 it('revalidates on explicit refresh and expiry without caching failed authentication', async () => {
   vi.useFakeTimers()
   const f = setup()

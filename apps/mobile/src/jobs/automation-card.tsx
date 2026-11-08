@@ -17,12 +17,22 @@ import { RunProgress } from './run-progress'
 import { automationRuns } from './automation-summary'
 import { automationStarts } from './automation-starts'
 import { useNavigation } from '../shell/navigation'
-export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () => void }) {
+import { SettingsSheet } from '../screens/settings-theme'
+export function AutomationCard({
+  flow,
+  onEdit,
+  onDeleted,
+}: {
+  flow: Automation
+  onEdit: () => void
+  onDeleted: () => void
+}) {
   const { colors, styles } = useTheme()
 
   const { snapshot, connected, activeId, callEffect } = useRuntime()
   const { focused } = useNavigation()
   const { busy, error, act } = useAction()
+  const [deletingOn, setDeletingOn] = useApplicationState<string | null>(null)
   const [history, setHistory] = useApplicationState(false)
   const requestId = activeId ? automationStarts.get(activeId, flow.id) : undefined
   const { history: runs, active, latest } = automationRuns(flow.id, snapshot?.runs ?? [])
@@ -161,6 +171,45 @@ export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () 
           {issue}
         </Text>
       ))}
+      <Action
+        secondary
+        label="Delete automation"
+        disabled={!focused || !connected || !activeId || busy || !!active}
+        onPress={() => setDeletingOn(activeId)}
+      />
+      {deletingOn && (
+        <SettingsSheet
+          title={`Delete “${flow.name}”?`}
+          presentation="dialog"
+          onClose={() => {
+            if (!busy) setDeletingOn(null)
+          }}
+        >
+          <View style={{ gap: 12 }}>
+            <Text style={styles.muted}>
+              This removes the automation and its triggers. Existing threads and run history are
+              kept.
+            </Text>
+            {error && <Text style={styles.error}>{error}</Text>}
+            <Action
+              label="Delete automation"
+              wide
+              disabled={!focused || !connected || busy || !!active || deletingOn !== activeId}
+              onPress={() =>
+                act(() =>
+                  mobileWorkflow(function* () {
+                    if (!focused || deletingOn !== activeId) return
+                    yield* callEffect('/api/jobs/delete', { id: flow.id }, responses.ok)
+                    setDeletingOn(null)
+                    onDeleted()
+                  }),
+                )
+              }
+            />
+            <Action label="Cancel" secondary disabled={busy} onPress={() => setDeletingOn(null)} />
+          </View>
+        </SettingsSheet>
+      )}
       {runs.length > 1 && (
         <Action
           secondary

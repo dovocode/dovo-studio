@@ -7,18 +7,24 @@ import { chromium } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
 if (screenshots) mkdirSync(screenshots, { recursive: true })
-const css = readdirSync(root + 'apps/desktop/dist/assets')
+const assets = process.env.DOVO_BROWSER_ASSETS ?? root + 'apps/desktop/dist/assets'
+const css = readdirSync(assets)
   .filter((file) => file.endsWith('.css'))
-  .map((file) => readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'))
+  .map((file) => readFileSync(assets + '/' + file, 'utf8'))
   .join('\n')
 const mocks = {
   '@dovo/studio-core': `
     export * from '../studio-core/src/index';
-    export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';
+    export {useWorkspace} from '../studio-core/src/workspace/context';
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
-    const preferences={sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false};
+    const preferences={showSendOptions:true,threadInfoSections:{},sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,minimalComposer:true,showSkillsInSlashMenu:true};
     window.setFollowUp=value=>{preferences.followUp=value};
+    window.setContextVisible=value=>{preferences.showContextUsage=value};
+    window.setSendOptions=value=>{preferences.showSendOptions=value};
+    window.setMinimalComposer=value=>{preferences.minimalComposer=value};
+    window.setSourceToggle=value=>{preferences.showMarkdownSourceToggle=value};
+    window.setRichText=value=>{preferences.richTextComposer=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;
   `,
@@ -48,11 +54,14 @@ const built = await build({
     contents: `
       import {useState} from 'react';
       import {createRoot} from 'react-dom/client';
-      import {Context,defaultTaskHarness} from '@dovo/studio-core';
-      import {TooltipProvider,TaskDefaultSettings} from '@dovo/studio-ui';
+      import {WorkspaceValueProvider,defaultTaskHarness} from '@dovo/studio-core';
+      import {TooltipProvider,TaskDefaultSettings,Popover,IconButton} from '@dovo/studio-ui';
+      import {Info} from 'lucide-react';
+      import {TaskProjectPanelRoot,TaskProjectPopover,ThreadInfoSettingsSlot} from '../extension-tasks/src/detail/task-project-popover';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {TaskConversation} from '../extension-tasks/src/detail/task-conversation';
       import {ComposerActivity} from '../extension-tasks/src/chat/composer/composer-activity';
+      import {ActivityBar} from '../studio-shell/src/activity-bar';
       const repositories=[
         {id:'scratch',kind:'scratch',name:'Thread folder',path:'/private/thread',branch:''},
         {id:'git',name:'dovo-studio',path:'/repo',branch:'main',gitIdentity:'github.com/dovo/studio'},
@@ -62,13 +71,22 @@ const built = await build({
       const defaults={scopedSettings:{environment:{taskDefaults:{harness}},shared:[{key:'project:github.com/dovo/studio',updatedAt:1,changeId:'fixture',value:{taskDefaults:{defaultServerId:'linux'}}}]},harness};
       const profile={id:'mac',name:'MacBook',nameIsCustom:true,connection:{address:'http://runtime.test',token:'fixture-token'}};
       const remoteProfile={...profile,id:'linux',name:'Linux workstation'};
-      window.requests=[];
+      window.requests=[];window.asides=[];window.backgroundStarts=[];
+      window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
+      function Thread({task,workspaceControls,temporary,onSelectRemote,onStartBackground}){
+        const [open,setOpen]=useState(false);
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New thread':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+      }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
+        const [rail,setRail]=useState(false);window.setRail=setRail;
+        const [activeView,setActiveView]=useState('tasks');window.setActiveView=setActiveView;
+        const views=[['tasks','Threads','tasks'],['browser','Browser','browser'],['artifacts','Artifacts','artifacts'],['issues','Issues','issues'],['jira','Jira','jira'],['pulls','Pull requests','pulls'],['jobs','Automations','jobs']].map(([id,title,icon])=>({id,title,icon})).concat([{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]);
         const [id,setId]=useState(null);
         const [pending,setPending]=useState(null);
         const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;const [scopeEnabled,setScopeEnabled]=useState(false);window.setScopeEnabled=setScopeEnabled;
         const [activity,setActivity]=useState(false);window.setActivity=setActivity;const [activityPaused,setActivityPaused]=useState(true);window.setActivityPaused=setActivityPaused;
+        const [queueStaging,setQueueStaging]=useState(false);window.setQueueStaging=setQueueStaging;
         const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);window.hideSettings=()=>setSettings(false);
         const task=workspace.tasks.find(task=>task.id===id);
         window.task=task;window.reset=()=>{setId(null);setPending(null);setWorkspace({repositories,agents:[],tasks:[],automations:[]})};
@@ -81,15 +99,17 @@ const built = await build({
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
           if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
           if(path==='/api/tasks/title')return {title:'Unify the composers'};
+          if(path==='/api/tasks/projects/select')return {...workspace.tasks.find(task=>task.id===input.id),repositoryId:'git',autoProject:false};
+          if(path==='/api/tasks/side-thread/create')return {id:'side-fixture'};
           if(path==='/api/tasks/message'||path==='/api/tasks/steer'){
             setWorkspace(w=>({...w,tasks:w.tasks.map(t=>t.id===input.id?{...t,status:'running',messages:[{id:input.messageId,role:'user',text:input.text,createdAt:new Date().toISOString()}]}:t)}));
             return {ok:true};
           }
           throw Error('Unexpected request '+path);
         };
-        const value={workspace,setWorkspace,snapshot:{workspace,defaults,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
-        const renderThread=(task,workspaceControls,temporary,onSelectRemote)=><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}}/>;
-        return <Context.Provider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
+        const value={workspace,setWorkspace,snapshot:{workspace,defaults,promptQueueStagingSupported:queueStaging,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
+        const renderThread=(task,workspaceControls,temporary,onSelectRemote,onStartBackground)=><Thread task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} onStartBackground={onStartBackground??(window.testBackground?()=>{}:undefined)}/>;
+        return <WorkspaceValueProvider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-row bg-background text-foreground">{rail&&<ActivityBar views={views} activeId={activeView} onSelect={setActiveView} onCheckUpdates={()=>{}}/>}<section className="flex min-h-0 min-w-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
     `,
@@ -149,13 +169,213 @@ try {
         overflow: document.documentElement.scrollWidth > innerWidth,
       }
     })
+  const infoButton = page.getByRole('button', { name: 'Thread info', exact: true })
+  const openInfo = async () => {
+    if ((await infoButton.getAttribute('aria-expanded')) !== 'true') await infoButton.click()
+    await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
+  }
+  const closeInfo = async () => {
+    if ((await infoButton.count()) && (await infoButton.getAttribute('aria-expanded')) === 'true')
+      await infoButton.click()
+  }
+  const settleComposer = () =>
+    page.waitForFunction(
+      () =>
+        !document
+          .querySelector('.studio-composer')
+          .getAnimations({ subtree: true })
+          .some(
+            (a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity,
+          ),
+    )
+  const checkIconAction = async (name, title) => {
+    const button = page.getByRole('button', { name, exact: true })
+    await button.waitFor()
+    assert.equal((await button.textContent()).trim(), '', name + ' has no visible label')
+    assert.equal(await button.getAttribute('aria-label'), name)
+    assert.match(await button.getAttribute('title'), title, name + ' keeps its hover name')
+    const bounds = await button.boundingBox()
+    assert.ok(Math.abs(bounds.width - 32) < 0.1, name + ' retains its 32px pointer target')
+    assert.ok(Math.abs(bounds.height - 32) < 0.1, name + ' retains its 32px pointer target')
+    assert.equal(await button.locator('svg').count(), 1, name + ' keeps its action icon')
+    if (await button.isEnabled()) {
+      await button.hover()
+      await button.focus()
+      assert.equal(await button.evaluate((element) => element === document.activeElement), true)
+    }
+  }
+  const checkIdle = async (screenshot) => {
+    const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
+    await page
+      .locator('header')
+      .first()
+      .click({ position: { x: 20, y: 20 } })
+    await page.locator('.studio-composer[data-idle]').waitFor()
+    await settleComposer()
+    const surface = await page.locator('.studio-composer').boundingBox()
+    const editor = await input.boundingBox()
+    const add = await page.getByRole('button', { name: 'Attach files', exact: true }).boundingBox()
+    const actions = await page.locator('[data-composer-actions]').boundingBox()
+    assert.ok(
+      surface.height <= 48,
+      'Empty, unfocused composer is a single row: ' + JSON.stringify(surface),
+    )
+    assert.ok(
+      editor.width > 70,
+      'The idle input leaves room for its placeholder: ' + JSON.stringify({ surface, editor }),
+    )
+    assert.ok(editor.x >= add.x + add.width, 'The placeholder follows the plus control')
+    assert.ok(Math.abs(editor.y + editor.height / 2 - (add.y + add.height / 2)) < 2)
+    assert.ok(Math.abs(editor.y + editor.height / 2 - (actions.y + actions.height / 2)) < 2)
+    const idleFont = await input.evaluate((element) => getComputedStyle(element).fontSize)
+    assert.ok(parseFloat(idleFont) <= 14, 'The compact layout keeps the existing small text')
+    const checkTextAlignment = async () => {
+      const alignment = await input.evaluate((element) => {
+        const host = element.closest('[data-composer-input]') ?? element
+        const box = host.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return {
+          lineHeight: parseFloat(style.lineHeight),
+          textCenter:
+            element.getBoundingClientRect().y +
+            parseFloat(style.paddingTop) +
+            parseFloat(style.borderTopWidth) +
+            parseFloat(style.lineHeight) / 2,
+          hostCenter: box.y + box.height / 2,
+        }
+      })
+      assert.equal(alignment.lineHeight, 20, 'Plain and rich editors use the same text baseline')
+      assert.ok(
+        Math.abs(alignment.textCenter - alignment.hostCenter) < 1,
+        'The first line stays vertically centered: ' + JSON.stringify(alignment),
+      )
+    }
+    await checkTextAlignment()
+    if (screenshots && screenshot) await page.screenshot({ path: screenshots + '/' + screenshot })
+    const motion = await input.evaluate((element) => {
+      element.focus()
+      return new Promise((resolve) =>
+        requestAnimationFrame(() => {
+          const surface = element.closest('.studio-composer')
+          const animations = surface
+            .getAnimations({ subtree: true })
+            .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+          animations.forEach((animation) => {
+            animation.pause()
+            animation.currentTime = 0
+          })
+          const firstEditorHeight = element.getBoundingClientRect().height
+          const firstHeight = surface.getBoundingClientRect().height
+          animations.forEach((animation) => {
+            animation.currentTime = 140
+          })
+          const middleHeight = surface.getBoundingClientRect().height
+          animations.forEach((animation) => {
+            animation.currentTime = 280
+          })
+          const finalHeight = surface.getBoundingClientRect().height
+          animations.forEach((animation) => animation.finish())
+          resolve({
+            firstEditorHeight,
+            firstHeight,
+            middleHeight,
+            finalHeight,
+            clipped: getComputedStyle(surface).overflow === 'clip',
+            height: surface.getBoundingClientRect().height,
+            animations: animations.length,
+          })
+        }),
+      )
+    })
+    assert.ok(motion.animations > 0, 'Focusing smoothly animates the compact layout')
+    assert.ok(
+      Math.abs(motion.firstEditorHeight - editor.height) < 1,
+      'The input does not jump to its expanded height on the first frame',
+    )
+    assert.ok(
+      motion.firstHeight < motion.middleHeight && motion.middleHeight < motion.finalHeight,
+      'The surface grows continuously through the transition',
+    )
+    assert.ok(motion.clipped, 'Moving controls stay clipped inside the resizing surface')
+    await settleComposer()
+    assert.equal(await input.evaluate((element) => getComputedStyle(element).fontSize), idleFont)
+    await checkTextAlignment()
+    assert.ok((await page.locator('.studio-composer').boundingBox()).height > surface.height + 40)
+    const reversal = await input.evaluate(async (element) => {
+      const surface = element.closest('.studio-composer')
+      const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+      element.blur()
+      await frame()
+      await frame()
+      const before = surface.getBoundingClientRect().height
+      element.focus()
+      await frame()
+      const animations = surface
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+      animations.forEach((animation) => {
+        animation.pause()
+        animation.currentTime = 0
+      })
+      const after = surface.getBoundingClientRect().height
+      animations.forEach((animation) => animation.finish())
+      return { before, after }
+    })
+    assert.ok(
+      Math.abs(reversal.after - reversal.before) < 3,
+      'Refocusing during collapse continues from the current height instead of jumping: ' +
+        JSON.stringify(reversal),
+    )
+    await settleComposer()
+  }
+  const checkFullComposer = async () => {
+    const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
+    await input.evaluate((element) => element.blur())
+    await settleComposer()
+    const compact = await page.locator('.studio-composer').boundingBox()
+    await page.evaluate(() => {
+      window.setMinimalComposer(false)
+      window.setTask({})
+    })
+    await page.locator('.studio-composer:not([data-idle])').waitFor()
+    await settleComposer()
+    assert.equal(await page.locator('.studio-composer').getAttribute('data-idle'), null)
+    const expanded = await page.locator('.studio-composer').boundingBox()
+    assert.ok(
+      expanded.height > compact.height + 40,
+      'Full mode expands an empty unfocused composer',
+    )
+    await input.focus()
+    await input.fill('Keep the full composer')
+    await input.fill('')
+    await input.evaluate((element) => element.blur())
+    await settleComposer()
+    assert.equal(
+      (await page.locator('.studio-composer').boundingBox()).height,
+      expanded.height,
+      'Full mode stays expanded after clearing and blurring',
+    )
+    await page.evaluate(() => {
+      window.setMinimalComposer(true)
+      window.setTask({})
+    })
+    await page.locator('.studio-composer[data-idle]').waitFor()
+    await settleComposer()
+    assert.equal(
+      (await page.locator('.studio-composer').boundingBox()).height,
+      compact.height,
+      'Re-enabling minimal restores the single row',
+    )
+    await input.focus()
+    await settleComposer()
+  }
   // The composer machine selector and header share transfer state, including recovery.
   await page.evaluate(() => window.setMultiple(true))
-  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread server', exact: true }).click()
   await page.getByRole('button', { name: 'Linux workstation', exact: true }).click()
   await page.waitForFunction(() => typeof window.cancelSwitch === 'function')
   assert.equal(
-    await page.getByRole('button', { name: 'Start in General', exact: true }).isDisabled(),
+    await page.getByRole('button', { name: 'Start without a project', exact: true }).isDisabled(),
     true,
   )
   assert.equal(
@@ -163,19 +383,22 @@ try {
     true,
   )
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task', exact: true }).isDisabled(),
+    await page.getByRole('textbox', { name: 'Message thread', exact: true }).isDisabled(),
     true,
   )
   await page.evaluate(() => window.cancelSwitch())
   await page.getByRole('alert').filter({ hasText: 'Transfer fixture failed' }).waitFor()
-  await page.waitForFunction(() => !document.querySelector('[aria-label="Message task"]').disabled)
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Message thread"]').disabled,
+  )
   assert.equal(
-    await page.getByRole('button', { name: 'Start in General', exact: true }).isDisabled(),
+    await page.getByRole('button', { name: 'Start without a project', exact: true }).isDisabled(),
     false,
   )
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread server', exact: true }).click()
   await page.keyboard.press('Escape')
+  await closeInfo()
   await page.evaluate(() => window.setMultiple(false))
   for (const device of [
     { name: 'desktop', width: 1440, height: 900 },
@@ -202,8 +425,10 @@ try {
       await page.waitForFunction(() =>
         document
           .querySelector('[aria-label="Choose agent and model"]')
-          .textContent.includes('GPT-6.1-Sol'),
+          .textContent.includes('6.1 Sol'),
       )
+      await checkIdle(project === 'No project' ? device.name + '-idle-start.png' : undefined)
+      if (project === 'No project') await checkFullComposer()
       if (screenshots && device.name === 'desktop' && project === 'No project')
         await page.screenshot({ path: screenshots + '/desktop-empty.png' })
       const start = page.getByRole('group', { name: 'Start a thread', exact: true })
@@ -215,17 +440,27 @@ try {
       const dropdownBounds = await start
         .getByRole('button', { name: 'Choose project', exact: true })
         .boundingBox()
+      assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 1)
       const workspaceBar = page.getByRole('group', { name: 'Project and checkout', exact: true })
       const deviceBounds = await workspaceBar
-        .getByRole('button', { name: 'Task server', exact: true })
+        .getByRole('button', { name: 'Thread server', exact: true })
         .boundingBox()
       assert.ok(projectBounds && dropdownBounds && deviceBounds)
       assert.ok(Math.abs(projectBounds.x + projectBounds.width - dropdownBounds.x) < 1)
       assert.equal(projectBounds.y, dropdownBounds.y)
-      assert.equal(await start.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(
+        await start.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        0,
+      )
       assert.ok(deviceBounds.y >= (await page.locator('.studio-composer').boundingBox()).y)
-      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread project', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        1,
+      )
       const modelGroup = page.getByRole('group', { name: 'Model and reasoning', exact: true })
       assert.equal(
         await modelGroup
@@ -235,37 +470,73 @@ try {
       )
       assert.equal(
         await modelGroup.getByRole('button', { name: 'Reasoning and speed', exact: true }).count(),
-        1,
+        0,
       )
       assert.equal(
         await modelGroup
-          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
           .count(),
         0,
       )
       assert.equal(
         await workspaceBar
-          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
           .count(),
-        1,
+        0,
       )
+      await page.getByRole('textbox', { name: 'Message thread' }).focus()
+      await settleComposer()
       const before = await geometry()
-      const input = page.getByRole('textbox', { name: 'Message task' })
+      // The reference layout must apply through StartupDraft's production conversation path.
+      assert.equal(await page.locator('[data-task-conversation][data-startup-draft]').count(), 1)
+      const surface = await page.locator('.studio-composer').boundingBox()
+      if (device.name === 'desktop') assert.equal(surface.width, 768)
+      const add = await page
+        .getByRole('button', { name: 'Attach files', exact: true })
+        .boundingBox()
+      const model = await page
+        .getByRole('button', { name: 'Choose agent and model', exact: true })
+        .boundingBox()
+      const mic = await page
+        .getByRole('button', { name: 'Dictate message', exact: true })
+        .boundingBox()
+      const send = await page
+        .getByRole('button', { name: 'Send to agent', exact: true })
+        .boundingBox()
+      assert.ok(add.x >= surface.x && add.x + add.width < model.x)
+      assert.ok(model.x + model.width <= mic.x)
+      assert.ok(mic.x + mic.width <= send.x)
+      assert.ok(send.x + send.width <= surface.x + surface.width)
+      assert.ok(Math.abs(add.y + add.height / 2 - (send.y + send.height / 2)) < 1)
+      assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
+      const input = page.getByRole('textbox', { name: 'Message thread' })
+      assert.equal(await input.getAttribute('placeholder'), 'Ask anything, build or fix...')
+      const emptyEditor = await input.evaluate((el) => ({
+        height: el.getBoundingClientRect().height,
+        textX: el.getBoundingClientRect().x + parseFloat(getComputedStyle(el).paddingLeft),
+      }))
+      const addIcon = await page
+        .getByRole('button', { name: 'Attach files', exact: true })
+        .locator('svg')
+        .boundingBox()
+      assert.ok(emptyEditor.height <= 65, 'Empty composers stay compact')
+      assert.ok(
+        Math.abs(emptyEditor.textX - addIcon.x) < 2,
+        'Placeholder aligns with the plus icon',
+      )
       if (device.name === 'desktop' && project === 'No project') {
         await input.focus()
-        await input.pressSequentially('Make both composers uniform using this styling.', {
+        await input.pressSequentially('Make both composers uniform.', {
           delay: 1,
         })
-      } else await input.fill('Make both composers uniform using this styling.')
+      } else await input.fill('Make both composers uniform.')
       await page.locator('[data-saved="true"]').waitFor()
       await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
       const after = await geometry()
-      if (device.name === 'desktop') {
-        const bar = await page
-          .getByRole('group', { name: 'Project and checkout', exact: true })
-          .boundingBox()
-        assert.ok(bar && bar.height <= 44, JSON.stringify(bar))
-      }
+      assert.equal(
+        await page.getByRole('region', { name: 'Environment and access', exact: true }).count(),
+        0,
+      )
       for (const key of ['heroX', 'heroY', 'composerY', 'composerHeight'])
         assert(
           Math.abs(before[key] - after[key]) < 2,
@@ -275,7 +546,7 @@ try {
       assert(after.heroY > 48)
       assert(after.composerY > after.heroY)
       assert(after.composerY + after.composerHeight < device.height - 40)
-      assert.equal(await input.inputValue(), 'Make both composers uniform using this styling.')
+      assert.equal(await input.inputValue(), 'Make both composers uniform.')
       assert(await input.evaluate((element) => document.activeElement === element))
       assert.equal(
         await page.getByRole('button', { name: 'Working directory', exact: true }).count(),
@@ -301,12 +572,153 @@ try {
           )
         })
       await page.getByRole('button', { name: 'Stop', exact: true }).waitFor()
+
+      const stop = page.getByRole('button', { name: 'Stop', exact: true })
+      const stopStyle = await stop.evaluate((button) => {
+        const style = getComputedStyle(button)
+        return {
+          type: button.type,
+          width: style.width,
+          height: style.height,
+          radius: style.borderRadius,
+          accent: style.getPropertyValue('--primary').trim(),
+          error: style.getPropertyValue('--destructive').trim(),
+          shadow: style.boxShadow,
+          gradient: style.backgroundImage,
+          icon: !!button.querySelector('.lucide-square'),
+        }
+      })
+      assert.equal(stopStyle.type, 'button', 'Stop must not submit the message form')
+      await checkIconAction('Stop', /^Stop the agent and pause queued messages$/)
+      assert.equal(stopStyle.width, '32px')
+      assert.equal(stopStyle.height, '32px')
+      assert.ok(parseFloat(stopStyle.radius) >= 16, 'Stop shares Send circular shape')
+      assert.equal(stopStyle.accent, stopStyle.error, 'Stop uses the destructive accent')
+      assert.equal(stopStyle.shadow, 'none', 'Activity glow lives on the ring')
+      assert.equal(stopStyle.gradient, 'none', 'Stop uses a quiet, solid surface')
+      assert.equal(stopStyle.icon, true)
+      if (device.name === 'desktop' && project === 'dovo-studio') {
+        await settleComposer()
+        const glow = (pseudo = '::before') =>
+          stop.evaluate((button, pseudo) => {
+            const style = getComputedStyle(button, pseudo)
+            return {
+              display: style.display,
+              animation: style.animationName,
+              transform: style.transform,
+              filter: style.filter,
+              mask: style.maskImage,
+              background: style.backgroundImage,
+            }
+          }, pseudo)
+        for (const pseudo of ['::before', '::after'])
+          assert.equal(
+            (await glow(pseudo)).animation,
+            'studio-stop-glow',
+            'Stop ring rotates while work runs',
+          )
+        const initialRing = (await glow('::after')).transform
+        await page.waitForFunction(
+          (initial) =>
+            getComputedStyle(document.querySelector('[data-composer-stop]'), '::after')
+              .transform !== initial,
+          initialRing,
+        )
+        await page.evaluate(() => {
+          document.documentElement.dataset.motion = 'reduce'
+        })
+        for (const pseudo of ['::before', '::after'])
+          assert.equal((await glow(pseudo)).display, 'none', 'Reduced motion hides rotating layers')
+        await page.evaluate(() => {
+          delete document.documentElement.dataset.motion
+        })
+        assert.equal(
+          await page
+            .locator('.studio-composer')
+            .evaluate((element) => getComputedStyle(element).borderBottomLeftRadius),
+          '28px',
+          'Composer retains its rounded frame',
+        )
+        for (const selector of ['[data-composer-stop]', '[data-composer-stop] svg'])
+          assert.equal(
+            await page.locator(selector).evaluate((node) => getComputedStyle(node).transform),
+            'none',
+            'Button and stop icon remain still',
+          )
+        if (screenshots)
+          await page.screenshot({
+            path: screenshots + '/desktop-stop.png',
+            animations: 'disabled',
+          })
+        await page.evaluate(() => {
+          document.documentElement.dataset.themeGlow = '0'
+          document.documentElement.dataset.themeGradients = 'false'
+        })
+        await page.waitForFunction(
+          () =>
+            getComputedStyle(document.querySelector('[data-composer-stop]')).boxShadow === 'none',
+        )
+        assert.equal((await glow()).display, 'none', 'Disabled glow hides the halo')
+        assert.equal(
+          await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
+          'none',
+        )
+        await page.evaluate(() => {
+          delete document.documentElement.dataset.themeGlow
+          delete document.documentElement.dataset.themeGradients
+          document.documentElement.dataset.theme = 'light'
+          document.documentElement.classList.remove('dark')
+        })
+        await settleComposer()
+        assert.equal((await glow()).animation, 'studio-stop-glow', 'Light Stop ring also rotates')
+        if (screenshots)
+          await page.screenshot({
+            path: screenshots + '/desktop-stop-light.png',
+            animations: 'disabled',
+          })
+
+        const contrast = await stop.evaluate((button) => {
+          const style = getComputedStyle(button)
+          const surface = getComputedStyle(button.closest('form')).backgroundColor
+          const context = document.createElement('canvas').getContext('2d')
+          const luminance = (color) => {
+            context.clearRect(0, 0, 1, 1)
+            context.fillStyle = surface
+            context.fillRect(0, 0, 1, 1)
+            context.fillStyle = color
+            context.fillRect(0, 0, 1, 1)
+            const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map((value) => {
+              const channel = value / 255
+              return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+            })
+            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+          }
+          const icon = luminance(getComputedStyle(button.querySelector('.lucide-square')).color),
+            background = luminance(style.backgroundColor)
+          return (Math.max(icon, background) + 0.05) / (Math.min(icon, background) + 0.05)
+        })
+        assert.ok(contrast >= 3, 'Light Stop icon has at least 3:1 contrast: ' + contrast)
+        assert.equal(
+          await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
+          'none',
+        )
+        await page.evaluate(() => {
+          document.documentElement.dataset.theme = 'dark'
+          document.documentElement.classList.add('dark')
+        })
+      }
       assert.equal(
         await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
         0,
       )
-      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread project', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        0,
+      )
       assert.equal(
         await page.getByRole('button', { name: 'Working directory', exact: true }).count(),
         0,
@@ -316,7 +728,70 @@ try {
         await page.getByRole('button', { name: 'Scope checkout', exact: true }).count(),
         0,
       )
+      assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 0)
+      await openInfo()
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
+          .count(),
+        0,
+      )
+      if (project === 'dovo-studio')
+        assert.equal(
+          await page.getByRole('button', { name: 'Checkout branch', exact: true }).count(),
+          0,
+        )
+      if (screenshots && device.name === 'desktop' && project === 'dovo-studio')
+        await page.screenshot({ path: screenshots + '/desktop-info-menu.png' })
+      const settingsNode = await page.locator('.task-info-settings').elementHandle()
+      await closeInfo()
+      assert.equal(await settingsNode.evaluate((node) => node.isConnected), false)
+      await openInfo()
+      assert.equal(
+        await settingsNode.evaluate((node) => node.isConnected),
+        true,
+        'Info controls keep their existing DOM/state after reopening',
+      )
+      await closeInfo()
       assert.equal(await input.inputValue(), '')
+      await checkIdle(project === 'dovo-studio' ? device.name + '-idle-thread.png' : undefined)
+      if (project === 'dovo-studio') {
+        // The rich text editor takes the textarea's place in the single idle row.
+        await page.evaluate(() => {
+          window.setRichText(true)
+          window.setTask({})
+        })
+        await page
+          .locator('.studio-composer [contenteditable][aria-label="Message thread"]')
+          .waitFor()
+        await checkIdle(device.name + '-idle-thread-rich.png')
+        await page.evaluate(() => {
+          window.setRichText(false)
+          window.setTask({})
+        })
+        await page.locator('.studio-composer textarea[aria-label="Message thread"]').waitFor()
+        await checkFullComposer()
+      }
+      const startedSurface = await page.locator('.studio-composer').boundingBox()
+      assert.ok(
+        device.height - startedSurface.y - startedSurface.height >= 19,
+        'Started composers leave space above the bottom edge',
+      )
+      await input.fill('A longer message\n'.repeat(8))
+      await input.evaluate((element) => element.blur())
+      await settleComposer()
+      const expandedSurface = await page.locator('.studio-composer').boundingBox()
+      assert.ok(
+        expandedSurface.height > startedSurface.height + 50,
+        'Composers grow with multiline content',
+      )
+      await input.fill('')
+      await settleComposer()
+      assert.equal(
+        (await page.locator('.studio-composer').boundingBox()).height,
+        startedSurface.height,
+        'Clearing a message restores the compact height',
+      )
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,
@@ -325,7 +800,80 @@ try {
         await page.screenshot({ path: screenshots + '/' + device.name + '-task-started.png' })
     }
   }
-  // The queue mirrors the inset project strip, with compaction outside both surfaces.
+  // /sidechat uses the real command menu and never submits a main-thread message.
+  const input = page.getByRole('textbox', { name: 'Message thread' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page
+    .locator('header')
+    .first()
+    .click({ position: { x: 20, y: 20 } })
+  await settleComposer()
+  await input.focus()
+  assert.equal(
+    await page.locator('.studio-composer').evaluate((element) => element.getAnimations().length),
+    0,
+    'Reduced motion skips the layout animation',
+  )
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page
+    .locator('header')
+    .first()
+    .click({ position: { x: 20, y: 20 } })
+  await settleComposer()
+  assert.equal(
+    await page.locator('.composer-mode-toggle').count(),
+    0,
+    'Markdown source toolbar toggle is hidden by default',
+  )
+  await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  await page.getByRole('button', { name: 'Markdown source', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Stashed drafts', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await input.focus()
+  await settleComposer()
+  await page.evaluate(() => {
+    window.setSourceToggle(true)
+    window.setTask({})
+  })
+  await page.locator('.composer-mode-toggle').waitFor()
+  await page.evaluate(() => {
+    window.setSourceToggle(false)
+    window.setTask({})
+  })
+  await page.locator('.composer-mode-toggle').waitFor({ state: 'detached' })
+  const mainCount = await page.evaluate(
+    () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Ask a side question (⌘/Ctrl+;)' }).count(),
+    0,
+  )
+  await input.fill('/sidechat')
+  await page.getByRole('option', { name: '/sidechat', exact: false }).waitFor()
+  await input.press('Enter')
+  await page.waitForFunction(() => window.asides.at(-1) === null)
+  assert.equal(await input.inputValue(), '')
+  // The command restores focus/caret in the next frame; finish it before entering a new draft.
+  await input.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+  await input.fill('Explain this code\n/sidechat')
+  await page.getByRole('option', { name: '/sidechat', exact: false }).waitFor()
+  await input.press('Enter')
+  await page.waitForFunction(() =>
+    window.requests.some((r) => r.path === '/api/tasks/side-thread/create'),
+  )
+  const sideAsk = await page.evaluate(() =>
+    window.requests.findLast((r) => r.path === '/api/tasks/side-thread/create'),
+  )
+  assert.equal(sideAsk.input.objective.trim(), 'Explain this code')
+  assert.equal(sideAsk.input.objective.includes('/sidechat'), false)
+  assert.equal(await input.inputValue(), '')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
+    ),
+    mainCount,
+  )
+  // The queue stays inset above the shared composer, with compaction outside both surfaces.
   await page.evaluate(() =>
     window.setTask({
       repositoryId: 'git',
@@ -345,6 +893,20 @@ try {
       ],
     }),
   )
+  await input.fill('Continue the review')
+  await settleComposer()
+  await page.getByRole('meter', { name: 'Agent context used' }).waitFor()
+  await page.evaluate(() => {
+    window.setContextVisible(false)
+    window.setTask({ title: 'Hidden context' })
+  })
+  await page.getByRole('meter', { name: 'Agent context used' }).waitFor({ state: 'detached' })
+  assert.equal(await page.getByRole('button', { name: 'Compact context', exact: true }).count(), 1)
+  await page.evaluate(() => {
+    window.setContextVisible(true)
+    window.setTask({ title: 'Visible context' })
+  })
+  await page.getByRole('meter', { name: 'Agent context used' }).waitFor()
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     const compact = await page
@@ -359,16 +921,34 @@ try {
       .getByRole('region', { name: 'Composer activity', exact: true })
       .boundingBox()
     const composer = await page.locator('.studio-composer').boundingBox()
-    const project = await page
-      .getByRole('group', { name: 'Project and checkout', exact: true })
-      .boundingBox()
+    const alignment = await page.locator('[role="log"]').evaluate((log) => {
+      const content = log.querySelector('.max-w-\\[var\\(--chat-max\\)\\]')
+      if (!content) throw Error('Missing conversation content')
+      const bounds = content.getBoundingClientRect()
+      const style = getComputedStyle(content)
+      const viewport = log.getBoundingClientRect()
+      return {
+        textCenter:
+          (bounds.left +
+            parseFloat(style.paddingLeft) +
+            bounds.right -
+            parseFloat(style.paddingRight)) /
+          2,
+        viewportCenter: (viewport.left + viewport.right) / 2,
+      }
+    })
+    assert.ok(
+      Math.abs(alignment.textCenter - alignment.viewportCenter) < 1,
+      JSON.stringify(alignment),
+    )
     assert.ok(compact.y + compact.height <= queue.y)
     assert.ok(queue.height <= 32, JSON.stringify(queue))
     assert.ok(
-      Math.abs(queueStrip.x - project.x) < 1 && Math.abs(queueStrip.width - project.width) < 1,
+      Math.abs(queueStrip.x - composer.x) < 1 && Math.abs(queueStrip.width - composer.width) < 1,
+      JSON.stringify({ queueStrip, composer }),
     )
     assert.ok(
-      Math.abs(queueStrip.y + queueStrip.height - 12 - composer.y) < 2,
+      Math.abs(queueStrip.y + queueStrip.height - composer.y) < 2,
       JSON.stringify({ queue, composer }),
     )
     assert.equal(
@@ -378,10 +958,25 @@ try {
     await page.getByRole('button', { name: 'Expand composer activity', exact: true }).click()
     const queuedRow = page.locator('[aria-label="Queued follow-ups"] li').first()
     const rowBounds = await queuedRow.boundingBox()
-    // Own queued messages omit the redundant source line above their preview.
-    assert.ok(rowBounds.height <= 56, JSON.stringify(rowBounds))
+    // Narrow panels reserve a second line for actions without squeezing the preview.
+    const secondaryActions = await queuedRow.locator('[data-queue-actions]').boundingBox()
+    const steerControl = await queuedRow
+      .getByRole('button', { name: 'Steer with queued message 1' })
+      .boundingBox()
+    const actionsBelow = secondaryActions.y >= steerControl.y + steerControl.height
+    const extraLineHeight = actionsBelow ? secondaryActions.height + 8 : 0
+    assert.ok(rowBounds.height <= 56 + extraLineHeight, JSON.stringify(rowBounds))
     assert.equal(await queuedRow.getByText('You', { exact: true }).count(), 0)
     const preview = queuedRow.locator('span[title]').first()
+    const ownPreviewBounds = await preview.boundingBox()
+    assert.ok(ownPreviewBounds.width >= 80, JSON.stringify(ownPreviewBounds))
+    assert.ok(
+      Math.abs(
+        ownPreviewBounds.y + ownPreviewBounds.height / 2 - steerControl.y - steerControl.height / 2,
+      ) < 1,
+      'Own queued text stays vertically centered beside Steer',
+    )
+    if (actionsBelow) assert.ok(ownPreviewBounds.y + ownPreviewBounds.height <= secondaryActions.y)
     assert.equal(
       await preview.evaluate((element) => getComputedStyle(element).whiteSpace),
       'nowrap',
@@ -421,16 +1016,19 @@ try {
       const bounds = await queuedRow.boundingBox()
       const sourceBounds = await sourceControl.boundingBox()
       const previewBounds = await preview.boundingBox()
-      assert.ok(bounds.height <= 56, JSON.stringify({ source: source.kind, bounds }))
+      assert.ok(
+        bounds.height <= 64 + extraLineHeight,
+        JSON.stringify({ source: source.kind, bounds }),
+      )
       assert.ok(sourceBounds.y + sourceBounds.height <= previewBounds.y + 1)
       assert.equal(
         await sourceControl.evaluate((element) => getComputedStyle(element).whiteSpace),
         'nowrap',
       )
-      const editBounds = await queuedRow
-        .getByRole('button', { name: 'Edit queued message 1' })
+      const steerBounds = await queuedRow
+        .getByRole('button', { name: 'Steer with queued message 1' })
         .boundingBox()
-      assert.ok(previewBounds.x + previewBounds.width <= editBounds.x)
+      assert.ok(previewBounds.x + previewBounds.width <= steerBounds.x)
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,
@@ -462,9 +1060,16 @@ try {
   await page.getByRole('menuitem', { name: 'Queue follow-up' }).waitFor()
   assert.equal(await page.getByRole('menuitem', { name: 'Steer agent' }).count(), 0)
   await page.keyboard.press('Escape')
+  await page.evaluate(() => {
+    window.setSendOptions(false)
+    window.setTask({})
+  })
+  await page
+    .getByRole('button', { name: 'More message actions', exact: true })
+    .waitFor({ state: 'hidden' })
   // Alt previews and submits the alternative for either saved default, without
   // changing the preference or inverting Alt+Enter a second time.
-  const followUpInput = page.getByRole('textbox', { name: 'Message task', exact: true })
+  const followUpInput = page.getByRole('textbox', { name: 'Message thread', exact: true })
   for (const defaultMode of ['queue', 'steer']) {
     await page.evaluate((mode) => {
       window.setFollowUp(mode)
@@ -474,10 +1079,11 @@ try {
     const defaultLabel = defaultMode === 'steer' ? 'Steer agent' : 'Queue follow-up'
     const alternateLabel = defaultMode === 'steer' ? 'Queue follow-up' : 'Steer agent'
     await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    await checkIconAction(defaultLabel, new RegExp('^' + defaultLabel + ' \\(Enter\\)$'))
     await page.keyboard.down('Alt')
     const alternateButton = page.getByRole('button', { name: alternateLabel, exact: true })
     await alternateButton.waitFor()
-    assert.match(await alternateButton.getAttribute('title'), /Alt\+Enter/)
+    await checkIconAction(alternateLabel, /\(Alt\+Enter\)$/)
     assert.equal(await followUpInput.inputValue(), 'Keep this draft while choosing an action')
     await page.keyboard.up('Alt')
     await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
@@ -532,8 +1138,29 @@ try {
     await page.keyboard.up('Alt')
   }
   await page.evaluate(() => {
+    window.setQueueStaging(true)
+    window.setTask({
+      status: 'review',
+      queuePaused: true,
+      queue: [{ id: 'stage-icon', role: 'user', text: 'Paused follow-up', paused: true }],
+    })
+  })
+  await followUpInput.fill('Add this message without starting the queue')
+  await checkIconAction('Add to queue', /^Add to queue \(Enter\)$/)
+  assert.equal(
+    await page.getByRole('button', { name: 'Add to queue', exact: true }).isDisabled(),
+    false,
+  )
+  await followUpInput.fill('')
+  await checkIconAction('Add to queue', /^Add to queue \(Enter\)$/)
+  assert.equal(
+    await page.getByRole('button', { name: 'Add to queue', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.setQueueStaging(false)
     window.setFollowUp('queue')
-    window.setTask({ queue: [], contextUsage: undefined })
+    window.setTask({ queue: [], queuePaused: undefined, contextUsage: undefined })
   })
   // A transcript with unloaded history must keep its loading/error path, not show a new-task hero.
   await page.evaluate(() =>
@@ -543,7 +1170,7 @@ try {
     await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
     0,
   )
-  assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Thread project', exact: true }).count(), 0)
   if (screenshots) {
     for (const device of [
       { name: 'desktop', width: 1440, height: 900 },
@@ -557,7 +1184,10 @@ try {
       await page.locator('[data-saved="false"]').waitFor()
       await page.getByRole('button', { name: 'Choose project', exact: true }).click()
       await page.getByRole('textbox', { name: 'Search projects' }).waitFor()
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        1,
+      )
       await page.screenshot({
         path: screenshots + '/' + device.name + '-single-server-projects.png',
       })
@@ -574,15 +1204,18 @@ try {
       )
       await page.getByRole('textbox', { name: 'Search projects' }).fill('notes')
       assert.equal(
-        await page.getByRole('button', { name: 'Start in General', exact: true }).isVisible(),
+        await page
+          .getByRole('button', { name: 'Start without a project', exact: true })
+          .isVisible(),
         true,
       )
       await page.screenshot({ path: screenshots + '/' + device.name + '-searched-projects.png' })
       await page.keyboard.press('Escape')
-      await page.getByRole('button', { name: 'Task server', exact: true }).click()
+      await page.getByRole('button', { name: 'Thread server', exact: true }).click()
       await page.getByRole('dialog', { name: 'Choose a server' }).waitFor()
       await page.screenshot({ path: screenshots + '/' + device.name + '-server-choice.png' })
       await page.keyboard.press('Escape')
+      await closeInfo()
     }
   }
   if (screenshots) {
@@ -595,6 +1228,48 @@ try {
         ?.textContent.includes('Linux workstation'),
     )
     await page.screenshot({ path: screenshots + '/desktop-project-default-server.png' })
+  }
+  if (screenshots) {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.evaluate(() => {
+      window.hideSettings()
+      window.reset()
+      window.setRail(true)
+      window.setMultiple(false)
+      window.setScopeEnabled(false)
+    })
+    await page.getByRole('button', { name: 'Choose project', exact: true }).click()
+    await page.getByRole('button', { name: 'dovo-studio', exact: true }).click()
+    await page.getByRole('group', { name: 'Project and checkout', exact: true }).waitFor()
+    const rail = page.getByRole('navigation', { name: 'Main navigation', exact: true })
+    const tasks = rail.getByRole('button', { name: 'Threads', exact: true })
+    assert.equal(await tasks.getAttribute('aria-current'), 'page')
+    await rail.getByRole('button', { name: 'Browser', exact: true }).click()
+    assert.equal(
+      await rail.getByRole('button', { name: 'Browser', exact: true }).getAttribute('aria-current'),
+      'page',
+    )
+    await tasks.click()
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[aria-label="Choose agent and model"]')
+        ?.textContent.includes('6.1 Sol'),
+    )
+    await page.screenshot({ path: screenshots + '/sidebar-startup.png', scale: 'css' })
+    const draft = page.getByRole('textbox', { name: 'Message thread', exact: true })
+    await draft.fill('Refine the project start experience')
+    await page.locator('[data-saved="true"]').waitFor()
+    await page.screenshot({ path: screenshots + '/sidebar-startup-ready.png', scale: 'css' })
+    await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
+    await page.getByRole('button', { name: 'Stop', exact: true }).waitFor()
+    await page.evaluate(() => window.setTask({ status: 'review' }))
+    await page.getByRole('button', { name: 'Send to agent', exact: true }).waitFor()
+    await page.screenshot({ path: screenshots + '/sidebar-default-composer.png', scale: 'css' })
+    await openInfo()
+    await page.screenshot({ path: screenshots + '/sidebar-project-info.png', scale: 'css' })
+    await closeInfo()
+    await rail.screenshot({ path: screenshots + '/sidebar-detail.png', scale: 'css' })
+    await page.evaluate(() => window.setRail(false))
   }
   // Keep counts, status indicators and collapse reachable in the narrow header.
   await page.evaluate(() => window.setActivity(true))
@@ -649,7 +1324,7 @@ try {
       await collapse.waitFor()
     }
   }
-  // Light mode, draft-only starters, and errors in an otherwise empty saved draft.
+  // Light mode, extra composer actions, and errors in an otherwise empty saved draft.
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.evaluate(() => {
     window.setActivity(false)
@@ -659,20 +1334,67 @@ try {
     document.documentElement.classList.remove('dark')
     document.documentElement.dataset.theme = 'light'
   })
-  await page.getByRole('button', { name: 'Build something', exact: true }).waitFor()
   if (screenshots) await page.screenshot({ path: screenshots + '/desktop-empty-light.png' })
+  await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  await page.getByRole('button', { name: 'Stashed drafts', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Stashed drafts', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  const addMenu = page.getByRole('button', { name: 'More composer actions', exact: true })
+  if ((await addMenu.getAttribute('aria-expanded')) !== 'true') await addMenu.click()
+  assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
+  await page.keyboard.press('Escape')
   const sentBefore = await page.evaluate(
     () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
   )
-  await page.getByRole('button', { name: 'Build something', exact: true }).click()
-  const draftInput = page.getByRole('textbox', { name: 'Message task', exact: true })
-  assert.equal(await draftInput.inputValue(), 'Help me build ')
+  const draftInput = page.getByRole('textbox', { name: 'Message thread', exact: true })
+  await draftInput.fill('Help me build ')
+  await page.locator('[data-saved="true"]').waitFor()
   assert(await draftInput.evaluate((node) => document.activeElement === node))
   assert.equal(
     await page.evaluate(
       () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
     ),
     sentBefore,
+  )
+  await page.evaluate(() => {
+    window.testBackground = true
+    window.setTask({})
+  })
+  const foreground = page.getByRole('button', { name: 'Send to agent', exact: true })
+  const background = page.getByRole('button', { name: 'Start in background', exact: true })
+  await page.keyboard.down('Alt')
+  await background.waitFor()
+  assert.equal(
+    await background.locator('svg').evaluate((icon) => getComputedStyle(icon).rotate),
+    '45deg',
+  )
+  assert.match(await background.getAttribute('title'), /Alt\+Enter/)
+  await page.keyboard.up('Alt')
+  await foreground.waitFor()
+  assert.equal(
+    await foreground.locator('svg').evaluate((icon) => getComputedStyle(icon).rotate),
+    'none',
+  )
+  await page.keyboard.down('Control')
+  await page.keyboard.down('Alt')
+  await foreground.waitFor()
+  await page.keyboard.up('Alt')
+  await page.keyboard.up('Control')
+  await page.keyboard.down('Alt')
+  await background.waitFor()
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await foreground.waitFor()
+  await page.keyboard.up('Alt')
+  await page.keyboard.down('Alt')
+  await background.waitFor()
+  await background.click()
+  await page.keyboard.up('Alt')
+  await page.waitForFunction(() => window.backgroundStarts.length === 1)
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((request) => request.path === '/api/tasks/message').length,
+    ),
+    sentBefore + 1,
   )
   await page.evaluate(() => window.setActivityError('Activity fixture unavailable'))
   await page.getByRole('alert').filter({ hasText: 'Activity fixture unavailable' }).waitFor()

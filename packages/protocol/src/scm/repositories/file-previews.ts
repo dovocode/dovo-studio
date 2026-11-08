@@ -5,6 +5,14 @@ import type { ChangedFile, TaskTurn } from '../../workspace.js'
 /** Expanded text is loaded only on request, never embedded in workspace snapshots. */
 export const FULL_FILE_DIFF_LIMIT = 8 * 1024 * 1024
 
+export const stagingFilePreviewQuerySchema = mutableStruct({
+  path: Schema.String.pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(4096)),
+  ),
+  comparison: Schema.Literals(['staged', 'unstaged']),
+})
+
 const savedFileSchema = mutableStruct({
   hash: Schema.String,
   size: Schema.Number.pipe(
@@ -32,6 +40,7 @@ const previewSideSchema = mutableStruct({
 export const filePreviewSchema = mutableStruct({
   before: Schema.optional(previewSideSchema),
   after: Schema.optional(previewSideSchema),
+  patch: Schema.optional(Schema.String),
 })
 export type FilePreview = Schema.Schema.Type<typeof filePreviewSchema>
 export type FilePreviewMetadata = Schema.Schema.Type<typeof filePreviewMetadataSchema>
@@ -92,9 +101,20 @@ export function checkpointFileCount(checkpoint: TaskTurn['checkpoint']) {
 }
 
 export function checkpointCanUndo(checkpoint: TaskTurn['checkpoint']) {
+  if (checkpoint?.restorePending) return true
   if (!checkpoint || checkpoint.error) return false
   return [checkpoint, ...(checkpoint.linked ?? [])].some(
     (item) =>
       !!item.after && !item.error && !item.undone && item.files.length + item.omitted.length > 0,
+  )
+}
+
+/** Finish an interrupted undo before undoing another turn. */
+export function checkpointUndoTurn(turns: readonly TaskTurn[]) {
+  return (
+    turns.find((turn) => turn.status !== 'running' && turn.checkpoint?.restorePending) ??
+    [...turns]
+      .reverse()
+      .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
   )
 }

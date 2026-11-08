@@ -1,0 +1,631 @@
+import assert from 'node:assert/strict'
+import { writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+// These open production follow-up UI. No final submit, destructive action or runtime write is run.
+export async function captureFollowUpDialogs(page, origin, output) {
+  page.setDefaultTimeout(6000)
+  const button = (name) => page.getByRole('button', { name, exact: true })
+  const menu = (name) => page.getByRole('menuitem', { name, exact: true })
+  const info = async () => {
+    const show = button('Show thread info')
+    if (await show.count()) await show.click()
+    await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
+  }
+  const projectAction = (name) => async () => {
+    await info()
+    await button('Project actions').click()
+    await menu(name).click()
+  }
+  const threadAction = (name) => async () => {
+    await button('Thread actions').first().click()
+    await menu(name).click()
+  }
+  const prAction = (name) => async () => {
+    await button('PR actions').click()
+    await menu(name).click()
+  }
+  const reviewGitFile = (comparison) => async () => {
+    await info()
+    await button('Git actions').click()
+    await menu('Stage, commit & push…').click()
+    await page
+      .getByRole('textbox', { name: 'Commit message', exact: true })
+      .fill('Clarify workspace navigation')
+    await page.getByRole('checkbox', { name: 'Select src/navigation.tsx', exact: true }).check()
+    await button(`Review ${comparison} src/navigation.tsx`).click()
+    await page
+      .getByText(
+        comparison === 'staged'
+          ? 'Staged changes · HEAD → index'
+          : 'Unstaged changes · index → working file',
+        { exact: true },
+      )
+      .waitFor()
+    const contents =
+      comparison === 'staged'
+        ? {
+            before: 'export const label = "Tasks"',
+            after: 'export const label = "Projects"',
+            absent: 'export const label = "Threads"',
+          }
+        : {
+            before: 'export const label = "Projects"',
+            after: 'export const label = "Threads"',
+            absent: 'export const label = "Tasks"',
+          }
+    await page.waitForFunction(
+      ({ before, after, absent }) =>
+        [...document.querySelectorAll('diffs-container')].some((element) => {
+          const text = element.shadowRoot?.querySelector('pre')?.textContent ?? ''
+          return text.includes(before) && text.includes(after) && !text.includes(absent)
+        }),
+      contents,
+    )
+    assert.equal(await button('Stage selected').count(), 0)
+    assert.equal(await button('Commit staged').count(), 0)
+  }
+  const denseGitPath =
+    'packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.ts'
+  const openDenseGit = async () => {
+    await info()
+    await button('Git actions').click()
+    await menu('Stage, commit & push…').click()
+    await button(`Review staged ${denseGitPath}`).waitFor()
+    await button(`Review unstaged ${denseGitPath}`).waitFor()
+    await button(
+      'Review unstaged packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.test.ts',
+    ).waitFor()
+    await button('Review staged docs/runtime-connections.md').waitFor()
+  }
+  const reviewDenseGit =
+    (comparison, scrolled = false) =>
+    async () => {
+      await openDenseGit()
+      await button(`Review ${comparison} ${denseGitPath}`).click()
+      await page.waitForFunction(
+        (expected) =>
+          [...document.querySelectorAll('diffs-container')].some((element) => {
+            const text = element.shadowRoot?.querySelector('pre')?.textContent ?? ''
+            return expected.every((line) => text.includes(line))
+          }),
+        comparison === 'staged'
+          ? [
+              'snapshot !== undefined',
+              'snapshot?.connected === true',
+              'if (selected) return selected',
+            ]
+          : ['Reconnect to continue', 'Choose a computer', 'projectRuntimeLabel'],
+      )
+      const viewport = page
+        .locator(
+          `section[aria-label="${comparison === 'staged' ? 'Staged' : 'Unstaged'} file review"] .overflow-auto`,
+        )
+        .first()
+      const range = await viewport.evaluate(
+        (element) => element.scrollHeight - element.clientHeight,
+      )
+      assert.ok(range > 100, 'Real multiline Git comparison scrolls in its production viewport')
+      if (scrolled) {
+        await viewport.evaluate((element) => {
+          element.scrollTop = element.scrollHeight - element.clientHeight
+        })
+        assert.ok(
+          await viewport.evaluate((element) => element.scrollTop > 100),
+          'Comparison reaches later TypeScript context',
+        )
+      }
+      assert.equal(await button('Stage selected').count(), 0)
+      assert.equal(await button('Commit staged').count(), 0)
+    }
+  /** @type {Array<[string, string, () => Promise<void>]>} */
+  const scenarios = [
+    [
+      'project-actions-menu',
+      'tasks',
+      async () => {
+        await info()
+        await button('Project actions').click()
+      },
+    ],
+    ['project-actions', 'tasks', projectAction('Edit project actions…')],
+    [
+      'project-actions-validation',
+      'tasks',
+      async () => {
+        await projectAction('Edit project actions…')()
+        await page
+          .getByRole('dialog', { name: 'Project actions', exact: true })
+          .getByRole('button', { name: 'Save', exact: true })
+          .click()
+        const command = page
+          .getByRole('dialog', { name: 'Project actions', exact: true })
+          .getByRole('textbox', { name: 'Command', exact: true })
+        assert.equal(await command.getAttribute('aria-invalid'), 'true')
+        assert.equal(await command.evaluate((element) => element === document.activeElement), true)
+        await page.getByRole('alert').filter({ hasText: 'Enter a command' }).waitFor()
+      },
+    ],
+    [
+      'project-actions-discard',
+      'tasks',
+      async () => {
+        await projectAction('Edit project actions…')()
+        const dialog = page.getByRole('dialog', { name: 'Project actions', exact: true })
+        await dialog.getByRole('textbox', { name: 'Command', exact: true }).fill('pnpm test')
+        await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+        await page
+          .getByRole('dialog', { name: 'Discard project action changes?', exact: true })
+          .waitFor()
+      },
+    ],
+    ['saved-prompts', 'tasks', projectAction('Edit saved prompts…')],
+    ['task-templates', 'tasks', projectAction('Manage thread templates…')],
+    ['approval-rules', 'tasks', projectAction('Manage approval rules…')],
+    ['project-instructions', 'tasks', projectAction('Edit project instructions…')],
+    [
+      'open-in-menu',
+      'tasks',
+      async () => {
+        await info()
+        await button('Open in…').click()
+      },
+    ],
+    [
+      'branch-move',
+      'tasks',
+      async () => {
+        await info()
+        await page
+          .getByRole('dialog', { name: 'Thread info', exact: true })
+          .getByRole('button', { name: /main/ })
+          .click()
+        await menu('Move to its own worktree…').click()
+      },
+    ],
+    [
+      'branch-menu',
+      'tasks',
+      async () => {
+        await info()
+        await page
+          .getByRole('dialog', { name: 'Thread info', exact: true })
+          .getByRole('button', { name: /main/ })
+          .click()
+      },
+    ],
+    [
+      'git-actions-menu',
+      'tasks',
+      async () => {
+        await info()
+        await button('Git actions').click()
+      },
+    ],
+    [
+      'git-actions',
+      'tasks',
+      async () => {
+        await info()
+        await button('Git actions').click()
+        await menu('Stage, commit & push…').click()
+      },
+    ],
+    [
+      'git-actions-selection',
+      'tasks&thread=preview-task&changes=1',
+      async () => {
+        await info()
+        await button('Git actions').click()
+        await menu('Stage, commit & push…').click()
+        await page.getByRole('checkbox', { name: 'Select src/navigation.tsx', exact: true }).check()
+        assert.equal(
+          await page
+            .getByRole('checkbox', { name: 'Select all unstaged files', exact: true })
+            .getAttribute('aria-checked'),
+          'mixed',
+        )
+        assert.equal(await button('Stage selected').isDisabled(), false)
+      },
+    ],
+    [
+      'git-actions-commit-ready',
+      'tasks&thread=preview-task&changes=1',
+      async () => {
+        await info()
+        await button('Git actions').click()
+        await menu('Stage, commit & push…').click()
+        await page
+          .getByRole('textbox', { name: 'Commit message', exact: true })
+          .fill('Clarify workspace navigation')
+        assert.equal(await button('Commit & push').isEnabled(), true)
+        assert.equal(await button('Commit staged').isEnabled(), true)
+      },
+    ],
+    ['git-actions-review-staged', 'tasks&thread=preview-task&changes=1', reviewGitFile('staged')],
+    [
+      'git-actions-review-unstaged',
+      'tasks&thread=preview-task&changes=1',
+      reviewGitFile('unstaged'),
+    ],
+    ['git-actions-dense', 'tasks&thread=preview-task&git-dense=1', openDenseGit],
+    [
+      'git-actions-review-long-staged',
+      'tasks&thread=preview-task&git-dense=1',
+      reviewDenseGit('staged'),
+    ],
+    [
+      'git-actions-review-long-unstaged',
+      'tasks&thread=preview-task&git-dense=1',
+      reviewDenseGit('unstaged'),
+    ],
+    [
+      'git-actions-review-long-scrolled',
+      'tasks&thread=preview-task&git-dense=1',
+      reviewDenseGit('unstaged', true),
+    ],
+    [
+      'thread-archive-confirm',
+      'tasks',
+      async () => {
+        await page.evaluate(() => window.uiSetPreferences({ confirmArchive: true }))
+        await threadAction('Archive thread')()
+        await page.getByRole('dialog', { name: /^Archive “/ }).waitFor()
+      },
+    ],
+    [
+      'stop-confirm',
+      'tasks',
+      async () => {
+        const current = new URL(page.url())
+        current.searchParams.delete('idle')
+        await page.goto(current.toString())
+        await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
+        await page.evaluate(() => window.uiSetPreferences({ confirmStop: true }))
+        await button('Stop').click()
+        await page.getByRole('dialog', { name: /^Stop “/ }).waitFor()
+      },
+    ],
+    ['thread-rename', 'tasks', threadAction('Rename…')],
+    ['thread-delete', 'tasks', threadAction('Delete thread…')],
+    [
+      'thread-template',
+      'tasks',
+      async () => {
+        await button('Thread actions').first().click()
+        await menu('New thread').focus()
+        await page.keyboard.press('ArrowRight')
+        await menu('Save as template…').click()
+      },
+    ],
+    [
+      'pr-create',
+      'pulls',
+      async () => {
+        await button('Create pull request').click()
+      },
+    ],
+    ['pr-review', 'pull-overview', prAction('Submit review')],
+    ['pr-merge', 'pull-overview', prAction('Merge pull request')],
+    ['pr-edit', 'pull-overview', prAction('Edit pull request')],
+    ['pr-close', 'pull-overview', prAction('Close pull request')],
+    ['pr-draft', 'pull-overview', prAction('Convert to draft')],
+    ['pr-auto-merge', 'pull-overview', prAction('Enable auto-merge')],
+    ['pr-comment', 'pull-overview', prAction('Comment on PR')],
+    [
+      'pr-add-to-thread',
+      'pulls',
+      async () => {
+        await button('Actions for PR #42').click()
+        await menu('Add to thread').click()
+      },
+    ],
+    [
+      'new-automation',
+      'jobs',
+      async () => {
+        await button('New automation').click()
+      },
+    ],
+    ['pr-reviewers', 'pull-overview', prAction('Manage reviewers')],
+    [
+      'add-skill',
+      'resources',
+      async () => {
+        await button('Add skill').click()
+      },
+    ],
+    [
+      'add-mcp',
+      'resources',
+      async () => {
+        await button('Add MCP server').click()
+      },
+    ],
+
+    [
+      'pair-computer',
+      'runtime',
+      async () => {
+        await button('Connect computer').click()
+      },
+    ],
+    [
+      'licenses',
+      'updates-settings',
+      async () => {
+        await button('View notices').click()
+      },
+    ],
+  ]
+  const direct = [
+    'command-palette',
+    'project-delete',
+    'forge-connections',
+    'import-codex',
+    'import-pi',
+    'downloads',
+    'issue-create',
+    'issue-edit',
+    'issue-comment',
+    'pipeline-run',
+    'artifact-actions',
+    'terminal-close',
+    'terminal-close-multiple',
+    'undo',
+    'new-session',
+    'undo-error',
+    'harness',
+    'link-pr',
+    'repository-local',
+    'repository-github',
+    'repository-forge',
+    'source-picker',
+    'project-transfer',
+    'jira-sources',
+    'artifact-export',
+    'website-customization',
+    'thread-context',
+    'draft-stash',
+    'section-order',
+    'local-commits',
+    'browser-history',
+    'browser-bookmarks',
+    'image-preview',
+    'image-editor',
+    'add-agent',
+    'edit-agent',
+    'pr-ask-agent',
+  ]
+  /** @type {Record<string, string>} */
+  const directTriggers = {
+    'project-delete': 'Delete Dovo Studio…',
+    'forge-connections': 'Connections',
+    'import-codex': 'Import Codex terminal session',
+    'import-pi': 'Import Pi terminal session',
+    downloads: 'Downloads',
+    'artifact-actions': 'Delete artifact Workspace notes',
+    'image-editor': 'Edit sample image',
+    'image-preview': 'Preview workspace.png',
+    'thread-context': 'Attach thread context',
+    'draft-stash': 'Stashed drafts',
+    'section-order': 'Organize sections',
+    'local-commits': 'Local commits',
+  }
+  for (const name of direct)
+    scenarios.push([
+      name,
+      `dialog:${name}`,
+      async () => {
+        if (directTriggers[name]) await button(directTriggers[name]).last().click()
+        await page.getByRole('dialog').last().waitFor()
+        if (name === 'image-editor')
+          await page
+            .frameLocator('iframe[title="Image editor"]')
+            .getByRole('button', { name: 'Attach image', exact: true })
+            .waitFor({ state: 'visible' })
+        if (name === 'local-commits')
+          await page.getByText('Loading commits…', { exact: true }).waitFor({ state: 'hidden' })
+      },
+    ])
+  scenarios.push([
+    'edit-agent-dirty',
+    'dialog:edit-agent',
+    async () => {
+      const dialog = page.getByRole('dialog', { name: 'Edit agent profile', exact: true })
+      await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Navigation reviewer')
+      await dialog.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+    },
+  ])
+  const results = []
+  for (const mode of ['dark', 'light'].filter(
+    (mode) =>
+      !process.argv.some((arg) => arg.startsWith('--capture-mode=')) ||
+      process.argv.includes(`--capture-mode=${mode}`),
+  ))
+    for (const [name, route, open] of scenarios) {
+      if (
+        process.argv.some((arg) => arg.startsWith('--dialog-only=')) &&
+        !process.argv
+          .find((arg) => arg.startsWith('--dialog-only='))
+          .slice(14)
+          .split(',')
+          .includes(name)
+      )
+        continue
+      try {
+        const target = route.startsWith('dialog:')
+          ? `tasks&thread=preview-task&dialog=${route.slice(7)}`
+          : route.startsWith('pull-')
+            ? `pulls&surface=${route}`
+            : route === 'tasks'
+              ? 'tasks&thread=preview-task'
+              : route
+        await page.goto(`${origin}/?mode=${mode}&route=${target}&idle=1`)
+        await page.locator('.studio').waitFor()
+        await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))
+        if (route === 'tasks')
+          await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
+        await open()
+        if (['edit-agent', 'edit-agent-dirty'].includes(name)) {
+          assert.ok(
+            await page.locator('.studio-agent-editor').evaluate((dialog) => {
+              const body = dialog.querySelector('[data-agent-editor-scroll]')
+              const footer = dialog.querySelector('.studio-scroll-gutter-match > fieldset')
+              const contentRight =
+                body.getBoundingClientRect().right -
+                (body.offsetWidth - body.clientWidth) -
+                parseFloat(getComputedStyle(body).paddingRight)
+              return Math.abs(footer.getBoundingClientRect().right - contentRight) <= 1
+            }),
+            `${name}: fixed actions align with the scroll body content edge`,
+          )
+        }
+        if (name === 'thread-delete') {
+          const cancel = page
+            .getByRole('dialog')
+            .getByRole('button', { name: 'Cancel', exact: true })
+          if (!(await cancel.evaluate((button) => button === document.activeElement)))
+            throw new Error('Delete thread must initially focus Cancel')
+        }
+        await page.waitForFunction(
+          () => !document.body.innerText.includes('Loading provider models…'),
+        )
+        await page.evaluate(() => document.fonts.ready)
+        await page.waitForFunction(() =>
+          document
+            .getAnimations()
+            .every(
+              (a) =>
+                a.effect?.getComputedTiming().iterations === Infinity ||
+                ['finished', 'idle', 'paused'].includes(a.playState),
+            ),
+        )
+        const dialogs = page.getByRole('dialog')
+        assert.ok(
+          (await dialogs.count()) || (await page.getByRole('menu').count()),
+          `${name} opens a dialog or menu`,
+        )
+        for (const dialog of await dialogs.all()) {
+          const box = await dialog.boundingBox()
+          assert.ok(
+            box.x >= 0 && box.y >= 0 && box.x + box.width <= 1441 && box.y + box.height <= 961,
+            `${name}: dialog fits viewport`,
+          )
+          assert.ok(
+            await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+            `${name}: no horizontal clipping`,
+          )
+        }
+        await page.mouse.move(0, 0)
+        await page.screenshot({
+          path: resolve(output, `${name}-${mode}.png`),
+          animations: 'disabled',
+        })
+        if (
+          [
+            'git-actions-dense',
+            'git-actions-review-long-staged',
+            'git-actions-review-long-unstaged',
+            'git-actions-review-long-scrolled',
+          ].includes(name)
+        ) {
+          await page.setViewportSize({ width: 1100, height: 960 })
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+          await page.screenshot({
+            path: resolve(output, `${name}-compact-${mode}.png`),
+            animations: 'disabled',
+          })
+          await page.setViewportSize({ width: 1440, height: 960 })
+        }
+        results.push({ name, mode, route, text: await page.locator('body').innerText() })
+        console.log(`dialog ${name}-${mode}: captured`)
+        if (name === 'pr-merge' || name === 'pr-auto-merge') {
+          const sources = page
+            .getByRole('region', { name: 'Merge readiness', exact: true })
+            .locator('summary')
+            .filter({ hasText: 'Status sources' })
+          await sources.click()
+          await page.screenshot({
+            path: resolve(output, `${name}-sources-${mode}.png`),
+            animations: 'disabled',
+          })
+          await sources.click()
+        }
+        if (name === 'image-editor') {
+          const frame = page.frameLocator('iframe[title="Image editor"]')
+          await frame.locator('#attach:enabled').waitFor()
+          await frame.getByRole('button', { name: 'Arrow', exact: true }).click()
+          const box = await frame.locator('canvas').boundingBox()
+          await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.45)
+          await page.mouse.down()
+          await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.45, { steps: 10 })
+          await page.mouse.up()
+          await page.screenshot({ path: resolve(output, `image-editor-annotated-${mode}.png`) })
+          await frame.getByRole('button', { name: 'Crop', exact: true }).click()
+          await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.1)
+          await page.mouse.down()
+          await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.9, { steps: 10 })
+          await page.screenshot({ path: resolve(output, `image-editor-crop-${mode}.png`) })
+          await page.mouse.up()
+          await frame.getByText('Keyboard shortcuts', { exact: true }).click()
+          await page.screenshot({ path: resolve(output, `image-editor-shortcuts-${mode}.png`) })
+          await frame.getByRole('button', { name: 'Actual size', exact: true }).click()
+          for (let i = 0; i < 4; i++)
+            await frame.getByRole('button', { name: 'Zoom in', exact: true }).click()
+          await frame.getByRole('button', { name: 'Pan', exact: true }).click()
+          await page.screenshot({ path: resolve(output, `image-editor-zoom-${mode}.png`) })
+          await frame.getByRole('button', { name: 'Cancel', exact: true }).click()
+        } else if (name === 'add-agent') {
+          const dialog = page.getByRole('dialog').last()
+          await dialog.getByRole('button', { name: 'Next', exact: true }).click()
+          await page.screenshot({ path: resolve(output, `add-agent-profile-${mode}.png`) })
+          await dialog.getByRole('button', { name: 'Next', exact: true }).click()
+          await page.waitForFunction(
+            () => !document.body.innerText.includes('Loading provider models…'),
+          )
+          const completion = dialog.getByRole('button', { name: 'Add agent profile', exact: true })
+          const completionBox = await completion.boundingBox()
+          const dialogBox = await dialog.boundingBox()
+          assert.ok(
+            completionBox &&
+              dialogBox &&
+              completionBox.y >= dialogBox.y &&
+              completionBox.y + completionBox.height <= dialogBox.y + dialogBox.height,
+            'Agent setup completion stays inside the dialog viewport',
+          )
+          await page.screenshot({ path: resolve(output, `add-agent-model-${mode}.png`) })
+          await dialog
+            .locator('summary')
+            .filter({ hasText: 'Connection & account' })
+            .scrollIntoViewIfNeeded()
+          const afterScroll = await completion.boundingBox()
+          assert.ok(
+            afterScroll &&
+              dialogBox &&
+              afterScroll.y + afterScroll.height <= dialogBox.y + dialogBox.height,
+            'Agent completion remains visible after scrolling provider options',
+          )
+          await page.screenshot({ path: resolve(output, `add-agent-model-scrolled-${mode}.png`) })
+          await page.keyboard.press('Escape')
+        } else await page.keyboard.press('Escape')
+      } catch (error) {
+        results.push({
+          name,
+          mode,
+          route,
+          error: error.message,
+          text: await page.locator('body').innerText(),
+          controls: await page.locator('button, [role="menuitem"]').allTextContents(),
+        })
+        console.log(`dialog ${name}-${mode}: ${error.message.split('\n')[0]}`)
+      }
+      await writeFile(resolve(output, 'dialogs-manifest.json'), JSON.stringify(results, null, 2))
+    }
+  await writeFile(resolve(output, 'dialogs-manifest.json'), JSON.stringify(results, null, 2))
+  assert.equal(
+    results.filter((row) => row.error).length,
+    0,
+    'All follow-up scenarios must open successfully; see dialogs-manifest.json',
+  )
+}

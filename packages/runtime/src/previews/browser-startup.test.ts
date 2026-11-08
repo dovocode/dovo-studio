@@ -25,10 +25,65 @@ function browser() {
   return {
     once: vi.fn<(event: string, listener: () => void) => void>(),
     close: vi.fn<() => Promise<void>>(async () => {}),
+    newContext: vi.fn<() => Promise<ReturnType<typeof context>>>(async () => context()),
+  }
+}
+function context() {
+  let onClose: (() => void) | undefined
+  let closed = false
+  return {
+    once: vi.fn<(event: string, listener: () => void) => void>((event, listener) => {
+      if (event === 'close') onClose = listener
+    }),
+    close: vi.fn<() => Promise<void>>(async () => {
+      closed = true
+      onClose?.()
+    }),
+    isClosed: () => closed,
+    route: vi.fn<() => Promise<void>>(async () => {}),
   }
 }
 afterEach(() => {
+  vi.useRealTimers()
   vi.resetAllMocks()
+})
+
+it('reopens a profile when its context closes before the close command rejects', async () => {
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const instance = browser()
+  const original = context()
+  instance.newContext.mockResolvedValueOnce(original)
+  mocks.launch.mockResolvedValue(instance)
+  const browsers = new RemoteBrowsers()
+  const profile = await browsers['profile']('default')
+  const finishClose = original.close.getMockImplementation()
+  if (!finishClose) throw new Error('Missing native context close fixture')
+  // The close starts while open, observes closure, then loses its command reply.
+  original.close.mockImplementationOnce(async () => {
+    await finishClose()
+    throw new Error('Target page, context or browser has been closed')
+  })
+  await expect(profile.release()).resolves.toBeUndefined()
+  const reopened = await browsers['profile']('default')
+  expect(reopened.context).not.toBe(original)
+  await reopened.release()
+  await browsers.dispose()
+})
+
+it('reports a failed profile close when the context remains open', async () => {
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const instance = browser()
+  const original = context()
+  instance.newContext.mockResolvedValueOnce(original)
+  mocks.launch.mockResolvedValue(instance)
+  const browsers = new RemoteBrowsers()
+  const profile = await browsers['profile']('default')
+  const failure = new Error('Context shutdown failed')
+  original.close.mockRejectedValueOnce(failure)
+  await expect(profile.release()).rejects.toBe(failure)
+  expect(original.isClosed()).toBe(false)
+  await original.close()
+  await browsers.dispose()
 })
 
 it('shares startup before installation and Chromium launch finish', async () => {
@@ -134,5 +189,95 @@ it('does not let an old disconnected callback clear a replacement browser', asyn
   disconnect()
   expect(browsers['launch']()).toBe(replacement)
   expect(mocks.launch).toHaveBeenCalledTimes(2)
+  await browsers.dispose()
+})
+
+it('retires an unused shared browser and relaunches after the next context request', async () => {
+  vi.useFakeTimers()
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const first = browser()
+  const second = browser()
+  mocks.launch.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+  const browsers = new RemoteBrowsers()
+  const firstContext = await browsers['sharedContext']({})
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(first.close).not.toHaveBeenCalled()
+  await firstContext.close()
+  await vi.advanceTimersByTimeAsync(59_999)
+  expect(first.close).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(first.close).toHaveBeenCalledTimes(1)
+  const replacement = await browsers['sharedContext']({})
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
+  // A retired browser's delayed notification cannot remove the new instance.
+  first.once.mock.calls[0]![1]()
+  expect(await browsers['launch']()).toBe(second)
+  await replacement.close()
+  await browsers.dispose()
+  expect(second.close).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(second.close).toHaveBeenCalledTimes(1)
+})
+
+it('protects pending context acquisition and restarts the idle window on release', async () => {
+  vi.useFakeTimers()
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const instance = browser()
+  mocks.launch.mockResolvedValue(instance)
+  const browsers = new RemoteBrowsers()
+  const first = await browsers['sharedContext']({})
+  await first.close()
+  await vi.advanceTimersByTimeAsync(59_000)
+  const opening = deferred<ReturnType<typeof context>>()
+  instance.newContext.mockReturnValueOnce(opening.promise)
+  const pending = browsers['sharedContext']({})
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(instance.close).not.toHaveBeenCalled()
+  const next = context()
+  opening.resolve(next)
+  await pending
+  await next.close()
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(instance.close).toHaveBeenCalledTimes(1)
+  await browsers.dispose()
+})
+
+it('waits for retirement before acquiring a replacement context', async () => {
+  vi.useFakeTimers()
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const first = browser()
+  const second = browser()
+  const closing = deferred<void>()
+  first.close.mockReturnValue(closing.promise)
+  mocks.launch.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+  const browsers = new RemoteBrowsers()
+  const initial = await browsers['sharedContext']({})
+  await initial.close()
+  await vi.advanceTimersByTimeAsync(60_000)
+  const pending = browsers['sharedContext']({})
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(mocks.launch).toHaveBeenCalledTimes(1)
+  closing.resolve()
+  const replacement = await pending
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
+  await replacement.close()
+  await browsers.dispose()
+})
+
+it('releases a failed acquisition and keeps queued artifact renders from retiring Chromium', async () => {
+  vi.useFakeTimers()
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const instance = browser()
+  mocks.launch.mockResolvedValue(instance)
+  const browsers = new RemoteBrowsers()
+  instance.newContext.mockRejectedValueOnce(new Error('Context failed'))
+  await expect(browsers['sharedContext']({})).rejects.toThrow('Context failed')
+  browsers['pendingArtifactRenders'] = 1
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(instance.close).not.toHaveBeenCalled()
+  browsers['pendingArtifactRenders'] = 0
+  browsers['scheduleBrowserClose']()
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(instance.close).toHaveBeenCalledTimes(1)
   await browsers.dispose()
 })

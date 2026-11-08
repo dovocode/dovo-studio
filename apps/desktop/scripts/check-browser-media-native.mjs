@@ -72,6 +72,7 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
 import { registerConnectionStorage } from ${JSON.stringify(connectionModule)}
+import { browserPermissions } from ${JSON.stringify(join(desktop, 'electron', 'browser-permissions.ts'))}
 
 const work = process.env.SMOKE_DIR!
 app.setPath('userData', join(work, 'user-data'))
@@ -329,6 +330,7 @@ app.whenReady().then(async () => {
       if ((!playbackOk || !fullscreenOk) && !report.screenshot) await failureScreenshot()
       let pipOk = false
       let backgroundOk = false
+      let automaticOk = false
       try {
         const videoPoint = await point('video')
         assert.ok(videoPoint, 'YouTube video unavailable')
@@ -352,12 +354,28 @@ app.whenReady().then(async () => {
         const active = await youtubePage.executeJavaScript('!!document.pictureInPictureElement')
         pipOk = pipOk && active
         report.pip = {ok:pipOk,before,after,backgroundPlayback:backgroundOk,active}
+        await call({action:'show',key:'youtube',url:youtubeUrl,profileId:'work',workspaceBrowser:true,bounds})
+        await youtubePage.executeJavaScript('document.exitPictureInPicture()', true)
+        browserPermissions('work').setSite(new URL(youtubeUrl).origin, 'automatic-pip', 'allow')
+        for (let cycle = 0; cycle < 2; cycle++) {
+          await call({action:'hide',key:'youtube'})
+          for (let attempt = 0; attempt < 50; attempt++) {
+            if (await youtubePage.executeJavaScript('!!document.pictureInPictureElement')) break
+            await wait(100)
+          }
+          assert.equal(await youtubePage.executeJavaScript('!!document.pictureInPictureElement'), true, 'Leaving YouTube automatically opens native PiP')
+          await call({action:'show',key:'youtube',url:youtubeUrl,profileId:'work',workspaceBrowser:true,bounds})
+          await youtubePage.executeJavaScript('document.exitPictureInPicture()', true)
+        }
+        automaticOk = true
+        report.automaticPip = {ok:true,cycles:2}
+
       } catch (error) {
         report.pip = {ok:false,error:String(error)}
         await failureScreenshot()
       }
       report.youtube = await youtubePage.executeJavaScript('({url:location.href,title:document.title})')
-      report.ok = playbackOk && fullscreenOk && pipOk && backgroundOk
+      report.ok = playbackOk && fullscreenOk && pipOk && backgroundOk && automaticOk
       if (!report.ok) {
         report.page = await videoState()
         if (!report.screenshot) await failureScreenshot()

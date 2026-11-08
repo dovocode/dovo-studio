@@ -9,6 +9,7 @@ import {
   pullStackLabel,
   taskPullStatusFor,
   taskDisplayProject,
+  taskBackgroundTerminalCount,
 } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
 import {
@@ -31,9 +32,8 @@ import {
   CircleX,
   CircleStop,
   FilePenLine,
-  GitFork,
   MessageCircleQuestion,
-  MessageCircle,
+  MessageCircleDashed,
   Save,
   type LucideIcon,
   CircleCheck,
@@ -43,6 +43,7 @@ import {
   Layers,
   Pin,
   Network,
+  SquareTerminal,
 } from 'lucide-react'
 import { memo, useId, useMemo, useState } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
@@ -51,15 +52,16 @@ import type { TaskOwner } from './task-collection'
 import { useTaskNow } from './task-clock'
 import { threadTreeSummary } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
+  Draft: FilePenLine,
   Working: CircleDashed,
   Done: CircleCheck,
+  Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
   Waiting: AlarmClock,
   Settled: CircleCheck,
   Archived: Archive,
-  Draft: FilePenLine,
   'Needs input': MessageCircleQuestion,
   'Saving changes': Save,
 }
@@ -94,6 +96,13 @@ function TaskRowView({
   selectedThreadKey?: string
   searching?: boolean
 }) {
+  const activeTerminals = terminals + taskBackgroundTerminalCount(task)
+  const terminalIndicator = activeTerminals > 0 && (
+    <SquareTerminal
+      className="size-3.5 shrink-0 text-muted-foreground"
+      aria-label={`${activeTerminals} active terminal${activeTerminals === 1 ? '' : 's'}`}
+    />
+  )
   const studioHost = useStudioHost()
   const childrenId = useId()
   const parentKey = JSON.stringify([owner.runtimeId, task.id])
@@ -106,7 +115,7 @@ function TaskRowView({
   const displayProject = taskDisplayProject(task, owner.repositories)
   const general = repository?.kind === 'scratch'
   const projectName =
-    displayProject?.kind === 'scratch' ? 'General' : (displayProject?.name ?? 'No project')
+    displayProject?.kind === 'scratch' ? 'No Project' : (displayProject?.name ?? 'No Project')
   // The list retains this projection across transcript-only updates, including native agents.
   const rootThread = useMemo(
     () =>
@@ -137,6 +146,7 @@ function TaskRowView({
     [childRows, task.acknowledgedSubagentFailures],
   )
   const compact = task.archived || !!task.archivedAt
+  const draft = task.status === 'draft' && !compact
   const childCount = summary.total
   const childrenDetail = [
     `${childCount} subthread${childCount === 1 ? '' : 's'}`,
@@ -157,9 +167,15 @@ function TaskRowView({
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
-      <MessageCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <MessageCircleDashed
+        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-5')}
+        aria-hidden="true"
+      />
     ) : (
-      <ProjectIcon repository={displayProject} className="size-4 shrink-0" />
+      <ProjectIcon
+        repository={displayProject}
+        className={cn('shrink-0', compact ? 'size-4' : 'size-5 rounded-[5px] text-[10px]')}
+      />
     )
   const latest = task.turns?.at(-1)
   const provider =
@@ -193,18 +209,14 @@ function TaskRowView({
   const unread = hasUnreadTaskActivity(task)
   const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !owner.online && !!owner.runtimeId
-  const compactStatus = offline ? 'Offline' : presentation.compactLabel
-  const StatusIcon = offline
-    ? CloudOff
-    : ['Review', 'Finished'].includes(presentation.state)
-      ? undefined
+  const hideReviewStatus = !offline && presentation.state === 'Review'
+  const visibleStatus = offline ? 'Offline' : presentation.compactLabel
+  const StatusIcon = hideReviewStatus
+    ? undefined
+    : offline
+      ? CloudOff
       : (statusIcons[presentation.state] ?? CircleDashed)
-  const statusTone = cn(
-    !offline && presentation.state === 'Working' && 'text-primary',
-    !offline && ['Done', 'Settled'].includes(presentation.state) && 'text-status-success',
-    !offline && presentation.state === 'Failed' && 'text-destructive',
-    !offline && presentation.state === 'Needs input' && 'text-status-warning',
-  )
+  const statusTone = offline ? 'neutral' : presentation.tone
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
@@ -222,19 +234,55 @@ function TaskRowView({
     agent?.name ??
     (provider ? providers[provider].short : 'Unassigned agent')
   const agentDetail = `${agentName}${provider ? ` · ${providers[provider].name}` : ''}`
+  const pullIndicators = !!linkedPulls.length && (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-0.5 font-mono tabular-nums',
+        pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
+      )}
+      aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
+      title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
+    >
+      {stack ? (
+        <Layers
+          className={cn(
+            'size-3',
+            pullRequestIconTone(task.pullStatus?.state, task.pullStatus?.draft),
+          )}
+          aria-label={pullStackLabel(stack)}
+        />
+      ) : (
+        <PullRequestIcon state={badgeStatus?.state} draft={badgeStatus?.draft} />
+      )}
+      {linkedPulls.length > 1 ? `${linkedPulls.length} PRs` : linkedPulls[0]!.number}
+      {stack && linkedPulls.length === 1 && (
+        <span className="text-[0.625rem]">
+          {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
+        </span>
+      )}
+    </span>
+  )
+  const executionIcons = (
+    <span className="inline-flex shrink-0 items-center gap-1" data-thread-execution>
+      {(general || compact) && pullIndicators}
+      {!!childCount && <span className="studio-subthread-anchor block h-3.5 w-5 shrink-0" />}
+      <RuntimeIcon
+        icon={owner.runtimeIcon}
+        className="size-3.5 shrink-0"
+        aria-label={host ?? 'Unknown host'}
+      />
+      {provider && (
+        <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5 shrink-0" />
+      )}
+    </span>
+  )
   const grouped = compact && !!childCount && open
   const highlighted = selected || multiSelected || !!selectedChildId
   return (
     <div
+      data-highlighted={highlighted || undefined}
       onMouseLeave={() => setHovered(false)}
-      className={cn(
-        'group/task relative w-full min-w-0',
-        grouped && 'mb-0.5 rounded-xl border transition-colors',
-        grouped &&
-          (highlighted
-            ? 'border-transparent bg-accent/70 hover:bg-accent/80'
-            : 'border-border/30 bg-accent/15 hover:bg-accent/30'),
-      )}
+      className={cn('studio-thread-row group/task relative w-full min-w-0', grouped && 'mb-[3px]')}
     >
       <div className="relative">
         <Tooltip delayDuration={450}>
@@ -243,13 +291,16 @@ function TaskRowView({
               variant="ghost"
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
+              data-read={(!highlighted && !unread) || undefined}
+              data-draft={draft || undefined}
+              data-compact={compact || undefined}
               className={cn(
-                'mb-0.5 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
+                'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact
-                  ? 'min-h-9 flex-row items-center gap-2 py-1.5'
-                  : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
+                  ? 'min-h-9 items-center py-1.5'
+                  : cn('items-start py-2', general ? 'min-h-[48px]' : 'min-h-[68px]'),
                 grouped
-                  ? 'mb-0 rounded-b-none border-0 bg-transparent hover:bg-accent/30'
+                  ? 'mb-0'
                   : highlighted
                     ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                     : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
@@ -257,109 +308,95 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              {compact ? (
-                <span className="shrink-0">{projectIcon}</span>
-              ) : (
-                <span
-                  className={cn(
-                    'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
-                    !!childCount && 'pr-7',
-                    editable &&
-                      'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
-                  )}
-                >
-                  {projectIcon}
-                  <span
-                    className="min-w-0 flex-1 truncate"
-                    title={`${statusDetail} · ${agentDetail}`}
-                  >
-                    {projectName}
-                  </span>
-                  {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                  {!general && task.execution === 'worktree' && (
-                    <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
-                  )}
-                  <span className={cn('flex shrink-0 items-center gap-1 text-xs', statusTone)}>
-                    {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
-                    {compactStatus}
-                  </span>
-                </span>
-              )}
+              <span className={cn('studio-thread-project-icon shrink-0', !compact && 'pt-0.5')}>
+                {projectIcon}
+              </span>
               <span
                 className={cn(
-                  'block min-w-0 truncate text-sm font-medium leading-5',
-                  compact ? 'flex-1' : 'w-full',
-                  compact && !!childCount && 'pr-7',
-                  highlighted || unread
-                    ? 'text-foreground'
-                    : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
-                  editable &&
-                    'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
+                  'studio-thread-card-body flex min-w-0 flex-1',
+                  compact ? 'items-center gap-1.5' : 'flex-col items-stretch gap-0.5',
                 )}
               >
-                {task.title}
-              </span>
-              {compact && StatusIcon && (
-                <span
-                  className={cn('shrink-0', statusTone)}
-                  aria-label={compactStatus}
-                  title={status}
-                >
-                  <StatusIcon className="size-3.5" aria-hidden="true" />
-                </span>
-              )}
-              {!compact && (
-                <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
-                  {!general && (
-                    <>
-                      <GitBranch className="size-3 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
-                    </>
-                  )}
-                  {general && <span className="min-w-0 flex-1" />}
-                  {!!linkedPulls.length && (
+                {!compact && (
+                  <span
+                    className={cn(
+                      'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
+                      editable &&
+                        'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
+                    )}
+                  >
                     <span
-                      className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground"
-                      aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
-                      title={linkedPulls
-                        .map((pull) => `#${pull.number} · ${pull.title}`)
-                        .join(' · ')}
+                      className="min-w-0 flex-1 truncate"
+                      data-thread-copy=""
+                      title={`${statusDetail} · ${agentDetail}`}
                     >
-                      {stack ? (
-                        <Layers
-                          className={cn(
-                            'size-3',
-                            pullRequestIconTone(task.pullStatus?.state, task.pullStatus?.draft),
-                          )}
-                          aria-label={pullStackLabel(stack)}
-                        />
-                      ) : (
-                        <PullRequestIcon state={badgeStatus?.state} draft={badgeStatus?.draft} />
-                      )}
-                      {linkedPulls.length > 1
-                        ? `${linkedPulls.length} PRs`
-                        : linkedPulls[0]!.number}
-                      {stack && linkedPulls.length === 1 && (
-                        <span className="text-[0.625rem]">
-                          {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
-                        </span>
-                      )}
+                      {projectName}
                     </span>
+                    {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+                    {!hideReviewStatus && (
+                      <span
+                        className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
+                        data-thread-copy=""
+                        data-tone={statusTone}
+                        data-thread-state={offline ? 'Offline' : presentation.state}
+                        title={status}
+                      >
+                        {StatusIcon && (
+                          <StatusIcon
+                            className="studio-thread-status-icon size-3.5"
+                            aria-hidden="true"
+                          />
+                        )}
+                        {visibleStatus}
+                      </span>
+                    )}
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    'studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
+                    compact ? 'flex-1' : 'w-full',
+                    'text-foreground',
+                    compact && editable && 'pr-24',
                   )}
-                  <RuntimeIcon
-                    icon={owner.runtimeIcon}
-                    className="size-3 shrink-0"
-                    aria-label={host ?? 'Unknown host'}
-                  />
-                  {provider && (
-                    <AgentAvatar
-                      provider={provider}
-                      customIcon={customIcon}
-                      className="size-3 shrink-0"
-                    />
-                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate" data-thread-title data-thread-copy="">
+                    {task.title}
+                  </span>
+                  {(general || (compact && !!childCount)) && executionIcons}
+                  {(general || compact) && terminalIndicator}
                 </span>
-              )}
+                {compact && StatusIcon && (
+                  <span
+                    className="studio-thread-status shrink-0"
+                    data-tone={statusTone}
+                    data-thread-state={offline ? 'Offline' : presentation.state}
+                    aria-label={visibleStatus}
+                    title={status}
+                  >
+                    <StatusIcon className="studio-thread-status-icon size-3.5" aria-hidden="true" />
+                  </span>
+                )}
+                {!compact && !general && (
+                  <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
+                    <GitBranch className="size-3 shrink-0" />
+                    <span
+                      className={cn('min-w-0 flex-1 truncate text-left', branch && 'font-mono')}
+                      dir={branch ? 'rtl' : undefined}
+                      data-thread-branch
+                      data-thread-copy=""
+                    >
+                      {/* Keep the branch tail visible without reversing its text or metadata. */}
+                      <bdi dir="ltr">{branch || 'Local checkout'}</bdi>
+                    </span>
+                    {pullIndicators}
+                    <span className="flex items-center gap-1">
+                      {executionIcons}
+                      {terminalIndicator}
+                    </span>
+                  </span>
+                )}
+              </span>
             </Button>
           </TooltipTrigger>
           <TooltipContent
@@ -372,7 +409,7 @@ function TaskRowView({
             <div className="space-y-2 text-xs text-muted-foreground">
               <p className="flex items-center gap-2">
                 {general ? (
-                  <MessageCircle className="size-3 shrink-0" />
+                  <MessageCircleDashed className="size-3 shrink-0" />
                 ) : (
                   <FolderGit2 className="size-3 shrink-0" />
                 )}
@@ -426,7 +463,7 @@ function TaskRowView({
                 </p>
               )}
               <p>
-                {terminals} terminal {terminals === 1 ? 'session' : 'sessions'} running
+                {activeTerminals} terminal {activeTerminals === 1 ? 'session' : 'sessions'} running
               </p>
             </div>
           </TooltipContent>
@@ -435,7 +472,7 @@ function TaskRowView({
           <button
             type="button"
             className={cn(
-              'absolute top-1 right-2.5 flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
+              'studio-subthread-control flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
               open && 'bg-accent text-foreground',
               summary.attention > 0 && 'text-status-warning',
               summary.failed > 0 && 'text-destructive',
@@ -488,8 +525,9 @@ function TaskRowView({
       {editable && (
         <div
           className={cn(
-            'pointer-events-none absolute top-1.5 flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none',
-            childCount ? 'right-9' : 'right-2',
+            'studio-thread-actions pointer-events-none absolute flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none',
+            compact ? 'top-1.5' : 'top-0.5',
+            'right-2',
           )}
         >
           <TaskLifecycleActions key={owner.runtimeId ?? 'local'} task={task} owner={owner} />

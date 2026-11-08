@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { chromium } from './browser/harness.mjs'
+const assets = fileURLToPath(new URL('../apps/desktop/dist/assets/', import.meta.url))
 const catalogMock = `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model',serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});`
 const mocks = {
   './harness-catalog': catalogMock,
   './use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['harness:codex']),loading:false,refresh:()=>{}});`,
   './agent-avatar': `export const AgentAvatar=()=>null;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
-  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;export const updateAppPreferences=value=>Object.assign(preferences,value);export const useWorkspaceSelector=select=>select(useContext(Context));export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export {Dialog,DialogContent,DialogTitle,DialogDescription} from '../studio-ui/src/components/ui/dialog';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
+  '@dovo/studio-ui': `export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
@@ -33,10 +35,11 @@ const built = await build({
   stdin: {
     contents: `
 import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {RunControls} from './src/chat/actions/run-controls.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
+const connection={address:'http://runtime',token:'token'};
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{workspace,...inputs,runs:[],queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-thread/create'){if(window.failSideSave)throw Error('Side save failed');return new Promise((resolve,reject)=>{window.sideSaved=()=>resolve({id:'side-'+input.childId});window.sideLost=()=>reject(Error('Side chat response lost'))})};if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
+function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection,flush:async()=>{},snapshot:{workspace,...inputs,runs:[],queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -73,6 +76,12 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   await page.goto('https://dovo.test/')
+  await page.addStyleTag({
+    content: readdirSync(assets)
+      .filter((file) => file.endsWith('.css'))
+      .map((file) => readFileSync(assets + file, 'utf8'))
+      .join('\n'),
+  })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByRole('textbox', { name: 'Message' })
   const dropFiles = async () =>
@@ -93,6 +102,46 @@ try {
       previous,
     )
   }
+  await page.evaluate(() => {
+    window.setComposerPreferences({ confirmStop: true })
+    window.confirmationResponse = (options) =>
+      new Promise((resolve) => {
+        window.pendingConfirmation = { options, resolve }
+      })
+    window.setTask((task) => ({ ...task, status: 'running', activeRunId: 'run-one' }))
+  })
+  const stop = page.getByRole('button', { name: 'Stop', exact: true })
+  await stop.click()
+  await page.waitForFunction(() => !!window.pendingConfirmation)
+  await page.evaluate(() => window.pendingConfirmation.resolve(false))
+  await stop.waitFor({ state: 'visible' })
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="Stop"]').disabled)
+  assert.equal(
+    await page.evaluate(() => window.requests.filter((r) => r.path === '/api/tasks/cancel').length),
+    0,
+  )
+  await stop.click()
+  await page.evaluate(() => window.setTask((task) => ({ ...task, activeRunId: 'run-two' })))
+  await page.waitForFunction(() => window.current.activeRunId === 'run-two')
+  await page.evaluate(() => window.pendingConfirmation.resolve(true))
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="Stop"]').disabled)
+  assert.equal(
+    await page.evaluate(() => window.requests.filter((r) => r.path === '/api/tasks/cancel').length),
+    0,
+  )
+  await stop.click()
+  await page.evaluate(() => window.pendingConfirmation.resolve(true))
+  await page.waitForFunction(() => window.requests.some((r) => r.path === '/api/tasks/cancel'))
+  assert.deepEqual(
+    await page.evaluate(() => window.requests.find((r) => r.path === '/api/tasks/cancel').input),
+    { id: 'task', runId: 'run-two' },
+  )
+  await page.evaluate(() => {
+    window.setComposerPreferences({ confirmStop: false })
+    delete window.confirmationResponse
+    window.requests = []
+    window.setTask((task) => ({ ...task, status: 'draft', activeRunId: undefined }))
+  })
   await page.evaluate(() => window.setTask((task) => ({ ...task, autoProject: true })))
   await input.fill('Update dashboard using API')
   await page.evaluate(() => {
@@ -123,7 +172,9 @@ try {
     window.response()
     window.response = null
   })
-  await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
+  await page.waitForFunction(
+    () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+  )
   await page.waitForFunction(() => typeof window.finishTitle === 'function')
   // A later browser handoff may intentionally insert the same text as a previous send.
   await page.evaluate(() =>
@@ -188,7 +239,9 @@ try {
     window.response()
     window.response = null
   })
-  await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
+  await page.waitForFunction(
+    () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+  )
   await remount()
   assert.equal(await input.inputValue(), '', 'A sent reference reappeared')
   // Keep the remaining send scenarios independent of the reference regression.
@@ -286,7 +339,9 @@ try {
       window.response()
       window.response = null
     }, fail)
-    await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
+    await page.waitForFunction(
+      () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+    )
   }
   const acknowledge = async (destination) => {
     await page.evaluate(
@@ -345,13 +400,12 @@ try {
   // The queued choice survives a failed send; only its draft override clears after acknowledgement.
   assert.equal(await page.getByText('Next turn', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Next turn model and reasoning' }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Configure task permissions' }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Configure thread permissions' }).count(), 0)
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: 'Custom configurations' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Agent configuration' }).count(), 0)
   await page.locator('[role=option][data-value=large-model]').click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
+  await page.getByRole('radio', { name: 'High', exact: true }).click()
   assert.equal(await page.evaluate(() => window.current.harness ?? null), null)
   await submit('Use a larger model')
   const selectedId = await page.evaluate(() => window.pending.message.id)
@@ -395,12 +449,12 @@ try {
       queue: [{ id: 'queued-message', role: 'user', text: 'Original queued input' }],
     })),
   )
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Edited queued input')
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   await page.locator('[role=option][data-value=fast-model]').click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'Low', exact: true }).click()
+  await page.getByRole('radio', { name: 'Low', exact: true }).click()
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page
     .getByRole('button', { name: 'Cancel edit', exact: true })
@@ -420,7 +474,7 @@ try {
     reasoning: 'low',
   })
   assert.equal(edit.input.expectedTurnSettings, null)
-  // Duplicate leaves the composer alone and reuses its id after a failed response.
+  // Duplicate leaves the composer alone. Durable journal retry identity is covered in protocol tests; this fixture mocks requests before that layer.
   const duplicateButton = page.getByRole('button', {
     name: 'Duplicate queued message 1',
     exact: true,
@@ -429,6 +483,7 @@ try {
   await page.evaluate(() => {
     window.failDuplicate = true
   })
+  await duplicateButton.focus()
   await duplicateButton.click()
   await page.getByRole('alert').filter({ hasText: 'Duplicate failed' }).waitFor()
   const duplicateId = await page.evaluate(() => window.requests.at(-1).input.duplicateMessageId)
@@ -436,16 +491,19 @@ try {
   await page.evaluate(() => {
     window.failDuplicate = false
   })
+  await duplicateButton.focus()
   await duplicateButton.click()
   await page.waitForFunction(() => !document.querySelector('[role="alert"]'))
-  assert.equal(
-    await page.evaluate(() => window.requests.at(-1).input.duplicateMessageId),
-    duplicateId,
+  const retriedCandidateId = await page.evaluate(
+    () => window.requests.at(-1).input.duplicateMessageId,
   )
+  assert.ok(retriedCandidateId)
+  assert.notEqual(retriedCandidateId, duplicateId)
+  await duplicateButton.focus()
   await duplicateButton.click()
   await page.waitForFunction(
     (id) => window.requests.at(-1).input.duplicateMessageId !== id,
-    duplicateId,
+    retriedCandidateId,
   )
   assert.equal(await input.inputValue(), draftBeforeDuplicate)
 
@@ -512,8 +570,9 @@ try {
     .getByRole('button', { name: 'Drag queued message 1 to reorder', exact: true })
     .dragTo(input)
   if ((await moves()).length !== 4) throw Error('Canceled drag sent a mutation')
-  assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 0)
-  assert.equal(await queued.getByRole('button', { name: /Move queued message/ }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 1)
+  assert.equal(await queued.getByRole('button', { name: /Move queued message/ }).count(), 8)
+  await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).focus()
   await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).click()
   await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).waitFor()
   assert.equal(
@@ -522,6 +581,7 @@ try {
   )
   assert.equal(await page.evaluate(() => window.current.queue[1].paused), true)
   assert.equal(await page.evaluate(() => window.current.queue[0].paused ?? false), false)
+  await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).focus()
   await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).click()
   await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).waitFor()
   assert.equal(await queued.getByRole('img', { name: /Waiting behind paused message/ }).count(), 0)
@@ -650,7 +710,8 @@ try {
         ['/api/tasks/message', '/api/tasks/steer', '/api/tasks/start-fork'].includes(request.path),
       ).length,
   )
-  // The side-chat action consumes the current draft only after saving it, leaving attachments.
+  // Ask on side turns the current draft into a draft agent side chat, leaving attachments. It
+  // never runs the child or the main composer.
   await page.evaluate(() => {
     window.setTask((task) => ({
       ...task,
@@ -659,11 +720,33 @@ try {
     }))
   })
   await input.fill('Explain this worktree')
-  const aside = page.getByRole('button', { name: 'Ask a side question (⌘/Ctrl+;)', exact: true })
-  await aside.click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Ask a side question (⌘/Ctrl+;)', exact: true }).count(),
+    0,
+  )
+  const askSide = () =>
+    page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
+      ),
+    )
+  const creates = () =>
+    page.evaluate(() =>
+      window.requests.filter((request) => request.path === '/api/tasks/side-thread/create'),
+    )
+  await askSide()
   await page.waitForFunction(() => typeof window.sideSaved === 'function')
   if ((await input.inputValue()) !== 'Explain this worktree')
-    throw Error('Side question cleared before persistence')
+    throw Error('Side chat draft cleared before the side chat was created')
+  // An uncertain response is retried with the same child id, so it cannot create two side chats.
+  await page.evaluate(() => {
+    window.sideLost()
+    window.sideSaved = null
+  })
+  await page.getByText('Side chat response lost', { exact: true }).waitFor()
+  assert.equal(await input.inputValue(), 'Explain this worktree')
+  await askSide()
+  await page.waitForFunction(() => typeof window.sideSaved === 'function')
   await page.evaluate(() => {
     window.dispatchEvent(
       new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
@@ -671,41 +754,32 @@ try {
     window.sideSaved()
     window.sideSaved = null
   })
-  await page.waitForFunction(() => window.sideResponse !== null)
-  if ((await input.inputValue()) !== '') throw Error('Side send did not consume the saved draft')
-  await input.fill('A newer draft')
-  const sideAsk = await page.evaluate(() =>
-    window.requests.findLast((request) => request.path === '/api/tasks/side-chat/ask'),
-  )
+  await page.waitForFunction(() => window.asides.length > 0)
+  if ((await input.inputValue()) !== '') throw Error('Side chat did not consume the main draft')
+  const [lost, created] = await creates()
   if (
-    sideAsk.input.question !== 'Explain this worktree' ||
-    sideAsk.input.id !== 'task' ||
-    sideAsk.input.chatId !== 'side-0'
+    !created ||
+    created.input.id !== 'task' ||
+    created.input.objective !== 'Explain this worktree' ||
+    !created.input.childId ||
+    created.input.childId !== lost.input.childId
   )
-    throw Error('Side question went to the wrong destination')
-  if (
-    (await page.evaluate(
-      () =>
-        window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
-    )) !== 1
-  )
-    throw Error('Duplicate side send')
+    throw Error('Side chat retry went to the wrong destination or changed its child id')
+  assert.equal((await creates()).length, 2, 'Duplicate side chat creation')
+  assert.equal(await page.evaluate(() => window.asides.at(-1)), `side-${created.input.childId}`)
   if (
     !(await page.evaluate(() => window.current.draftAttachments.some((file) => file.id === 'keep')))
   )
-    throw Error('Side send consumed attachments')
-  await page.evaluate(() => {
-    window.sideResponse()
-    window.sideResponse = null
-  })
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
+    throw Error('Side chat consumed attachments')
+  if (
+    await page.evaluate(() =>
+      window.requests.some((request) => request.path.startsWith('/api/tasks/side-chat/')),
+    )
   )
-  if ((await input.inputValue()) !== 'A newer draft')
-    throw Error('Side answer cleared newer typing')
-  // Saving a side question must not clear an edit made away from and back to the same text.
+    throw Error('Ask on side used the legacy read-only side chat')
+  // Saving a side chat must not clear an edit made away from and back to the same text.
   await input.fill('Keep this new edit')
-  await aside.click()
+  await askSide()
   await page.waitForFunction(() => typeof window.sideSaved === 'function')
   await input.fill('An intervening edit')
   await input.fill('Keep this new edit')
@@ -713,55 +787,22 @@ try {
     window.sideSaved()
     window.sideSaved = null
   })
-  await page.waitForFunction(() => window.sideResponse !== null)
+  await page.waitForFunction(() => window.asides.length > 1)
   assert.equal(await input.inputValue(), 'Keep this new edit')
-  await page.evaluate(() => {
-    window.sideResponse()
-    window.sideResponse = null
-  })
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
-  )
-  // Keyboard dispatch targets the same action, using live text rather than a stale task snapshot.
-  await input.fill('Keyboard side question')
-  await page.evaluate(() =>
-    window.dispatchEvent(
-      new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
-    ),
-  )
-  await page.waitForFunction(() => typeof window.sideSaved === 'function')
-  await page.evaluate(() => {
-    window.sideSaved()
-    window.sideSaved = null
-  })
-  await page.waitForFunction(() => window.sideResponse !== null)
-  if ((await input.inputValue()) !== '')
-    throw Error('Saved side question remained in the main composer')
-  await page.evaluate(() => {
-    window.sideResponse()
-    window.sideResponse = null
-  })
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
-  )
-  const saves = await page.evaluate(
-    () => window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
-  )
-  await aside.click()
+  const [, , second] = await creates()
+  if (second.input.childId === created.input.childId)
+    throw Error('A new side chat reused the previous child id')
+  const saves = (await creates()).length
+  await input.fill('')
+  await askSide()
   if ((await page.evaluate(() => window.asides.at(-1))) !== null)
     throw Error('Empty composer did not open side chats')
-  if (
-    (await page.evaluate(
-      () =>
-        window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
-    )) !== saves
-  )
-    throw Error('Empty composer created a chat')
+  if ((await creates()).length !== saves) throw Error('Empty composer created a side chat')
   await input.fill('Keep after side save failure')
   await page.evaluate(() => {
     window.failSideSave = true
   })
-  await aside.click()
+  await askSide()
   await page.getByText('Side save failed', { exact: true }).waitFor()
   if (
     (await page.evaluate(
@@ -804,7 +845,7 @@ try {
   await page
     .getByRole('listitem', { name: 'Queued message 1 of 1, not sent', exact: true })
     .waitFor()
-  assert.equal(await queueTab.textContent(), 'Queue1')
+  assert.equal(await queueTab.textContent(), '1 queued')
   assert.equal(await checklistTab.textContent(), 'Checklist1/2')
   await page.evaluate(() =>
     window.setTask((task) => ({ ...task, queuePaused: true, status: 'completed' })),
@@ -820,6 +861,7 @@ try {
     window.setTask((task) => ({ ...task, queuePaused: false, status: 'running' })),
   )
   await queueTab.waitFor()
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   const queuedEdit = page.getByRole('textbox', { name: 'Message', exact: true })
   await queuedEdit.fill('Unsaved queue edit')
@@ -933,6 +975,7 @@ try {
     })),
   )
   await page.getByRole('tab', { name: 'Queue · 1', exact: true }).click()
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await queuedEdit.fill('Keep edit after clearing checklist')
   await page.getByRole('tab', { name: /Checklist · 0\/1/ }).click()
@@ -947,16 +990,15 @@ try {
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await input.fill('Preserve my draft')
   await page.evaluate(() => window.setFull(true))
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await input.fill('Use the full composer')
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   await page.getByRole('button', { name: 'Custom configurations', exact: true }).waitFor()
   await page.locator('[role=option][data-value=large-model]').click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: /Fast/, exact: false }).click()
-  await page.getByRole('button', { name: 'Configure task permissions', exact: true }).click()
+  await page.getByRole('radio', { name: 'High', exact: true }).click()
+  await page.getByRole('radio', { name: /Fast/, exact: false }).click()
+  await page.getByRole('button', { name: 'Configure thread permissions', exact: true }).click()
   await page.locator('[role=menuitemradio][data-value=full-access]').click()
   assert.equal(await input.inputValue(), 'Use the full composer')
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
@@ -1036,6 +1078,7 @@ try {
     exact: true,
   })
   if (await watchExpandActivity.isVisible()) await watchExpandActivity.click()
+  await page.getByRole('button', { name: 'View queued update 1', exact: true }).focus()
   await page.getByRole('button', { name: 'View queued update 1', exact: true }).click()
   const watchDialog = page.getByRole('dialog')
   await watchDialog.getByRole('heading', { name: 'Queued update' }).waitFor()
@@ -1076,9 +1119,87 @@ try {
     window.setTask((task) => ({ ...task, status: 'running', error: undefined }))
   })
   await page.getByRole('button', { name: 'Retry', exact: true }).waitFor({ state: 'hidden' })
+  // Use production CSS to check action visibility and geometry, beyond queue dispatch behavior.
+
+  await page.evaluate(() => {
+    document.documentElement.classList.add('dark')
+    window.setTask((task) => ({
+      ...task,
+      activeRunId: 'run',
+      queue: [
+        { id: 'compact-1', role: 'user', text: 'Verify the queue and checklist layout' },
+        { id: 'compact-2', role: 'user', text: 'Keep Steer in the same place on hover' },
+      ],
+      nativeTodos: [
+        { text: 'Match the reference card', status: 'completed' },
+        { text: 'Verify hover controls', status: 'in-progress' },
+        { text: 'Ship the update', status: 'pending' },
+      ],
+    }))
+  })
+  const screenshotPath = process.env.DOVO_COMPOSER_SCREENSHOTS
+  if (screenshotPath) mkdirSync(screenshotPath, { recursive: true })
+  await page.getByRole('tab', { name: 'Queue · 2', exact: true }).click()
+  for (const [width, panelWidth] of [[900], [480], [320], [900, 320]]) {
+    await page.setViewportSize({ width, height: 800 })
+    await queued.evaluate((element, panelWidth) => {
+      element.style.width = panelWidth ? `${panelWidth}px` : ''
+      element.style.maxWidth = panelWidth ? '100%' : ''
+    }, panelWidth)
+    await input.focus()
+    await page.mouse.move(width - 1, 799)
+    const row = queued.getByRole('listitem').first()
+    const steer = row.getByRole('button', { name: 'Steer with queued message 1', exact: true })
+    const edit = row.getByRole('button', { name: 'Edit queued message 1', exact: true })
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '0',
+    )
+    const preview = await row.locator('span[title]').last().boundingBox()
+    assert.ok(preview.width > 40, 'Hidden queue controls consumed the message preview')
+    const before = await steer.boundingBox()
+    assert.equal(await steer.evaluate((el) => getComputedStyle(el).opacity), '1')
+    await row.hover()
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '1',
+    )
+    assert.deepEqual(await steer.boundingBox(), before, 'Steer moved when queue actions appeared')
+    const rowBounds = await row.boundingBox()
+    assert.ok(
+      before.x + before.width <= rowBounds.x + rowBounds.width,
+      'Steer overflowed the queue row',
+    )
+    await page.mouse.move(width - 1, 799)
+    await edit.focus()
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '1',
+    )
+    assert.deepEqual(
+      await steer.boundingBox(),
+      before,
+      'Steer moved when queue actions received keyboard focus',
+    )
+    await input.focus()
+    await page.mouse.move(width - 1, 799)
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '0',
+    )
+    if (screenshotPath)
+      await page.screenshot({ path: screenshotPath + '/desktop-queue-' + width + '.png' })
+  }
+  await queued.evaluate((element) => {
+    element.style.width = ''
+    element.style.maxWidth = ''
+  })
+  await page.getByRole('tab', { name: 'Checklist · 1/3', exact: true }).click()
+  if (screenshotPath) await page.screenshot({ path: screenshotPath + '/desktop-checklist.png' })
+  await page.getByRole('tab', { name: 'Queue · 2', exact: true }).click()
+  await queued.getByRole('listitem').first().hover()
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  assert.equal(await input.inputValue(), 'Verify the queue and checklist layout')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',
+    'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch, draft agent side chats with stable retry ids, hover/focus queue actions, readable previews and fixed Steer geometry at 320/480/900px passed.',
   )
 } finally {
   await browser.close()

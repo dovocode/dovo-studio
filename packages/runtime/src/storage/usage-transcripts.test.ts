@@ -112,6 +112,159 @@ it('deduplicates cumulative Codex notifications and keeps cache input disjoint',
     },
   })
 })
+function codexCounters(input = 100, output = 20) {
+  return {
+    input_tokens: input,
+    cached_input_tokens: 30,
+    cache_write_input_tokens: 10,
+    output_tokens: output,
+    reasoning_output_tokens: 5,
+    total_tokens: input + output,
+  }
+}
+function codexCounted(last: unknown, total: unknown, timestamp = '2026-10-01T00:00:00Z') {
+  return {
+    type: 'event_msg',
+    timestamp,
+    payload: { type: 'token_count', info: { last_token_usage: last, total_token_usage: total } },
+  }
+}
+function addCodexCounters(
+  left: ReturnType<typeof codexCounters>,
+  right: ReturnType<typeof codexCounters>,
+) {
+  return {
+    input_tokens: left.input_tokens + right.input_tokens,
+    cached_input_tokens: left.cached_input_tokens + right.cached_input_tokens,
+    cache_write_input_tokens: left.cache_write_input_tokens + right.cache_write_input_tokens,
+    output_tokens: left.output_tokens + right.output_tokens,
+    reasoning_output_tokens: left.reasoning_output_tokens + right.reasoning_output_tokens,
+    total_tokens: left.total_tokens + right.total_tokens,
+  }
+}
+it('skips stale changed requests while counting identical requests with advancing cumulative counters', () => {
+  const request = codexCounters()
+  const rows = transcriptUsage(
+    'codex',
+    [
+      codexCounted(request, request),
+      codexCounted(codexCounters(60, 10), request),
+      codexCounted(request, addCodexCounters(request, request)),
+      codexCounted(request, request),
+    ],
+    'session',
+  )
+  expect(rows).toHaveLength(2)
+  expect(rows.map((row) => row.turn.tokens)).toEqual([120, 120])
+  expect(rows[0]?.turn.tokenUsage).toEqual({ input: 60, cacheRead: 30, cacheWrite: 10, output: 20 })
+})
+it.each([
+  'input_tokens',
+  'cached_input_tokens',
+  'cache_write_input_tokens',
+  'output_tokens',
+  'reasoning_output_tokens',
+  'total_tokens',
+] as const)(
+  'reconciles %s and recovers from the new cumulative baseline after an inconsistent pair',
+  (counter) => {
+    const request = codexCounters()
+    const inconsistent = addCodexCounters(request, request)
+    inconsistent[counter] += 1
+    // Keep the cumulative snapshot internally valid. It disagrees only with
+    // this request's delta and remains a usable baseline for the next event.
+    if (counter === 'input_tokens' || counter === 'output_tokens') inconsistent.total_tokens += 1
+    if (counter === 'total_tokens') inconsistent.input_tokens += 1
+    const rows = transcriptUsage(
+      'codex',
+      [
+        codexCounted(request, request),
+        codexCounted(request, inconsistent),
+        codexCounted(request, addCodexCounters(inconsistent, request)),
+      ],
+      'session',
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows.map((row) => row.turn.tokens)).toEqual([120, 120])
+  },
+)
+it('uses inherited cumulative counters as a baseline without billing inherited context', () => {
+  const inherited = codexCounters(10000, 2000)
+  const request = codexCounters()
+  const rows = transcriptUsage(
+    'codex',
+    [
+      codexCounted(undefined, inherited),
+      codexCounted(request, addCodexCounters(inherited, request)),
+    ],
+    'session',
+  )
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.turn.tokens).toBe(120)
+  expect(
+    transcriptUsage('codex', [codexCounted(request, inherited)], 'session')[0]?.turn.tokens,
+  ).toBe(120)
+})
+it('waits for a cumulative snapshot instead of billing request-only notifications twice', () => {
+  const first = codexCounters()
+  const next = codexCounters(80, 20)
+  const rows = transcriptUsage(
+    'codex',
+    [
+      codexCounted(first, first),
+      codexCounted(next, undefined),
+      codexCounted(next, addCodexCounters(first, next)),
+    ],
+    'session',
+  )
+  expect(rows.map((row) => row.turn.tokens)).toEqual([120, 100])
+  expect(
+    transcriptUsage(
+      'codex',
+      [codexCounted(first, undefined), codexCounted(first, first)],
+      'session',
+    ).map((row) => row.turn.tokens),
+  ).toEqual([120])
+  expect(transcriptUsage('codex', [codexCounted(first, undefined)], 'session')).toEqual([])
+})
+it.each([
+  { input_tokens: 1_000_000_000 },
+  { output_tokens: 1_000_000_000 },
+  { cached_input_tokens: 201 },
+  { cache_write_input_tokens: 201 },
+  { reasoning_output_tokens: 41 },
+  { total_tokens: 241 },
+])('does not poison the baseline with internally impossible cumulative counters: %j', (invalid) => {
+  const first = codexCounters()
+  const next = codexCounters(200, 40)
+  const malformed = { ...addCodexCounters(first, first), ...invalid }
+  expect(
+    transcriptUsage(
+      'codex',
+      [
+        codexCounted(first, first),
+        codexCounted(first, malformed),
+        codexCounted(next, addCodexCounters(first, next)),
+      ],
+      'session',
+    ).map((row) => row.turn.tokens),
+  ).toEqual([120, 240])
+})
+it.each([NaN, Infinity, -1, 1.5])(
+  'rejects invalid Codex counters (%s) instead of treating them as zero',
+  (invalid) => {
+    const request = codexCounters()
+    const rows = transcriptUsage(
+      'codex',
+      [
+        codexCounted({ ...request, input_tokens: invalid }, request),
+        codexCounted(request, { ...request, total_tokens: invalid }),
+      ],
+      'session',
+    )
+    expect(rows).toEqual([])
+  },
+)
 it('replaces repeated Claude message updates and counts cache creation separately', () => {
   const event = {
     type: 'assistant',
@@ -194,6 +347,109 @@ function codexEvent(total: number, timestamp = new Date().toISOString()) {
     },
   }
 }
+it('reports excluded standalone request-only history, then counts its paired snapshot once', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-unpaired-'))
+  const source = join(directory, 'sessions')
+  const path = join(source, 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  const request = codexCounters()
+  const event = (total: unknown) =>
+    JSON.stringify(codexCounted(request, total, new Date().toISOString())) + '\n'
+  try {
+    await mkdir(source)
+    await writeFile(path, event(undefined))
+    const usage = new UsageTranscripts()
+    const unpaired = await usage.read([agent], new Set(), true)
+    expect(unpaired.records).toEqual([])
+    expect(unpaired.notices).toContain(
+      'codex: excluded CLI records without cumulative token counters; usage may be incomplete.',
+    )
+    await appendFile(path, event(request))
+    const paired = await usage.read([agent], new Set(), true)
+    expect(paired.records.map((row) => row.turn.tokens)).toEqual([120])
+    expect(await new UsageTranscripts().read([agent], new Set(), true)).toEqual(paired)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('ignores Codex context-size notifications with unchanged totals without hiding new inconsistent usage', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-context-count-'))
+  const path = join(directory, 'sessions', 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  const reader = new UsageTranscripts()
+  const request = codexCounters()
+  const contextOnly = {
+    ...codexCounters(0, 0),
+    cached_input_tokens: 0,
+    cache_write_input_tokens: 0,
+    reasoning_output_tokens: 0,
+    total_tokens: 23061,
+  }
+  const event = (last: unknown, total: unknown) =>
+    JSON.stringify(codexCounted(last, total, new Date().toISOString())) + '\n'
+  try {
+    await mkdir(join(directory, 'sessions'))
+    await writeFile(path, event(request, request) + event(contextOnly, request))
+    const result = await reader.read([agent], new Set(), true)
+    expect(result.records.map((row) => row.turn.tokens)).toEqual([120])
+    expect(result.notices).toEqual([])
+    await appendFile(path, event(contextOnly, request))
+    expect(await reader.read([agent], new Set(), true)).toEqual(result)
+    await appendFile(path, event(request, addCodexCounters(request, request)))
+    const next = await reader.read([agent], new Set(), true)
+    expect(next.records.map((row) => row.turn.tokens)).toEqual([120, 120])
+    expect(next.notices).toEqual([])
+    expect(await new UsageTranscripts().read([agent], new Set(), true)).toEqual(next)
+    await appendFile(
+      path,
+      event(contextOnly, addCodexCounters(request, addCodexCounters(request, request))),
+    )
+    expect((await reader.read([agent], new Set(), true)).notices).toContain(
+      'codex: skipped inconsistent token counters in CLI history.',
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('keeps reconciliation state across appends and previews without committing an unterminated row', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-reconciliation-'))
+  const source = join(directory, 'sessions')
+  const path = join(source, 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  const usage = new UsageTranscripts()
+  const request = codexCounters()
+  const inconsistent = {
+    ...addCodexCounters(request, request),
+    input_tokens: 201,
+    total_tokens: 241,
+  }
+  const event = (last: unknown, total: unknown) =>
+    JSON.stringify(codexCounted(last, total, new Date().toISOString()))
+  try {
+    await mkdir(source)
+    await writeFile(path, event(request, request) + '\n')
+    const initial = await usage.read([agent], new Set(), true)
+    expect(initial.records).toHaveLength(1)
+    expect(initial.notices).toEqual([])
+    await appendFile(path, event(request, inconsistent))
+    const preview = await usage.read([agent], new Set(), true)
+    expect(preview.records).toEqual(initial.records)
+    expect(preview.notices).toContain('codex: skipped inconsistent token counters in CLI history.')
+    expect(await usage.read([agent], new Set(), true)).toEqual(preview)
+    await appendFile(path, '\n' + event(request, addCodexCounters(inconsistent, request)) + '\n')
+    const recovered = await usage.read([agent], new Set(), true)
+    expect(recovered.records.map((row) => row.turn.tokens)).toEqual([120, 120])
+    expect(await new UsageTranscripts().read([agent], new Set(), true)).toEqual(recovered)
+    await appendFile(path, event(request, { total_tokens: 481 }) + '\n')
+    const partial = await usage.read([agent], new Set(), true)
+    expect(partial.records).toHaveLength(3)
+    expect(partial.notices).toContain(
+      'codex: CLI history has partial token counters; reconciliation is limited.',
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 it('reads only appended bytes and preserves Codex session, model and cumulative dedupe across refreshes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-append-'))
   const source = join(directory, 'sessions')
@@ -426,6 +682,254 @@ it('rebuilds expired malformed Codex dedupe baselines so valid copies are not lo
     expect((await new UsageTranscripts().read([agent], new Set(), true)).records).toEqual(
       result.records,
     )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+const smallTranscriptLimits = {
+  lineBytes: 1024,
+  cacheBytes: 16 * 1024,
+  files: 2,
+  resultBytes: 8 * 1024,
+  idleMs: 1000,
+}
+it('discards oversized partial and complete rows, then resumes at the next line across refreshes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-line-budget-'))
+  const source = join(directory, 'sessions')
+  const path = join(source, 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  const usage = new UsageTranscripts(smallTranscriptLimits)
+  try {
+    await mkdir(source)
+    await writeFile(path, 'x'.repeat(8192))
+    const partial = await usage.read([agent], new Set(), true)
+    expect(partial.notices.join(' ')).toContain('usage may be incomplete')
+    const scan = usage['cache'].get(await realpath(path))!
+    expect(scan.trailingBytes).toBe(0)
+    expect(scan.trailing).toEqual([])
+    await appendFile(path, 'x'.repeat(8192) + '\n' + JSON.stringify(codexEvent(15)) + '\n')
+    const recovered = await usage.read([agent], new Set(), true)
+    expect(recovered.records).toHaveLength(1)
+    await appendFile(path, 'x'.repeat(8192) + '\r\n' + JSON.stringify(codexEvent(30)) + '\n')
+    const next = await usage.read([agent], new Set(), true)
+    expect(next.records).toHaveLength(2)
+    expect(next).toEqual(
+      await new UsageTranscripts(smallTranscriptLimits).read([agent], new Set(), true),
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it.each(['item_completed', 'agent_message', 'response_item', 'compacted'])(
+  'skips oversized non-usage Codex %s rows without claiming lost usage',
+  async (type) => {
+    const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-nonusage-size-'))
+    const path = join(directory, 'sessions', 'session.jsonl')
+    const agent = cliAgent('codex', directory)
+    const reader = new UsageTranscripts(smallTranscriptLimits)
+    const event = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      ordinal: 42,
+      type: type === 'response_item' || type === 'compacted' ? type : 'event_msg',
+      payload: { type: type === 'response_item' ? 'message' : type, text: '🙂'.repeat(3000) },
+    })
+    const usage = JSON.stringify(codexEvent(15)) + '\n'
+    try {
+      await mkdir(join(directory, 'sessions'))
+      // Keep the size guard and discard state through an append in the middle of the row.
+      await writeFile(path, event.slice(0, -100))
+      expect((await reader.read([agent], new Set(), true)).notices).toEqual([])
+      const scan = reader['cache'].get(await realpath(path))!
+      expect(scan.trailingBytes).toBe(0)
+      expect(scan.droppingLine).toBe(true)
+      await appendFile(path, event.slice(-100) + '\n' + usage)
+      const result = await reader.read([agent], new Set(), true)
+      expect(result.records.map((row) => row.turn.tokens)).toEqual([15])
+      expect(result.notices).not.toContainEqual(expect.stringContaining('exceeding'))
+      expect(
+        await new UsageTranscripts(smallTranscriptLimits).read([agent], new Set(), true),
+      ).toEqual(result)
+      const { zstdCompressSync } = await import('node:zlib')
+      await rm(path)
+      await writeFile(path + '.zst', zstdCompressSync(event + '\n' + usage))
+      expect(await reader.read([agent], new Set(), true)).toEqual(result)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  },
+)
+it('still warns for oversized Codex usage and unknown envelopes, including misleading text', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-size-warning-'))
+  const path = join(directory, 'sessions', 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  try {
+    await mkdir(join(directory, 'sessions'))
+    for (const row of [
+      {
+        ...codexEvent(15),
+        payload: { ...codexEvent(15).payload, text: 'item_completed'.repeat(200) },
+      },
+      { text: 'response_item'.repeat(200), ...codexEvent(15) },
+    ]) {
+      await writeFile(path, JSON.stringify(row) + '\n')
+      expect(
+        (await new UsageTranscripts(smallTranscriptLimits).read([agent], new Set(), true)).notices,
+      ).toContain('codex: skipped a transcript row exceeding 1024 bytes; usage may be incomplete.')
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('bounds retained scan count and bytes without truncating usage results', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-cache-budget-'))
+  const source = join(directory, 'sessions')
+  try {
+    await mkdir(source)
+    for (let index = 0; index < 4; index++)
+      await writeFile(join(source, `${index}.jsonl`), JSON.stringify(codexEvent(15)) + '\n')
+    const agent = cliAgent('codex', directory)
+    const usage = new UsageTranscripts(smallTranscriptLimits)
+    expect((await usage.read([agent], new Set(), true)).records).toHaveLength(4)
+    expect(usage['cache'].size).toBe(2)
+    const tiny = new UsageTranscripts({ ...smallTranscriptLimits, cacheBytes: 1, resultBytes: 1 })
+    expect((await tiny.read([agent], new Set(), true)).records).toHaveLength(4)
+    expect(tiny['cache'].size).toBe(0)
+    expect(tiny['completed']).toBeUndefined()
+    expect((await tiny.read([agent], new Set())).records).toHaveLength(4)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('releases cached results and transcript buffers after inactivity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-idle-budget-'))
+  try {
+    await mkdir(join(directory, 'sessions'))
+    await writeFile(join(directory, 'sessions', 'a.jsonl'), JSON.stringify(codexEvent(15)) + '\n')
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const usage = new UsageTranscripts(smallTranscriptLimits)
+    const agent = cliAgent('codex', directory)
+    const initial = await usage.read([agent], new Set())
+    expect(usage['cache'].size).toBe(1)
+    await vi.advanceTimersByTimeAsync(1001)
+    expect(usage['cache'].size).toBe(0)
+    expect(usage['completed']).toBeUndefined()
+    expect(await usage.read([agent], new Set())).toEqual(initial)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('reuses admitted scans on repeated full walks larger than the cache capacity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-cache-churn-'))
+  const source = join(directory, 'sessions')
+  try {
+    await mkdir(source)
+    for (let index = 0; index < 4; index++)
+      await writeFile(join(source, `${index}.jsonl`), JSON.stringify(codexEvent(15)) + '\n')
+    const usage = new UsageTranscripts(smallTranscriptLimits)
+    const agent = cliAgent('codex', directory)
+    const first = await usage.read([agent], new Set(), true)
+    vi.mocked(createReadStream).mockClear()
+    expect(await usage.read([agent], new Set(), true)).toEqual(first)
+    expect(createReadStream).toHaveBeenCalledTimes(2) // Only the two non-resident files.
+    vi.mocked(createReadStream).mockClear()
+    await usage.read([agent], new Set(['codex:unrelated-new-session']), true)
+    expect(createReadStream).toHaveBeenCalledTimes(2)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+it('streams compressed Codex histories, caches unchanged archives and fully reparses rewrites', async () => {
+  const { zstdCompressSync, constants } = await import('node:zlib')
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-zstd-'))
+  const sessions = join(directory, 'sessions')
+  const path = join(sessions, 'session.jsonl')
+  const agent: Agent = {
+    id: 'codex',
+    name: 'Codex',
+    provider: 'codex',
+    model: '',
+    instructions: '',
+    endpoint: '',
+    permission: 'ask',
+    env: { CODEX_HOME: directory },
+  }
+  const text = (tokens: number) =>
+    [
+      { type: 'session_meta', payload: { id: 'compressed-session' } },
+      {
+        type: 'event_msg',
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: tokens },
+            last_token_usage: { input_tokens: tokens, output_tokens: 0 },
+          },
+        },
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n') + '\n'
+  try {
+    await mkdir(sessions)
+    const original = text(10)
+    await writeFile(path, original)
+    await writeFile(`${path}.zst`, zstdCompressSync(original))
+    await writeFile(`${path}.zst.bak`, zstdCompressSync(text(999)))
+    const reader = new UsageTranscripts()
+    const both = await reader.read([agent], new Set(), true)
+    expect(both.records).toHaveLength(1)
+    expect(both.records[0].turn.tokens).toBe(10)
+    await rm(path)
+    vi.mocked(createReadStream).mockClear()
+    expect((await reader.read([agent], new Set(), true)).records).toEqual(both.records)
+    expect(createReadStream).not.toHaveBeenCalled()
+    expect((await new UsageTranscripts().read([agent], new Set(), true)).records).toEqual(
+      both.records,
+    )
+    expect(
+      (await reader.read([agent], new Set(['codex:compressed-session']), true)).records,
+    ).toEqual([])
+    await writeFile(`${path}.zst`, zstdCompressSync(text(20)))
+    expect((await reader.read([agent], new Set(), true)).records[0].turn.tokens).toBe(20)
+    // Concatenated checksummed frames must work even when stream chunks split every header.
+    const frames = Buffer.concat([
+      zstdCompressSync(original, { params: { [constants.ZSTD_c_checksumFlag]: 1 } }),
+      zstdCompressSync('\n'),
+    ])
+    await writeFile(`${path}.zst`, frames)
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    vi.mocked(createReadStream).mockImplementationOnce((path, options) =>
+      fs.createReadStream(path, {
+        ...(typeof options === 'object' ? options : {}),
+        highWaterMark: 1,
+      }),
+    )
+    expect((await reader.read([agent], new Set(), true)).records).toEqual(both.records)
+    const archive = zstdCompressSync(text(30))
+    for (const bytes of [
+      Buffer.alloc(0),
+      Buffer.from('invalid zstd'),
+      ...[1, 2, 5, archive.length - 1].map((length) => archive.subarray(0, length)),
+    ]) {
+      await writeFile(`${path}.zst`, bytes)
+      const failed = await reader.read([agent], new Set(), true)
+      expect(failed.records).toEqual([])
+      expect(failed.notices).toContain('codex: a transcript could not be read.')
+    }
+    await writeFile(`${path}.zst`, zstdCompressSync('x'.repeat(5000) + '\n' + original))
+    const bounded = new UsageTranscripts({
+      lineBytes: 1024,
+      cacheBytes: 100000,
+      files: 10,
+      resultBytes: 100000,
+      idleMs: 1000,
+    })
+    const result = await bounded.read([agent], new Set(), true)
+    expect(result.records).toEqual(both.records)
+    expect(result.notices.some((notice) => notice.includes('exceeding 1024 bytes'))).toBe(true)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

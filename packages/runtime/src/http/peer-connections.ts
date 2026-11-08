@@ -105,6 +105,7 @@ export class PeerConnections {
   readonly internet: AccountInternet
   readonly upgrades: PeerUpgrades
   private rooms = new Map<string, Room>()
+  private closing = new Set<Promise<void>>()
   private recent: PeerSessionDiagnostics[] = []
   /** Loopback source port of each tunneled socket, registered before any tunnel byte is sent. */
   private origins = new Map<number, { socket: Socket; origin: PeerOrigin }>()
@@ -115,14 +116,15 @@ export class PeerConnections {
   constructor(
     private readonly db: Database.Database,
     private readonly devices: Devices,
+    private readonly policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS peer_connections (device_id TEXT PRIMARY KEY, config TEXT NOT NULL)',
     )
     this.identity = peerRelayIdentity(db)
     this.relay = new RuntimeRelaySettings(db)
-    this.internet = new AccountInternet(db, devices, this, this.identity)
-    this.upgrades = new PeerUpgrades(devices)
+    this.internet = new AccountInternet(db, devices, this, this.identity, policy)
+    this.upgrades = new PeerUpgrades(devices, undefined, policy)
   }
   /** Keep current tunnels alive so the client changing policy can receive confirmation.
    * New negotiations immediately use the saved mode; pairings and relay credentials survive. */
@@ -133,13 +135,32 @@ export class PeerConnections {
       if (room.retry) clearTimeout(room.retry)
       room.retry = undefined
       const socket = room.socket
-      room.socket = undefined
-      room.ready = undefined
       room.online = false
       room.lastError = null
       room.customRelays.clear()
-      socket?.terminate()
-      if (mode !== 'lan') this.open(room)
+      for (const ice of room.ice.values()) ice.stop()
+      room.ice.clear()
+      if (socket) {
+        // Finish the close handshake before reusing this room's broker registration.
+        // Keep the socket as its owner so enable() cannot race a replacement ahead of close.
+        room.ready = new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => socket.terminate(), 10000)
+          timeout.unref()
+          socket.once('close', () => {
+            clearTimeout(timeout)
+            // The ordinary close listener releases this socket and its reconnect timer first.
+            this.open(room)
+            if (room.ready) void room.ready.then(resolve, reject)
+            else resolve()
+          })
+          if (socket.readyState === WebSocket.OPEN) socket.close(1000, 'Connection policy changed')
+          else if (socket.readyState === WebSocket.CONNECTING) socket.terminate()
+        })
+        void room.ready.catch(() => {})
+      } else {
+        room.ready = undefined
+        if (mode !== 'lan') this.open(room)
+      }
     }
     return status
   }
@@ -162,6 +183,7 @@ export class PeerConnections {
   }
   start(port: number) {
     this.port = port
+    if (this.policy?.summary?.disabledCapabilities.includes('connect')) return
     for (const row of this.db
       .prepare('SELECT device_id AS deviceId, config FROM peer_connections')
       .all()) {
@@ -241,6 +263,7 @@ export class PeerConnections {
     })
   }
   async invitation(expiresAt: string, relay?: PeerRelayProvider) {
+    this.policy?.require('connect')
     if (this.relay.connectionMode() === 'lan')
       throw new HttpError(409, 'This computer allows LAN / VPN connections only')
     if (!this.port) throw new Error('Internet connections are not running on this computer')
@@ -252,6 +275,7 @@ export class PeerConnections {
     return config
   }
   async enable(deviceId: string, relay?: PeerRelayProvider, accountGrant?: string) {
+    this.policy?.require('connect')
     if (this.relay.connectionMode() === 'lan')
       throw new HttpError(409, 'This computer allows LAN / VPN connections only')
     if (!this.port || deviceId === 'owner' || !this.active().has(deviceId))
@@ -408,7 +432,7 @@ export class PeerConnections {
           const type =
             value && typeof value === 'object' && 'type' in value ? value.type : undefined
           if (type === 'relay-challenge') {
-            if (phase !== 'hello' || !host.relayAllowed)
+            if (phase !== 'hello' || !host.relayIdentity)
               throw new Error('Unexpected relay challenge')
             const { challenge } = decode(peerRelayChallengeSchema, value)
             phase = 'proving'
@@ -494,13 +518,16 @@ export class PeerConnections {
           if (room.sessions.has(signal.session) || room.peers.size >= 4) return
           if (room.sessions.size >= 128) room.sessions.delete(room.sessions.values().next().value!)
           room.sessions.add(signal.session)
-          void this.accept(room, signal, signal.relay === 'custom' ? custom : offer.relay).catch(
-            () => {
-              room.ice.get(signal.session)?.stop()
-              room.ice.delete(signal.session)
-              console.error('Internet peer negotiation failed')
-            },
-          )
+          void this.accept(
+            room,
+            socket,
+            signal,
+            signal.relay === 'custom' ? custom : offer.relay,
+          ).catch(() => {
+            room.ice.get(signal.session)?.stop()
+            room.ice.delete(signal.session)
+            console.error('Internet peer negotiation failed')
+          })
         } catch {
           room.lastError = 'Dovo Connect sent invalid signaling metadata.'
           socket.close(1008, 'Invalid signaling metadata')
@@ -527,6 +554,8 @@ export class PeerConnections {
       room.online = false
       room.lastError ??= 'Signaling disconnected; reconnecting to Dovo Connect.'
       room.customRelays.clear()
+      for (const ice of room.ice.values()) ice.stop()
+      room.ice.clear()
       room.socket = undefined
       room.ready = undefined
       if (
@@ -543,8 +572,14 @@ export class PeerConnections {
       }
     })
   }
-  private async accept(room: Room, signal: PeerSignal, relay?: PeerRelay) {
-    if (!this.port || room.stopped || this.relay.connectionMode() === 'lan') return
+  private async accept(room: Room, socket: WebSocket, signal: PeerSignal, relay?: PeerRelay) {
+    if (
+      !this.port ||
+      room.stopped ||
+      room.socket !== socket ||
+      this.relay.connectionMode() === 'lan'
+    )
+      return
     let iceFailed = false
     let failIce = () => {
       iceFailed = true
@@ -556,8 +591,8 @@ export class PeerConnections {
           offer: signal.offer,
           role: 'answer',
           send: (value) => {
-            if (!closed && room.socket?.readyState === WebSocket.OPEN)
-              room.socket.send(JSON.stringify(value))
+            if (!closed && room.socket === socket && socket.readyState === WebSocket.OPEN)
+              socket.send(JSON.stringify(value))
           },
           add: async (candidate) => {
             await pc.addIceCandidate(candidate)
@@ -574,8 +609,8 @@ export class PeerConnections {
       this.relay.connectionMode() === 'lan' ||
       (this.relay.connectionMode() !== 'automatic' && !!relay) ||
       room.peers.size >= 4 ||
-      !room.socket ||
-      room.socket.readyState !== WebSocket.OPEN
+      room.socket !== socket ||
+      socket.readyState !== WebSocket.OPEN
     ) {
       ice?.stop()
       room.ice.delete(signal.session)
@@ -633,7 +668,11 @@ export class PeerConnections {
       for (const socket of sockets) socket.destroy()
       sockets.clear()
       room.peers.delete(pc)
-      void pc.close().catch((error: unknown) => console.error('Internet peer close failed:', error))
+      const closing = pc.close()
+      this.closing.add(closing)
+      void closing
+        .catch((error: unknown) => console.error('Internet peer close failed:', error))
+        .finally(() => this.closing.delete(closing))
     }
     failIce = () => close('Invalid authenticated ICE candidate.')
     const refreshRoute = async () => {
@@ -833,7 +872,12 @@ export class PeerConnections {
           }
         })
       await pc.setLocalDescription(await pc.createAnswer(), { trickle: !!ice })
-      if (closed || room.stopped || room.socket?.readyState !== WebSocket.OPEN) {
+      if (
+        closed ||
+        room.stopped ||
+        room.socket !== socket ||
+        socket.readyState !== WebSocket.OPEN
+      ) {
         close()
         return
       }
@@ -842,7 +886,7 @@ export class PeerConnections {
       diagnostic.localCandidates = peerCandidateCounts(sdp)
       diagnostic.state = 'waiting for encrypted transport'
       diagnostic.answerMs = Date.now() - Date.parse(diagnostic.startedAt)
-      room.socket.send(
+      socket.send(
         JSON.stringify(
           signPeerSignal(room.config, {
             session: signal.session,
@@ -874,9 +918,18 @@ export class PeerConnections {
   async dispose() {
     this.internet.stop()
     if (this.timer) clearInterval(this.timer)
-    const peers = [...this.rooms.values()].flatMap((room) => [...room.peers.keys()])
     for (const [id, room] of this.rooms) this.remove(id, room)
-    await Promise.all(peers.map((pc) => pc.close()))
+    // Closing signaling above releases pending enable() calls. Their account cleanup and
+    // aborted inbox callbacks must finish while the database is still available.
+    const settled = await Promise.allSettled([
+      this.internet.drain(),
+      // Await the original close promises: werift's repeated close() returns immediately.
+      ...this.closing,
+    ])
     this.port = undefined
+    const errors: unknown[] = []
+    for (const result of settled) if (result.status === 'rejected') errors.push(result.reason)
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1) throw new AggregateError(errors, 'Internet peer disposal failed')
   }
 }

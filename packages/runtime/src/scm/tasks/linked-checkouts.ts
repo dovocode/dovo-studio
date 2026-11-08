@@ -1,3 +1,8 @@
+import {
+  worktreeRecords,
+  availableWorktree,
+  requireCompleteWorktree,
+} from '../git/worktree-records.js'
 import { isDeepStrictEqual } from 'node:util'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -41,25 +46,26 @@ export class LinkedCheckouts {
     if (!repo || repo.kind) throw new HttpError(404, 'The saved checkpoint project is unavailable')
     const root = (await this.git.inspect(repo.path)).path
     if (!restore) return root
-    const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
-      .split('\0\0')
-      .map((block) => block.split('\0'))
-      .filter((record) => !record.some((line) => line.startsWith('prunable')))
-    const branch = checkpoint.branch && `branch refs/heads/${checkpoint.branch}`
-    const listed =
-      records.find(
-        (record) =>
-          record.includes(`worktree ${checkpoint.directory}`) &&
-          (!branch || record.includes(branch)),
-      ) ?? (branch ? records.find((record) => record.includes(branch)) : undefined)
-    const directory = listed?.find((line) => line.startsWith('worktree '))?.slice(9)
+    const records = worktreeRecords(
+      await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']),
+    )
+    const branch = checkpoint.branch && `refs/heads/${checkpoint.branch}`
+    const matching = records.filter(
+      (record) =>
+        (record.path === checkpoint.directory && (!branch || record.branch === branch)) ||
+        (branch && record.branch === branch),
+    )
+    for (const record of matching) requireCompleteWorktree(record)
+    const directory =
+      matching.find(
+        (record) => record.path === checkpoint.directory && !record.prunable && !record.creating,
+      )?.path ?? matching.find((record) => availableWorktree(record, root))?.path
     if (directory) return directory
     if (!checkpoint.branch)
       throw new HttpError(409, 'Restore the saved linked checkout before undoing its changes')
-    const identity = await this.git.repositoryIdentity(root)
+    const identity = await this.git.repositoryIdentity(root, true)
     const target = join(this.worktrees(), taskWorktreePath(identity, root, checkpoint.branch))
     await mkdir(dirname(target), { recursive: true })
-    await this.git.command(root, ['worktree', 'prune'])
     // Reattach only the saved branch; never reset another checkout or invent a replacement branch.
     await this.git.addWorktree(root, target, [target, checkpoint.branch])
     return target
@@ -154,16 +160,15 @@ export class LinkedCheckouts {
         resolved.push({ ...link, directory: root, name: repo.name, git: !repo.kind })
         continue
       }
-      const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
-        .split('\0\0')
-        .map((block) => block.split('\0'))
-        .filter((record) => !record.some((line) => line.startsWith('prunable')))
+      const records = worktreeRecords(
+        await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']),
+      )
       let directory = link.existingWorktreePath
       let branch = link.branch
       if (directory) {
         if (
           directory === root ||
-          !records.some((record) => record.includes(`worktree ${directory}`))
+          !records.some((record) => record.path === directory && availableWorktree(record, root))
         )
           throw new HttpError(
             409,
@@ -176,11 +181,11 @@ export class LinkedCheckouts {
           await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
         ).trim()
         const keys = taskWorktreeKeys(common, `${id}:linked:${link.id}`, this.worktrees())
-        directory = records.flatMap((record) => {
-          const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
-          const branch = record.find((line) => line.startsWith('branch '))?.slice(7)
-          return path && isTaskWorktree(path, keys, branch) ? [path] : []
-        })[0]
+        const matching = records.filter(
+          (record) => record.path && isTaskWorktree(record.path, keys, record.branch),
+        )
+        for (const record of matching) requireCompleteWorktree(record)
+        directory = matching.find((record) => availableWorktree(record, root))?.path
         if (!directory) {
           const kept = (
             await this.git.command(root, [
@@ -196,7 +201,7 @@ export class LinkedCheckouts {
             kept ??
             `${link.branch?.trim() || taskBranchName(task.title, keys.suffix, 'dovo/').replace(`-${keys.suffix}`, '')}-${keys.suffix}`
           await this.git.command(root, ['check-ref-format', '--branch', branch])
-          const identity = await this.git.repositoryIdentity(root)
+          const identity = await this.git.repositoryIdentity(root, true)
           directory = join(keys.worktrees, taskWorktreePath(identity, root, branch, 'dovo/'))
           await mkdir(dirname(directory), { recursive: true })
           this.store.updateTask(id, (current) => ({
@@ -207,9 +212,8 @@ export class LinkedCheckouts {
           }))
           signal?.throwIfAborted()
           if (kept) {
-            await this.git.command(root, ['worktree', 'prune'])
             signal?.throwIfAborted()
-            await this.git.addWorktree(root, directory, [directory, kept])
+            await this.git.addWorktree(root, directory, [directory, kept], signal)
           } else {
             const refs = await listBranches({ git: this.git }, root)
             const selection =
@@ -221,7 +225,7 @@ export class LinkedCheckouts {
             if (!base)
               throw new HttpError(400, 'Choose an existing base branch for the linked worktree')
             signal?.throwIfAborted()
-            await this.git.addWorktree(root, directory, ['-b', branch, directory, base])
+            await this.git.addWorktree(root, directory, ['-b', branch, directory, base], signal)
           }
         }
       }
@@ -235,15 +239,19 @@ export class LinkedCheckouts {
       ) {
         const setup = this.store.taskDefaults(link.repositoryId).setupCommand
         signal?.throwIfAborted()
-        if (setup?.trim()) await this.git.setupWorktree(directory, setup, signal)
-        signal?.throwIfAborted()
-        this.store.updateTask(id, (current) => ({
-          ...current,
-          linkedCheckoutSetup: [
-            ...(current.linkedCheckoutSetup ?? []).filter((entry) => entry.id !== link.id),
-            { id: link.id, directory },
-          ],
-        }))
+        const prepare = async () => {
+          if (setup?.trim()) await this.git.setupWorktree(directory, setup, signal)
+          signal?.throwIfAborted()
+          this.store.updateTask(id, (current) => ({
+            ...current,
+            linkedCheckoutSetup: [
+              ...(current.linkedCheckoutSetup ?? []).filter((entry) => entry.id !== link.id),
+              { id: link.id, directory },
+            ],
+          }))
+        }
+        if (setup?.trim()) await this.git.withWorktreePreparation(directory, prepare, signal)
+        else await prepare()
       }
       signal?.throwIfAborted()
       const inspected = await this.git.inspect(directory)

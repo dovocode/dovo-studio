@@ -4,7 +4,7 @@ import { mobileWorkflow } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
-import { Alert, Keyboard } from 'react-native'
+import { Alert } from 'react-native'
 import { randomUUID, digestStringAsync, CryptoDigestAlgorithm } from 'expo-crypto'
 import type { PendingQueueRestore } from '../../draft/storage'
 import { nativeEffect } from '../../../runtime/state/native-effect'
@@ -16,6 +16,7 @@ import {
   sameTurnSettings,
   applyTurnSettings,
   queuedModelAgent,
+  planModeIssue,
   responses,
   generatedTitleSchema,
   taskSchema,
@@ -32,8 +33,14 @@ import { useAction } from '../../../ui/controls/use-action'
 import { useDraft } from '../../draft/use-draft'
 import { useAttachmentPicker } from '../../composer/attachment-picker'
 import { useComposerDictation } from '../../composer/use-composer-dictation'
+import { useComposerHistory } from '../../composer/use-composer-history'
 import { createSendAttempts, type SendAttempt } from '../../composer/send-attempts'
 const sendAttempts = createSendAttempts(randomUUID)
+export type BackgroundStart = {
+  /** The message is durably saved locally or acknowledged by its computer. */
+  confirmed: () => void
+  settled: (outcome: 'failed' | 'pending' | 'confirmed') => void
+}
 export function useConversationActions(task: Task) {
   const {
       call,
@@ -44,6 +51,9 @@ export function useConversationActions(task: Task) {
       readEffect,
       callEffect,
       pendingMessages: savedMessages,
+      attachmentUploads,
+      finishAttachmentEffect,
+      reviewAttachments,
     } = useRuntime(),
     storedDraft = useDraft(
       task.id,
@@ -58,14 +68,34 @@ export function useConversationActions(task: Task) {
   useEffect(() => {
     setTurnSettings(task.draftTurnSettings ?? null)
   }, [task.draftTurnSettings, setTurnSettings])
+  const [draftPlan, setDraftPlan] = useApplicationState(task.draftPlan === true)
+  useEffect(() => {
+    setDraftPlan(task.draftPlan === true)
+  }, [task.draftPlan, setDraftPlan])
   const [editing, setEditing] = useApplicationState<{
     message: Task['messages'][number]
     text: string
     revision: number
     settings: TurnSettings | null
     files: Attachment[]
+    session: string
+    plan: boolean
   } | null>(null)
+  const editSession = useRef<string | null>(null)
+  const currentEditing = useRef(editing)
+  currentEditing.current = editing
+  useEffect(
+    () => () => {
+      editSession.current = null
+    },
+    [],
+  )
   const turnSettings = editing ? editing.settings : draftTurnSettings
+  // One-message plan mode: kept with the draft until a plan send is accepted.
+  const plan = editing ? editing.plan : draftPlan
+  const planSupported = snapshot?.planModeSupported === true
+  const latestDraftText = useRef(storedDraft.text)
+  latestDraftText.current = storedDraft.text
   const currentDraftKey = useRef(storedDraft.key)
   currentDraftKey.current = storedDraft.key
   const pendingScope = JSON.stringify([
@@ -94,6 +124,27 @@ export function useConversationActions(task: Task) {
       })
     })
   }
+  const [stageIntents, setStageIntents] = useApplicationState<
+    {
+      scope: string
+      messageId: string
+      wasRunning: boolean
+      runId?: string
+    }[]
+  >([])
+  const stageIntent = stageIntents.find((intent) => intent.scope === pendingScope)
+  const stageIntentObserved =
+    !!stageIntent &&
+    (task.queuePaused === true ||
+      [...task.messages, ...(task.queue ?? [])].some(
+        (message) => message.id === stageIntent.messageId,
+      ) ||
+      (task.status === 'running' &&
+        (!stageIntent.wasRunning || task.activeRunId !== stageIntent.runId)))
+  useEffect(() => {
+    if (stageIntentObserved)
+      setStageIntents((current) => current.filter((intent) => intent !== stageIntent))
+  }, [stageIntentObserved, stageIntent, setStageIntents])
   const pendingMessage = localPending.filter((item) => item.scope === pendingScope).at(-1) ?? null
   const pendingMessages = mergePendingMessages(
     task,
@@ -103,9 +154,17 @@ export function useConversationActions(task: Task) {
   const { busy } = action
   const failedSend = useRef<SendAttempt | null>(null)
   const restoredScope = useRef('')
+  const [submitting, setSubmitting] = useApplicationState(false)
+  const [backgroundSubmitting, setBackgroundSubmitting] = useApplicationState(false)
+  const backgroundLocked = useRef(false)
+  const admitted = useRef(false)
   const run = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) => {
+    if (admitted.current) return Promise.resolve()
+    admitted.current = true
     failedSend.current = null
-    return action.run(work)
+    return action.run(work).finally(() => {
+      admitted.current = false
+    })
   }
   const act = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) => {
     void run(work)
@@ -114,7 +173,24 @@ export function useConversationActions(task: Task) {
     runtimeId: activeId ?? '',
     taskId: task.id,
   }
+  const composerHistory = useComposerHistory({
+    scope: storedDraft.key,
+    text: storedDraft.text,
+    revision: storedDraft.revision,
+    messages: task.messages,
+    enabled:
+      storedDraft.ready &&
+      !editing &&
+      !busy &&
+      !submitting &&
+      !storedDraft.pendingFork &&
+      !storedDraft.pendingRestore &&
+      (!storedDraft.submission || storedDraft.submission.accepted) &&
+      !task.archivedAt &&
+      !task.example,
+  })
   const updateDraft = (text: string, source?: 'keyboard') => {
+    if (backgroundLocked.current) return
     if (editing) {
       setEditing((current) =>
         current
@@ -127,13 +203,14 @@ export function useConversationActions(task: Task) {
       )
       return
     }
+    composerHistory.cancel()
     sendAttempts.textChanged(scope, text)
     storedDraft.update(text, source)
   }
   const dictation = useComposerDictation({
     draft: {
       ...storedDraft,
-      text: editing?.text ?? storedDraft.text,
+      text: editing?.text ?? composerHistory.text,
       update: updateDraft,
     },
     connected,
@@ -155,13 +232,17 @@ export function useConversationActions(task: Task) {
       editing?.message.id,
       editing?.revision,
       storedDraft.revision,
+      composerHistory.index,
       pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'
         ? pendingMessage.message.id
         : null,
     ]),
     text: editing
       ? editing.text
-      : sendingDraft(storedDraft.text, pendingMessage?.taskId === task.id ? pendingMessage : null),
+      : sendingDraft(
+          composerHistory.text,
+          pendingMessage?.taskId === task.id ? pendingMessage : null,
+        ),
     update: dictation.update,
   }
   const attachmentPicker = useAttachmentPicker(
@@ -170,15 +251,21 @@ export function useConversationActions(task: Task) {
       ? {
           messageId: editing.message.id,
           files: editing.files,
-          uploaded: (file, replaceId) =>
+          uploaded: (file, replaceId) => {
+            if (editSession.current !== editing.session) return false
+            if (replaceId && !currentEditing.current?.files.some((item) => item.id === replaceId))
+              return false
             setEditing((current) =>
-              current?.message.id === editing.message.id
+              current?.session === editing.session &&
+              (!replaceId || current.files.some((item) => item.id === replaceId))
                 ? {
                     ...current,
                     files: [...current.files.filter((item) => item.id !== replaceId), file],
                   }
                 : current,
-            ),
+            )
+            return true
+          },
         }
       : undefined,
   )
@@ -191,8 +278,10 @@ export function useConversationActions(task: Task) {
       restoredScope.current = scopeKey
       if (storedDraft.submission) {
         sendAttempts.restore(scope, storedDraft.submission.attempt, storedDraft.submission.accepted)
-        if (!storedDraft.submission.accepted)
+        if (!storedDraft.submission.accepted) {
           setTurnSettings(storedDraft.submission.attempt.turnSettings ?? null)
+          if (storedDraft.submission.attempt.plan) setDraftPlan(true)
+        }
       }
     }
     const attempt = sendAttempts.peek(scope)
@@ -210,15 +299,22 @@ export function useConversationActions(task: Task) {
         ? pendingMessage
         : null
     if (pending) {
-      setTurnSettings((current) =>
-        sameTurnSettings(current, pending.message.turnSettings) ? null : current,
-      )
+      if (
+        !latestDraftText.current.trim() ||
+        latestDraftText.current.trim() === pending.message.text.trim()
+      ) {
+        setTurnSettings((current) =>
+          sameTurnSettings(current, pending.message.turnSettings) ? null : current,
+        )
+        if (pending.message.plan) setDraftPlan(false)
+      }
       const submitted = attempt ?? {
         id: pending.message.id,
         text: pending.message.text,
         attachmentIds: pending.message.attachments?.map((file) => file.id) ?? [],
         mode: 'queue' as const,
         turnSettings: pending.message.turnSettings,
+        ...(pending.message.plan ? { plan: true } : {}),
       }
       void runClientEffect(
         storedDraft
@@ -234,9 +330,12 @@ export function useConversationActions(task: Task) {
           ),
       )
     } else if (acknowledged && attempt) {
-      setTurnSettings((current) =>
-        sameTurnSettings(current, attempt.turnSettings) ? null : current,
-      )
+      if (!latestDraftText.current.trim() || latestDraftText.current.trim() === attempt.text) {
+        setTurnSettings((current) =>
+          sameTurnSettings(current, attempt.turnSettings) ? null : current,
+        )
+        if (attempt.plan) setDraftPlan(false)
+      }
       void runClientEffect(storedDraft.confirmEffect(attempt, true))
     }
     // Once the host lists the message, the local copy is done; keeping it would show a ghost
@@ -271,13 +370,20 @@ export function useConversationActions(task: Task) {
         snapshot?.permissionPolicySupported === true,
       )
     : undefined
+  const planIssue = !plan
+    ? undefined
+    : !planSupported
+      ? 'Update the task computer to use plan mode.'
+      : planModeIssue(agent)
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
   const checkoutEditable = canChangeTaskCheckout(task)
   const hasInput =
     !!draft.text.trim() || !!(editing ? editing.files.length : task.draftAttachments?.length)
   const canSend =
     !policyIssue &&
-    connected &&
+    !planIssue &&
+    (connected ||
+      (!!profile && !editing && (!task.autoProject || snapshot?.messageSetupSupported === true))) &&
     !busy &&
     !cancellation.busy &&
     !storedDraft.pendingRestore &&
@@ -300,6 +406,7 @@ export function useConversationActions(task: Task) {
       }
     >,
     refresh = true,
+    defer = false,
   ) =>
     (refresh ? callEffect : readEffect)(
       '/api/workspace',
@@ -312,12 +419,64 @@ export function useConversationActions(task: Task) {
         revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       }),
       'PATCH',
+      { defer },
     )
   const patch = (changes: Parameters<typeof patchEffect>[0]) =>
     runClientEffect(patchEffect(changes))
-  const submit = (mode: 'queue' | 'steer' = 'queue', input = draft.text) => {
+  const stageSupported = snapshot?.promptQueueStagingSupported === true
+  const retryAttempt =
+    sendAttempts.peek(scope) ??
+    (!storedDraft.submission?.accepted ? storedDraft.submission?.attempt : undefined)
+  const retryStage =
+    retryAttempt?.mode === 'stage' &&
+    retryAttempt.text === storedDraft.text.trim() &&
+    sameTurnSettings(retryAttempt.turnSettings, turnSettings) &&
+    !!retryAttempt.plan === plan &&
+    ![...task.messages, ...(task.queue ?? [])].some((message) => message.id === retryAttempt.id)
+  const retryAutomaticAddition =
+    retryAttempt?.preserveQueuePause === true &&
+    retryAttempt.text === storedDraft.text.trim() &&
+    sameTurnSettings(retryAttempt.turnSettings, turnSettings) &&
+    !!retryAttempt.plan === plan &&
+    JSON.stringify(retryAttempt.attachmentIds) ===
+      JSON.stringify(task.draftAttachments?.map((file) => file.id) ?? [])
+  const defaultSendMode =
+    !retryAutomaticAddition &&
+    stageSupported &&
+    ((!!stageIntent && !stageIntentObserved) ||
+      retryStage ||
+      (!!task.queue?.length && (task.queuePaused || task.queue[0]?.paused)))
+      ? 'stage'
+      : 'queue'
+  const canStartInBackground =
+    firstMessage && defaultSendMode === 'queue' && (!retryAttempt || retryAttempt.mode === 'queue')
+  const submit = (
+    mode: 'queue' | 'steer' | 'stage' | 'direct' = defaultSendMode,
+    input = draft.text,
+    startInBackground?: (attemptId: string) => BackgroundStart,
+  ) => {
     let submittedId: string | undefined
+    let background: BackgroundStart | undefined
+    let backgroundOutcome: Parameters<BackgroundStart['settled']>[0] = 'failed'
     return mobileWorkflow(function* () {
+      if (startInBackground && (!canStartInBackground || mode !== 'queue'))
+        return yield* Effect.fail(
+          new Error('Resolve the earlier send before starting in background.'),
+        )
+      if (
+        !connected &&
+        (editing ||
+          mode === 'steer' ||
+          mode === 'direct' ||
+          (task.autoProject && !snapshot?.messageSetupSupported))
+      )
+        return yield* Effect.fail(new Error('Connect to the computer before using this action.'))
+      if (mode === 'direct' && snapshot?.directMessageSupported !== true)
+        return yield* Effect.fail(
+          new Error('Update the task computer to send without resuming the queue.'),
+        )
+      if (mode === 'stage' && !stageSupported)
+        return yield* Effect.fail(new Error('Update the task computer to stage queued messages.'))
       if (storedDraft.pendingFork)
         return yield* Effect.fail(new Error('Resolve the pending fork before sending'))
       if (storedDraft.pendingRestore)
@@ -337,6 +496,14 @@ export function useConversationActions(task: Task) {
         return yield* Effect.fail(
           new Error('Queue this message to use its model and reasoning settings.'),
         )
+      if (planIssue) return yield* Effect.fail(new Error(planIssue))
+      if (plan && mode === 'steer')
+        return yield* Effect.fail(
+          new Error('Queue this message to plan before the agent changes anything.'),
+        )
+      const deferSend =
+        (mode === 'queue' || mode === 'stage') &&
+        (snapshot?.messageSetupSupported === true || !connected)
       if (editing) {
         yield* callEffect(
           '/api/tasks/queue',
@@ -358,14 +525,31 @@ export function useConversationActions(task: Task) {
                   expectedTurnSettings: editing.message.turnSettings ?? null,
                 }
               : {}),
+            ...(planSupported ? { plan: editing.plan, expectedPlan: !!editing.message.plan } : {}),
           },
-          responses.ok,
+          responses.queueAction,
         )
+        if (profile) {
+          const ids = new Set(editing.files.map((file) => file.id))
+          yield* Effect.forEach(
+            attachmentUploads(profile).filter((item) => ids.has(item.id)),
+            (item) =>
+              finishAttachmentEffect(profile, item.id).pipe(
+                Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),
+              ),
+          )
+        }
         dictation.reset()
+        editSession.current = null
         setEditing(null)
         return
       }
-      Keyboard.dismiss()
+      if (composerHistory.active) {
+        // Commit only after validation; cancelled browsing never overwrites the durable draft.
+        updateDraft(input)
+        latestDraftText.current = input
+      }
+      setSubmitting(true)
       dictation.reset()
       const text = input.trim(),
         attachmentIds = task.draftAttachments?.map((file) => file.id) ?? []
@@ -375,8 +559,20 @@ export function useConversationActions(task: Task) {
         mode,
         runId: mode === 'steer' ? task.activeRunId : undefined,
         turnSettings: turnSettings ?? undefined,
+        ...(plan ? { plan: true } : {}),
+        preserveQueuePause:
+          mode === 'queue' &&
+          defaultSendMode !== 'stage' &&
+          !task.queuePaused &&
+          snapshot?.queuePausePreservationSupported === true,
       })
       submittedId = attempt.id
+      // Start suppression only after admission and validation, using the stable retry identity.
+      if (startInBackground) {
+        background = startInBackground(attempt.id)
+        backgroundLocked.current = true
+        setBackgroundSubmitting(true)
+      }
       setPendingMessage({
         taskId: task.id,
         state: 'sending',
@@ -388,10 +584,11 @@ export function useConversationActions(task: Task) {
           createdAt: new Date().toISOString(),
           attachments: task.draftAttachments,
           turnSettings: attempt.turnSettings,
+          ...(attempt.plan ? { plan: true } : {}),
         },
       })
       yield* storedDraft.stageEffect(attempt)
-      if (firstMessage && task.autoProject) {
+      if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
         yield* callEffect(
           '/api/tasks/projects/select',
           { id: task.id, requestId: attempt.id, text: text || 'Work with the attached files' },
@@ -405,44 +602,86 @@ export function useConversationActions(task: Task) {
         const title = attempt.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
         sendAttempts.setTitle(scope, attempt.id, title)
         yield* storedDraft.stageEffect(attempt)
-        yield* patchEffect(
-          {
-            title: {
-              before: task.title,
-              after: title,
+        if (!snapshot?.messageSetupSupported)
+          yield* patchEffect(
+            {
+              title: {
+                before: task.title,
+                after: title,
+              },
             },
-          },
-          false,
-        )
+            false,
+            deferSend,
+          )
       }
       return yield* mobileWorkflow(function* () {
-        const clearDraft = yield* sendAttempts.deliverEffect(
-          scope,
-          attempt,
-          callEffect(
-            mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
-            {
-              id: task.id,
-              messageId: attempt.id,
-              runId: attempt.runId,
-              turnSettings: attempt.turnSettings,
-              text,
-              attachmentIds,
-            },
-            responses.ok,
-          ).pipe(
-            Effect.tap((result) =>
-              Effect.sync(() => {
-                if (result.pending)
-                  setPendingMessage((pending) =>
-                    pending?.message.id === attempt.id ? { ...pending, state: 'saved' } : pending,
-                  )
-              }),
-            ),
+        let messageAcknowledged = false
+        const request = callEffect(
+          mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
+          {
+            id: task.id,
+            messageId: attempt.id,
+            ...(firstMessage && snapshot?.messageSetupSupported
+              ? {
+                  initialTitle: { before: task.title, after: attempt.title },
+                  ...(task.autoProject ? { selectProject: true } : {}),
+                }
+              : {}),
+            ...(mode === 'stage' ? { queueOnly: true } : {}),
+            ...(mode === 'direct' ? { sendNow: true } : {}),
+            ...(attempt.preserveQueuePause ? { preserveQueuePause: true } : {}),
+            runId: attempt.runId,
+            turnSettings: attempt.turnSettings,
+            ...(attempt.plan ? { plan: true } : {}),
+            text,
+            attachmentIds,
+          },
+          responses.ok,
+          undefined,
+          { defer: deferSend },
+        ).pipe(
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              messageAcknowledged = !result.pending
+              if (result.pending)
+                setPendingMessage((pending) =>
+                  pending?.message.id === attempt.id ? { ...pending, state: 'saved' } : pending,
+                )
+            }),
           ),
         )
+        // Legacy requests retain their retry identity until acknowledged.
+        // A deferred send has already committed to the durable outbox, so it can
+        // release the composer without waiting for the network recovery worker.
+        const clearDraft =
+          background && !deferSend
+            ? yield* request.pipe(
+                Effect.flatMap(() =>
+                  messageAcknowledged
+                    ? sendAttempts.deliverEffect(scope, attempt, Effect.void)
+                    : Effect.succeed(false),
+                ),
+              )
+            : yield* sendAttempts.deliverEffect(scope, attempt, request)
+        if (background && !messageAcknowledged && !deferSend) {
+          backgroundOutcome = 'pending'
+          return
+        }
+        // Keep builder intent across HTTP acceptance and the later authoritative snapshot.
+        if (attempt.mode === 'stage')
+          setStageIntents((current) => [
+            ...current.filter((intent) => intent.scope !== pendingScope),
+            {
+              scope: pendingScope,
+              messageId: attempt.id,
+              wasRunning: task.status === 'running',
+              runId: attempt.runId ?? task.activeRunId,
+            },
+          ])
+        else if (attempt.mode === 'queue')
+          setStageIntents((current) => current.filter((intent) => intent.scope !== pendingScope))
         yield* storedDraft.confirmEffect(attempt, clearDraft)
-        if (firstMessage)
+        if (firstMessage && messageAcknowledged && !snapshot?.messageSetupSupported)
           void runClientEffect(
             readEffect(
               '/api/tasks/title',
@@ -455,7 +694,17 @@ export function useConversationActions(task: Task) {
             ).pipe(Effect.catch(() => Effect.succeed(undefined))),
           )
 
-        setTurnSettings(null)
+        if (!latestDraftText.current.trim() || latestDraftText.current.trim() === attempt.text) {
+          setTurnSettings((current) =>
+            sameTurnSettings(current, attempt.turnSettings) ? null : current,
+          )
+          if (attempt.plan)
+            setDraftPlan((current) => (current === !!attempt.plan ? false : current))
+        }
+        if (background && (messageAcknowledged || deferSend)) {
+          yield* Effect.sync(background.confirmed)
+          backgroundOutcome = 'confirmed'
+        }
       }).pipe(
         Effect.catch((error) =>
           mobileWorkflow(function* () {
@@ -465,6 +714,16 @@ export function useConversationActions(task: Task) {
         ),
       )
     }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          setSubmitting(false)
+          if (background) {
+            backgroundLocked.current = false
+            setBackgroundSubmitting(false)
+            background.settled(backgroundOutcome)
+          }
+        }),
+      ),
       Effect.catch((error) =>
         mobileWorkflow(function* () {
           setPendingMessage((pending) =>
@@ -513,7 +772,7 @@ export function useConversationActions(task: Task) {
           expectedTurnSettings: restore.turnSettings,
           expectedDraftTurnSettings: restore.draftTurnSettings,
         },
-        responses.ok,
+        responses.queueAction,
       )
       yield* storedDraft.confirmRestoreEffect(restore.requestId)
       if (currentDraftKey.current === key)
@@ -554,6 +813,13 @@ export function useConversationActions(task: Task) {
           )
             throw new Error(
               'Clear the composer before restoring a message with different model settings',
+            )
+          if (
+            (storedDraft.text.trim() || task.draftAttachments?.length) &&
+            !!message.plan !== draftPlan
+          )
+            throw new Error(
+              'Clear the composer before restoring a message with a different plan mode',
             )
           if (!snapshot?.queueRestoreReceiptsSupported)
             throw new Error('Update this computer’s runtime before restoring queued messages')
@@ -597,12 +863,16 @@ export function useConversationActions(task: Task) {
     },
     beginEdit: (message: Task['messages'][number]) => {
       if (busy || attaching || editing || dictation.active) return
+      const session = randomUUID()
+      editSession.current = session
       setEditing({
         message,
         text: message.text,
         revision: 0,
         settings: message.turnSettings ?? null,
         files: message.attachments ?? [],
+        session,
+        plan: message.plan === true,
       })
     },
     removeEditAttachment: (id: string) =>
@@ -611,7 +881,9 @@ export function useConversationActions(task: Task) {
       ),
     cancelEdit: () => {
       dictation.reset()
+      editSession.current = null
       setEditing(null)
+      if (profile) reviewAttachments(profile)
     },
     turnSettings,
     setTurnSettings: (value: TurnSettings | null) => {
@@ -625,6 +897,17 @@ export function useConversationActions(task: Task) {
           draftTurnSettings: { before: task.draftTurnSettings ?? null, after: value },
         }),
       )
+    },
+    plan,
+    planSupported,
+    planIssue,
+    setPlan: (value: boolean) => {
+      if (editing) {
+        setEditing({ ...editing, plan: value })
+        return
+      }
+      setDraftPlan(value)
+      act(() => patchEffect({ draftPlan: { before: task.draftPlan ?? null, after: value } }))
     },
     threadScope: JSON.stringify([profile?.connection.address, profile?.connection.token, task.id]),
     pendingMessage,
@@ -665,11 +948,13 @@ export function useConversationActions(task: Task) {
     connected,
     snapshot,
     draft,
+    composerHistory,
     dictation,
     busy,
     // A later snapshot may also acknowledge a request after its HTTP error was displayed.
     error:
       policyIssue ||
+      planIssue ||
       (failedSend.current &&
       (sendAttempts.isConfirmed(failedSend.current) ||
         [...task.messages, ...(task.queue ?? [])].some(
@@ -687,6 +972,11 @@ export function useConversationActions(task: Task) {
     checkoutEditable,
     hasInput,
     canSend,
+    canStartInBackground,
+    backgroundSubmitting,
+    submitting,
+    defaultSendMode,
+    stageSupported,
     patch,
     submit,
   }

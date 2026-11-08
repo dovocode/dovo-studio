@@ -75,7 +75,12 @@ export function RunControls({ task }: { task: Task }) {
   )
     return null
   return (
-    <div ref={controls} className="shrink-0 space-y-2 px-5 pb-2">
+    <div
+      ref={controls}
+      className="shrink-0 space-y-2 px-5 pb-2"
+      data-human-input={approvals.length ? 'approval' : undefined}
+      data-human-input-task={task.id}
+    >
       {!connected && (
         <p role="status" className="mx-auto max-w-[var(--chat-max)] text-xs text-muted-foreground">
           {executionHost} is offline. Your draft is saved here.
@@ -91,7 +96,7 @@ export function RunControls({ task }: { task: Task }) {
               disabled={busy || !connected}
               onClick={() => act('/api/tasks/run', { id: task.id })}
             >
-              {task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'}
+              {task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume thread'}
             </Button>
           </div>
         )}
@@ -173,7 +178,7 @@ export function RunControls({ task }: { task: Task }) {
               >
                 {action.label}
                 {action.decision === 'approve' || action.decision === 'deny' ? (
-                  <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
+                  <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
                     {action.decision === 'approve' ? 'Y / Enter' : 'N'}
                   </kbd>
                 ) : null}

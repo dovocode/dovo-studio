@@ -145,6 +145,7 @@ it('lists stored GitHub accounts for the chosen host without exposing tokens or 
     },
   ])
   expect(JSON.stringify(result)).not.toContain('private')
+  expect(result.message).toContain('runtime environment token')
   expect(runForgeCli).toHaveBeenCalledExactlyOnceWith(
     'gh',
     ['auth', 'status', '--hostname', 'github.example', '--json', 'hosts'],

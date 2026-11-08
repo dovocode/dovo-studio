@@ -191,7 +191,7 @@ function OwnedBrowserThreadPanel({
               <option value="">Choose project…</option>
               {store.workspace.repositories.map((repo) => (
                 <option key={repo.id} value={repo.id}>
-                  {repo.kind === 'scratch' ? 'General' : repo.name}
+                  {repo.kind === 'scratch' ? 'No Project' : repo.name}
                 </option>
               ))}
             </select>

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
@@ -6,7 +7,7 @@ const mocks = {
   './task-list-view-state': `export const readTaskListViewState=()=>({environment:JSON.stringify('removed-computer')});export const saveTaskListViewState=()=>{};`,
   './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react'; export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref];}`,
-  '@dovo/studio-core': `
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
 export {responses} from '@dovo/protocol';
 import {useSyncExternalStore} from 'react';
 let preferences = {taskSort:'created',taskGrouping:'none',confirmArchive:false,collapsedThreadSections:['working','waiting','snoozed','settled']};
@@ -23,7 +24,7 @@ export const taskSortOptions = [];
 export const taskGroupOptions = [];
 export const latestCompletedTaskTurn = task => task.turns?.at(-1);
 const store = { activeRuntimeId:null, connection:null, runtimeRegistry:{profiles:[]}, request:async(path,input)=>{window.requests.push({path,input});return {ok:true}}, refreshRuntimes:async()=>{} };
-export const useWorkspace = () => store;
+window.store=store;export const useWorkspace = () => store;
 export const useWorkspaceSelector = select => select(store);
 export const sameWorkspaceFields = () => false;`,
   '@dovo/studio-ui': `
@@ -46,7 +47,7 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TaskList} from './src/list/task-list.tsx';import {taskCollectionKey} from './src/list/task-collection.ts';
 window.requests=[];
 const tasks=['A','B','C'].map(title=>({id:title,title,repositoryId:'r',agentId:'',status:'completed',messages:[],files:[],draft:'',createdAt:'',turns:[{id:'turn-'+title,status:'completed'}]}));
-function App(){const [selected,setSelected]=useState(taskCollectionKey(null,'A'));const [waiting,setWaiting]=useState(true);window.reviveWaiting=()=>setWaiting(false);const watched={...tasks[0],id:'watched',title:'Watched thread',status:'review',waitingForFeedback:waiting};const sources=[{runtimeId:null,name:'Local',online:true,snapshot:null,workspace:{tasks:[...tasks,watched],repositories:[],agents:[]}}];return <TaskList projectId="" onProjectChange={()=>{}} selectedId={selected} onSelect={entry=>setSelected(entry.key)} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>setSelected('')} sources={sources} activeRuntimeId={null} busy={false} error=""/>;}
+function App(){const [runtime,setRuntime]=useState(null);window.renderedRuntime=runtime;window.switchRuntime=id=>{window.store.activeRuntimeId=id;setRuntime(id)};const [selected,setSelected]=useState(taskCollectionKey(null,'A'));const [waiting,setWaiting]=useState(true);window.reviveWaiting=()=>setWaiting(false);const watched={...tasks[0],id:'watched',title:'Watched thread',status:'review',waitingForFeedback:waiting};const sources=[{runtimeId:null,name:'Local',online:true,snapshot:null,workspace:{tasks:[...tasks,watched],repositories:[],agents:[]}}];return <TaskList projectId="" onProjectChange={()=>{}} selectedId={selected} onSelect={entry=>setSelected(entry.key)} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>setSelected('')} sources={sources} activeRuntimeId={runtime} busy={false} error=""/>;}
 createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
@@ -107,7 +108,7 @@ try {
   )
     throw new Error(JSON.stringify({ requests, errors }))
 
-  page.on('dialog', (dialog) => dialog.accept())
+  // Consent is an async application decision; no native browser dialog is used.
   for (const [name, path] of [
     ['Archive', '/api/tasks/lifecycle'],
     ['Reopen', '/api/workspace'],
@@ -136,6 +137,47 @@ try {
     )
       throw new Error(`${name}: ${JSON.stringify(batch)}`)
   }
+  // Bulk consent holds the lock before awaiting, and cancellation retains selection.
+  await page.evaluate(() => {
+    window.requests = []
+    window.confirmationResponse = (options) =>
+      new Promise((resolve) => {
+        window.pendingConfirmation = { options, resolve }
+      })
+  })
+  for (const decision of ['cancel', 'stale', 'accept']) {
+    if (decision === 'cancel') {
+      await page.getByRole('button', { name: 'A', exact: true }).click()
+      await page.getByRole('button', { name: 'B', exact: true }).click({ modifiers: ['Meta'] })
+    }
+    await page.getByRole('button', { name: 'B', exact: true }).click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+    await page.waitForFunction(() => !!window.pendingConfirmation)
+    assert.equal(await page.evaluate(() => window.requests.length), 0)
+    if (decision === 'stale') {
+      await page.evaluate(() => window.switchRuntime('other'))
+      await page.waitForFunction(() => window.renderedRuntime === 'other')
+    }
+    await page.evaluate(
+      (accepted) => window.pendingConfirmation.resolve(accepted),
+      decision !== 'cancel',
+    )
+    await page.waitForFunction(
+      () =>
+        ![...document.querySelectorAll('button')].some((b) => b.textContent === 'A' && b.disabled),
+    )
+    if (decision === 'accept') await page.waitForFunction(() => window.requests.length === 2)
+    else assert.equal(await page.evaluate(() => window.requests.length), 0)
+    if (decision === 'stale') {
+      await page.evaluate(() => window.switchRuntime(null))
+      await page.waitForFunction(() => window.renderedRuntime === null)
+    }
+    await page.evaluate(() => (window.pendingConfirmation = null))
+  }
+  await page.evaluate(() => {
+    delete window.confirmationResponse
+    window.requests = []
+  })
   await page.getByRole('button', { name: 'A', exact: true }).click()
   await page.getByRole('button', { name: 'B', exact: true }).click({ modifiers: ['Meta'] })
   await page.waitForFunction(

@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { browserQuote } from './shared-browser-tabs'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Copy, MessageSquarePlus } from 'lucide-react'
@@ -64,7 +65,7 @@ export function SharedBrowserActions({
         const parsed = decodeResult(browserContextActionSchema, input)
         if (!parsed.success) return
         const action = parsed.data
-        if (action.key !== tabKey || busy) return
+        if (action.key !== tabKey || busy || !['selection', 'page'].includes(action.action)) return
         setError('')
         setNotice('')
         setQuery('')
@@ -112,7 +113,7 @@ export function SharedBrowserActions({
       const value = action === 'page' ? { text: '', url, title } : await capture()
       if (action !== 'page' && !value.text.trim()) throw new Error('Select text on the page first.')
       if (action === 'copy') {
-        await navigator.clipboard.writeText(value.text)
+        await copyTextToClipboard(value.text)
         setNotice('Selection copied.')
       } else {
         setQuery('')
@@ -356,7 +357,7 @@ export function SharedBrowserActions({
               <SelectContent>
                 {store.workspace.repositories.map((repo) => (
                   <SelectItem key={repo.id} value={repo.id}>
-                    {repo.kind === 'scratch' ? 'General' : repo.name}
+                    {repo.kind === 'scratch' ? 'No Project' : repo.name}
                   </SelectItem>
                 ))}
               </SelectContent>

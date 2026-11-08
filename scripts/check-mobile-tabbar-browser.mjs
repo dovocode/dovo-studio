@@ -10,7 +10,7 @@ const workbench = root + 'apps/mobile/src/shell/workbench.tsx'
 // outside the native tab navigator even though they have no tab trigger.
 const mobileRequire = createRequire(root + 'apps/mobile/package.json')
 const { getRoutes } = mobileRequire('expo-router/build/getRoutesCore')
-const { getValidInitialRouteName } = mobileRequire('expo-router/build/RouteNode')
+const { getValidInitialRouteName } = mobileRequire('expo-router/build/routeNode')
 const appRoot = root + 'apps/mobile/src/app/'
 const routeContext = () => ({ default: () => null })
 routeContext.keys = () =>

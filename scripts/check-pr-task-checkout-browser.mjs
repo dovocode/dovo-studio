@@ -16,7 +16,7 @@ const mocks = {
   'react-native': native,
   '@dovo/studio-core': `export * from '../protocol/src/index';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:value=>window.events.push(['navigate',value])});export const WorkspaceScope=({children})=>children;export {updateTask} from '../studio-core/src/workspace/actions';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export {LinkedCheckoutEditor} from './src/linked-checkouts';export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {ChoicePicker} from './src/choice-picker';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;`,
+  '@dovo/studio-ui': `export {ProjectIcon} from './src/project-icon';export {LinkedCheckoutEditor} from './src/linked-checkouts';export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {ChoicePicker} from './src/choice-picker';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
   '../../list/task-collection': `export const taskSources=store=>[{runtimeId:'machine',name:'Machine',online:true,workspace:store.workspace}];`,
@@ -85,7 +85,7 @@ try {
     for (const mode of ['new-branch', 'pr-branch']) {
       await page.evaluate((mobile) => window.render(mobile), mobile)
       await page
-        .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+        .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
         .click()
       assert.equal(await page.getByRole('dialog').count(), 0)
       await page
@@ -113,7 +113,7 @@ try {
       window.fail = true
     }, mobile)
     await page
-      .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
       .click()
     await page
       .getByRole(mobile ? 'button' : 'menuitem', { name: 'Use PR branch', exact: true })
@@ -128,7 +128,7 @@ try {
       window.fail = false
     })
     await page
-      .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
       .click()
     await page
       .getByRole(mobile ? 'button' : 'menuitem', { name: 'New branch from PR', exact: true })
@@ -136,7 +136,7 @@ try {
     await page.waitForFunction(() => window.events.some((event) => event[0] === 'navigate'))
     await page.evaluate((mobile) => window.render(mobile, false), mobile)
     await page
-      .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
       .click()
     const direct = page.getByRole(mobile ? 'button' : 'menuitem', {
       name: 'Use PR branch',
@@ -148,7 +148,7 @@ try {
     )
     await page.evaluate((mobile) => window.render(mobile, true, true), mobile)
     await page
-      .getByRole('button', { name: mobile ? 'Update stack' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'Update stack' : 'New thread', exact: true })
       .click()
     if (!mobile) await page.getByRole('menuitem', { name: 'Update PR stack', exact: true }).click()
     await page.waitForFunction(() => window.events.some((event) => event[0] === 'navigate'))
@@ -173,7 +173,7 @@ try {
       true,
     )
     assert.equal(await page.getByText('New worktree', { exact: true }).count(), 0)
-    assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Thread server', exact: true }).count(), 0)
   }
   assert.deepEqual(errors, [])
   console.log(

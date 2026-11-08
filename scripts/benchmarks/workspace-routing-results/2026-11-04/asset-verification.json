@@ -1,0 +1,265 @@
+[
+  {
+    "name": "Julia-1",
+    "repo": "SupersonicLabs/Julia-1-ONNX",
+    "revision": "82a2fadf8fccfccdc5fd4e1009ba8f1a265eb7a8",
+    "files": [
+      {
+        "file": "model.onnx",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "model.onnx.data",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "wasm/julia_webgpu_encode.js",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "wasm/julia_webgpu_encode_bg.wasm",
+        "status": "sha256-matched"
+      }
+    ]
+  },
+  {
+    "name": "Qwen3",
+    "repo": "onnx-community/Qwen3-0.6B-ONNX",
+    "revision": "58ca03a5e7b354b480b1a82b34bde8dc7b854cc0",
+    "files": [
+      {
+        "file": "onnx/model_int8.onnx",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "generation_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      }
+    ]
+  },
+  {
+    "name": "Qwen2.5",
+    "repo": "onnx-community/Qwen2.5-0.5B-Instruct",
+    "revision": "22942cb7d7ba4cc81bb4673549ca4d4614469b5e",
+    "files": [
+      {
+        "file": "onnx/model_int8.onnx",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "generation_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      }
+    ]
+  },
+  {
+    "name": "SmolLM2",
+    "repo": "HuggingFaceTB/SmolLM2-360M-Instruct",
+    "revision": "a10cc1512eabd3dde888204e902eca88bddb4951",
+    "files": [
+      {
+        "file": "onnx/model_int8.onnx",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "generation_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      }
+    ]
+  },
+  {
+    "name": "Kev0.6",
+    "repo": "onnx-community/kev-0.6b-ONNX",
+    "revision": "5a827091b3d58fe4fdfc02a5a5b2ce364047d678",
+    "files": [
+      {
+        "file": "onnx/model_q4.onnx",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "onnx/model_q4.onnx_data",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      }
+    ]
+  },
+  {
+    "name": "Laya",
+    "repo": "convaiinnovations/laya",
+    "revision": "7b928d828b7b0e022f929d9bd2e44165aa270148",
+    "files": [
+      {
+        "file": "model.safetensors",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "rl_agent_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "encoder/config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer/tokenizer.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer/tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      }
+    ]
+  },
+  {
+    "name": "Laya-multilingual",
+    "repo": "convaiinnovations/laya-multilingual",
+    "revision": "1720e3e3357cfe1e281542e223f8273b0890ca34",
+    "files": [
+      {
+        "file": "model.safetensors",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "rl_agent_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "encoder/config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer/tokenizer.json",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "tokenizer/tokenizer_config.json",
+        "status": "official-loader-compatibility-normalization",
+        "note": "Laya 0.3.20 normalizes extra_special_tokens list to named dict; tokenizer vocabulary unchanged."
+      }
+    ]
+  },
+  {
+    "name": "Laya-typed",
+    "repo": "convaiinnovations/laya-typed-decisions",
+    "revision": "e929ae5cf69bc34259cd2f95c9e91145b818b1f0",
+    "files": [
+      {
+        "file": "model.safetensors",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "rl_agent_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "encoder/config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer/tokenizer.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer/tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      }
+    ]
+  },
+  {
+    "name": "Kev0.8 adapter",
+    "repo": "jaredpalmer/kev-0.8b",
+    "revision": "bf75a6a8848ea6960ff2ed108d9ed44c2941174f",
+    "files": [
+      {
+        "file": "adapter_model.safetensors",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "adapter_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "head.pt",
+        "status": "sha256-matched"
+      }
+    ]
+  },
+  {
+    "name": "Kev0.8 base",
+    "repo": "Qwen/Qwen3.5-0.8B-Base",
+    "revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68",
+    "files": [
+      {
+        "file": "base/model.safetensors-00001-of-00001.safetensors",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "base/config.json",
+        "status": "size-matched-local-sha256-recorded"
+      },
+      {
+        "file": "base/tokenizer.json",
+        "status": "sha256-matched"
+      },
+      {
+        "file": "base/tokenizer_config.json",
+        "status": "size-matched-local-sha256-recorded"
+      }
+    ]
+  }
+]

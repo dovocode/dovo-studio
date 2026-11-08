@@ -16,13 +16,17 @@ window.edited=[];window.calls=[];window.connected=true;window.disabled=false;win
 const image={id:'photo',name:'Schermafbeelding 2026-10-24 om 09.01 — a very long filename.jpg',mime:'image/jpeg',size:2048};
 const doc={id:'notes',name:'Notes for the release.txt',mime:'text/plain',size:32};
 const zip={id:'archive',name:'Build artifacts and supporting reports.zip',mime:'application/zip',size:2048};
+const audio={id:'audio',name:'recording.wav',mime:'audio/wav',size:8044};const video={id:'video',name:'movie.mp4',mime:'video/mp4',size:100};
+const wav=new Uint8Array(8044), wavView=new DataView(wav.buffer);for(const [offset,text] of [[0,'RIFF'],[8,'WAVE'],[12,'fmt '],[36,'data']])for(let index=0;index<text.length;index++)wav[offset+index]=text.charCodeAt(index);wavView.setUint32(4,8036,true);wavView.setUint32(16,16,true);wavView.setUint16(20,1,true);wavView.setUint16(22,1,true);wavView.setUint32(24,8000,true);wavView.setUint32(28,8000,true);wavView.setUint16(32,1,true);wavView.setUint16(34,8,true);wavView.setUint32(40,8000,true);wav.fill(128,44);
 window.archiveEntries=[{path:'reports/deep/results.txt',size:15,directory:false},{path:'reports/other.txt',size:12,directory:false},{path:'image.png',size:32,directory:false},{path:'empty/',size:0,directory:true}];window.uploads=[];
 
-window.files=[image,doc,zip];window.request=async(path,input)=>{window.calls.push({path,input});
+window.files=[image,doc,zip];window.mediaFiles=[audio,video];window.request=async(path,input)=>{window.calls.push({path,input});
 if(path==='/api/attachments/archive/list'){if(window.archiveFail)throw Error('Expanded ZIP exceeds preview limits');return {entries:window.archiveEntries}};
 if(path==='/api/attachments/archive/read'){if(window.holdEntry){window.holdEntry=false;await new Promise(resolve=>window.releaseEntry=resolve)}if(window.entryFail)throw Error('Entry unavailable');const image=input.path==='image.png';return {path:input.path,name:input.path.split('/').at(-1),mime:image?'image/png':'text/plain',size:15,data:image?window.png.split(',')[1]:btoa(input.path==='reports/other.txt'?'Other result':'Selected result')}};
-if(path==='/api/attachments/upload'){window.uploads.push(input);if(window.uploadFail){window.uploadFail=false;throw Error('Upload response lost')}return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:15}}};
-if(window.fail)throw Error('Attachment unavailable');if(path==='/api/tasks/images/read'){if(window.thumbnailFail)throw Error('Thumbnail unavailable');return {uri:window.png}};return {attachment:window.files.find(file=>file.id===input.id),data:input.id==='photo'?window.png.split(',')[1]:btoa('Release notes')}};
+if(path==='/api/attachments/draft-guard')return {guard:'guard'};
+if(path==='/api/attachments/commit-upload'){window.committed=(window.committed||[]).concat(input);const upload=window.uploads.find(item=>item.id===input.id);return {attachment:{id:input.id,name:upload.name,mime:'text/plain',size:15},revision:1,nextGuard:'next-guard'}};
+if(path==='/api/attachments/recoverable-upload'){window.uploads.push(input);if(window.holdUpload){window.holdUpload=false;await new Promise(resolve=>window.releaseUpload=resolve)}if(window.preflightFail){window.preflightFail=false;throw Error('Upload not dispatched')}if(window.uploadFail){window.uploadFail=false;throw Error('Upload response lost')}return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:15},revision:1}};
+if(window.fail)throw Error('Attachment unavailable');if(path==='/api/tasks/images/read'){if(window.thumbnailFail)throw Error('Thumbnail unavailable');return {uri:window.png}};if(window.holdRead){await new Promise(resolve=>window.releaseRead=resolve)}return {attachment:[...window.files,...window.mediaFiles].find(file=>file.id===input.id),data:input.id==='photo'?window.png.split(',')[1]:input.id==='audio'?btoa(String.fromCharCode(...wav)):btoa('Release notes')}};
 function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=useState(0);window.refresh=()=>setRevision(value=>value+1);window.setFiles=setFiles;return <main data-revision={revision} style={{padding:12}}><MessageAttachments taskId="task" files={files} removable edit={async id=>{window.edited.push(id)}} remove={id=>setFiles(files=>files.filter(file=>file.id!==id))} disabled={window.disabled}/><textarea aria-label="Message" defaultValue="Keep my draft"/></main>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -41,8 +45,17 @@ function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=u
       contents: 'export const EditChatImage=()=>null;',
     },
     {
+      path: 'expo-router',
+      contents: `import {useSyncExternalStore} from 'react';export const useIsFocused=()=>useSyncExternalStore(callback=>{window.focusChanged=callback;return()=>{}},()=>window.focused!==false);`,
+    },
+    {
+      path: 'react-native-webview',
+      contents: `import {useEffect} from 'react';export const WebView=({source,accessibilityLabel,onMessage})=>{useEffect(()=>{const listener=event=>onMessage({nativeEvent:{data:event.detail}});window.addEventListener('media-probe',listener);return()=>window.removeEventListener('media-probe',listener)},[onMessage]);return <iframe title={accessibilityLabel} srcDoc={source.html.replace('<head>','<head><script>window.ReactNativeWebView={postMessage:value=>parent.dispatchEvent(new CustomEvent("media-probe",{detail:value}))}</script>')}/>};`,
+    },
+    {
       path: 'react-native',
       contents: `import {useEffect,useRef} from 'react';
+export const AppState={currentState:'active',addEventListener:(_event,callback)=>{window.appListeners=(window.appListeners||0)+1;window.appStateChanged=callback;return {remove(){window.appListeners--}}}};
 const css=s=>{const value=Array.isArray(s)?Object.assign({},...s):s;return {...value,...(value?.paddingHorizontal!==undefined?{paddingLeft:value.paddingHorizontal,paddingRight:value.paddingHorizontal}:{}),...(value?.paddingVertical!==undefined?{paddingTop:value.paddingVertical,paddingBottom:value.paddingVertical}:{})}};
 export const View=({children,style,accessibilityLabel,onLayout})=>{const ref=useRef(null),callback=useRef(onLayout);callback.current=onLayout;useEffect(()=>{if(!callback.current)return;const observer=new ResizeObserver(([entry])=>callback.current?.({nativeEvent:{layout:entry.contentRect}}));observer.observe(ref.current);return()=>observer.disconnect()},[]);return <div ref={ref} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',minHeight:0,boxSizing:'border-box',borderStyle:'solid',borderWidth:0,...css(style)}}>{children}</div>};
 export const Pressable=({children,onPress,disabled,style,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',border:0,font:'inherit',background:'transparent',boxSizing:'border-box',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
@@ -62,7 +75,7 @@ export const Image=({source,accessibilityLabel,style})=><img src={source?.uri} a
     {
       path: '../../../runtime/connection/provider',
       importer: component,
-      contents: `import {Effect} from 'effect';const request=(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error});export const useRuntime=()=>({connected:window.connected,callEffect:request,readEffect:request});`,
+      contents: `import {Effect} from 'effect';const request=(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error});export const useRuntime=()=>({connected:window.connected,profile:{id:'host',connection:{address:'host',token:'token'}},callEffect:request,readEffect:request,readRuntimeEffect:(_profile,path,input)=>request(path,input),refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{window.reviews=(window.reviews||0)+1},attachmentPendingEffect:()=>window.pendingReadFail?Effect.fail(Error('Storage unavailable')):Effect.succeed(!window.noPending),requestAttachmentEffect:(_profile,input)=>request('/api/attachments/recoverable-upload',input)});`,
     },
     {
       path: '../../../ui/theme',
@@ -335,14 +348,31 @@ try {
       assert.ok(box.y >= 0 && box.y + box.height <= size.height)
     }
   }
-  await page.evaluate(() => (window.uploadFail = true))
+  await page.evaluate(() => {
+    window.preflightFail = true
+    window.noPending = true
+  })
+  await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
+  await archive.getByRole('alert').getByText('Upload not dispatched').waitFor()
+  assert.equal(
+    await archive.getByRole('button', { name: 'Attach selected file to draft' }).isEnabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.uploadFail = true
+    window.noPending = false
+  })
   await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
   await archive.getByRole('alert').getByText('Upload response lost').waitFor()
-  await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
-  await archive.getByRole('button', { name: 'Added to draft' }).waitFor()
+  await archive.getByRole('button', { name: 'Check saved uploads' }).waitFor()
+  assert.equal(
+    await archive.getByRole('button', { name: 'Check saved uploads' }).isDisabled(),
+    true,
+  )
   const uploads = await page.evaluate(() => window.uploads)
   assert.equal(uploads.length, 2)
   assert.equal(uploads[0].id, uploads[1].id)
+  assert.equal(uploads[0].detached, true)
   assert.equal(uploads[0].name, 'results.txt')
   assert.equal(uploads[0].data, Buffer.from('Selected result').toString('base64'))
   assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep my draft')
@@ -359,6 +389,22 @@ try {
   await archive.getByRole('button', { name: 'Back to archive folder' }).click()
   await archive.getByRole('button', { name: 'Parent archive folder' }).click()
   await archive.getByRole('button', { name: 'Preview file other.txt' }).waitFor()
+  await archive.getByRole('button', { name: 'Preview file other.txt' }).click()
+  await archive.getByText('Other result', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.preflightFail = true
+    window.pendingReadFail = true
+  })
+  await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
+  await archive.getByRole('alert').getByText('Upload not dispatched').waitFor()
+  assert.equal(
+    await archive.getByRole('button', { name: 'Check saved uploads' }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.pendingReadFail = false
+  })
+  await archive.getByRole('button', { name: 'Back to archive folder' }).click()
   await page.evaluate(() => (window.holdEntry = true))
   await archive.getByRole('button', { name: 'Preview file other.txt' }).click()
   await page.waitForFunction(() => !!window.releaseEntry)
@@ -374,6 +420,9 @@ try {
   await archive.getByRole('button', { name: 'Parent archive folder' }).click()
   await archive.getByRole('button', { name: 'Preview file image.png' }).click()
   await archive.getByRole('img', { name: 'image.png' }).waitFor()
+  await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
+  await archive.getByRole('button', { name: 'Attached to draft' }).waitFor()
+  assert.equal(await page.evaluate(() => window.committed.length), 1)
   await page.evaluate(() => {
     window.connected = false
     window.refresh()
@@ -402,6 +451,96 @@ try {
   await archive.getByRole('button', { name: 'Open folder empty' }).click()
   await archive.getByText('This folder is empty.').waitFor()
   await archive.getByRole('button', { name: 'Close archive' }).click()
+  await rows
+    .getByRole('button', { name: 'Preview Build artifacts and supporting reports.zip' })
+    .click()
+  await archive.getByRole('button', { name: 'Preview file image.png' }).click()
+  await archive.getByRole('img', { name: 'image.png' }).waitFor()
+  const reviewsBeforeClose = await page.evaluate(() => window.reviews || 0)
+  await page.evaluate(() => {
+    window.holdUpload = true
+  })
+  await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
+  await page.waitForFunction(() => !!window.releaseUpload)
+  await archive.getByRole('button', { name: 'Close archive' }).click()
+  await page.evaluate(() => window.releaseUpload())
+  await page.waitForFunction((previous) => window.reviews > previous, reviewsBeforeClose)
+  assert.equal(await page.evaluate(() => window.committed.length), 1)
+  await page.evaluate(() => window.setFiles(window.mediaFiles))
+  await page.clock.install()
+  assert.equal(await page.evaluate(() => window.appListeners || 0), 0)
+  for (const [name, tag] of [
+    ['recording.wav', 'audio'],
+    ['movie.mp4', 'video'],
+  ]) {
+    await rows.getByRole('button', { name: `Preview ${name}` }).click()
+    const frame = dialog.locator('iframe')
+    await frame.waitFor()
+    const media = frame.contentFrame().locator(tag)
+    await media.waitFor()
+    assert.equal(await media.getAttribute('controls'), '')
+    assert.equal(await media.getAttribute('autoplay'), null)
+    assert.equal(await media.getAttribute('playsinline'), '')
+    await page.waitForFunction((label) => {
+      const frame = document.querySelector(`iframe[title="Play ${label}"]`)
+      return frame?.contentDocument?.querySelector('audio, video')?.src.startsWith('blob:')
+    }, name)
+    if (tag === 'audio') {
+      await media.evaluate(async (element) => {
+        await element.play()
+      })
+      assert.equal(await media.evaluate((element) => element.paused), false)
+      await media.dispatchEvent('waiting')
+      await page.clock.fastForward(10001)
+      await dialog
+        .getByRole('alert')
+        .getByText('Unable to play this file. Share it to open elsewhere.')
+        .waitFor()
+      await media.dispatchEvent('playing')
+      await dialog.getByRole('alert').waitFor({ state: 'detached' })
+    } else {
+      await dialog
+        .getByRole('alert')
+        .getByText('Unable to play this file. Share it to open elsewhere.')
+        .waitFor()
+    }
+    await dialog.getByRole('button', { name: 'Close preview' }).click()
+    await dialog.waitFor({ state: 'detached' })
+  }
+  await rows.getByRole('button', { name: 'Preview recording.wav' }).click()
+  await dialog.locator('iframe').waitFor()
+  await page.evaluate(() => window.appStateChanged('background'))
+  await dialog.waitFor({ state: 'detached' })
+  await rows.getByRole('button', { name: 'Preview movie.mp4' }).click()
+  await dialog.locator('iframe').waitFor()
+  await page.evaluate(() => {
+    window.focused = false
+    window.focusChanged()
+  })
+  await dialog.waitFor({ state: 'detached' })
+  assert.equal(await page.evaluate(() => window.appListeners), 0)
+  await page.evaluate(() => {
+    window.focused = true
+    window.holdRead = true
+  })
+  await rows.getByRole('button', { name: 'Preview recording.wav' }).click()
+  await page.waitForFunction(() => !!window.releaseRead && window.appListeners === 1)
+  await page.evaluate(() => window.appStateChanged('background'))
+  await page.evaluate(() => window.releaseRead())
+  await page.waitForFunction(() => window.appListeners === 0)
+  assert.equal(await dialog.count(), 0)
+  await page.evaluate(() => {
+    window.releaseRead = null
+  })
+  await rows.getByRole('button', { name: 'Preview recording.wav' }).click()
+  await page.waitForFunction(() => !!window.releaseRead && window.appListeners === 1)
+  await page.evaluate(() => {
+    window.focused = false
+    window.focusChanged()
+    window.releaseRead()
+  })
+  await page.waitForFunction(() => window.appListeners === 0)
+  assert.equal(await dialog.count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     'Mobile attachment rows: responsive geometry, bounded list, icon actions, fixed glass preview toolbar, responsive zoom viewport, native sharing, bounded ZIP browsing, folder navigation, file/image previews, draft attachment retry identity, stale-reply isolation, fallbacks, disabled/offline controls and draft preservation passed (browser adapters).',

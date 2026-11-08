@@ -189,6 +189,12 @@ export class AppToolViews {
       }
     })
   }
+  /** Open views, including those with pending app requests, keep their upstream session. */
+  attached(taskId: string, server: string) {
+    for (const view of this.views.values())
+      if (view.taskId === taskId && view.server === server) return true
+    return false
+  }
   cancelTask(taskId: string) {
     for (const view of this.views.values()) if (view.taskId === taskId) view.close()
   }

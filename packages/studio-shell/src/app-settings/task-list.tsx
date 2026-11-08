@@ -1,15 +1,86 @@
-import { taskSortOptions, updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
-import { Input } from '@dovo/studio-ui'
+import { SnoozeSchedule } from './snooze-schedule'
+import {
+  taskSortOptions,
+  updateAppPreferences,
+  useAppPreferences,
+  useSettingsDraft,
+} from '@dovo/studio-core'
+import { Input, Button } from '@dovo/studio-ui'
+import {
+  defaultTaskSnoozeMinutes,
+  formatTaskSnoozeMinutes,
+  parseTaskSnoozeMinutes,
+  taskGroupOptions,
+} from '@dovo/protocol'
+import { useEffect, useState } from 'react'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
+
+function SnoozeDurations({ minutes }: { minutes: number[] }) {
+  const saved = formatTaskSnoozeMinutes(minutes)
+  const [text, setText] = useState(saved)
+  const [error, setError] = useState('')
+  useSettingsDraft(text !== saved)
+  useEffect(() => {
+    setText(saved)
+    setError('')
+  }, [saved])
+  return (
+    <div className="space-y-2">
+      <Input
+        aria-label="Snooze durations"
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value)
+          setError('')
+        }}
+        placeholder="15m, 1h, 4h, 1d"
+      />
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={text === saved}
+          onClick={() => {
+            try {
+              updateAppPreferences({ taskSnoozeMinutes: parseTaskSnoozeMinutes(text) })
+              setError('')
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : String(cause))
+            }
+          }}
+        >
+          Save snooze durations
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            updateAppPreferences({ taskSnoozeMinutes: [...defaultTaskSnoozeMinutes] })
+            setText(formatTaskSnoozeMinutes(defaultTaskSnoozeMinutes))
+            setError('')
+          }}
+        >
+          Reset snooze durations
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
 
 export default function TaskListSettings() {
   const preferences = useAppPreferences()
   return (
     <SettingsPage
-      local
-      title="Task list & projects"
-      description="Organize the task list and project picker, and choose when to ask for confirmation. These preferences apply on this device."
+      title="Thread list & projects"
+      description="Organize the thread list and project picker, and choose when to ask for confirmation."
+      storageInfo={<span>This device · saved automatically, except Snoozing (Save to apply)</span>}
     >
       <SettingsGroup title="Projects" description="Arrange projects in the project picker.">
         <SettingRow
@@ -46,23 +117,34 @@ export default function TaskListSettings() {
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Task list">
+      <SettingsGroup title="Thread list">
         <SettingRow
-          label="Group running tasks"
-          description="Keep running tasks in a collapsed Working section. Tasks needing input and pinned tasks stay visible."
+          label="Thread grouping"
+          description="Group the thread list by status or project, or show one list."
+        >
+          <SettingsSelect
+            label="Thread grouping"
+            value={preferences.taskGrouping}
+            options={taskGroupOptions.map((option) => [option.id, option.name])}
+            onChange={(taskGrouping) => updateAppPreferences({ taskGrouping })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Group running threads"
+          description="Keep running threads in a collapsed Working section. Threads needing input and pinned threads stay visible."
         >
           <Toggle
-            label="Group running tasks"
+            label="Group running threads"
             checked={preferences.workingSection}
             onChange={(workingSection) => updateAppPreferences({ workingSection })}
           />
         </SettingRow>
         <SettingRow
-          label="Default task sort"
-          description="How the task sidebar is ordered when Dovo opens."
+          label="Default thread sort"
+          description="How the thread sidebar is ordered when Dovo opens."
         >
           <SettingsSelect
-            label="Default task sort"
+            label="Default thread sort"
             value={preferences.taskSort}
             options={taskSortOptions
               .filter((option) => option.id !== 'status')
@@ -72,26 +154,39 @@ export default function TaskListSettings() {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup
+        title="Snoozing"
+        saveRequired
+        description="Choose the thread snooze options on this device, in menu order. Use Save calendar shortcuts and Save snooze durations to apply edits. Existing snoozed threads keep their wake-up time."
+      >
+        <SnoozeSchedule schedule={preferences.taskSnoozeSchedule} />
+        <SettingRow
+          label="Snooze durations"
+          description="Enter 1–12 durations separated by commas. Use m for minutes, h for hours, d for days or w for weeks."
+        >
+          <SnoozeDurations minutes={preferences.taskSnoozeMinutes} />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup
         title="Confirmations"
-        description="Choose when Dovo asks before changing a task."
+        description="Choose when Dovo asks before changing a thread."
       >
         {(
           [
             [
               'confirmArchive',
-              'Confirm before archiving a task',
-              'Archived tasks can be restored from Archived tasks.',
+              'Confirm before archiving a thread',
+              'Archived threads can be restored from Archived threads.',
             ],
             [
               'confirmStop',
-              'Confirm before stopping a running task',
+              'Confirm before stopping a running thread',
               'Ends the current turn and pauses queued messages.',
             ],
-            ['confirmUnpin', 'Confirm before unpinning a task', 'Remove a task from Pinned.'],
+            ['confirmUnpin', 'Confirm before unpinning a thread', 'Remove a thread from Pinned.'],
             [
               'confirmDelete',
-              'Confirm before deleting a task',
-              'Ask before permanently deleting a task and its conversation.',
+              'Confirm before deleting a thread',
+              'Ask before permanently deleting a thread and its conversation.',
             ],
           ] as const
         ).map(([key, label, description]) => (

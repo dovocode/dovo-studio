@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
-import { SettingsScopePage, Button } from '@dovo/studio-ui'
+import { SettingsScopePage, Button, Disclosure } from '@dovo/studio-ui'
 import { ScopedAgents } from './scoped-agents'
 import { HarnessUpdates } from './harness-updates'
 import { AcpRegistrySettings } from './acp-registry'
@@ -8,31 +8,37 @@ export default function AgentsView() {
   const host = useStudioHost()
   return (
     <SettingsScopePage
-      wide
       title="Agents"
       description="Agent profiles: the provider, model, access and instructions each coding agent uses."
+      supportsEditing={(snapshot) => snapshot?.scopedAgentsSupported === true}
+      saveInfo="Profile edits apply after saving."
+      wide
     >
       {({ scope, repository }) => (
         <>
-          <ScopedAgents scope={scope} repository={repository} />
+          <ScopedAgents
+            scope={scope}
+            repository={repository}
+            onOpenRuntime={() => host.navigate({ viewId: 'runtime' })}
+          />
           <div className="grid gap-3 lg:grid-cols-2">
             <LinkCard
-              title="Default agent for new tasks"
-              description="Pick which profile new tasks start with, and their default access, in Task defaults."
+              title="Default agent for new threads"
+              description="Pick which profile new threads start with, and their default access, in Thread defaults."
               action={
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => host.navigate({ viewId: 'task-defaults' })}
                 >
-                  Open task defaults
+                  Open thread defaults
                 </Button>
               }
             />
             {(scope === 'global' || scope === 'project') && (
               <LinkCard
                 title="Installations & sign-in"
-                description="Provider installs, ACP agents, titles and dictation belong to one computer. Choose a computer in the bar above to manage them."
+                description="Provider installs, ACP agents, titles and dictation belong to one computer. Choose a computer in the Computer selector above to manage them."
               />
             )}
           </div>
@@ -55,7 +61,7 @@ function LinkCard({
     <div
       data-setting-label={title}
       tabIndex={-1}
-      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/30 p-4"
+      className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 py-4"
     >
       <div className="min-w-0 flex-1">
         <h2 className="text-xs font-medium">{title}</h2>
@@ -69,13 +75,7 @@ function EnvironmentTools() {
   const { connected, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   return (
-    <details className="rounded-xl border p-4">
-      <summary
-        data-setting-label="Installations & sign-in"
-        className="cursor-pointer text-sm font-medium"
-      >
-        Installations & sign-in · this computer
-      </summary>
+    <Disclosure title="Installations & sign-in" data-setting-label="Installations & sign-in">
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
         Update provider tools and install agents from the ACP registry on this computer. Profiles
         above use these installations.
@@ -88,7 +88,7 @@ function EnvironmentTools() {
       <fieldset disabled={!connected} className="mt-4 space-y-4">
         <HarnessUpdates />
         <AcpRegistrySettings />
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-4">
           <p className="text-xs text-muted-foreground">
             Titles and dictation cleanup use their own model on each computer.
           </p>
@@ -103,6 +103,6 @@ function EnvironmentTools() {
           </Button>
         </div>
       </fieldset>
-    </details>
+    </Disclosure>
   )
 }

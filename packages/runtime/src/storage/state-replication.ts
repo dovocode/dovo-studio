@@ -1,10 +1,21 @@
-import { DurableState, startReplication, StateProtocolError } from '@dovo/durable-connections'
+import {
+  DurableState,
+  startReplication,
+  StateProtocolError,
+  compareVersions,
+  nextRevision,
+} from '@dovo/durable-connections'
 import {
   createRuntimeClient,
   decode,
   isRuntimeStateSource,
   scopedSettingsValueSchema,
   sharedSettingsSchema,
+  sharedSettingsVersions,
+  sharedSettingsFromVersions,
+  sharedSettingsVersionEntry,
+  mergeSharedSettings,
+  updateSharedSettingsEntry,
   type ScopedSettingsValue,
   type SharedSettingsEntry,
   type RuntimeConnection,
@@ -55,10 +66,10 @@ export class SharedStateReplication {
         validateVersion: (version) => {
           if (version.deleted)
             throw new StateProtocolError('Shared settings use explicit reset values')
-          validateSharedEntry(version)
+          validateSharedEntry(sharedSettingsVersionEntry(version))
         },
         validateState: (latest) => {
-          decode(sharedSettingsSchema, latest)
+          decode(sharedSettingsSchema, sharedSettingsFromVersions(latest))
         },
         storage: sharedStateJournal(db, runtimeId, replicationIdentity(db, runtimeId).source),
       }),
@@ -74,26 +85,12 @@ export class SharedStateReplication {
     const versions = this.defaults.sharedVersions(this.imported)
     const current = this.defaults.get().scopedSettings?.shared ?? []
     await state.importVersions(
-      [...versions.map(({ entry }) => entry), ...current].map((entry) => ({
-        ...entry,
-        deleted: false as const,
-      })),
+      sharedSettingsVersions([...versions.map(({ entry }) => entry), ...current]),
     )
     this.imported = versions.at(-1)?.sequence ?? this.imported
   }
   private publish(state: DurableState<ScopedSettingsValue>) {
-    const shared: SharedSettingsEntry[] = state.latest().flatMap((entry) =>
-      entry.deleted
-        ? []
-        : [
-            {
-              key: entry.key,
-              updatedAt: entry.updatedAt,
-              changeId: entry.changeId,
-              value: entry.value,
-            },
-          ],
-    )
+    const shared = sharedSettingsFromVersions(state.latest())
     this.defaults.mergeShared(shared)
     this.revision = state.revision
   }
@@ -227,17 +224,49 @@ export class SharedStateReplication {
     if (this.failure) throw new HttpError(503, this.failure)
     const state = await this.ready
     await this.capture(state)
-    return state.history(key)
+    return this.settingsHistory(state, key)
+  }
+  private settingsHistory(state: DurableState<ScopedSettingsValue>, key: string) {
+    const groups = new Map<string, SharedSettingsEntry[]>()
+    for (const version of state.versions().sort(compareVersions)) {
+      const entry = sharedSettingsVersionEntry(version)
+      if (entry.key !== key) continue
+      const id = JSON.stringify([entry.updatedAt, entry.changeId])
+      groups.set(id, [...(groups.get(id) ?? []), entry])
+    }
+    let current: SharedSettingsEntry[] = []
+    return [...groups.values()]
+      .map((entries) => {
+        current = mergeSharedSettings(current, entries)
+        const entry = current[0]!
+        return {
+          key,
+          updatedAt: entry.updatedAt,
+          changeId: entry.changeId,
+          deleted: false as const,
+          value: entry.value,
+        }
+      })
+      .reverse()
   }
   async restore(key: string, updatedAt: number, changeId: string) {
     if (this.failure) throw new HttpError(503, this.failure)
     const state = await this.ready
     await this.capture(state)
-    const version = state
-      .history(key)
-      .find((entry) => entry.updatedAt === updatedAt && entry.changeId === changeId)
+    const version = this.settingsHistory(state, key).find(
+      (entry) => entry.updatedAt === updatedAt && entry.changeId === changeId,
+    )
     if (!version) throw new HttpError(404, 'Shared state version not found')
-    const restored = await state.restoreVersion(version)
+    const restoredAt = nextRevision(state.latest(), Date.now())
+    const revision = { updatedAt: restoredAt, changeId: `${state.replicaId}:${restoredAt}` }
+    const entry = updateSharedSettingsEntry(
+      key,
+      sharedSettingsFromVersions(state.latest()).find((entry) => entry.key === key),
+      version.value,
+      revision,
+    )
+    await state.importVersions(sharedSettingsVersions([entry]))
+    const restored = { key, ...revision, deleted: false as const, value: version.value }
     this.publish(state)
     return restored
   }

@@ -30,6 +30,78 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+it('rechecks overlapping runs after asynchronous checkout availability checks', async () => {
+  const s = await setup()
+  const cwd = s.store.get().repositories[0]!.path
+  vi.spyOn(s.checkouts, 'directory').mockResolvedValue(cwd)
+  vi.spyOn(s.checkouts.linked, 'resolve').mockResolvedValue([])
+  let releaseChecks!: () => void
+  const checked = new Promise<void>((resolve) => {
+    releaseChecks = resolve
+  })
+  let arrivals = 0
+  vi.spyOn(s.git, 'assertCheckoutAvailable').mockImplementation(async () => {
+    if (++arrivals === 2) releaseChecks()
+    await checked
+  })
+  let finishProvider!: () => void
+  const providerDone = new Promise<void>((resolve) => {
+    finishProvider = resolve
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (run) => {
+    await providerDone
+    run.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const tasks = ['First', 'Second'].map((title) =>
+    s.tasks.create({ title, repositoryId: 'repo', agentId: 'agent', objective: 'Work' }),
+  )
+  try {
+    const results = await Promise.allSettled(tasks.map((task) => s.tasks.start(task.id)))
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      { status: 'rejected', reason: expect.objectContaining({ status: 409 }) },
+    ])
+    finishProvider()
+    for (const result of results) if (result.status === 'fulfilled') await result.value.done
+    expect(run).toHaveBeenCalledTimes(1)
+  } finally {
+    releaseChecks()
+    finishProvider()
+  }
+})
+it('pauses accepted input when restart admission fails and resumes it exactly once', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (run) => {
+    run.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Restart',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const lease = s.tasks.prepareRestart(true)
+  await expect(s.tasks.send(task.id, 'restart-message', 'Continue after restart')).resolves.toEqual(
+    { ok: true },
+  )
+  expect(s.store.taskSummary(task.id)).toMatchObject({
+    queuePaused: true,
+    queue: [{ id: 'restart-message', text: 'Continue after restart' }],
+    error: expect.stringContaining('Runtime is restarting'),
+  })
+  expect(run).not.toHaveBeenCalled()
+  s.tasks.cancelRestart(lease.id)
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(
+    s.store.task(task.id).messages.filter((message) => message.id === 'restart-message'),
+  ).toHaveLength(1)
+  expect(s.store.taskSummary(task.id).queue ?? []).toEqual([])
+})
 it('refreshes harness sessions when optional MCP features change and favors replies over artifacts', async () => {
   const s = await setup()
   const runs: AgentRun[] = []
@@ -656,6 +728,130 @@ it('persists separate checkpoint diffs for completed and failed turns', async ()
       ],
     },
   })
+})
+it.each(['none', 'early', 'snapshot', 'persisted', 'manual'] as const)(
+  'keeps quota failure and Stop state consistent (%s)',
+  async (timing) => {
+    const s = await setup()
+    s.defaults.save(
+      {
+        ...s.defaults.get(),
+        scopedSettings: {
+          shared: [],
+          environment: { taskBehavior: { quotaResume: true, quotaSnooze: true } },
+        },
+      },
+      false,
+    )
+    const task = s.tasks.create({
+      title: 'Quota Stop race',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+    })
+    const manualSnooze = '2099-01-01T00:00:00.000Z'
+    const run = vi.fn<AgentAdapter['run']>(async (input) => {
+      if (run.mock.calls.length > 1) return
+      input.onEvent?.('account/rateLimits/updated', {
+        rateLimits: {
+          primary: {
+            usedPercent: 100,
+            windowDurationMins: 300,
+            resetsAt: Math.floor(Date.now() / 1000) + 3600,
+          },
+        },
+      })
+      if (timing === 'early') s.tasks.cancel(task.id)
+      throw new Error('Usage limit reached')
+    })
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    const snapshot = s.git.snapshot.bind(s.git)
+    vi.spyOn(s.git, 'snapshot').mockImplementation(async (cwd, ref, signal) => {
+      if (timing === 'snapshot' && ref.endsWith('/after')) s.tasks.cancel(task.id)
+      return snapshot(cwd, ref, signal)
+    })
+    const update = s.store.updateTaskHistory.bind(s.store)
+    let stopped = false
+    vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((id, change, receipt, action) => {
+      const result = update(id, change, receipt, action)
+      if (
+        !stopped &&
+        (timing === 'persisted' || timing === 'manual') &&
+        s.store.task(task.id).quotaContinuation
+      ) {
+        stopped = true
+        if (timing === 'manual')
+          s.store.updateTask(task.id, (current) => ({
+            ...current,
+            snoozedUntil: manualSnooze,
+          }))
+        s.tasks.cancel(task.id)
+      }
+      return result
+    })
+    await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Usage limit reached')
+    const after = s.store.task(task.id)
+    expect(after.status).toBe(timing === 'none' ? 'failed' : 'cancelled')
+    expect(after.turns?.at(-1)?.status).toBe(after.status)
+    const resetAt = expect.any(String)
+    expect(after.quotaContinuation).toEqual(
+      timing === 'none'
+        ? { resume: true, turnId: after.turns?.at(-1)?.id, at: resetAt }
+        : undefined,
+    )
+    expect(after.snoozedUntil ?? null).toBe(
+      timing === 'none' ? after.quotaContinuation?.at : timing === 'manual' ? manualSnooze : null,
+    )
+    if (timing === 'none') {
+      const expired = new Date(Date.now() - 1000).toISOString()
+      s.store.updateTask(task.id, (current) => ({
+        ...current,
+        quotaContinuation: current.quotaContinuation && {
+          ...current.quotaContinuation,
+          at: expired,
+        },
+        snoozedUntil: expired,
+      }))
+    }
+    await s.tasks.runScheduled()
+    await waitForTask(() => expect(run).toHaveBeenCalledTimes(timing === 'none' ? 2 : 1))
+  },
+)
+it('keeps a streaming store failure failed when Stop follows the internal abort', async () => {
+  const s = await setup()
+  const task = s.tasks.create({
+    title: 'Store failure',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const update = s.store.updateTaskHistory.bind(s.store)
+  let failed = false
+  vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((id, change, receipt, action) => {
+    const next = change(s.store.task(id))
+    if (!failed && next.messages.some((message) => message.text === 'first buffered')) {
+      failed = true
+      throw new Error('Streaming SQLite failure')
+    }
+    return update(id, change, receipt, action)
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (input) => {
+      input.onText('first')
+      input.onText(' buffered')
+      await waitForTask(() => expect(input.signal.aborted).toBe(true))
+      s.tasks.cancel(task.id)
+      input.signal.throwIfAborted()
+    },
+  })
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Streaming SQLite failure')
+  expect(s.store.task(task.id)).toMatchObject({
+    status: 'failed',
+    turns: [{ status: 'failed' }],
+    error: expect.stringContaining('Streaming SQLite failure'),
+  })
+  expect(s.store.task(task.id).quotaContinuation).toBeUndefined()
 })
 it('does not start provider work without a baseline and reports after-snapshot failures separately', async () => {
   const s = await setup()
@@ -2178,6 +2374,23 @@ it.each(['accept', 'reject'] as const)(
     expect(
       s.store.task(task.id).messages.filter((message) => message.text === 'New direction'),
     ).toHaveLength(0)
+    const before = s.store.task(task.id)
+    const blocked = [
+      () => s.tasks.queue.edit(task.id, 'queued-input', 'Edited direction', 'New direction'),
+      () => s.tasks.queue.change(task.id, 'remove', 'queued-input'),
+      () => s.tasks.queue.change(task.id, 'restore', 'queued-input'),
+      () =>
+        s.tasks.queue.restore(task.id, {
+          requestId: 'restore-during-steering',
+          messageId: 'queued-input',
+          expectedText: 'New direction',
+          expectedTurnSettings: null,
+          expectedDraftTurnSettings: null,
+          expectedAttachmentIds: [],
+        }),
+    ]
+    for (const action of blocked) expect(action).toThrow('being delivered')
+    expect(s.store.task(task.id)).toEqual(before)
     // A lost HTTP response retried during acknowledgement must not reinject the message.
     await runClientEffect(s.tasks.steerQueuedEffect(task.id, 'queued-input', runId))
     acknowledge()
@@ -2488,4 +2701,563 @@ it('emits completed shell commands once with paired inputs and excludes failed o
   })
   expect(completed).toHaveLength(1)
   stop()
+})
+
+it('bounds a model handover without changing saved history and resumes the replacement session', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession(runs.length === 1 ? 'original-session' : 'handover-session')
+      run.onText(runs.length === 1 ? 'Older output '.repeat(10000) : 'Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Budgeted handover',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Keep the original requirement',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const oldMessages = structuredClone(s.store.task(task.id).messages)
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    agentOverrides: { model: 'another-model' },
+    messages: [
+      ...task.messages,
+      { id: 'followup-budget', role: 'user', text: 'Finish the latest request' },
+    ],
+  }))
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[1].sessionId).toBeUndefined()
+  expect(runs[1].prompt).toContain('Keep the original requirement')
+  expect(runs[1].prompt).toContain('Finish the latest request')
+  expect(runs[1].prompt).toContain('Earlier conversation omitted')
+  expect(Buffer.byteLength(runs[1].prompt)).toBeLessThanOrEqual(64000)
+  expect(s.store.task(task.id).messages.slice(0, oldMessages.length)).toEqual(oldMessages)
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    messages: [...task.messages, { id: 'next-budget', role: 'user', text: 'Next' }],
+  }))
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[2].sessionId).toBe('handover-session')
+  expect(runs[2].prompt).toBe('user: Next')
+})
+
+it('recovers a context-rejected resume and retains the original and failed pending input', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      if (runs.length === 2) throw new Error('context_length_exceeded')
+      run.onSession(runs.length === 1 ? 'full-session' : 'recovered-session')
+      run.onText('Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Recover handover',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Original objective',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    messages: [
+      ...task.messages,
+      { id: 'pending-recovery', role: 'user', text: 'Keep this pending request' },
+    ],
+  }))
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs).toHaveLength(3)
+  expect(runs[1].sessionId).toBe('full-session')
+  expect(runs[2].sessionId).toBeUndefined()
+  expect(runs[2].prompt).toContain('Original objective')
+  expect(runs[2].prompt).toContain('Keep this pending request')
+  expect(s.store.task(task.id).sessionId).toBe('recovered-session')
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    messages: [...task.messages, { id: 'next-recovery', role: 'user', text: 'Next' }],
+  }))
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[3].sessionId).toBe('recovered-session')
+  expect(runs[3].prompt).toBe('user: Next')
+})
+
+it('replaces a provider-confirmed exhausted session before submitting pending input', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession(runs.length === 1 ? 'exhausted' : 'replacement')
+      run.onText('Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Full context',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Original objective',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    contextUsage: { used: 200000, limit: 200000, updatedAt: new Date().toISOString() },
+    messages: [...task.messages, { id: 'full-pending', role: 'user', text: 'Next request' }],
+  }))
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[1].sessionId).toBeUndefined()
+  expect(runs[1].prompt).toContain('Original objective')
+  expect(runs[1].prompt).toContain('Next request')
+  expect(s.store.task(task.id).contextUsage).toBeUndefined()
+})
+
+it('preserves accepted but unfinished input when a later continue message needs a bounded handover', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession('original')
+      run.onText(runs.length === 2 ? 'Partial output '.repeat(10000) : 'Done')
+      if (runs.length === 2) throw new Error('Provider disconnected after accepting input')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Failed input',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Original scope',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    messages: [
+      ...task.messages,
+      { id: 'unfinished-request', role: 'user', text: 'Implement the API and validate its schema' },
+    ],
+  }))
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Provider disconnected')
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    agentOverrides: { model: 'new-model' },
+    messages: [...task.messages, { id: 'continue-failed', role: 'user', text: 'Continue' }],
+  }))
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[2].prompt).toContain('Original scope')
+  expect(runs[2].prompt).toContain('Implement the API and validate its schema')
+  expect(runs[2].prompt).toContain('user: Continue')
+  expect(runs[2].prompt).toContain('Earlier conversation omitted')
+})
+
+it('keeps hook-repair instructions and prior output when its resumed session rejects context', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  s.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({
+      ...agent,
+      resources: {
+        skills: [],
+        mcpServers: [],
+        hooks: [
+          {
+            name: 'check',
+            enabled: true,
+            event: 'after-turn',
+            timeoutSeconds: 10,
+            command:
+              "node -e \"const fs=require('node:fs');if(!fs.existsSync('.handover-hook')){fs.writeFileSync('.handover-hook','');process.stdout.write('Expected check failure');process.exitCode=1}\"",
+          },
+        ],
+      },
+    })),
+  }))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      if (runs.length === 2) throw new Error('context_length_exceeded')
+      run.onSession(runs.length === 1 ? 'original' : 'repaired')
+      run.onText(runs.length === 1 ? 'Work before hooks' : 'Repair completed')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Hook recovery',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Original requirement',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs).toHaveLength(3)
+  expect(runs[2].sessionId).toBeUndefined()
+  expect(runs[2].prompt).toContain('Original requirement')
+  expect(runs[2].prompt).toContain('Work before hooks')
+  expect(runs[2].prompt).toContain('Required project/agent checks failed')
+  expect(runs[2].prompt).toContain('Expected check failure')
+})
+
+it('keeps native child approvals available after blocked context recovery but fences stopped or replaced sessions', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  const stop = vi.fn<() => Promise<void>>(async () => {})
+  const approval = vi.spyOn(s.approvals, 'request').mockResolvedValue('approve')
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession('native-session')
+      run.onNativeSession?.({ stop }, 'native-session')
+      if (runs.length === 2) throw new Error('context_length_exceeded')
+      run.onText('Parent reply')
+      run.onSubagentEvent?.(
+        'item/started',
+        { threadId: 'native-child', item: { type: 'commandExecution' } },
+        'native-session',
+      )
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Native approvals',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Inspect',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    messages: [...task.messages, { id: 'blocked-context', role: 'user', text: 'Continue' }],
+  }))
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow(
+    'background commands are still active',
+  )
+  expect(stop).not.toHaveBeenCalled()
+  const native = runs[1].nativeAgentInteractions
+  expect(native).toBeDefined()
+  await expect(
+    native!.approve('Command', 'Inspect files', new AbortController().signal),
+  ).resolves.toBe('approve')
+  expect(approval).toHaveBeenCalledTimes(1)
+  s.store.updateTask(task.id, (task) => ({ ...task, status: 'cancelled' }))
+  await expect(
+    native!.approve('Command', 'Inspect files', new AbortController().signal),
+  ).resolves.toBe('deny')
+  s.store.updateTask(task.id, (task) => ({ ...task, status: 'failed', sessionId: 'replacement' }))
+  await expect(
+    native!.approve('Command', 'Inspect files', new AbortController().signal),
+  ).resolves.toBe('deny')
+  expect(approval).toHaveBeenCalledTimes(1)
+})
+
+it('blocks configuration handovers without revoking the live native session credential', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  const stop = vi.fn<() => Promise<void>>(async () => {})
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession('native-session')
+      run.onNativeSession?.({ stop }, 'native-session')
+      run.onText('Parent reply')
+      run.onSubagentEvent?.(
+        'item/started',
+        { threadId: 'native-child', item: { type: 'commandExecution' } },
+        'native-session',
+      )
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Native grant',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Inspect',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const { readFile } = await import('node:fs/promises')
+  const { Schema } = await import('effect')
+  const { runCredentials } = await import('../../auth/run-credentials')
+  const file = runs[0].agent.resources?.mcpServers.find((server) => server.name === 'dovo_task')
+    ?.envValues?.DOVO_TASK_CREDENTIAL_FILE
+  expect(file).toBeDefined()
+  const { token } = decode(
+    Schema.Struct({ token: Schema.String }),
+    JSON.parse(await readFile(file!, 'utf8')),
+  )
+  expect(() => runCredentials(s.store).authenticate(token)).not.toThrow()
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    agentOverrides: { model: 'new-model' },
+    messages: [...task.messages, { id: 'blocked-config', role: 'user', text: 'Continue' }],
+  }))
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow(
+    'background commands are still active',
+  )
+  expect(runs).toHaveLength(1)
+  expect(stop).not.toHaveBeenCalled()
+  expect(() => runCredentials(s.store).authenticate(token)).not.toThrow()
+})
+
+it('keeps manual compaction available for an exhausted session after accepted input failed', async () => {
+  const s = await setup(),
+    runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession('full-session')
+      if (run.compact)
+        run.onEvent?.('item/completed', { item: { id: 'manual', type: 'contextCompaction' } })
+      else run.onText('Partial result')
+      if (runs.length === 2) throw new Error('Connection lost')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Manual compaction recovery',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Original',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    messages: [
+      ...task.messages,
+      { id: 'failed-before-compact', role: 'user', text: 'Implement feature' },
+    ],
+  }))
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Connection lost')
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    contextUsage: { used: 200000, limit: 200000, updatedAt: new Date().toISOString() },
+    messages: [...task.messages, { id: 'manual-compact', role: 'user', text: '/compact' }],
+  }))
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[2]).toMatchObject({ compact: true, prompt: '/compact', sessionId: 'full-session' })
+})
+
+it('aborts Stop and completes checkpoint cleanup even when its durable interrupt write fails', async () => {
+  const s = await setup()
+  let provider: AgentRun | undefined
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      provider = run
+      await run.approve('Wait', 'Cancellation persistence failure')
+      run.signal.throwIfAborted()
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Stop storage failure',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Wait',
+  })
+  const execution = await s.tasks.start(task.id)
+  await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
+  const cancelQuestions = vi.spyOn(s.questions, 'cancelTask')
+  vi.spyOn(s.store, 'updateTask').mockImplementationOnce(() => {
+    throw new Error('interrupt disk failure')
+  })
+  expect(() => s.tasks.cancel(task.id)).toThrow('Could not persist all task cancellation state')
+  expect(provider?.signal.aborted).toBe(true)
+  expect(cancelQuestions).toHaveBeenCalledWith(task.id)
+  await expect(execution.done).rejects.toThrow('Cancelled by user')
+  expect(s.approvals.list()).toHaveLength(0)
+  expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.after).toBeTruthy()
+})
+
+it('aborts and drains every worker before reporting a shutdown persistence failure', async () => {
+  const s = await setup()
+  const providers: AgentRun[] = []
+  let release = () => {}
+  const cleanup = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      providers.push(run)
+      await run.approve('Wait', 'Shutdown persistence failure')
+      await cleanup
+      run.signal.throwIfAborted()
+    },
+  })
+  const executions = []
+  for (const title of ['First', 'Second']) {
+    const task = s.tasks.create({
+      title,
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Wait',
+      execution: 'worktree',
+    })
+    executions.push(await s.tasks.start(task.id))
+  }
+  await waitForTask(() => expect(providers).toHaveLength(2))
+  vi.spyOn(s.store, 'updateTask').mockImplementationOnce(() => {
+    throw new Error('restart marker disk failure')
+  })
+  let settled = false
+  const closing = s.tasks.dispose().finally(() => {
+    settled = true
+  })
+  const result = closing.catch((error: unknown) => error)
+  try {
+    await waitForTask(() => expect(providers.every((run) => run.signal.aborted)).toBe(true))
+    expect(settled).toBe(false)
+  } finally {
+    release()
+  }
+  expect(await result).toMatchObject({
+    message: expect.stringContaining('restart marker disk failure'),
+  })
+  await Promise.all(
+    executions.map(({ done }) => expect(done).rejects.toThrow('Runtime shutting down')),
+  )
+  expect(s.approvals.list()).toHaveLength(0)
+})
+
+it('recovers unrelated checkouts while an approval retains the first checkout reservation', async () => {
+  const s = await setup()
+  const other = await fixture()
+  cleanups.push(other.cleanup)
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [...workspace.repositories, { ...other.workspace.repositories[0], id: 'other' }],
+  }))
+  const tasks = ['repo', 'other', 'repo'].map((repositoryId, index) =>
+    s.tasks.create({
+      title: `Recovery ${index}`,
+      repositoryId,
+      agentId: 'agent',
+      objective: 'Continue',
+    }),
+  )
+  for (const task of tasks)
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      status: 'failed',
+      restartRecovery: { kind: 'turn', automatic: true },
+    }))
+  const invoked: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      invoked.push(run.taskId!)
+      if (run.taskId === tasks[0].id) {
+        await run.approve('Wait', 'Recovery approval')
+        run.signal.throwIfAborted()
+      }
+      run.onText('Recovered')
+    },
+  })
+  s.tasks.continueAfterRestart(() => true)
+  await waitForTask(() => {
+    expect(s.approvals.list().some((item) => item.taskId === tasks[0].id)).toBe(true)
+    expect(s.store.task(tasks[1].id).status).toBe('review')
+    expect(s.store.task(tasks[2].id)).toMatchObject({
+      status: 'failed',
+      queuePaused: true,
+      restartRecovery: { kind: 'turn', automatic: false },
+      error: expect.stringContaining('Another task is running'),
+    })
+  })
+  expect(invoked).toEqual(expect.arrayContaining([tasks[0].id, tasks[1].id]))
+  expect(invoked).not.toContain(tasks[2].id)
+  s.tasks.cancel(tasks[0].id)
+})
+
+it('drains delayed scheduler discovery and stops admitting the remaining scheduled messages', async () => {
+  const { Effect } = await import('effect')
+  const { ModelSelection } = await import('./model-selection')
+  const s = await setup()
+  const task = s.tasks.create({
+    title: 'Delayed scheduled discovery',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Wait',
+  })
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    scheduledMessages: ['first', 'second'].map((id) => ({
+      id,
+      text: id,
+      at: new Date(0).toISOString(),
+    })),
+  }))
+  let entered = false,
+    release = () => {}
+  const discovered = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(ModelSelection.prototype, 'resolveEffect').mockImplementation((id) =>
+    Effect.promise(async () => {
+      entered = true
+      await discovered
+      s.store.updateTask(id, (current) => ({ ...current, draft: 'discovery finished' }))
+    }),
+  )
+  const run = vi.fn<AgentAdapter['run']>(async () => {})
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const scheduled = s.tasks.runScheduled()
+  await waitForTask(() => expect(entered).toBe(true))
+  let closed = false
+  const closing = s.tasks.dispose().then(() => {
+    closed = true
+  })
+  try {
+    // An executor handoff gives an incorrectly untracked tick time to escape shutdown.
+    await Effect.runPromise(Effect.yieldNow)
+    await Effect.runPromise(Effect.yieldNow)
+    expect(closed).toBe(false)
+  } finally {
+    release()
+  }
+  await Promise.all([closing, scheduled])
+  expect(s.store.task(task.id)).toMatchObject({
+    draft: 'discovery finished',
+    queue: [{ id: 'first' }],
+    scheduledMessages: [{ id: 'second' }],
+  })
+  expect(run).not.toHaveBeenCalled()
+  await s.tasks.runScheduled()
+  expect(s.store.task(task.id).scheduledMessages).toHaveLength(1)
 })

@@ -47,6 +47,8 @@ import {
   taskMetadataSchema,
   taskHistorySummaryVersion,
   taskMetadata,
+  conversationPage,
+  type Attachment,
   type Workspace,
   type WorkspacePatch,
   type Task,
@@ -224,6 +226,7 @@ export class WorkspaceStore {
   }
   private committed(before: WorkspaceSummary) {
     if (this.transactionDepth || before === this.workspace) return
+    this.documents.committed()
     for (const listener of this.commitListeners) {
       try {
         listener(before, this.workspace)
@@ -286,6 +289,7 @@ export class WorkspaceStore {
           automations: [],
           runtimeAddress: '',
         }
+    this.documents.preserveUnreadableTasks(stored, loaded.tasks)
     this.seedHistory = !stored || stored.version === 1
     this.rewriteDocuments = stored?.version !== 3
     this.workspace = { ...loaded, tasks: this.loadSummaries(stored, loaded.tasks) }
@@ -480,19 +484,26 @@ export class WorkspaceStore {
   }
   acceptQuestionResponse(
     taskId: string,
-    response: { id: string; fingerprint: string },
+    response: { id: string; fingerprint: string; attachments?: Attachment[] },
     action: ProviderAction,
   ) {
     this.db.transaction(() => {
       this.db
-        .prepare('INSERT INTO question_responses VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING')
-        .run(response.id, taskId, response.fingerprint)
+        .prepare(
+          'INSERT INTO question_responses (id,task_id,fingerprint,attachments) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
+        )
+        .run(response.id, taskId, response.fingerprint, JSON.stringify(response.attachments ?? []))
       this.providerActions.record(action)
     })()
   }
   /** Task summaries and the rest of the workspace. No conversation history. */
   get(): WorkspaceSummary {
     return this.workspace
+  }
+  wasTaskDeleted(id: string) {
+    return !!this.db
+      .prepare('SELECT 1 FROM documents WHERE id=?')
+      .get(`workspace-deleted:tasks:${id}`)
   }
   /** Enclosing writes must share this boundary so a rollback restores the live snapshot too.
    * Updates remain synchronously visible to other operations inside the transaction. Cached
@@ -754,7 +765,7 @@ export class WorkspaceStore {
       taskId: string
       id: string
       fingerprint: string
-      response?: { id: string; fingerprint: string }
+      response?: { id: string; fingerprint: string; attachments?: Attachment[] }
     },
     action?: ProviderAction,
     options?: { preserveSettledAt?: boolean },
@@ -838,6 +849,35 @@ export class WorkspaceStore {
             if (task.settledAt !== settledAt) task = { ...task, settledAt }
           } else if (task.settledAt !== undefined) task = { ...task, settledAt: undefined }
           task = versionReviewedFiles(task, previous)
+          if (
+            task.sideThread &&
+            [...(task.linkedCheckouts ?? []), ...(task.pendingLinkedCheckouts ?? [])].some(
+              (link) => link.access !== 'read-only',
+            )
+          )
+            throw new HttpError(403, 'Side-thread linked checkouts must be read-only.')
+          if (
+            task.sideThread &&
+            (!previous ||
+              previous.agentId !== task.agentId ||
+              !isDeepStrictEqual(previous.harness, task.harness) ||
+              !isDeepStrictEqual(previous.agentOverrides, task.agentOverrides) ||
+              !isDeepStrictEqual(previous.draftTurnSettings, task.draftTurnSettings) ||
+              previous.modelSelection !== task.modelSelection ||
+              previous.modelSelectionDifficulty !== task.modelSelectionDifficulty ||
+              previous.harnessCustomized !== task.harnessCustomized)
+          ) {
+            const childAgent = resolveTaskAgent(task, parsed.agents)
+            const parent = summaries.find((entry) => entry.id === task.sideThread?.parentTaskId)
+            const parentAgent = parent && resolveTaskAgent(parent, parsed.agents)
+            if (
+              !childAgent ||
+              !permissionPolicyWithinCeiling(task.sideThread.permissionCeiling, childAgent) ||
+              !parentAgent ||
+              !permissionPolicyWithinCeiling(parentAgent, childAgent)
+            )
+              throw new HttpError(403, 'Side-thread permissions cannot exceed their parent.')
+          }
           const childPermissionChanged =
             task.delegation &&
             (!previous ||
@@ -1034,8 +1074,15 @@ export class WorkspaceStore {
           .run(submission.taskId, submission.id, submission.fingerprint)
       if (submission?.response)
         this.db
-          .prepare('INSERT INTO question_responses VALUES (?, ?, ?)')
-          .run(submission.response.id, submission.taskId, submission.response.fingerprint)
+          .prepare(
+            'INSERT INTO question_responses (id,task_id,fingerprint,attachments) VALUES (?, ?, ?, ?)',
+          )
+          .run(
+            submission.response.id,
+            submission.taskId,
+            submission.response.fingerprint,
+            JSON.stringify(submission.response.attachments ?? []),
+          )
       for (const { id } of removed) {
         this.providerActions.remove(id)
         this.db.prepare('DELETE FROM task_submissions WHERE task_id = ?').run(id)
@@ -1098,6 +1145,14 @@ export class WorkspaceStore {
   task(id: string): Task {
     return this.complete(this.taskSummary(id))
   }
+  /** Read one message without materializing the conversation. */
+  taskMessage(id: string, messageId: string) {
+    const summary = this.taskSummary(id)
+    const retained = this.seed?.get(id) ?? this.histories.peek(summary)
+    return retained
+      ? retained.messages.find((message) => message.id === messageId)
+      : this.conversations.message(id, messageId)
+  }
   /** Attachments referenced by any committed message, without loading histories. */
   messageAttachmentIds() {
     return this.histories.attachmentIds()
@@ -1106,9 +1161,23 @@ export class WorkspaceStore {
   retainedHistories() {
     return this.histories.retained()
   }
-  /** One committed history page read from SQLite. Undefined when the cursor no longer exists. */
+  /** Reuse a retained committed history without loading or retaining any additional histories.
+   * Otherwise read one bounded SQLite page. Undefined when the cursor no longer exists. */
   historyPage(id: string, before?: string) {
-    return this.conversations.page(id, before, this.taskSummary(id).historyRevision)
+    const summary = this.taskSummary(id)
+    const retained = this.seed?.get(id) ?? this.histories.peek(summary)
+    if (retained) {
+      if (before !== undefined && !retained.messages.some((message) => message.id === before))
+        return undefined
+      return conversationPage({ ...retained, historyRevision: summary.historyRevision }, before)
+    }
+    return this.conversations.page(id, before, summary.historyRevision)
+  }
+  /** Defer derived search text during a run, while retaining every authoritative save.
+   * Call the returned completion function after the final flush, including failure/cancellation. */
+  deferHistorySearch(id: string) {
+    this.taskSummary(id)
+    return this.conversations.deferSearch(id)
   }
   /** Search committed histories in SQLite, ordered and bounded like `searchTaskMessages`. */
   searchHistory(query: string, id?: string, before?: string) {
@@ -1128,6 +1197,14 @@ export class WorkspaceStore {
       .prepare('SELECT fingerprint AS value FROM question_responses WHERE id = ?')
       .get(id)
     return row ? decode(rowSchema, row).value : undefined
+  }
+  questionAttachmentIds(taskId?: string) {
+    return this.db
+      .prepare(`SELECT json_extract(file.value, '$.id') AS value
+      FROM question_responses, json_each(question_responses.attachments) AS file
+      WHERE (? IS NULL OR task_id = ?)`)
+      .all(taskId ?? null, taskId ?? null)
+      .map((row) => decode(rowSchema, row).value)
   }
   taskSubmission(id: string, messageId: string) {
     const row = this.db
@@ -1164,7 +1241,7 @@ export class WorkspaceStore {
     submission?: {
       id: string
       fingerprint: string
-      response?: { id: string; fingerprint: string }
+      response?: { id: string; fingerprint: string; attachments?: Attachment[] }
     },
     action?: ProviderAction,
   ) {
@@ -1184,7 +1261,7 @@ export class WorkspaceStore {
     submission?: {
       id: string
       fingerprint: string
-      response?: { id: string; fingerprint: string }
+      response?: { id: string; fingerprint: string; attachments?: Attachment[] }
     },
     action?: ProviderAction,
   ) {
@@ -1368,10 +1445,13 @@ export class WorkspaceStore {
           record.status !== 'draft' ||
           record.example === true ||
           record.sessionId !== undefined ||
+          record.importedCodexSession !== undefined ||
+          record.importedPiSession !== undefined ||
           record.checkoutLocked !== undefined ||
           record.providerLock !== undefined ||
           record.worktreeSetupComplete !== undefined ||
           record.worktreeInitialSnapshot !== undefined ||
+          record.worktreeBase !== undefined ||
           record.worktreeSubmodulesComplete !== undefined ||
           record.quotaContinuation !== undefined ||
           record.autoSettled !== undefined ||
@@ -1404,6 +1484,7 @@ export class WorkspaceStore {
           record.autoProjectFallback !== undefined ||
           record.contextUsage !== undefined ||
           record.sideChats !== undefined ||
+          record.sideThread !== undefined ||
           record.forkedFrom !== undefined ||
           record.consumedMessageIds !== undefined)
       )
@@ -1481,7 +1562,7 @@ export class WorkspaceStore {
       throw new HttpError(400, 'Cannot edit the managed project kind')
     if (
       patch.collection === 'tasks' &&
-      current.delegation &&
+      (current.delegation || current.sideThread) &&
       [
         'repositoryId',
         'execution',
@@ -1493,7 +1574,7 @@ export class WorkspaceStore {
         'setupCommand',
       ].some((key) => patch.changes[key])
     )
-      throw new HttpError(400, 'Child agents use their parent’s checkout')
+      throw new HttpError(400, 'Child threads cannot change their checkout')
     const allowed =
       patch.collection === 'tasks'
         ? new Set([
@@ -1504,6 +1585,7 @@ export class WorkspaceStore {
             'autoProjectExecution',
             'draft',
             'draftTurnSettings',
+            'draftPlan',
             'messages',
             'files',
             'pinned',
@@ -1634,6 +1716,20 @@ export class WorkspaceStore {
       current.worktreeSetupComplete =
         current.execution === 'worktree' && current.existingWorktreePath ? true : undefined
     }
+    if (
+      patch.collection === 'tasks' &&
+      changed &&
+      [
+        'execution',
+        'existingWorktreePath',
+        'repositoryId',
+        'worktreeBaseBranch',
+        'worktreeFromOrigin',
+        'worktreeIncludeChanges',
+      ].some((key) => patch.changes[key])
+    )
+      // A base recorded by an earlier creation attempt belongs to that configuration only.
+      current.worktreeBase = undefined
     if (
       patch.collection === 'tasks' &&
       (patch.changes.archived?.after === true || patch.changes.snoozedUntil)

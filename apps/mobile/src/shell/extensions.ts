@@ -11,6 +11,8 @@ type NativeContribution = {
   }>
 }
 const contributions: NativeContribution[] = [
+  { id: 'terminal', title: 'Terminals', load: () => import('../screens/terminals') },
+  { id: 'workspace', title: 'Unified', load: () => import('../screens/workspace') },
   {
     id: 'browser',
     title: 'Browser',
@@ -19,7 +21,7 @@ const contributions: NativeContribution[] = [
   {
     id: 'tasks',
     title: 'Tasks',
-    load: () => import('../screens/tasks'),
+    load: () => import('../screens/workbench-tasks'),
   },
   {
     id: 'issues',

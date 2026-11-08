@@ -401,6 +401,30 @@
       #status.error {
         color: var(--error);
       }
+      #downloads {
+        background: var(--bar);
+        padding: 8px 14px;
+        max-height: 160px;
+        overflow: auto;
+      }
+      #downloads[hidden] {
+        display: none;
+      }
+      #downloads > div {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #downloads > div > span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+      #downloads > div > span:nth-child(2) {
+        color: var(--muted);
+        font-size: 12px;
+      }
       #reconnect {
         align-self: center;
         margin: 8px;
@@ -746,6 +770,7 @@
       autocorrect="off"
       spellcheck="false"
     ></textarea>
+    <div id="downloads" aria-label="Browser downloads" aria-live="polite" hidden></div>
     <div id="status" role="status">Connecting to host browser…</div>
     <button id="reconnect" type="button" hidden>Reconnect</button>
     <dialog id="dialog" aria-labelledby="dialogText">
@@ -756,6 +781,15 @@
           <button id="cancelDialog" value="cancel">Cancel</button><button value="accept">OK</button>
         </footer>
       </form>
+    </dialog>
+    <dialog id="uploadDialog" aria-labelledby="uploadTitle">
+      <h2 id="uploadTitle">Select files for this website</h2>
+      <p id="uploadProgress" role="status"></p>
+      <input id="uploadFiles" type="file" aria-label="Website files" hidden />
+      <footer>
+        <button id="uploadCancel" type="button">Cancel</button>
+        <button id="uploadChoose" type="button">Choose files</button>
+      </footer>
     </dialog>
     <script>
       __BROWSER_SCRIPT__

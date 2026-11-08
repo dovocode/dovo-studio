@@ -1,6 +1,8 @@
+import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { EditChatImage } from './chat-image-edit-context'
-import { useEffect, useRef } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
+import { ConversationVisibilityContext } from '../conversation-visibility'
 import { File, FileImage, X, Pencil } from 'lucide-react'
 import {
   attachmentReadSchema,
@@ -9,7 +11,14 @@ import {
   type Attachment,
 } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
-import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@dovo/studio-ui'
 export function MessageAttachments({
   taskId,
   files = [],
@@ -28,6 +37,27 @@ export function MessageAttachments({
   disabled?: boolean
 }) {
   const { request, connected } = useWorkspace()
+  const visible = useContext(ConversationVisibilityContext)
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const generation = useRef(0)
+  const compactRow = useRef<HTMLDivElement>(null)
+  const strip = useRef<HTMLDivElement>(null)
+  const [overflowing, setOverflowing] = useState(false)
+  useEffect(() => {
+    const row = compactRow.current
+    const list = strip.current
+    if (!compact || files.length !== 1 || !row || !list) {
+      setOverflowing(false)
+      return
+    }
+    const measure = () => setOverflowing(list.scrollWidth > row.clientWidth)
+    const observer = new ResizeObserver(measure)
+    observer.observe(row)
+    observer.observe(list)
+    measure()
+    return () => observer.disconnect()
+  }, [compact, files])
   const [preview, setPreview] = useApplicationState<{
       attachment: Attachment
       data: string
@@ -35,67 +65,127 @@ export function MessageAttachments({
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const open = async (id: string) => {
+    const current = generation.current
     setBusy(true)
     setError('')
     try {
-      setPreview(
-        await request(
-          '/api/attachments/read',
-          {
-            taskId,
-            id,
-          },
-          attachmentReadSchema,
-        ),
+      const result = await request(
+        '/api/attachments/read',
+        {
+          taskId,
+          id,
+        },
+        attachmentReadSchema,
       )
+      if (generation.current === current && !document.hidden && visibleRef.current)
+        setPreview(result)
     } catch (error) {
       setError(String(error))
     } finally {
       setBusy(false)
     }
   }
+  useEffect(() => {
+    if (!visible) {
+      generation.current++
+      setPreview((current) =>
+        current && /^(audio|video)\//.test(current.attachment.mime) ? null : current,
+      )
+    }
+  }, [visible])
+  useEffect(() => {
+    setPreview(null)
+    return () => {
+      generation.current++
+    }
+  }, [taskId])
+  useEffect(() => {
+    if (!busy && !preview) return
+    const closeMedia = () => {
+      generation.current++
+      setPreview((current) =>
+        current && /^(audio|video)\//.test(current.attachment.mime) ? null : current,
+      )
+    }
+    const onVisibility = () => {
+      if (document.hidden) closeMedia()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', closeMedia)
+    onVisibility()
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', closeMedia)
+    }
+  }, [busy, preview])
   if (!files.length) return null
   return (
     <div
-      className="flex min-w-0 flex-col gap-1 py-0.5"
+      ref={compactRow}
+      data-compact-attachments={compact || undefined}
+      className={`flex min-w-0 py-0.5 ${compact ? 'flex-row items-center gap-2' : 'flex-col gap-1'}`}
       aria-label={remove ? 'Draft attachments' : 'Message attachments'}
     >
-      <div className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto overscroll-contain">
+      {compact && (
+        <span
+          className={
+            files.length > 1 || overflowing
+              ? 'shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground'
+              : 'sr-only'
+          }
+        >
+          {files.length} {files.length === 1 ? 'file' : 'files'}
+        </span>
+      )}
+      <div
+        ref={strip}
+        className={
+          compact
+            ? 'flex min-w-0 flex-1 flex-row flex-nowrap! gap-1 overflow-x-auto overscroll-contain'
+            : 'flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto overscroll-contain'
+        }
+      >
         {files.map((file) => (
           <div
             key={file.id}
-            className="flex w-full min-w-0 shrink-0 items-center rounded-lg border border-border/60 bg-muted/30 px-1"
+            className={`flex min-w-0 shrink-0 items-center border ${compact ? 'max-w-52 rounded-md border-border/50 bg-muted/20 px-0.5' : 'w-full rounded-lg border-border/60 bg-muted/30 px-1'}`}
           >
             <button
               type="button"
-              className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1 [@media(pointer:coarse)]:min-h-11 text-left transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
+              className={`flex min-w-0 flex-1 items-center rounded-md px-1 [@media(pointer:coarse)]:min-h-11 text-left transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 ${compact ? 'min-h-7 gap-1.5' : 'min-h-8 gap-2'}`}
               disabled={!connected || busy || disabled}
               onClick={() => void open(file.id)}
               aria-label={`Preview ${file.name}`}
-              title={file.name}
+              title={`${file.name} · ${fileSizeLabel(file.size)}`}
             >
               {isImageAttachment(file) ? (
                 previews?.get(file.id) ? (
                   <img
                     src={previews.get(file.id)}
                     alt={file.name}
-                    className={`${compact ? 'size-6' : 'size-7'} shrink-0 rounded-md object-cover`}
+                    className={`${compact ? 'size-5 rounded' : 'size-7 rounded-md'} shrink-0 border border-border object-cover`}
                   />
                 ) : (
                   <AttachmentThumbnail taskId={taskId} file={file} compact={compact} />
                 )
               ) : (
                 <span
-                  className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground`}
+                  className={`flex ${compact ? 'size-5 rounded' : 'size-7 rounded-md'} shrink-0 items-center justify-center bg-muted text-muted-foreground`}
                 >
                   <File className="size-4" />
                 </span>
               )}
               <span className="flex min-w-0 flex-1 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs font-medium">{file.name}</span>
-                <span className="shrink-0 text-[0.625rem] text-muted-foreground">
-                  {fileSizeLabel(file.size)}
+                <span
+                  className={`min-w-0 flex-1 truncate ${compact ? 'text-xs' : 'text-[0.8125rem] font-medium'}`}
+                >
+                  {file.name}
                 </span>
+                {!compact && (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {fileSizeLabel(file.size)}
+                  </span>
+                )}
               </span>
             </button>
             {edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
@@ -139,14 +229,16 @@ export function MessageAttachments({
         <DialogContent className="max-h-[85dvh] max-w-[var(--chat-max)] overflow-auto">
           <DialogTitle>{preview?.attachment.name}</DialogTitle>
           <DialogDescription>
-            {preview?.attachment.mime} · {preview?.attachment.size} bytes
+            {preview?.attachment.mime} · {preview && fileSizeLabel(preview.attachment.size)}
           </DialogDescription>
           {preview && isImageAttachment(preview.attachment) ? (
-            <img
-              className="max-h-[60dvh] object-contain"
+            <ImageViewer
+              className="h-[55dvh] min-h-48"
               alt={preview.attachment.name}
               src={`data:${preview.attachment.mime};base64,${preview.data}`}
             />
+          ) : preview && /^(audio|video)\//.test(preview.attachment.mime) ? (
+            visible && <AttachmentMedia key={preview.attachment.id} {...preview} />
           ) : (
             preview && (
               <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs">
@@ -161,26 +253,80 @@ export function MessageAttachments({
               onEdit={() => setPreview(null)}
             />
           )}
-          <Button
-            type="button"
-            onClick={() => {
-              if (!preview) return
-              const url = URL.createObjectURL(
-                new Blob([Uint8Array.from(atob(preview.data), (c) => c.charCodeAt(0))], {
-                  type: 'application/octet-stream',
-                }),
-              )
-              const link = document.createElement('a')
-              link.href = url
-              link.download = preview.attachment.name
-              link.click()
-              setTimeout(() => URL.revokeObjectURL(url), 1000)
-            }}
-          >
-            Download file
-          </Button>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!preview) return
+                const url = URL.createObjectURL(
+                  new Blob([Uint8Array.from(atob(preview.data), (c) => c.charCodeAt(0))], {
+                    type: 'application/octet-stream',
+                  }),
+                )
+                const link = document.createElement('a')
+                link.href = url
+                link.download = preview.attachment.name
+                link.click()
+                setTimeout(() => URL.revokeObjectURL(url), 1000)
+              }}
+            >
+              Download file
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+function AttachmentMedia({ attachment, data }: { attachment: Attachment; data: string }) {
+  const ref = useRef<HTMLMediaElement>(null)
+  const [status, setStatus] = useApplicationState<'loading' | 'ready' | 'error'>('loading')
+  useEffect(() => {
+    const media = ref.current
+    const stop = () => media?.pause()
+    const onVisibility = () => {
+      if (document.hidden) stop()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', stop)
+    return () => {
+      stop()
+      media?.removeAttribute('src')
+      media?.load()
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', stop)
+    }
+  }, [])
+  const props = {
+    controls: true,
+    preload: 'metadata' as const,
+    src: `data:${attachment.mime};base64,${data}`,
+    'aria-label': `Play ${attachment.name}`,
+    onLoadedMetadata: () => setStatus('ready'),
+    onError: () => setStatus('error'),
+    className: 'max-h-[60dvh] w-full',
+  }
+  return (
+    <div>
+      {attachment.mime.startsWith('video/') ? (
+        <video
+          ref={(element) => {
+            ref.current = element
+          }}
+          {...props}
+        />
+      ) : (
+        <audio
+          ref={(element) => {
+            ref.current = element
+          }}
+          {...props}
+        />
+      )}
+      {status === 'loading' && <p role="status">Loading media…</p>}
+      {status === 'error' && (
+        <p role="alert">Unable to play this file. Download it to open elsewhere.</p>
+      )}
     </div>
   )
 }
@@ -233,7 +379,7 @@ function AttachmentThumbnail({
   return (
     <span
       ref={ref}
-      className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground`}
+      className={`flex ${compact ? 'size-5 rounded' : 'size-7 rounded-md'} shrink-0 items-center justify-center overflow-hidden border border-border bg-muted text-muted-foreground`}
     >
       {src ? (
         <img src={src} alt={file.name} className="size-full object-cover" />

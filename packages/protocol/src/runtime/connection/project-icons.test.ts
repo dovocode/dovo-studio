@@ -1,8 +1,14 @@
 import { expect, it } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
-import { repositorySchema } from '../../workspace.js'
+import { repositorySchema, sharedSettingsEntrySchema } from '../../workspace.js'
 import { runtimeDefaultsSchema } from './runtime-setup.js'
-import { sharedProjectIcon, sharedProjectIconEntry, migrateProjectIcons } from './project-icons.js'
+import {
+  sharedProjectIcon,
+  sharedProjectIconEntry,
+  migrateProjectIcons,
+  sharedProjectPresentation,
+} from './project-icons.js'
+import { mergeSharedSettings, updateSharedSettingsEntry } from './scoped-settings.js'
 const icon = 'data:image/png;base64,YQ=='
 const repository = decode(repositorySchema, {
   id: 'one',
@@ -13,6 +19,63 @@ const repository = decode(repositorySchema, {
   iconOverride: icon,
 })
 const runtime = decode(runtimeDefaultsSchema, {})
+
+it('does not let a late legacy-icon migration erase independently edited defaults', () => {
+  const migrated = migrateProjectIcons(runtime, [repository], {
+    updatedAt: 3,
+    changeId: 'legacy-icon',
+  })!
+  const defaults = updateSharedSettingsEntry(
+    'project:github.com/team/app',
+    undefined,
+    { taskDefaults: { setupCommand: 'new' } },
+    { updatedAt: 0, changeId: 'a' },
+  )
+  const [merged] = mergeSharedSettings(migrated.scopedSettings!.shared, [defaults])
+  expect(merged.value).toEqual({ projectIcon: icon, taskDefaults: { setupCommand: 'new' } })
+  const persisted = decode(sharedSettingsEntrySchema, JSON.parse(JSON.stringify(merged)))
+  expect(mergeSharedSettings([persisted], [merged])).toEqual([merged])
+})
+
+it('projects shared names and resets through unavailable snapshots without granting executable settings', () => {
+  const defaults = {
+    ...runtime,
+    scopedSettings: {
+      environment: {},
+      shared: [
+        {
+          key: 'project:github.com/team/app',
+          updatedAt: 1,
+          changeId: 'reset',
+          value: { projectName: 'Customer Portal', projectIcon: null },
+        },
+      ],
+    },
+  }
+  const projected = sharedProjectPresentation(defaults, {
+    ...repository,
+    name: 'app',
+    gitIdentity: undefined,
+    presentationIdentity: repository.gitIdentity,
+    gitIdentityError: 'Unavailable',
+  })
+  expect(projected).toMatchObject({
+    name: 'Customer Portal',
+    localName: 'app',
+    gitIdentityError: 'Unavailable',
+  })
+  expect(projected.iconOverride).toBeUndefined()
+  expect(
+    sharedProjectIconEntry(defaults, projected, icon, { updatedAt: 2, changeId: 'blocked' }),
+  ).toBeUndefined()
+  expect(
+    sharedProjectPresentation(defaults, {
+      ...repository,
+      gitIdentity: 'github.com/team/other',
+      presentationIdentity: repository.gitIdentity,
+    }).name,
+  ).toBe('App')
+})
 
 it('shares custom images while preserving unrelated project settings', () => {
   const before = {

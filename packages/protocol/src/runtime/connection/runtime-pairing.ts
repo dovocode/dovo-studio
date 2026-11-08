@@ -1,5 +1,6 @@
 import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { Effect, Result } from 'effect'
+import { isPeerAddress } from './peer.js'
 import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
 import { responses, snapshotSchema, type RuntimeConnection } from './runtime.js'
 import {
@@ -158,10 +159,34 @@ export function cancelRuntimePairing(
   write: WriteRegistry,
 ) {
   return Effect.gen(function* () {
-    const entry = registry.pendingPairings?.find(
-      (item) => item.proof.id === proof.id && item.profile.connection.address === address,
+    const matches = (registry.pendingPairings ?? []).filter(
+      (item) => item.proof.id === proof.id && item.proof.secret === proof.secret,
     )
-    yield* runtimeRequestEffect(null, address, '/api/pair/cancel', proof, responses.ok).pipe(
+    const scoped = matches.filter(
+      (item) => item.profile.connection.address === address || item.claimAddress === address,
+    )
+    // Older internet journals did not record their bootstrap address. Their full
+    // secret identifies the request, but only use the fallback when unambiguous.
+    const legacy = isPeerAddress(address)
+      ? matches.filter(
+          (item) => !item.claimAddress && isPeerAddress(item.profile.connection.address),
+        )
+      : []
+    const candidates = scoped.length ? scoped : legacy
+    if (candidates.length > 1)
+      return yield* Effect.fail(new Error('Cannot safely identify this pending pairing.'))
+    const entry = candidates[0]
+    // A staged device's permanent route remains usable when its QR tunnel expires.
+    // Issue one cancel; an uncertain network failure keeps the journal for recovery.
+    const cancel = entry
+      ? createRuntimeClient(entry.profile.connection).requestEffect(
+          '/api/pair/cancel',
+          proof,
+          responses.ok,
+          { method: 'POST', timeoutMs: 5000 },
+        )
+      : runtimeRequestEffect(null, address, '/api/pair/cancel', proof, responses.ok)
+    yield* cancel.pipe(
       Effect.catch((error) => {
         if (!(error instanceof RuntimeRequestError) || error.status !== 404)
           return Effect.fail(error)
@@ -178,7 +203,9 @@ export function cancelRuntimePairing(
           )
       }),
     )
-    const next = removePending(registry, proof.id, address)
+    const next = entry
+      ? { ...registry, pendingPairings: registry.pendingPairings?.filter((item) => item !== entry) }
+      : registry
     yield* write(next)
     return next
   }).pipe(Effect.uninterruptible)

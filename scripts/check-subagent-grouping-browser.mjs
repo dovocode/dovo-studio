@@ -6,7 +6,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`
 const controls = `
-import {useImperativeHandle} from 'react';
+import {useImperativeHandle,useLayoutEffect} from 'react';
 export const EmptyState=({title,description,action})=><div>{title}{description}{action}</div>;export const SidebarHeader=()=>null;export const HeaderContent=({children})=>children;
 export const Conversation=({children,...props})=><div role="log" {...props}>{children}</div>;export const ConversationContent=({children,...props})=><div {...props}>{children}</div>;export const ConversationScrollButton=()=>null;
 export const Message=({children,from})=><div data-native-role={from}>{children}</div>;export const MessageContent=({children})=><div>{children}</div>;
@@ -19,10 +19,11 @@ export const cn=(...values)=>values.filter(Boolean).join(' ');
 export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon.tsx';export const AgentAvatar=()=>null;export const ProjectIcon=()=>null;export const useModelLabel=()=>'';
 export const MessageResponse=({children})=><div>{children}</div>;
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=Tooltip;export const TooltipContent=()=>null;
+export const SettingsPage=({title,description,children})=><section><h1>{title}</h1><p>{description}</p>{children}</section>;
 export const PageHeader=({title})=><h1>{title}</h1>;
 export const ContextMenu={Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
 export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;
-export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
+export const View=({children,accessibilityLabel,ref,onLayout})=>{useImperativeHandle(ref,()=>({measureLayout:(_parent,done)=>done(0,0)}));useLayoutEffect(()=>{onLayout?.({nativeEvent:{layout:{height:44}}})},[onLayout]);return <div aria-label={accessibilityLabel}>{children}</div>};
 export const ScrollView=View;export const Image=()=>null;export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:3});
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} disabled={disabled} onClick={onPress} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</button>;
 export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}{ListFooterComponent}</div>;
@@ -60,7 +61,7 @@ window.updatePreferences=changes=>{window.preferences={...window.preferences,...
 async function bundle(contents) {
   const mocks = {
     './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
-    '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
+    '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
     '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
@@ -140,7 +141,7 @@ async function bundle(contents) {
                 navigation:
                   'export const useNavigation=()=>({focused:true,navigate:(view,entityId,runtimeId)=>window.routes.push({view,entityId,runtimeId})});',
                 preferences:
-                  'import {useSyncExternalStore} from "react";export const useCarMode=()=>false;export const useMobilePreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateMobilePreferences=changes=>window.updatePreferences(changes);',
+                  'import {useSyncExternalStore} from "react";export const useCarMode=()=>false;export const useMobilePreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateMobilePreferences=changes=>window.updatePreferences(changes);export const setMobileThreadSectionCollapsed=(section,value)=>{const collapsed=new Set(window.preferences.collapsedThreadSections);if(value)collapsed.add(section);else collapsed.delete(section);window.updatePreferences({collapsedThreadSections:[...collapsed]})};',
                 workflow:
                   'import {Effect} from "effect";export const mobileWorkflow=Effect.gen;export const nativeEffect=fn=>Effect.tryPromise(fn);',
                 lifecycle:
@@ -204,6 +205,19 @@ try {
       assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
     }
     if (!mobile) {
+      assert.equal(
+        await subthreads.evaluate((control) => {
+          const execution = control
+            .closest('.studio-thread-row')
+            .querySelector('[data-thread-execution]')
+          return (
+            execution.firstElementChild.classList.contains('studio-subthread-anchor') &&
+            !control.parentElement.closest('button')
+          )
+        }),
+        true,
+        'Subthreads precede runtime indicators without nesting interactive controls',
+      )
       const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
       assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
@@ -778,7 +792,7 @@ try {
     })
     if ((await generalToggle.getAttribute('aria-expanded')) === 'false') await generalToggle.click()
     await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).waitFor()
-    await page.getByText('General', { exact: true }).first().waitFor()
+    await page.getByText('No Project', { exact: true }).first().waitFor()
     assert.equal(
       await page.getByText(/\d+ (pipeline watch|PR watch|failed checks\/runs)/).count(),
       0,
@@ -985,8 +999,25 @@ try {
           threadSectionOrder: ['active', 'working', 'waiting', 'pinned', 'snoozed', 'settled'],
         }),
       )
+      await activeHeader.waitFor()
+      if (mobile)
+        assert.equal(
+          await activeHeader.getAttribute('aria-expanded'),
+          'false',
+          'Reordering Open to the top preserves its collapsed state',
+        )
+      else
+        assert.equal(
+          await activeHeader.evaluate((element) => element.parentElement.open),
+          false,
+          'Reordering Open to the top preserves its collapsed state',
+        )
+      await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
+      await page.getByText('Working order', { exact: true }).waitFor()
+      await page.getByText('Waiting order', { exact: true }).waitFor()
+      await activeHeader.click()
       await page.getByText('Active order', { exact: true }).waitFor()
-      assert.equal(await activeHeader.count(), 0, 'Open at the top has no collapse header')
+      assert.equal(await activeHeader.count(), 0, 'Expanded Open at the top has no collapse header')
       if (!mobile) await page.waitForFunction(() => window.orders.at(-1).includes('active-order'))
       await page.evaluate(() =>
         window.updatePreferences({
@@ -994,6 +1025,7 @@ try {
         }),
       )
       await activeHeader.waitFor()
+      await activeHeader.click()
       await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
 
       assert.equal(
@@ -1008,7 +1040,7 @@ try {
       await page.getByText('Active order', { exact: true }).waitFor()
       if (mobile) assert.equal(await activeHeader.getAttribute('aria-expanded'), 'true')
     }
-    // Attention has a fixed top position, including inherited child input and snoozed/pinned owners.
+    // Pinning outranks inherited child input and snoozed/waiting state; unpinned input follows.
     await page.evaluate(() => {
       const base = {
         ...window.workspace.tasks[0],
@@ -1048,8 +1080,12 @@ try {
         },
         { ...base, id: 'normal-pin', title: 'Ordinary pinned thread', pinned: true },
         { ...base, id: 'normal-open', title: 'Ordinary open thread' },
+        { ...base, id: 'attention-open', title: 'Unpinned needs a reply' },
       ])
-      window.store.snapshot.questions = [{ id: 'input', taskId: 'attention-child' }]
+      window.store.snapshot.questions = [
+        { id: 'input', taskId: 'attention-child' },
+        { id: 'unpin-input', taskId: 'attention-open' },
+      ]
       window.updatePreferences({
         collapsedThreadSections: [],
         threadSectionOrder: ['settled', 'snoozed', 'waiting', 'working', 'active', 'pinned'],
@@ -1070,12 +1106,21 @@ try {
             })
             .allTextContents()
         : await page.locator('summary').allTextContents()
-      assert.match(headers[0], /^Needs input/)
+      assert.match(headers[0], /^Pinned/)
+      assert.match(headers[1], /^Needs input/)
       if (!mobile) {
         const attention = page
           .locator('details')
           .filter({ has: page.locator('summary').filter({ hasText: 'Needs input' }) })
-        assert.equal(await attention.getByText('Parent needs a reply', { exact: true }).count(), 1)
+        assert.equal(
+          await attention.getByText('Unpinned needs a reply', { exact: true }).count(),
+          1,
+        )
+        const pinned = page
+          .locator('details')
+          .filter({ has: page.locator('summary').filter({ hasText: 'Pinned' }) })
+        assert.equal(await pinned.getByText('Parent needs a reply', { exact: true }).count(), 1)
+        assert.equal(await attention.getByText('Parent needs a reply', { exact: true }).count(), 0)
         const waiting = page
           .locator('details')
           .filter({ has: page.locator('summary').filter({ hasText: 'Waiting' }) })
@@ -1086,9 +1131,10 @@ try {
       ? page.getByRole('button', { name: 'Needs input, 1 tasks', exact: true })
       : page.locator('summary').filter({ hasText: 'Needs input' })
     await attentionHeader.click()
-    await page.getByText('Parent needs a reply', { exact: true }).waitFor({ state: 'hidden' })
-    await attentionHeader.click()
+    await page.getByText('Unpinned needs a reply', { exact: true }).waitFor({ state: 'hidden' })
     await page.getByText('Parent needs a reply', { exact: true }).waitFor()
+    await attentionHeader.click()
+    await page.getByText('Unpinned needs a reply', { exact: true }).waitFor()
     await page.evaluate(() => {
       window.store.snapshot.questions = []
       window.renderList(false)

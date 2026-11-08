@@ -1,4 +1,5 @@
-import { taskSnoozeOptions } from '@dovo/protocol'
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
+import { studioReference, taskSnoozeMenuChoices } from '@dovo/protocol'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
 import { Schema } from 'effect'
@@ -13,6 +14,8 @@ import { conversationPageSchema, taskTranscript, type ConversationPage } from '@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
+  useConfirmation,
+  clientScopeKey,
   generatedTitleSchema,
   hasUnviewedTaskCompletion,
   isSnoozed,
@@ -20,6 +23,7 @@ import {
   responses,
   readAppPreferences,
   useStudioHost,
+  useAppPreferences,
   WorkspaceScope,
   type Task,
 } from '@dovo/studio-core'
@@ -63,7 +67,7 @@ import {
   type TaskRowChanges,
 } from '../list/task-row-actions'
 const menuClass =
-  'z-50 max-h-[min(80dvh,var(--radix-dropdown-menu-content-available-height,80dvh))] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-xl'
+  'studio-menu-surface z-50 max-h-[min(80dvh,var(--radix-dropdown-menu-content-available-height,80dvh))] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground'
 const itemClass =
   'flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-xs outline-none transition-colors data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground'
 const separatorClass = 'my-1 h-px bg-border/70'
@@ -108,10 +112,35 @@ export function TaskContextMenu({
   /** Reports an open menu, dialog or action, so a windowed list keeps this row mounted. */
   onActiveChange?: (active: boolean) => void
 }) {
+  const { taskSnoozeMinutes, taskSnoozeSchedule } = useAppPreferences()
   const Menu = dropdown ? DropdownMenu : ContextMenu
   const host = useStudioHost()
   const store = useTaskActionStore()
   const client = taskActionClient(store, source)
+  const actionScope = JSON.stringify([
+    store.activeRuntimeId,
+    clientScopeKey(store.connection),
+    source.runtimeId,
+    source.address,
+    clientScopeKey(client.profile?.connection ?? null),
+    task.id,
+  ])
+  const confirm = useConfirmation(
+    JSON.stringify([actionScope, task.pinned, task.archivedAt, task.status]),
+  )
+  const currentScope = useRef(actionScope)
+  currentScope.current = actionScope
+  const available = useRef(source.online)
+  available.current = source.online
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const isCurrent = () =>
+    mounted.current && available.current && currentScope.current === actionScope
   const { repository, branch } = taskRowValues(task, source.repositories)
   const [pending, setPending] = useApplicationState(false)
   const pendingRef = useRef(false)
@@ -135,26 +164,27 @@ export function TaskContextMenu({
   const canEdit = source.online && !blocked
   const turn = latestCompletedTaskTurn(task)
   const unread = hasUnviewedTaskCompletion(task)
-  const run = async (action: () => Promise<void>) => {
+  const run = async <T,>(action: () => Promise<T>) => {
     if (pendingRef.current || busy) return
     pendingRef.current = true
     setPending(true)
     setError('')
     onError('')
     try {
-      await action()
+      return await action()
     } catch (failure) {
+      if (!isCurrent()) return
       const message = failure instanceof Error ? failure.message : String(failure)
       setError(message)
       onError(message)
     } finally {
       pendingRef.current = false
-      setPending(false)
+      if (mounted.current) setPending(false)
     }
   }
   const copyConversation = async () => {
     if (!source.online || (!task.historyBefore && task.messages.length)) {
-      await navigator.clipboard.writeText(taskTranscript(task))
+      await copyTextToClipboard(taskTranscript(task))
       return
     }
     const pages: ConversationPage[] = []
@@ -168,7 +198,7 @@ export function TaskContextMenu({
       pages.unshift(page)
       before = page.before
     } while (before)
-    await navigator.clipboard.writeText(
+    await copyTextToClipboard(
       taskTranscript({ title: task.title, messages: pages.flatMap((page) => page.messages) }),
     )
   }
@@ -222,7 +252,7 @@ export function TaskContextMenu({
             }}
           >
             <Menu.Label className="max-w-64 truncate px-2.5 py-1.5 text-[0.625rem] text-muted-foreground">
-              {repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'General')} ·{' '}
+              {repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project')} ·{' '}
               {source.name}
             </Menu.Label>
             {toolsMenu}
@@ -245,13 +275,20 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit}
               onSelect={() => {
-                if (
-                  task.pinned &&
-                  readAppPreferences().confirmUnpin &&
-                  !window.confirm(`Unpin “${task.title}”?`)
-                )
-                  return
-                void run(() => patch({ pinned: !task.pinned }))
+                void run(async () => {
+                  if (
+                    task.pinned &&
+                    readAppPreferences().confirmUnpin &&
+                    !(await confirm({
+                      title: `Unpin “${task.title}”?`,
+                      description: 'This thread will return to its usual position in the list.',
+                      confirmLabel: 'Unpin thread',
+                    }))
+                  )
+                    return
+                  if (!isCurrent()) return
+                  await patch({ pinned: !task.pinned })
+                })
               }}
             >
               {task.pinned ? <PinOff /> : <Pin />}
@@ -305,21 +342,23 @@ export function TaskContextMenu({
                 </Menu.SubTrigger>
                 <Menu.Portal>
                   <Menu.SubContent className={menuClass} collisionPadding={8}>
-                    {taskSnoozeOptions.map(({ hours, label }) => (
-                      <Menu.Item
-                        key={hours}
-                        className={itemClass}
-                        onSelect={() =>
-                          void run(() =>
-                            patch({
-                              snoozedUntil: new Date(Date.now() + hours * 3600000).toISOString(),
-                            }),
-                          )
-                        }
-                      >
-                        {label}
-                      </Menu.Item>
-                    ))}
+                    {taskSnoozeMenuChoices(taskSnoozeMinutes, taskSnoozeSchedule).map(
+                      ({ id, until, label }) => (
+                        <Menu.Item
+                          key={id}
+                          className={itemClass}
+                          onSelect={() =>
+                            void run(() =>
+                              patch({
+                                snoozedUntil: until(),
+                              }),
+                            )
+                          }
+                        >
+                          {label}
+                        </Menu.Item>
+                      ),
+                    )}
                     {isSnoozed(task, Date.now()) && (
                       <Menu.Item
                         className={itemClass}
@@ -394,7 +433,7 @@ export function TaskContextMenu({
                 onSelect={() => setDialog('transfer')}
               >
                 <Copy /> {task.execution === 'worktree' ? 'Copy worktree' : 'Copy project checkout'}{' '}
-                to another machine…
+                to another computer…
               </Menu.Item>
             )}
             <Menu.Sub>
@@ -513,13 +552,28 @@ export function TaskContextMenu({
                       ['Branch', branch],
                       ['Project path', repository?.path ?? ''],
                       ['Thread ID', task.id],
+                      [
+                        'Studio ID (for agents)',
+                        (() => {
+                          try {
+                            return studioReference(
+                              source.runtimeIdentity ??
+                                (local ? 'local' : (source.runtimeId ?? 'local')),
+                              'thread',
+                              task.id,
+                            )
+                          } catch {
+                            return ''
+                          }
+                        })(),
+                      ],
                     ] as const
                   ).map(([label, text]) => (
                     <Menu.Item
                       key={label}
                       className={itemClass}
                       disabled={!text}
-                      onSelect={() => void run(() => navigator.clipboard.writeText(text))}
+                      onSelect={() => void run(() => copyTextToClipboard(text))}
                     >
                       {label}
                     </Menu.Item>
@@ -684,16 +738,18 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit || task.status === 'running'}
               onSelect={() => {
-                // Settings → General → Confirm before archiving.
-                if (
-                  !task.archivedAt &&
-                  readAppPreferences().confirmArchive &&
-                  !window.confirm(
-                    `Archive “${task.title}”? You can restore it from Settings → Archived tasks.`,
-                  )
-                )
-                  return
                 void run(async () => {
+                  if (
+                    !task.archivedAt &&
+                    readAppPreferences().confirmArchive &&
+                    !(await confirm({
+                      title: `Archive “${task.title}”?`,
+                      description: 'You can restore it from Settings → Archived threads.',
+                      confirmLabel: 'Archive thread',
+                    }))
+                  )
+                    return
+                  if (!isCurrent()) return
                   await client.request(
                     '/api/tasks/lifecycle',
                     {
@@ -702,6 +758,7 @@ export function TaskContextMenu({
                     },
                     responses.ok,
                   )
+                  if (!isCurrent()) return
                   if (selected && !task.archivedAt) onDeselect()
                   await client.refresh()
                 })
@@ -716,12 +773,10 @@ export function TaskContextMenu({
               onSelect={() => {
                 setError('')
                 if (readAppPreferences().confirmDelete)
-                  void run(async () => {
-                    const preferences = await client.request(
-                      '/api/runtime/preferences/read',
-                      {},
-                      runtimePreferencesSchema,
-                    )
+                  void run(() =>
+                    client.request('/api/runtime/preferences/read', {}, runtimePreferencesSchema),
+                  ).then((preferences) => {
+                    if (!preferences) return
                     setRemoveWorktrees(preferences.removeWorktreesOnThreadDelete)
                     setDialog('delete')
                   })
@@ -745,7 +800,7 @@ export function TaskContextMenu({
       </Menu.Root>
       {pending && !dialog && (
         <p role="status" className="px-2.5 pb-2 text-[0.6875rem] text-muted-foreground">
-          Updating task…
+          Updating thread…
         </p>
       )}
       <Dialog
@@ -815,6 +870,7 @@ export function TaskContextMenu({
           {repository && (
             <ProjectSettings
               repository={repository}
+              onNavigate={() => setDialog(null)}
               onDeleted={(refreshError) => {
                 if (refreshError)
                   onError(
@@ -838,7 +894,7 @@ export function TaskContextMenu({
         <DialogContent className="max-w-md">
           <DialogTitle>Save as template</DialogTitle>
           <DialogDescription>
-            New tasks in {repository?.name ?? 'this project'} can start from this task’s first
+            New threads in {repository?.name ?? 'this project'} can start from this thread’s first
             request, agent, checkout choice and setup command. The conversation is not included.
           </DialogDescription>
           <form
@@ -908,9 +964,9 @@ export function TaskContextMenu({
         }}
       >
         <DialogContent className="max-w-md">
-          <DialogTitle>Rename task</DialogTitle>
+          <DialogTitle>Rename thread</DialogTitle>
           <DialogDescription>
-            {repository?.name ?? 'Task'} · {source.name}
+            {repository?.name ?? 'Thread'} · {source.name}
           </DialogDescription>
           <form
             className="grid gap-4"
@@ -988,7 +1044,12 @@ export function TaskContextMenu({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" disabled={pending} onClick={() => setDialog(null)}>
+            <Button
+              data-dialog-cancel
+              variant="outline"
+              disabled={pending}
+              onClick={() => setDialog(null)}
+            >
               Cancel
             </Button>
             <Button

@@ -41,6 +41,7 @@ it('allows clipboard once without saving and saves explicit always-allow by site
     await requestCommonBrowserPermission(contents as never, 'work', origin, 'clipboard-read'),
   ).toBe(true)
   expect(browserPermissions('work').site(origin).permissions['clipboard-read']).toBe('ask')
+  expect(browserPermissions('work').site(origin).requested).toEqual(['clipboard-read'])
   contents.emit('did-navigate')
   f.prompt.mockResolvedValueOnce({ response: 1 })
   expect(
@@ -62,6 +63,10 @@ it('honors blocks without a prompt and grants ordinary wake locks using native C
     await requestCommonBrowserPermission(contents as never, 'work', origin, 'screen-wake-lock'),
   ).toBe(true)
   expect(f.prompt).not.toHaveBeenCalled()
+  expect(browserPermissions('work').site(origin).requested).toEqual([
+    'speaker-selection',
+    'screen-wake-lock',
+  ])
 })
 it('coalesces repeated requests and rejects a stale approval after navigation', async () => {
   const contents = page()
@@ -97,6 +102,7 @@ it('retains one-time idle access for start checks in this document and clears it
   const allowed = (profile = 'work', site = origin) =>
     commonBrowserPermissionAllowed(contents as never, profile, site, 'idle-detection')
   expect(allowed()).toBe(false)
+  expect(browserPermissions('work').site(origin).requested).toEqual([])
   expect(
     await requestCommonBrowserPermission(contents as never, 'work', origin, 'idle-detection'),
   ).toBe(true)

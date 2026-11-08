@@ -16,12 +16,12 @@ import {
 } from '@dovo/protocol'
 import { useFileReview } from '../../review/use-file-review'
 import { MobileOrganizeReview } from '../../review/organize-review'
-import { ChangeTypeFilters } from '../../../ui/content/change-types'
+import { ChangeSummary } from '../../../ui/content/change-summary'
+import { MobileFileTree } from '../../../ui/content/file-tree'
 import { MobileFileReview } from '../../review/file-review'
 import { Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { pullFilePatch, type PullDetail } from '@dovo/protocol'
-import { Sheet } from '../../../ui/layout/sheet'
 import { Icon } from '../../../ui/controls/icon'
 import { pullFragment } from './pull-destination'
 import { Action } from '../../../ui/controls/action'
@@ -41,6 +41,7 @@ export function PullChanges({
   onOpen,
   onAction,
   onLineComment,
+  onAskAgent,
   initialPath,
   fragment,
   onAnchor,
@@ -52,6 +53,7 @@ export function PullChanges({
   onOpen: (url: string) => void
   onAction?: (target: PullActionTarget) => void
   onLineComment?: (path: string) => void
+  onAskAgent?: (path: string) => void
   initialPath?: string
   fragment?: string
   onAnchor?: (node: ComponentRef<typeof View>) => void
@@ -61,8 +63,8 @@ export function PullChanges({
 
   const { height } = useWindowDimensions()
   const [kind, setKind] = useState<FileKind | undefined>(undefined)
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [wrapLines, setWrapLines] = useState(false)
-  const [options, setOptions] = useState(false)
   const [feedbackPath, setFeedbackPath] = useState('')
   const [controlsHeight, setControlsHeight] = useState(88)
   const { headSha, baseSha } = detail.pull
@@ -130,18 +132,37 @@ export function PullChanges({
   useEffect(() => {
     if (linkedComment && file) setFeedbackPath(file.path)
   }, [linkedComment?.id, fragment, file?.path])
-  const filters = (
-    <ChangeTypeFilters
+  const summary = (
+    <ChangeSummary
       files={detail.files}
       value={kind}
       onChange={setKind}
       total={detail.pull.changedFiles}
-    />
+      expanded={summaryExpanded}
+      onExpandedChange={setSummaryExpanded}
+    >
+      <MobileFileTree
+        files={files.map((item) => ({
+          path: item.path,
+          changeKind: pullFileKind(item),
+          viewed: item.viewed,
+          additions: item.additions ?? undefined,
+          deletions: item.deletions ?? undefined,
+        }))}
+        groups={review.progress?.groups ?? []}
+        related={related}
+        selected={file?.path}
+        onSelect={setSelected}
+        scrollable={false}
+        defaultExpandedDepth={0}
+        showChangeBars
+      />
+    </ChangeSummary>
   )
   if (!file)
     return (
       <View>
-        {filters}
+        {summary}
         <Text style={styles.muted}>
           {detail.files.length ? 'No matching files.' : 'No changed files returned.'}
         </Text>
@@ -174,13 +195,13 @@ export function PullChanges({
         gap: 4,
       }}
     >
+      <View style={{ paddingHorizontal: 12 }}>{summary}</View>
       <View
         testID="PR file controls"
         onLayout={({ nativeEvent }) => setControlsHeight(nativeEvent.layout.height)}
         style={{ gap: 4 }}
       >
         <View style={{ paddingHorizontal: 12 }}>
-          {filters}
           <MobileFileReview
             files={files.map((file) => ({
               path: file.path,
@@ -203,7 +224,6 @@ export function PullChanges({
             busy={review.busy}
             error={review.error}
             onRetry={review.reload}
-            onOptions={() => setOptions(true)}
           />
         </View>
         {file.previousPath && (
@@ -249,6 +269,9 @@ export function PullChanges({
       ) : (
         <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>
       )}
+      {onAskAgent && (
+        <Action secondary label="Ask agent about this file" onPress={() => onAskAgent(file.path)} />
+      )}
       {(!!comments.length || canComment) && (
         <View
           style={{
@@ -293,11 +316,16 @@ export function PullChanges({
           />
         </View>
       )}
-      {options && (
-        <Sheet title="File actions" presentation="dialog" onClose={() => setOptions(false)}>
-          <MobileOrganizeReview review={review} onOrganized={() => setRelated(true)} />
-        </Sheet>
-      )}
+      <View style={{ paddingHorizontal: 12 }}>
+        <MobileOrganizeReview
+          onOpenFile={(path) => {
+            setKind(undefined)
+            setSelected(path)
+          }}
+          review={review}
+          onOrganized={() => setRelated(true)}
+        />
+      </View>
     </View>
   )
 }

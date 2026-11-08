@@ -87,10 +87,8 @@ export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter
     async run(run) {
       run = checkedPolicyRun(run, 'cursor')
       run.signal.throwIfAborted()
-      if (run.compact)
-        throw new Error(
-          'Cursor SDK manages context automatically and exposes no manual compaction API',
-        )
+      if (run.compact && !run.sessionId)
+        throw new Error('Cursor compaction requires an existing local session')
       if (!supportsAccess('cursor', run.agent.permission))
         throw new Error(
           'Cursor SDK supports read-only, Auto-review, and full access; choose a native mode',
@@ -102,6 +100,7 @@ export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter
         const input = cursorInputSchema.parse({
           cwd: run.cwd,
           sessionId: run.sessionId,
+          compact: run.compact,
           model: run.agent.model,
           reasoning: run.agent.reasoning,
           permission: run.agent.permission,

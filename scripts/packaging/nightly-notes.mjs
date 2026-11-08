@@ -18,15 +18,42 @@ export function nightlyNotes({ target, releases, repository, cwd }) {
   })
   const range = previous ? `${previous.tagName}..${commit}` : commit
   const lines = git('log', '--reverse', '--format=%H %s', range).split('\n').filter(Boolean)
-  const changes = lines.map((line) => {
+  const entries = lines.map((line) => {
     const sha = line.slice(0, 40)
-    const subject = line.slice(41).replace(/[\\`*_{}[\]<>]/g, '\\$&')
-    return `- ${subject} ([${sha.slice(0, 7)}](https://github.com/${repository}/commit/${sha}))`
+    const title = line.slice(41)
+    const subject = title.replace(/[\\`*_{}[\]<>]/g, '\\$&')
+    return {
+      title,
+      line: `- ${subject} ([${sha.slice(0, 7)}](https://github.com/${repository}/commit/${sha}))`,
+    }
   })
+  // Keep the complete history below, but lead with recent user-facing changes rather
+  // than distribution churn and fixture maintenance. No generated claims or API calls.
+  const seen = new Set()
+  const highlights = entries
+    .toReversed()
+    .filter(({ title }) => {
+      const key = title.toLowerCase().replace(/\s*\(#\d+\)$/, '')
+      if (
+        seen.has(key) ||
+        /^(?:merge\b|update homebrew distribution definitions\b|(?:chore|ci|test|build|docs)(?:\([^)]*\))?:)/i.test(
+          title,
+        ) ||
+        /\b(?:fixtures?|smoke[- ]tests?|browser checks)\b/i.test(title)
+      )
+        return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, 7)
+    .map(({ line }) => line)
   return [
+    ...(highlights.length ? ['## Highlights', '', ...highlights, ''] : []),
     '## Changes',
     '',
-    ...(changes.length ? changes : ['No new commits since the previous nightly.']),
+    ...(entries.length
+      ? entries.map(({ line }) => line)
+      : ['No new commits since the previous nightly.']),
     ...(previous
       ? [
           '',

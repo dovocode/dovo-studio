@@ -1,5 +1,6 @@
 import { FULL_FILE_DIFF_LIMIT, type FilePreview, type FilePreviewMetadata } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
+import { previewPatch } from './preview-patch.js'
 
 const TEXT_LIMIT = 64 * 1024
 const IMAGE_LIMIT = 16 * 1024 * 1024
@@ -9,6 +10,7 @@ export async function createFilePreview(
   metadata: Pick<FilePreviewMetadata, 'before' | 'after'>,
   read: (hash: string, limit: number) => Promise<Buffer>,
   full = false,
+  includePatch = false,
 ): Promise<FilePreview> {
   const side = async (file: FilePreviewMetadata['before']): Promise<FilePreview['before']> => {
     if (!file) return undefined
@@ -73,5 +75,12 @@ export async function createFilePreview(
     }
   }
   const [before, after] = await Promise.all([side(metadata.before), side(metadata.after)])
-  return { before, after }
+  const completeText = [before, after].every(
+    (item) => !item || (item.kind === 'text' && !item.truncated),
+  )
+  const patch =
+    includePatch && completeText
+      ? await previewPatch(path, before?.text ?? '', after?.text ?? '')
+      : undefined
+  return { before, after, patch }
 }

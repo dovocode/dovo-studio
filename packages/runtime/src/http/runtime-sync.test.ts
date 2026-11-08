@@ -173,6 +173,241 @@ it('pushes small deltas and replays updates after reconnect without a second bas
   )
   expect((await second.wait('snapshot')).sequence).toBe(delta.sequence)
 })
+it('hands off thread selection using the sent cursor without repeating the workspace', async () => {
+  const { runtime, open } = await setup()
+  const template = runtime.services.store.task('task')
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      ...workspace.tasks,
+      ...Array.from({ length: 300 }, (_, index) => ({
+        ...template,
+        id: `background-${index}`,
+        title: `Background work ${index}`,
+        draft: `Context for background work ${index}. `.repeat(40),
+        messages: [{ id: `reply-${index}`, role: 'assistant' as const, text: 'Other reply' }],
+      })),
+    ],
+  }))
+  const client = await open(token, 5, ['task'], true)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await client.wait('snapshot')
+  client.frames.length = 0
+  client.socket.send(
+    JSON.stringify({ type: 'watch', tasks: ['background-1'], scopes: [], selectionDelta: true }),
+  )
+  const handoff = await client.wait('selection')
+  expect(handoff.previousEpoch).toBe(baseline.epoch)
+  expect(handoff.base).toBe(baseline.sequence)
+  const selected = applySnapshotDelta(baseline.snapshot, handoff.delta)
+  expect(selected.detailTaskIds).toEqual(['background-1'])
+  expect(selected.workspace.tasks[0]?.messages).toEqual([])
+  expect(selected.workspace.tasks[2]?.messages[0]?.text).toBe('Other reply')
+  expect(selected.workspace.tasks[3]).toBe(baseline.snapshot.workspace.tasks[3])
+  const legacy = await open(token, 5, ['background-1'], true)
+  legacy.socket.send(JSON.stringify({ type: 'resume' }))
+  const full = await legacy.wait('snapshot')
+  expect(selected).toEqual(full.snapshot)
+  expect(Buffer.byteLength(JSON.stringify(handoff))).toBeLessThan(
+    Buffer.byteLength(JSON.stringify(full)) / 10,
+  )
+  runtime.services.store.updateTaskHistory('background-1', (task) => ({
+    ...task,
+    messages: task.messages.map((message) => ({ ...message, text: message.text + ' updated' })),
+  }))
+  const delta = await client.wait('delta')
+  expect(delta.epoch).toBe(handoff.epoch)
+  expect(delta.base).toBe(handoff.sequence)
+  expect(applySnapshotDelta(selected, delta.delta).workspace.tasks[2]?.messages[0]?.text).toBe(
+    'Other reply updated',
+  )
+  client.socket.close()
+  await once(client.socket, 'close')
+  const resumed = await open(token, 5, ['background-1'], true)
+  resumed.socket.send(
+    JSON.stringify({ type: 'resume', epoch: delta.epoch, sequence: delta.sequence }),
+  )
+  await resumed.wait('heartbeat')
+  expect(resumed.frames.filter((frame) => frame.type !== 'heartbeat')).toEqual([])
+})
+it('rebases a lagging client instead of patching from a snapshot it was never sent', async () => {
+  const { runtime, open } = await setup()
+  const serverSockets = new Set<WebSocket>()
+  let blocked: WebSocket | undefined
+  const buffered = vi
+    .spyOn(WebSocket.prototype, 'bufferedAmount', 'get')
+    .mockImplementation(function (this: WebSocket) {
+      serverSockets.add(this)
+      return this === blocked ? 128 * 1024 : 0
+    })
+  cleanup.push(() => buffered.mockRestore())
+  const slow = await open(token, 5, ['task'], true)
+  slow.socket.send(JSON.stringify({ type: 'resume' }))
+  await slow.wait('snapshot')
+  await slow.wait('heartbeat')
+  expect(serverSockets.size).toBe(1)
+  blocked = [...serverSockets][0]!
+  const fast = await open(token, 5, ['task'], true)
+  fast.socket.send(JSON.stringify({ type: 'resume' }))
+  await fast.wait('snapshot')
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Latest title' }))
+  await fast.wait('delta')
+  slow.frames.length = 0
+  slow.socket.send(JSON.stringify({ type: 'watch', tasks: [], scopes: [], selectionDelta: true }))
+  const selected = await slow.wait('snapshot')
+  expect(slow.frames.some((frame) => frame.type === 'selection')).toBe(false)
+  expect(selected.snapshot.detailTaskIds).toEqual([])
+  expect(selected.snapshot.workspace.tasks[0]?.title).toBe('Latest title')
+  expect(selected.snapshot.workspace.tasks[0]?.messages).toEqual([])
+  blocked = undefined
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Later title' }))
+  const delta = await slow.wait('delta')
+  expect(delta.base).toBe(selected.sequence)
+  expect(applySnapshotDelta(selected.snapshot, delta.delta).workspace.tasks[0]?.title).toBe(
+    'Later title',
+  )
+})
+it.each([
+  { shared: false, evict: false },
+  { shared: true, evict: false },
+  { shared: true, evict: true },
+])('paces a backed-up socket while a healthy client continues (%o)', async ({ shared, evict }) => {
+  const { runtime, open } = await setup()
+  const buffers = new Map<WebSocket, number>()
+  const serverSockets = new Set<WebSocket>()
+  const buffered = vi
+    .spyOn(WebSocket.prototype, 'bufferedAmount', 'get')
+    .mockImplementation(function (this: WebSocket) {
+      serverSockets.add(this)
+      return buffers.get(this) ?? 0
+    })
+  cleanup.push(() => buffered.mockRestore())
+  const slow = await open(token, 5, ['task'], true)
+  slow.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await slow.wait('snapshot')
+  await slow.wait('heartbeat')
+  slow.socket.send(JSON.stringify({ type: 'watch', scopes: ['task'] }))
+  await slow.wait('activity')
+  expect(serverSockets.size).toBe(1)
+  const socket = [...serverSockets][0]!
+  const otherToken = shared ? token : 'healthy-sync-device-token-with-at-least-32-characters'
+  if (!shared) runtime.services.devices.add('Healthy phone', otherToken)
+  const fast = await open(otherToken, 5, ['task'], true)
+  fast.socket.send(JSON.stringify({ type: 'resume' }))
+  await fast.wait('snapshot')
+  await fast.wait('heartbeat')
+  // Drain the device-list update caused by adding the healthy client before blocking.
+  slow.socket.send(
+    JSON.stringify({ type: 'resume', epoch: baseline.epoch, sequence: baseline.sequence }),
+  )
+  await expect.poll(() => slow.frames.filter((frame) => frame.type === 'heartbeat').length).toBe(2)
+  const last = slow.frames.filter((frame) => frame.type === 'delta').at(-1)
+  let snapshot = baseline.snapshot
+  for (const frame of slow.frames)
+    if (frame.type === 'delta') snapshot = applySnapshotDelta(snapshot, frame.delta)
+  const sequence = last?.sequence ?? baseline.sequence
+  slow.frames.length = 0
+  buffers.set(socket, 128 * 1024)
+  for (let index = 0; index < 12; index++) {
+    fast.frames.length = 0
+    runtime.services.store.updateTaskHistory('task', (task) => ({
+      ...task,
+      title: `Version ${index}`,
+      messages: task.messages.map((message) => ({
+        ...message,
+        text: message.text + (evict ? 'x'.repeat(210000) : '') + ` token${index}`,
+      })),
+    }))
+    runtime.services.activity.add(
+      'tool',
+      'task',
+      `Step ${index}`,
+      { status: 'running', index },
+      'tool',
+    )
+    await fast.wait('delta')
+  }
+  expect(slow.frames.filter((frame) => frame.type === 'delta')).toHaveLength(0)
+  expect(slow.frames.filter((frame) => frame.type === 'activity-delta')).toHaveLength(0)
+  expect(slow.socket.readyState).toBe(WebSocket.OPEN)
+  buffers.set(socket, 0)
+  const received = () => {
+    let current = snapshot,
+      cursor = sequence
+    const chain: Array<{ base: number; sequence: number; expected: number }> = []
+    for (const frame of slow.frames) {
+      if (frame.type === 'snapshot') {
+        current = frame.snapshot
+        cursor = frame.sequence
+      } else if (frame.type === 'delta') {
+        chain.push({ base: frame.base, sequence: frame.sequence, expected: cursor })
+        current = applySnapshotDelta(current, frame.delta)
+        cursor = frame.sequence
+      }
+    }
+    return { snapshot: current, cursor, chain }
+  }
+  await expect.poll(() => received().snapshot.workspace.tasks[0]?.title).toBe('Version 11')
+  const recovery = received()
+  expect(
+    recovery.chain.every(
+      (frame) => frame.base === frame.expected && frame.sequence === frame.expected + 1,
+    ),
+  ).toBe(true)
+  expect(slow.frames.filter((frame) => frame.type === 'delta')).toHaveLength(
+    evict ? 0 : shared ? 12 : 1,
+  )
+  expect(slow.frames.filter((frame) => frame.type === 'snapshot')).toHaveLength(evict ? 1 : 0)
+  expect(fast.frames.some((frame) => frame.type === 'snapshot')).toBe(false)
+  expect(recovery.snapshot.workspace.tasks[0]?.messages[0]?.text).toMatch(/token0.*token11$/)
+  await slow.wait('activity-delta')
+  expect(JSON.stringify(slow.frames.filter((frame) => frame.type === 'activity-delta'))).toContain(
+    'Step 11',
+  )
+  slow.socket.close()
+  await once(slow.socket, 'close')
+  const resumed = await open(token, 5, ['task'], true)
+  resumed.socket.send(
+    JSON.stringify({ type: 'resume', epoch: baseline.epoch, sequence: recovery.cursor }),
+  )
+  await resumed.wait('heartbeat')
+  expect(resumed.frames.some((frame) => frame.type === 'snapshot')).toBe(false)
+  expect(resumed.frames.some((frame) => frame.type === 'delta')).toBe(false)
+})
+it('still revokes a device while its socket is backed up', async () => {
+  const { runtime, open } = await setup()
+  const credential = 'backed-up-device-token-with-at-least-32-characters'
+  const device = runtime.services.devices.add('Slow phone', credential)
+  const client = await open(credential, 5)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  await client.wait('heartbeat')
+  const buffered = vi
+    .spyOn(WebSocket.prototype, 'bufferedAmount', 'get')
+    .mockReturnValue(128 * 1024)
+  cleanup.push(() => buffered.mockRestore())
+  const closed = once(client.socket, 'close')
+  runtime.services.devices.revoke(device)
+  expect((await closed)[0]).toBe(1008)
+})
+it('sends a large current delta directly even when it exceeds the retained replay budget', async () => {
+  const { runtime, open } = await setup()
+  const client = await open(token, 5, ['task'], true)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await client.wait('snapshot')
+  await client.wait('heartbeat')
+  client.frames.length = 0
+  const text = baseline.snapshot.workspace.tasks[0]!.messages[0]!.text + 'chunk'.repeat(450000)
+  runtime.services.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    messages: task.messages.map((message) => ({ ...message, text })),
+  }))
+  const delta = await client.wait('delta')
+  expect(delta.base).toBe(baseline.sequence)
+  expect(
+    applySnapshotDelta(baseline.snapshot, delta.delta).workspace.tasks[0]?.messages[0]?.text,
+  ).toBe(text)
+  expect(client.frames.some((frame) => frame.type === 'snapshot')).toBe(false)
+})
 it('negotiates field deltas while keeping legacy clients on complete task metadata', async () => {
   const { runtime, open } = await setup()
   runtime.services.store.updateTask('task', (task) => ({

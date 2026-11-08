@@ -1,6 +1,8 @@
 import { ToolResultImages } from './tool-result-images'
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
-import { mcpAppReferences, artifactReferences } from '@dovo/protocol'
+import { useConversationSelector } from '../state/provider'
+import { usePreviewActive } from '../../preview/use-preview-active'
+import { mcpAppReferences, artifactReferences, type McpAppReference } from '@dovo/protocol'
 import { lazy, Suspense } from 'react'
 const McpAppView = lazy(() =>
   import('../../../ui/content/mcp-app').then((module) => ({ default: module.McpAppView })),
@@ -38,6 +40,11 @@ const activityStatus = (status: string) =>
       : status === 'interrupted'
         ? 'Interrupted'
         : ''
+function MobileMcpApp({ reference }: { reference: McpAppReference }) {
+  const conversationVisible = useConversationSelector((value) => value.visible)
+  const foreground = usePreviewActive()
+  return <McpAppView reference={reference} visible={conversationVisible && foreground} />
+}
 function MobileDiffText({ text, colors }: { text: string; colors: { text: string } }) {
   return (
     <>
@@ -142,7 +149,7 @@ export function ToolActivityRow({
       <ToolResultImages event={event} />
       {mcpAppReferences(event.payload).map((reference) => (
         <Suspense key={reference.id} fallback={<Text>Loading app…</Text>}>
-          <McpAppView reference={reference} />
+          <MobileMcpApp reference={reference} />
         </Suspense>
       ))}
       {artifactReferences(event.payload).map((reference) => (
@@ -184,7 +191,7 @@ export function ToolActivityRow({
           {showToolDetails &&
             !!detail.output &&
             (detail.kind === 'reasoning' ? (
-              <ThreadMarkdown text={detail.output} variant="chat" />
+              <ThreadMarkdown text={detail.output} variant="chat" streaming={running} />
             ) : (
               <Text
                 selectable
@@ -269,6 +276,7 @@ export function ReasoningActivity({ events }: { events: TaskToolEvent[] }) {
                 key={activityIdentity(event)}
                 text={detail.output || detail.input || detail.title}
                 variant="chat"
+                streaming={pendingActivity(event.status)}
               />
             )
           })}

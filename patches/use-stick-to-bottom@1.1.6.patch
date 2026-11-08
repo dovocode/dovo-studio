@@ -1,0 +1,35 @@
+diff --git a/dist/useStickToBottom.js b/dist/useStickToBottom.js
+index 7d659edace3f497dc867d3ce24d31180e18cf909..c0d092a2be3b669f1586c400f76c14638cd33613 100644
+--- a/dist/useStickToBottom.js
++++ b/dist/useStickToBottom.js
+@@ -128,11 +128,13 @@ export const useStickToBottom = (options = {}) => {
+             },
+         };
+     }, []);
++    const followRequest = useRef(0);
+     const scrollToBottom = useCallback((scrollOptions = {}) => {
+         if (typeof scrollOptions === "string") {
+             scrollOptions = { animation: scrollOptions };
+         }
+         if (!scrollOptions.preserveScrollPosition) {
++            followRequest.current += 1;
+             setIsAtBottom(true);
+         }
+         const waitElapsed = Date.now() + (Number(scrollOptions.wait) || 0);
+@@ -230,6 +232,7 @@ export const useStickToBottom = (options = {}) => {
+         if (target !== scrollRef.current) {
+             return;
+         }
++        const request = followRequest.current;
+         const { scrollTop, ignoreScrollToTop } = state;
+         let { lastScrollTop = scrollTop } = state;
+         state.lastScrollTop = scrollTop;
+@@ -251,6 +254,8 @@ export const useStickToBottom = (options = {}) => {
+          * @see https://github.com/WICG/resize-observer/issues/25#issuecomment-248757228
+          */
+         setTimeout(() => {
++            // A newer explicit follow action supersedes an already queued scroll event.
++            if (request !== followRequest.current) return;
+             /**
+              * When theres a resize difference ignore the resize event.
+              */

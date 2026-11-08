@@ -25,7 +25,7 @@ const savedRunsSchema = mutableStruct({
     ),
   ),
 })
-export function PullPipelineRuns({
+export function usePullPipelineRuns({
   repositoryId,
   sha,
   active = true,
@@ -52,7 +52,6 @@ export function PullPipelineRuns({
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [notice, setNotice] = useApplicationState('')
-  const [stale, setStale] = useApplicationState(false)
   const generation = useRef(0)
   const pending = useRef(false)
   const stored = useRef<ForgePipeline[]>([])
@@ -133,7 +132,6 @@ export function PullPipelineRuns({
         depth.current = cursor ? Math.min(500, depth.current + 1) : pages
         setRuns(items)
         setNext(page.next)
-        setStale(!!page.stale)
         setError(page.refreshError ?? '')
         try {
           await readCache?.write(cacheKey, {
@@ -148,7 +146,6 @@ export function PullPipelineRuns({
       } catch (cause) {
         if (current === generation.current) {
           setError(cause instanceof Error ? cause.message : String(cause))
-          setStale(true)
         }
       } finally {
         if (current === generation.current) {
@@ -180,7 +177,6 @@ export function PullPipelineRuns({
           depth.current = cached.value.loadedPages ?? 1
           setRuns(cached.value.items)
           setNext(cached.value.next)
-          setStale(true)
         }
       } catch {
         if (current === generation.current) setError('Saved pipeline runs could not be read.')
@@ -202,6 +198,50 @@ export function PullPipelineRuns({
       document.removeEventListener('visibilitychange', refresh)
     }
   }, [active, connected, cacheKey])
+  return {
+    selected,
+    setSelected,
+    repositoryId,
+    repository,
+    connected,
+    request,
+    runs,
+    next,
+    busy,
+    error,
+    notice,
+    load,
+  }
+}
+
+export function PullPipelineRuns(props: { repositoryId: string; sha: string; active?: boolean }) {
+  const state = usePullPipelineRuns(props)
+  return <PullPipelineRunsContent state={state} sha={props.sha} active={props.active} />
+}
+
+export function PullPipelineRunsContent({
+  state,
+  sha,
+  active = true,
+}: {
+  state: ReturnType<typeof usePullPipelineRuns>
+  sha: string
+  active?: boolean
+}) {
+  const {
+    selected,
+    setSelected,
+    repositoryId,
+    repository,
+    connected,
+    request,
+    runs,
+    next,
+    busy,
+    error,
+    notice,
+    load,
+  } = state
   if (selected)
     return (
       <div className="mb-5 min-w-0 rounded-xl border">
@@ -226,10 +266,9 @@ export function PullPipelineRuns({
     <section aria-label="Pull request pipeline runs" className="mb-5 min-w-0 rounded-xl border">
       <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
         <div className="mr-auto">
-          <h3 className="text-sm font-medium">Pipeline runs</h3>
+          <h3 className="text-sm font-medium">Linked pipeline runs</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            For commit <code>{sha.slice(0, 8)}</code>
-            {stale || !connected ? ' · Cached' : ''}
+            For commit <code>{sha.slice(0, 8)}</code> · Tracked separately from check reports.
           </p>
         </div>
         <Button
@@ -273,7 +312,8 @@ export function PullPipelineRuns({
                 </div>
                 <p className="mt-1 truncate text-sm font-medium">{run.title}</p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {run.workflow || run.ref} · {formatDateTime(run.updatedAt)}
+                  {run.workflow ? `Workflow: ${run.workflow}` : `Branch: ${run.ref}`} ·{' '}
+                  {formatDateTime(run.updatedAt)}
                 </p>
               </div>
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />

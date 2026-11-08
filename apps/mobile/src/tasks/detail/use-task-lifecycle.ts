@@ -1,4 +1,4 @@
-import { taskSnoozeOptions } from '@dovo/protocol'
+import { taskSnoozeMenuChoices } from '@dovo/protocol'
 import { readMobilePreferences } from '../../runtime/preferences/app-preferences'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
@@ -17,26 +17,29 @@ import {
   type Runtime,
 } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
-export { taskSnoozeOptions as snoozeOptions } from '@dovo/protocol'
-export function chooseSnoozeDuration(title: string, apply: (hours: number) => void) {
-  const show = (options: readonly (typeof taskSnoozeOptions)[number][], cancel: boolean) =>
+export function chooseSnoozeDuration(title: string, apply: (until: string) => void) {
+  const preferences = readMobilePreferences()
+  const options = taskSnoozeMenuChoices(
+    preferences.taskSnoozeMinutes,
+    preferences.taskSnoozeSchedule,
+  )
+  const show = (offset: number) => {
+    const page = Platform.OS === 'android' ? options.slice(offset, offset + 2) : options
+    const more = offset + page.length < options.length
     Alert.alert(
       title,
-      'The thread returns to Active when this duration ends.',
+      'The thread returns to Active at the chosen time. Calendar shortcuts use this device’s local time.',
       [
-        ...options.map(({ hours, label }) => ({ text: label, onPress: () => apply(hours) })),
-        ...(cancel ? [{ text: 'Cancel', style: 'cancel' as const }] : []),
+        ...page.map(({ until, label }) => ({ text: label, onPress: () => apply(until()) })),
+        ...(more
+          ? [{ text: 'More options…', onPress: () => show(offset + page.length) }]
+          : [{ text: 'Cancel', style: 'cancel' as const }]),
       ],
       { cancelable: true },
     )
-  // Android Alert supports at most three buttons. Keep every duration reachable.
-  if (Platform.OS === 'android') {
-    Alert.alert(title, 'Choose a snooze duration.', [
-      { text: 'Up to a day', onPress: () => show(taskSnoozeOptions.slice(0, 3), false) },
-      { text: 'Multiple days', onPress: () => show(taskSnoozeOptions.slice(3), false) },
-      { text: 'Cancel', style: 'cancel' },
-    ])
-  } else show(taskSnoozeOptions, true)
+  }
+  // Android Alert supports at most three buttons, including navigation/cancel.
+  show(0)
 }
 type LifecycleChanges = Partial<{
   [Key in 'pinned' | 'archived' | 'snoozedUntil']: {

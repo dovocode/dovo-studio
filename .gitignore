@@ -70,3 +70,5 @@ apps/design-system/storybook-static/
 # Generated isolated hosted-service catalog bundles and website assets
 apps/design-system/src/hosted-screens.generated.json
 apps/design-system/public/website/
+
+/apps/desktop/electron/generated/browser-json-viewer.json

@@ -2,8 +2,8 @@
 
 ## Set up
 
-Use Node.js 24.11 or newer and pnpm 12.3.4 (the versions are declared in the root `package.json`).
-From the repository root, install the locked dependencies with:
+Use Node.js 24.11 or newer and the pnpm version declared in the root `package.json`. From the
+repository root, install the locked dependencies with:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -59,6 +59,20 @@ a focused check. CI runs the same registry in four shards. Register new browser 
 `package.json`; the runner rejects unregistered `check-*-browser.mjs` files. New browser fixtures
 should use `scripts/browser/harness.mjs`, which checks for unused stubs and requires an importer for
 relative module replacements.
+
+Before pushing, run `pnpm verify:ci` for typechecking, unit/integration tests, formatting/lint,
+builds, packaging/CI script regressions, runtime synchronization, Expo configuration, Metro module
+validation and every registered browser suite (including the complete design-system audit).
+Verification builds first, so generated package exports exist even in a fresh checkout. It uses the
+same checks as CI and installs Playwright's managed Chromium. On Linux, install missing browser
+dependencies first with `pnpm exec playwright install --with-deps chromium`. To reproduce one CI
+browser shard, run `node scripts/run-browser-suites.mjs 3 4` (zero-based shard).
+`pnpm test:ci:scripts` runs the same packaging and CI script tests as the Check workflow.
+
+`verify:ci` covers the portable checks. CI additionally runs platform-specific Windows/macOS process
+tests, Electron/media checks under a window manager, native mobile builds, bundled model inference
+and TURN kernel/network-namespace checks; those need their respective OS, SDK or system
+dependencies. A local pass does not replace these hosted checks.
 
 Task, recovery, and automation integration tests share the bounded budgets in
 `packages/runtime/src/testing/integration.ts` because they run real Git commands. Use state

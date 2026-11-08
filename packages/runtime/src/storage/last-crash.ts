@@ -1,6 +1,6 @@
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { decodeResult, mutableStruct } from '@dovo/protocol'
+import { decodeResult, mutableStruct, redactCredentialText } from '@dovo/protocol'
 import { Schema } from 'effect'
 
 const recordSchema = mutableStruct({ at: Schema.String, message: Schema.String })
@@ -9,11 +9,13 @@ export function recordLastCrash(databasePath: string, error: unknown) {
   if (databasePath === ':memory:') return
   const record = {
     at: new Date().toISOString(),
-    message: (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(
-      0,
-      1000,
-    ),
-    stack: error instanceof Error ? error.stack?.slice(0, 4000) : undefined,
+    message: redactCredentialText(
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    ).slice(0, 1000),
+    stack:
+      error instanceof Error && error.stack
+        ? redactCredentialText(error.stack).slice(0, 4000)
+        : undefined,
   }
   const file = lastCrashFile(databasePath)
   writeFileSync(file, JSON.stringify(record), { mode: 0o600 })
@@ -31,7 +33,11 @@ export function readLastCrash(databasePath: string) {
     let value: { at: string; message: string } | null = null
     try {
       const parsed = decodeResult(recordSchema, JSON.parse(readFileSync(file, 'utf8')))
-      if (parsed.success) value = { at: parsed.data.at, message: parsed.data.message }
+      if (parsed.success)
+        value = {
+          at: parsed.data.at,
+          message: redactCredentialText(parsed.data.message).slice(0, 1000),
+        }
     } catch {
       value = null
     }

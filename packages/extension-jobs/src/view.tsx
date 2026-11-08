@@ -1,10 +1,12 @@
 import { randomUUID, resolveRuntimeTarget } from '@dovo/protocol'
 import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
+import { SearchField } from '@dovo/studio-ui/search-field'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { ArrowLeft, ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
+import { ArrowLeft, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
 import {
   clientScopeKey,
+  formatDateTime,
   isActiveRuntime,
   useWorkspace,
   type RuntimeConnection,
@@ -16,6 +18,7 @@ import {
   cn,
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogDescription,
   DialogTitle,
   EmptyState,
@@ -216,20 +219,15 @@ export default function JobsView({ entityId }: StudioViewProps) {
     setBusy(false)
   }, [pending, activeRuntimeId, connection, setWorkspace, runtimes])
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {!selected && (
-        <PageHeader
-          title="Automations"
-          description={
-            <>
-              {rows.length} automation{rows.length === 1 ? '' : 's'} across your computers
-            </>
-          }
-        >
+        <PageHeader title="Automations">
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
             aria-label="Refresh"
+            title="Refresh"
+            className="size-8"
             disabled={busy || refreshing}
             onClick={() => {
               setRefreshing(true)
@@ -239,7 +237,6 @@ export default function JobsView({ entityId }: StudioViewProps) {
             }}
           >
             <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
-            <span className="sr-only sm:not-sr-only">Refresh</span>
           </Button>
           <Button
             size="sm"
@@ -269,84 +266,110 @@ export default function JobsView({ entityId }: StudioViewProps) {
         <div
           style={selected && !sidebarVisible ? { display: 'none' } : undefined}
           className={cn(
-            'studio-side-panel min-h-0 min-w-0 flex-col',
-            selected ? 'hidden w-72 shrink-0 border-r lg:flex' : 'flex flex-1',
+            'studio-side-panel min-h-0 min-w-0 flex-col bg-background',
+            selected ? 'hidden w-72 shrink-0 lg:flex' : 'flex flex-1',
           )}
         >
           <SidebarHeader enabled={!!selected} />
-          <div className="p-3">
-            <Input
-              aria-label="Search automations"
-              placeholder="Search automations, projects or computers…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-          <nav
-            aria-label="Automations across computers"
-            className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+          <div
+            className={cn(
+              'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+              selected ? 'studio-overview-pane bg-sidebar' : 'bg-background',
+            )}
           >
-            {visible.map((row) => (
-              <button
-                key={row.key}
-                disabled={busy}
-                aria-current={chosen?.key === row.key ? 'true' : undefined}
-                onClick={() => void open(row)}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-accent disabled:opacity-60',
-                  chosen?.key === row.key && 'bg-accent',
-                )}
-              >
-                <Workflow className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{row.flow.name}</span>
-                  <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    <Monitor className="size-3 shrink-0" />
-                    <span className="truncate">
-                      {row.runtimeName}
-                      {row.projects.length ? ` · ${row.projects.join(', ')}` : ''}
-                      {!row.runtime.connected ? ' · Offline' : ''}
+            <div className="shrink-0 border-b border-border/70 px-3 py-2">
+              <SearchField
+                aria-label="Search automations"
+                placeholder="Search automations, projects or computers…"
+                value={search}
+                onValueChange={setSearch}
+              />
+            </div>
+            <p
+              role="status"
+              className="shrink-0 border-b border-border/70 px-3 py-2 text-xs text-muted-foreground"
+            >
+              {visible.length} automation{visible.length === 1 ? '' : 's'}
+              {query ? ` of ${rows.length}` : ' across your computers'}
+            </p>
+            <nav
+              aria-label="Automations across computers"
+              className="min-h-0 flex-1 divide-y divide-border/50 overflow-y-auto px-3 py-2"
+            >
+              {visible.map((row) => (
+                <button
+                  key={row.key}
+                  disabled={busy}
+                  aria-current={chosen?.key === row.key ? 'true' : undefined}
+                  onClick={() => void open(row)}
+                  className={cn(
+                    'studio-collection-row w-full text-left disabled:opacity-60',
+                    chosen?.key === row.key && 'bg-accent',
+                  )}
+                >
+                  <span className="studio-collection-body">
+                    <span className="studio-collection-meta">
+                      <span
+                        className={cn(
+                          'studio-collection-status',
+                          row.needsInput || row.latest?.status === 'waiting'
+                            ? 'text-status-warning'
+                            : row.latest?.status === 'failed'
+                              ? 'text-destructive'
+                              : 'text-muted-foreground',
+                        )}
+                      >
+                        <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+                        {row.status}
+                      </span>
+                      {!row.runtime.connected && <span>Offline · Last saved state</span>}
+                    </span>
+                    <span className="studio-collection-title truncate">{row.flow.name}</span>
+                    <span className="studio-collection-context">
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <Monitor className="size-3 shrink-0" />
+                        <span className="truncate">{row.runtimeName}</span>
+                      </span>
+                      {row.projects.length > 0 && (
+                        <span className="truncate">{row.projects.join(', ')}</span>
+                      )}
                     </span>
                   </span>
-                  <span
-                    className={cn(
-                      'mt-1 block text-xs',
-                      row.needsInput || row.latest?.status === 'waiting'
-                        ? 'text-status-warning'
-                        : row.latest?.status === 'failed'
-                          ? 'text-destructive'
-                          : 'text-muted-foreground',
-                    )}
-                  >
-                    {row.runtime.connected ? row.status : `Last seen: ${row.status.toLowerCase()}`}
-                    {row.latest
-                      ? ` · ${new Date(row.latest.updatedAt ?? row.latest.createdAt).toLocaleDateString()}`
-                      : ''}
-                  </span>
-                </span>
-                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
-              </button>
-            ))}
-            {!visible.length && (
-              <EmptyState
-                icon={<Workflow />}
-                title={query ? 'No matching automations' : 'Automate repeatable work'}
-                description={
-                  query
-                    ? 'Search by automation, project or computer.'
-                    : 'Create an automation on one of your computers. Its runs appear here alongside your other work.'
-                }
-              />
-            )}
-            {entries
-              .filter((entry) => !entry.snapshot)
-              .map((entry) => (
-                <p key={entry.profile.id} className="px-3 py-2 text-xs text-muted-foreground">
-                  {entry.profile.name}:{' '}
-                  {entry.error ? 'Could not load saved automations.' : 'Loading automations…'}
-                </p>
+                  {row.latest && (
+                    <time
+                      className="studio-collection-date"
+                      dateTime={row.latest.updatedAt ?? row.latest.createdAt}
+                      title={`Last run updated ${formatDateTime(row.latest.updatedAt ?? row.latest.createdAt)}`}
+                    >
+                      {formatDateTime(row.latest.updatedAt ?? row.latest.createdAt, {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </time>
+                  )}
+                </button>
               ))}
-          </nav>
+              {!visible.length && (
+                <EmptyState
+                  icon={<Workflow />}
+                  title={query ? 'No matching automations' : 'Automate repeatable work'}
+                  description={
+                    query
+                      ? 'Search by automation, project or computer.'
+                      : 'Create an automation on one of your computers. Its runs appear here alongside your other work.'
+                  }
+                />
+              )}
+              {entries
+                .filter((entry) => !entry.snapshot)
+                .map((entry) => (
+                  <p key={entry.profile.id} className="px-3 py-2 text-xs text-muted-foreground">
+                    {entry.profile.name}:{' '}
+                    {entry.error ? 'Could not load saved automations.' : 'Loading automations…'}
+                  </p>
+                ))}
+            </nav>
+          </div>
         </div>
         {selected && (
           <div className="min-h-0 min-w-0 flex-1">
@@ -401,7 +424,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
         <DialogContent>
           <DialogTitle>New automation</DialogTitle>
           <DialogDescription>Choose where it runs, then connect its steps.</DialogDescription>
-          <label className="space-y-2 text-sm">
+          <label className="grid gap-2 text-xs text-muted-foreground">
             <span>Name</span>
             <Input
               autoFocus
@@ -411,7 +434,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
               disabled={busy}
             />
           </label>
-          <label className="space-y-2 text-sm">
+          <label className="grid gap-2 text-xs text-muted-foreground">
             <span>Run on</span>
             <ChoicePicker
               aria-label="Automation computer"
@@ -432,16 +455,21 @@ export default function JobsView({ entityId }: StudioViewProps) {
               {error}
             </p>
           )}
-          <Button
-            disabled={
-              busy ||
-              !name.trim() ||
-              !entries.find((entry) => entry.profile.id === owner)?.connected
-            }
-            onClick={() => void startCreation()}
-          >
-            {busy ? 'Creating…' : 'Create automation'}
-          </Button>
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setCreating(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                busy ||
+                !name.trim() ||
+                !entries.find((entry) => entry.profile.id === owner)?.connected
+              }
+              onClick={() => void startCreation()}
+            >
+              {busy ? 'Creating…' : 'Create automation'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </section>

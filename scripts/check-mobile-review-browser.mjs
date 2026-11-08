@@ -21,7 +21,7 @@ const built = await bundleBrowser(
         const root=createRoot(document.getElementById('app'));
         window.renderDiff=()=>root.render(<DiffView {...window.diffOptions}/>);
         window.renderSaved=()=>root.render(<SavedFilePreview taskId="task" turnId="turn" checkoutId="link" file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}}/>);
-        window.previewCalls=[];window.previewCall=async(path,input)=>{window.previewCalls.push({path,input});if(window.failFull&&input.full)throw Error('Full diff unavailable');const prefix='same line\\n'.repeat(12000);return {before:{kind:'text',size:prefix.length+10,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+10,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full}}};
+        window.previewCalls=[];window.previewCall=async(path,input)=>{window.previewCalls.push({path,input});if(window.failFull&&input.full)throw Error('Full diff unavailable');const prefix='same line\\n'.repeat(12000);return {before:{kind:'text',size:prefix.length+10,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+10,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full},...(input.full&&input.patch?{patch:'--- a/large.txt\\n+++ b/large.txt\\n@@ -12001 +12001 @@\\n-old tail\\n+new tail\\n'}:{})}};
         window.renderCode=()=>root.render(<CodeBlock content={window.source} language={window.language}/>);
         window.diffOptions={path:'Card.tsx',patch:'--- a/file\\n+++ b/file\\n@@ -1,2 +1,2 @@\\n-export const old = <span title="old" />;\\n+export const next = <span title="new" />;\\n context\\n',focusedLine:1,onLinePress:(line,side)=>window.comment={line,side},annotations:[{line:1,side:'additions',text:'Check persistence'}]};
         window.renderDiff();`,
@@ -42,7 +42,7 @@ const built = await bundleBrowser(
       path: '../../runtime/connection/provider',
       importer: mobile,
       contents:
-        'export const useRuntime=()=>({call:window.previewCall,connection:{address:"http://computer.test",token:"paired-token"}});',
+        'export const useRuntime=()=>({call:window.previewCall,read:window.previewCall,connection:{address:"http://computer.test",token:"paired-token"}});',
     },
     {
       path: './syntax-engine',
@@ -308,6 +308,7 @@ try {
       window.previewCalls.some(
         (call) =>
           call.input.full &&
+          call.input.patch === true &&
           call.input.id === 'task' &&
           call.input.turnId === 'turn' &&
           call.input.checkoutId === 'link',

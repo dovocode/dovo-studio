@@ -21,6 +21,7 @@ export class PeerUpgrades {
   constructor(
     private readonly devices: Devices,
     private readonly now = () => Date.now(),
+    private readonly policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {}
   private cleanup() {
     if (!this.requests.size) return
@@ -39,6 +40,7 @@ export class PeerUpgrades {
         this.requests.delete(deviceId)
   }
   request(deviceId: string, relay?: PeerRelayProvider) {
+    this.policy?.require('connect')
     this.cleanup()
     const device = this.devices.list().find((d) => d.id === deviceId && !d.revokedAt)
     if (!device || deviceId === 'owner') throw new HttpError(403, 'A paired phone is required')
@@ -64,6 +66,7 @@ export class PeerUpgrades {
     return [...this.requests.values()].filter((r) => r.status === 'pending').map((r) => ({ ...r }))
   }
   approve(id: string, allow: boolean) {
+    if (allow) this.policy?.require('connect')
     this.cleanup()
     const request = [...this.requests.values()].find((r) => r.id === id)
     if (!request || request.status !== 'pending')
@@ -89,6 +92,7 @@ export class PeerUpgrades {
     enable: (relay?: PeerRelayProvider) => Promise<PeerConfig>,
     disable: () => void,
   ) {
+    this.policy?.require('connect')
     const request = this.find(deviceId, id)
     if (request.status !== 'approved') return { ...request }
     try {

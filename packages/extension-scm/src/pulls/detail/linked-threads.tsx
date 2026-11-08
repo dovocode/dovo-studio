@@ -26,20 +26,15 @@ export function PullLinkedThreads({ pull }: { pull: PullSummary }) {
     ).map((task) => ({ task, runtime })),
   )
   return (
-    <section aria-label="Linked Studio threads" className="mb-4 space-y-1 rounded-lg border p-3">
+    <section aria-label="Linked Studio threads" className="mb-3 space-y-1 border-b pb-2">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-xs font-medium text-muted-foreground">
-          Linked threads · {threads.length}
+          {threads.length ? `Linked threads · ${threads.length}` : 'No linked threads'}
         </h2>
         <Button variant="ghost" size="sm" onClick={() => setLinking(true)}>
           Link thread
         </Button>
       </div>
-      {!threads.length && (
-        <p className="text-xs text-muted-foreground">
-          Link an existing thread to continue working on this PR.
-        </p>
-      )}
       {linking && <AddPullsToThread pulls={[pull]} onClose={() => setLinking(false)} />}
       {threads.map(({ task, runtime }) => (
         <Button

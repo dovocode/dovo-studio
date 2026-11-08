@@ -1,16 +1,15 @@
+import { terminalFileLinks, type TerminalFileLink } from './terminal-file-links'
 import { createRuntimeClient } from '@dovo/protocol'
-import { terminalInputFrames } from '@dovo/studio-core'
-import {
-  startReconnecting,
-  startSocketHeartbeat,
-  useAppPreferences,
-  fontStack,
-  systemMonoFont,
-} from '@dovo/studio-core'
+import { startReconnecting, useAppPreferences, fontStack, systemMonoFont } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
+import {
+  BrowserTerminal,
+  openElectronTerminalPort,
+  terminalDropPaths,
+  type BrowserTerminalOptions,
+} from '@dovo/terminal'
+import { terminalFontSources } from '@dovo/studio-ui/terminal-fonts'
 import { responses, useWorkspace, useStudioTheme, useResolvedTheme } from '@dovo/studio-core'
 import { terminalSelection } from './terminal-selection'
 import { ContextMenu } from '@dovo/studio-ui'
@@ -21,24 +20,35 @@ export function TerminalSession({
   id,
   active,
   onAddSelection,
+  onOpenFile,
+  focusRequest = 0,
   readOnly = false,
 }: {
   id: string
   active: boolean
   onAddSelection?: (text: string) => void
+  onOpenFile?: (file: TerminalFileLink) => Promise<void>
+  focusRequest?: number
   readOnly?: boolean
 }) {
   const { connection, request, connected } = useWorkspace(),
     container = useRef<HTMLDivElement>(null),
-    [error, setError] = useApplicationState(''),
-    [fontError, setFontError] = useApplicationState('')
+    [error, setError] = useApplicationState('')
   const [selectionError, setSelectionError] = useApplicationState('')
   const [hasSelection, setHasSelection] = useApplicationState(false)
   const [writable, setWritable] = useApplicationState(false)
   const [actionError, setActionError] = useApplicationState('')
+  const fileHandler = useRef(onOpenFile)
+  fileHandler.current = onOpenFile
   const actionScope = useRef(0)
   const canWriteRef = useRef<(() => boolean) | null>(null)
-  const menuContext = useRef<{ terminal: Terminal; scope: number; selection: string } | null>(null)
+  const inputAllowedRef = useRef(false)
+  inputAllowedRef.current = active && connected && !readOnly
+  const menuContext = useRef<{
+    terminal: BrowserTerminal
+    scope: number
+    selection: string
+  } | null>(null)
   useLayoutEffect(() => {
     actionScope.current++
     setActionError('')
@@ -51,7 +61,7 @@ export function TerminalSession({
   const mode = useResolvedTheme()
   const terminalTheme = useMemo(
     () => ({
-      background: colors.card,
+      background: colors.background,
       foreground: colors.foreground,
       cursor: colors.primary,
       cursorAccent: colors.background,
@@ -75,110 +85,126 @@ export function TerminalSession({
     }),
     [colors, mode],
   )
-  const themeRef = useRef(terminalTheme)
-  themeRef.current = terminalTheme
-  const resizeRef = useRef<(() => void) | null>(null)
-  const terminalRef = useRef<Terminal | null>(null)
+  const terminalOptions = useMemo<BrowserTerminalOptions>(
+    () => ({
+      fontFamily: fontStack(terminalFontFamily, systemMonoFont),
+      fontSize: terminalFontSize,
+      theme: terminalTheme,
+      scrollbackBytes: 16 * 1024 * 1024,
+      fonts: terminalFontFamily === 'JetBrains Mono Nerd Font' ? terminalFontSources : [],
+    }),
+    [terminalFontFamily, terminalFontSize, terminalTheme],
+  )
+  const optionsRef = useRef(terminalOptions)
+  optionsRef.current = terminalOptions
+  const terminalRef = useRef<BrowserTerminal | null>(null)
   useEffect(() => {
     if (!container.current || !connection) return
-    let socket: WebSocket | undefined
+    let writable = false
     setWritable(false)
     setHasSelection(false)
-    canWriteRef.current = () => socket?.readyState === WebSocket.OPEN
-    const terminal = new Terminal({
-        fontSize: 12,
-        fontFamily: systemMonoFont,
-        theme: themeRef.current,
-        scrollback: 5000,
-      }),
-      fit = new FitAddon()
-    terminal.loadAddon(fit)
+    canWriteRef.current = () => writable
+    const terminal = new BrowserTerminal(optionsRef.current)
     terminalRef.current = terminal
+    terminal.onError = (cause) => setError(cause.message)
+    terminal.onDrop = (data) => {
+      const scope = actionScope.current
+      setActionError('')
+      void (async () => {
+        if (!canWriteRef.current?.() || !inputAllowedRef.current)
+          throw new Error('Terminal is not writable.')
+        // Resolve the native files while the drop event still owns its data.
+        const paths = terminalDropPaths(data)
+        if (!paths.length) return
+        const result = await request(
+          '/api/terminals/quote-paths',
+          { id, paths },
+          responses.terminalPaths,
+        )
+        if (scope !== actionScope.current || !canWriteRef.current?.() || !inputAllowedRef.current)
+          return
+        terminal.paste(result.text)
+        terminal.focus()
+      })().catch((cause: unknown) => {
+        if (scope === actionScope.current)
+          setActionError(
+            `Could not insert file paths: ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
+      })
+    }
+    terminal.onActivate = (point, viewport) => {
+      const handler = fileHandler.current
+      if (!handler) return
+      let first = point.y,
+        last = point.y
+      while (first > 0 && viewport.lines[first - 1]?.wrapped && point.y - first < 16) first--
+      while (viewport.lines[last]?.wrapped && last - first < 16 && last < viewport.lines.length - 1)
+        last++
+      let text = '',
+        offset = 0
+      for (let row = first; row <= last; row++) {
+        const line = viewport.lines[row]
+        if (!line) continue
+        if (row === point.y) {
+          offset = text.length
+          let column = 0
+          for (let index = 0; index < line.text.length; index++) {
+            if (column > point.x) break
+            offset = text.length + index
+            column += line.widths[index] ?? 0
+          }
+        }
+        text += line.text
+      }
+      const file = terminalFileLinks(text).find((file) => offset >= file.start && offset < file.end)
+      if (!file) return
+      const scope = actionScope.current
+      setActionError('')
+      void handler({
+        path: file.path,
+        line: file.line,
+        ...(file.column ? { column: file.column } : {}),
+      }).catch((cause: unknown) => {
+        if (scope === actionScope.current)
+          setActionError(
+            `Could not open terminal file (relative paths use the terminal’s starting directory): ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
+      })
+    }
     terminal.open(container.current)
     const selection = terminal.onSelectionChange(() => {
       setHasSelection(terminal.hasSelection())
       setSelectionError('')
     })
-    const resize = () => {
-      if (container.current?.clientWidth && container.current.clientHeight) {
-        fit.fit()
-        if (socket?.readyState === WebSocket.OPEN)
-          socket.send(
-            JSON.stringify({
-              type: 'resize',
-              cols: terminal.cols,
-              rows: terminal.rows,
-            }),
-          )
-      }
-    }
-    resizeRef.current = resize
-    const observer = new ResizeObserver(resize)
-    observer.observe(container.current)
-    const input = terminal.onData((data) => {
-      if (socket?.readyState === WebSocket.OPEN)
-        for (const frame of terminalInputFrames(data)) socket.send(JSON.stringify(frame))
-    })
     const reconnect = startReconnecting(
       async (signal, connected) => {
         const ticket = await request('/api/terminals/ticket', { id }, responses.ticket)
         if (signal.aborted) return
-        const url = createRuntimeClient(connection).socketUrl('/ws/terminal', ticket)
-        await new Promise<void>((resolve, reject) => {
-          const current = new WebSocket(url)
-          current.binaryType = 'arraybuffer'
-          let heartbeat: ReturnType<typeof startSocketHeartbeat> | undefined
-          socket = current
-          const cleanup = () => {
-            actionScope.current++
-            heartbeat?.stop()
-            clearTimeout(timeout)
-            signal.removeEventListener('abort', abort)
-            current.onopen = current.onmessage = current.onerror = current.onclose = null
-            current.close()
-            if (socket === current) socket = undefined
-            setWritable(false)
-          }
-          const abort = () => {
-            cleanup()
-            resolve()
-          }
-          const fail = (message: string) => {
-            cleanup()
-            reject(new Error(message))
-          }
-          const timeout = setTimeout(
-            () => fail('Terminal connection timed out. Reconnecting…'),
-            10000,
+        const url = new URL(createRuntimeClient(connection).socketUrl('/ws/terminal', ticket))
+        url.searchParams.set('stream', 'binary-v1')
+        const port = await openElectronTerminalPort(url.href, signal)
+        try {
+          await terminal.connect(
+            url.href,
+            signal,
+            () => {
+              connected()
+              writable = true
+              setWritable(true)
+              setError('')
+            },
+            port,
           )
-          signal.addEventListener('abort', abort, { once: true })
-          current.onopen = () => {
-            clearTimeout(timeout)
-            connected()
-            setWritable(true)
-            terminal.reset()
-            setError('')
-            resize()
-            heartbeat = startSocketHeartbeat(
-              (message) => current.send(message),
-              () => fail('Terminal stopped responding. Reconnecting…'),
-            )
-          }
-          current.onmessage = (event) => {
-            if (typeof event.data === 'string') terminal.write(event.data)
-            else heartbeat?.receive(event.data)
-          }
-          current.onerror = () => fail('Terminal connection failed. Reconnecting…')
-          current.onclose = () => fail('Terminal disconnected. Reconnecting…')
-        })
+        } finally {
+          writable = false
+          setWritable(false)
+          actionScope.current++
+        }
       },
-      (error) => setError(error.message),
+      (cause) => setError(cause.message),
     )
-    // Only replace a socket that is not open; the heartbeat already detects dead ones, and a
-    // restart resets the screen and loses the cursor and scroll position.
     const wake = () => {
-      if (document.visibilityState === 'visible' && socket?.readyState !== WebSocket.OPEN)
-        reconnect.restart()
+      if (document.visibilityState === 'visible' && !writable) reconnect.restart()
     }
     window.addEventListener('online', wake)
     document.addEventListener('visibilitychange', wake)
@@ -186,43 +212,24 @@ export function TerminalSession({
       window.removeEventListener('online', wake)
       document.removeEventListener('visibilitychange', wake)
       void reconnect.stop()
-      input.dispose()
-      observer.disconnect()
       selection.dispose()
       terminal.dispose()
       terminalRef.current = null
-      resizeRef.current = null
       canWriteRef.current = null
     }
   }, [id, connection, request])
   useEffect(() => {
-    if (terminalRef.current) terminalRef.current.options.theme = terminalTheme
-  }, [terminalTheme])
+    terminalRef.current?.configure(terminalOptions)
+  }, [terminalOptions])
   useEffect(() => {
-    const terminal = terminalRef.current
-    if (!terminal) return
-    let cancelled = false
-    const family = fontStack(terminalFontFamily, systemMonoFont)
-    // Measure cells only once the font is available, including bold prompt/icon text.
-    void Promise.all([
-      document.fonts.load(`400 ${terminalFontSize}px ${family}`),
-      document.fonts.load(`700 ${terminalFontSize}px ${family}`),
-    ])
-      .then(() => {
-        if (cancelled) return
-        setFontError('')
-        terminal.options.fontFamily = family
-        terminal.options.fontSize = terminalFontSize
-        resizeRef.current?.()
-        terminal.refresh(0, terminal.rows - 1)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setFontError(`Could not load terminal font: ${String(error)}`)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [terminalFontFamily, terminalFontSize, id, connection, request, active, setFontError])
+    terminalRef.current?.setInputEnabled(active && connected && !readOnly)
+  }, [active, connected, readOnly, id, connection, request])
+  useEffect(() => {
+    terminalRef.current?.setVisible(active)
+  }, [active])
+  useEffect(() => {
+    if (active && focusRequest) terminalRef.current?.focus()
+  }, [active, focusRequest])
   const currentMenu = () => {
     const context = menuContext.current
     return context &&
@@ -272,7 +279,7 @@ export function TerminalSession({
     >
       <ContextMenu.Trigger asChild>
         <div className={active ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'hidden'}>
-          <div ref={container} className="h-full p-2" />
+          <div ref={container} className="h-full p-3" />
           {onAddSelection && hasSelection && (
             <button
               type="button"
@@ -287,9 +294,9 @@ export function TerminalSession({
               {selectionError}
             </p>
           )}
-          {(actionError || error || fontError) && (
+          {(actionError || error) && (
             <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
-              {actionError || error || fontError}
+              {actionError || error}
             </p>
           )}
         </div>

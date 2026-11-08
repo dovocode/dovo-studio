@@ -111,12 +111,14 @@ it('removes a partially copied checkout after failure and keeps its branch for r
   const target = join(f.directory, 'new-worktree')
   await writeFile(join(f.directory, '.worktreeinclude'), '.env.local')
   await writeFile(join(f.directory, '.env.local'), 'configuration')
-  const command = git.command.bind(git)
-  const spy = vi.spyOn(git, 'command').mockImplementation(async (cwd, args, env) => {
-    const result = await command(cwd, args, env)
-    if (args[0] === 'worktree' && args[1] === 'add') await rm(join(f.directory, '.env.local'))
-    return result
-  })
+  const command = git.checkoutCommand.bind(git)
+  const spy = vi
+    .spyOn(git, 'checkoutCommand')
+    .mockImplementation(async (cwd, args, signal, env) => {
+      const result = await command(cwd, args, signal, env)
+      if (args[0] === 'worktree' && args[1] === 'add') await rm(join(f.directory, '.env.local'))
+      return result
+    })
   try {
     await expect(
       git.addWorktree(f.directory, target, ['-b', 'include-retry', target, 'HEAD']),

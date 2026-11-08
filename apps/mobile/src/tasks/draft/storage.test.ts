@@ -23,6 +23,142 @@ function memoryStorage(values = new Map<string, string>()) {
 }
 
 describe('persistent draft ordering', () => {
+  it('retains uncertain side-chat create IDs across reopening and restart', async () => {
+    const storage = memoryStorage()
+    const drafts = createDraftStorage(storage)
+    expect(
+      await runClientEffect(
+        drafts.prepareSideThreadEffect('parent', 'child-one', 'Question', 'Keep draft'),
+      ),
+    ).toBe('child-one')
+    const reopened = createDraftStorage(storage)
+    expect(
+      await runClientEffect(
+        reopened.prepareSideThreadEffect('parent', 'child-two', 'Question', 'Old draft'),
+      ),
+    ).toBe('child-one')
+    await runClientEffect(reopened.finishSideThreadEffect('parent', 'child-one'))
+    expect(
+      await runClientEffect(
+        reopened.prepareSideThreadEffect('parent', 'child-three', 'Question', 'Old draft'),
+      ),
+    ).toBe('child-three')
+    expect(await reopened.read('parent')).toBe('Keep draft')
+  })
+
+  it('persists a failed creation journal before allowing its retry', async () => {
+    const storage = memoryStorage()
+    let fail = true
+    const drafts = createDraftStorage({
+      ...storage,
+      setItem: async (key, value) => {
+        if (fail) throw new Error('Disk unavailable')
+        await storage.setItem(key, value)
+      },
+    })
+    await expect(
+      runClientEffect(drafts.prepareSideThreadEffect('parent', 'child-one', 'Question', 'Draft')),
+    ).rejects.toThrow('Disk unavailable')
+    await expect(
+      runClientEffect(drafts.prepareSideThreadEffect('parent', 'child-two', 'Question', 'Draft')),
+    ).rejects.toThrow('Disk unavailable')
+    fail = false
+    expect(
+      await runClientEffect(
+        drafts.prepareSideThreadEffect('parent', 'child-two', 'Question', 'Draft'),
+      ),
+    ).toBe('child-one')
+    expect(
+      await runClientEffect(
+        createDraftStorage(storage).prepareSideThreadEffect(
+          'parent',
+          'child-three',
+          'Question',
+          'Draft',
+        ),
+      ),
+    ).toBe('child-one')
+  })
+
+  it('migrates an unopened legacy draft before bringing a side-thread result back', async () => {
+    const values = new Map([['dovo.draft.parent', 'Legacy local edits']])
+    const drafts = createDraftStorage(memoryStorage(values))
+    await runClientEffect(
+      drafts.appendEffect(
+        'runtime.parent',
+        'Result',
+        'Server draft',
+        'child:turn',
+        'dovo.draft.parent',
+      ),
+    )
+    expect(await drafts.read('runtime.parent')).toBe('Legacy local edits\n\nResult')
+    expect(values.has('dovo.draft.parent')).toBe(false)
+  })
+
+  it('uses receipts rather than matching text for existing local drafts', async () => {
+    const drafts = createDraftStorage(memoryStorage())
+    await drafts.write('runtime.parent', 'A result the user already typed')
+    await runClientEffect(
+      drafts.appendEffect('runtime.parent', 'A result the user already typed', '', 'new-receipt'),
+    )
+    expect(await drafts.read('runtime.parent')).toBe(
+      'A result the user already typed\n\nA result the user already typed',
+    )
+  })
+  it('brings side-thread results into local drafts once across retries and restarts', async () => {
+    const storage = memoryStorage()
+    const drafts = createDraftStorage(storage)
+    await drafts.write('runtime.parent', 'Unsent local edits')
+    await runClientEffect(
+      drafts.appendEffect('runtime.parent', '[child:turn] Answer', 'Server draft', 'child:turn'),
+    )
+    expect(await drafts.read('runtime.parent')).toBe('Unsent local edits\n\n[child:turn] Answer')
+    const reopened = createDraftStorage(storage)
+    await runClientEffect(
+      reopened.appendEffect('runtime.parent', '[child:turn] Answer', '', 'child:turn'),
+    )
+    expect(await reopened.read('runtime.parent')).toBe('Unsent local edits\n\n[child:turn] Answer')
+    await reopened.write('runtime.parent', 'A different draft after sending')
+    await runClientEffect(
+      reopened.appendEffect('runtime.parent', '[child:turn] Answer', '', 'child:turn'),
+    )
+    expect(await reopened.read('runtime.parent')).toBe('A different draft after sending')
+  })
+
+  it('recognizes a handoff already present in the server draft on a new device', async () => {
+    const drafts = createDraftStorage(memoryStorage())
+    await runClientEffect(
+      drafts.appendEffect(
+        'runtime.parent',
+        '[child:turn] Answer',
+        'Server draft\n\n[child:turn] Answer',
+        'child:turn',
+      ),
+    )
+    expect(await drafts.read('runtime.parent')).toBe('Server draft\n\n[child:turn] Answer')
+  })
+
+  it('retries a failed receipt save without losing or duplicating the handoff', async () => {
+    const storage = memoryStorage()
+    let fail = true
+    const drafts = createDraftStorage({
+      ...storage,
+      setItem: async (key, value) => {
+        if (fail) {
+          fail = false
+          throw new Error('Disk unavailable')
+        }
+        await storage.setItem(key, value)
+      },
+    })
+    await expect(
+      runClientEffect(drafts.appendEffect('runtime.parent', 'Answer', 'Draft', 'child:turn')),
+    ).rejects.toThrow('Disk unavailable')
+    await runClientEffect(drafts.appendEffect('runtime.parent', 'Answer', 'Draft', 'child:turn'))
+    expect(await createDraftStorage(storage).read('runtime.parent')).toBe('Draft\n\nAnswer')
+  })
+
   it('updates a reopened composer when the old screen acknowledges its send', async () => {
     const values = new Map([['runtime.task', 'Send this message']])
     const drafts = createDraftStorage(memoryStorage(values))
@@ -163,35 +299,40 @@ const submission = {
   id: 'sent-message',
   text: 'Send this message',
   attachmentIds: ['attachment'],
+  preserveQueuePause: true,
   mode: 'queue' as const,
   turnSettings: { provider: 'codex' as const, model: 'large', reasoning: 'high' },
 }
 
-it('persists delivery identity with the draft before sending and restores it after a process restart', async () => {
-  const { Effect } = await import('effect')
-  const { createSendAttempts } = await import('../composer/send-attempts')
-  const values = new Map<string, string>()
-  const storage = memoryStorage(values)
-  const first = createDraftStorage(storage)
-  await first.write('runtime.task', submission.text)
-  await Effect.runPromise(first.stageEffect('runtime.task', submission, submission.text))
-  const restarted = createDraftStorage(storage)
-  const recovered = await Effect.runPromise(restarted.readRecordEffect('runtime.task'))
-  expect(recovered).toEqual({
-    text: submission.text,
-    submission: { attempt: submission, accepted: false },
-  })
-  const attempts = createSendAttempts(() => 'new-id')
-  const scope = { runtimeId: 'runtime', taskId: 'task' }
-  if (!recovered?.submission) throw new Error('Submission was not saved')
-  attempts.restore(scope, recovered.submission.attempt)
-  expect(attempts.begin(scope, submission).id).toBe(submission.id)
-  expect(
-    attempts.reconcile(scope, { text: submission.text, attachmentIds: [] }, [submission.id]),
-  ).toBe(true)
-  await Effect.runPromise(restarted.confirmEffect('runtime.task', submission, true))
-  expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
-})
+it.each(['queue', 'direct'] as const)(
+  'persists %s delivery identity with the draft and restores it after a process restart',
+  async (mode) => {
+    const attempt = { ...submission, mode, preserveQueuePause: mode === 'queue' }
+    const { Effect } = await import('effect')
+    const { createSendAttempts } = await import('../composer/send-attempts')
+    const values = new Map<string, string>()
+    const storage = memoryStorage(values)
+    const first = createDraftStorage(storage)
+    await first.write('runtime.task', attempt.text)
+    await Effect.runPromise(first.stageEffect('runtime.task', attempt, attempt.text))
+    const restarted = createDraftStorage(storage)
+    const recovered = await Effect.runPromise(restarted.readRecordEffect('runtime.task'))
+    expect(recovered).toEqual({
+      text: attempt.text,
+      submission: { attempt, accepted: false },
+    })
+    const attempts = createSendAttempts(() => 'new-id')
+    const scope = { runtimeId: 'runtime', taskId: 'task' }
+    if (!recovered?.submission) throw new Error('Submission was not saved')
+    attempts.restore(scope, recovered.submission.attempt)
+    expect(attempts.begin(scope, attempt).id).toBe(attempt.id)
+    expect(attempts.reconcile(scope, { text: attempt.text, attachmentIds: [] }, [attempt.id])).toBe(
+      true,
+    )
+    await Effect.runPromise(restarted.confirmEffect('runtime.task', attempt, true))
+    expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
+  },
+)
 
 it('keeps accepted message metadata and clearing together, even without a cached server snapshot', async () => {
   const { Effect } = await import('effect')

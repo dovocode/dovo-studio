@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -13,14 +14,14 @@ const mocks = {
   '../ui/content/format-date': `export const formatDateTime=value=>value;`,
   '../ui/controls/pill': `export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
   '../screens/settings-controls': `export {Choice as SettingsChoice} from '../ui/controls/choice';export {Field as SettingsField} from '../ui/controls/field';export {Action as SettingsAction} from '../ui/controls/action';`,
-  'react-native': `const css=value=>{const s=Object.assign({},...[value??{}].flat());if(s.paddingHorizontal!==undefined){s.paddingLeft=s.paddingRight=s.paddingHorizontal;delete s.paddingHorizontal}if(s.paddingVertical!==undefined){s.paddingTop=s.paddingBottom=s.paddingVertical;delete s.paddingVertical}return s};export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,horizontal})=><div aria-label={accessibilityLabel} style={{minHeight:0,minWidth:0,overflow:'auto',...css(style)}}><div style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...css(contentContainerStyle)}}>{children}</div></div>;export const View=({children,style,accessibilityLabel,accessibilityRole})=><div role={accessibilityRole} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',...css(style)}}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState,style})=><button onClick={onPress} disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} aria-selected={accessibilityRole==='tab'?!!accessibilityState?.selected:undefined} aria-pressed={accessibilityRole==='button'&&accessibilityState?.selected!==undefined?!!accessibilityState.selected:undefined} style={{display:'flex',textAlign:'left',fontFamily:'inherit',border:0,boxSizing:'border-box',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;export const Alert={alert:()=>{}};export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+  'react-native': `export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" role="switch" aria-label={accessibilityLabel} checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;const css=value=>{const s=Object.assign({},...[value??{}].flat());if(s.paddingHorizontal!==undefined){s.paddingLeft=s.paddingRight=s.paddingHorizontal;delete s.paddingHorizontal}if(s.paddingVertical!==undefined){s.paddingTop=s.paddingBottom=s.paddingVertical;delete s.paddingVertical}return s};export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,horizontal})=><div aria-label={accessibilityLabel} style={{minHeight:0,minWidth:0,overflow:'auto',...css(style)}}><div style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...css(contentContainerStyle)}}>{children}</div></div>;export const View=({children,style,accessibilityLabel,accessibilityRole})=><div role={accessibilityRole} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',...css(style)}}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState,style})=><button onClick={onPress} disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} aria-checked={accessibilityState?.checked} aria-selected={accessibilityRole==='tab'?!!accessibilityState?.selected:undefined} aria-pressed={accessibilityRole==='button'&&accessibilityState?.selected!==undefined?!!accessibilityState.selected:undefined} style={{display:'flex',textAlign:'left',fontFamily:'inherit',border:0,boxSizing:'border-box',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;export const Alert={alert:()=>{}};export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
   'expo-crypto': `export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(_,text)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);export const useRuntimeSelector=select=>select(useContext(Context));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../runtime/preferences/app-preferences': `export const useMobilePreferences=()=>({globalModelPreferences:{},globalModelPreferencesUpdatedAt:0});export const updateMobilePreferences=()=>{};`,
   '../ui/content/text': `export const Text=({children,style})=>{const s=Object.assign({},...[style??{}].flat());if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';return <span style={s}>{children}</span>};`,
-  '../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
+  '../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id} disabled={item.disabled}>{item.name}</option>)}</select></label>;`,
   '../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
   '../ui/controls/field': `export const SearchField=({label,value,onChangeText,placeholder,onSubmitEditing,autoFocus})=><input autoFocus={autoFocus} placeholder={placeholder} aria-label={label} value={value} onKeyDown={event=>event.key==='Enter'&&onSubmitEditing?.()} onChange={event=>onChangeText(event.target.value)}/>;export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
@@ -35,14 +36,14 @@ const built = await build({
   stdin: {
     contents: `
 import {useState,useEffect} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness,decode,taskSchema,resolveTaskAgent} from '@dovo/protocol';import {Effect} from 'effect';import {HarnessSettings} from './src/tasks/detail/harness-settings.tsx';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';import {ConnectionPill} from './src/runtime/connection/connection-status.tsx';import {optimisticTaskEffect,optimisticTaskConfirmed,previewTasks} from './src/runtime/state/optimistic-tasks.ts';
-window.requests=[];window.finishes=[];
+window.requests=[];window.finishes=[];window.modelPreferences={};
 const readRuntime=async(profile,path,input)=>path==='/api/agents/models/cached'?null:new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
 function App(){
  const[persistent,setPersistent]=useState(true);window.setPersistent=setPersistent;
  const[turn,setTurn]=useState(undefined);window.turn=turn;window.openTurn=()=>{setTurn(null);setTask(old=>({...old,status:'running',messages:[{id:'first',role:'user',text:'Started'}]}));setEditing(true)};
  const[queueStatus,setQueueStatus]=useState({pending:0,error:null});window.queueStatus=setQueueStatus;
  const[task,setTask]=useState(null),[editing,setEditing]=useState(false),[pending,setPending]=useState([]),[revision,setRevision]=useState(1);
- window.openTask=()=>{if(!task)setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));setEditing(true)};
+ window.openTask=()=>{if(!task)setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',archived:true,createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));setEditing(true)};
  const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);
  window.host=setHost;window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;
  const profile={id:host,name:host,connection:{address:'http://'+host,token:'private-token'}};
@@ -50,7 +51,7 @@ function App(){
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
- const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/agents/models/preference'){const result={modelPreferences:{[input.key]:{favorite:input.favorite,disabled:false}}};return window.deferPreference?new Promise(resolve=>{window.finishPreference=()=>resolve(result)}):Promise.resolve(result)}if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
+ const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,attachmentUploads:()=>[],refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/agents/models/preference'){const preferences=window.modelPreferences[host]??={};const before=preferences[input.key]??{favorite:false,disabled:false};preferences[input.key]={favorite:input.favorite??before.favorite,disabled:input.disabled??before.disabled};const result={modelPreferences:{...preferences}};return window.deferPreference?new Promise(resolve=>{window.finishPreference=()=>resolve(result)}):Promise.resolve(result)}if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
  return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} turn={turn!==undefined?{value:turn,onChange:setTurn}:undefined} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
 };createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -112,7 +113,7 @@ try {
   await page.evaluate(() => window.harness('opencode'))
   await waitRequests(2)
   await finish(0, catalog('gpt-5.1-sol', 'GPT-5.1 Sol'))
-  if (await page.getByRole('option', { name: 'GPT-5.1 Sol', exact: true }).count())
+  if (await page.getByRole('option', { name: '5.1 Sol', exact: true }).count())
     throw new Error('Late Codex response leaked into OpenCode')
   await finish(
     1,
@@ -159,9 +160,7 @@ try {
     throw new Error('Persistent model cache contains credentials or is missing')
   await page.reload()
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page
-    .getByRole('option', { name: 'GPT-5.1 Sol', exact: true })
-    .waitFor({ state: 'attached' })
+  await page.getByRole('option', { name: '5.1 Sol', exact: true }).waitFor({ state: 'attached' })
   await page.evaluate(() => window.harness('opencode'))
   await page
     .getByRole('option', { name: 'Updated Host Model', exact: true })
@@ -239,6 +238,7 @@ try {
   await finish(modelIndex, {
     models: [
       { id: 'task-model', name: 'Task Model', reasoning: [{ id: 'high', name: 'High' }] },
+      { id: 'legacy-model', name: 'Legacy Model', hidden: true },
       {
         id: 'openrouter/anthropic/claude-sonnet-4.6-extended',
         name: 'Claude Sonnet 4.6 Extended Thinking via OpenRouter',
@@ -248,8 +248,9 @@ try {
     ],
     reasoning: [],
   })
-  if (await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).count())
-    throw new Error('Secondary settings clutter the initial picker')
+  await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).waitFor()
+  await page.getByRole('combobox', { name: 'Speed', exact: true }).waitFor()
+  await page.getByRole('combobox', { name: 'Access mode', exact: true }).waitFor()
   // The selection mode leads the picker instead of hiding under More settings.
   if (
     !(await page
@@ -344,6 +345,24 @@ try {
   await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).click()
   await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
   await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('all')
+  // Catalog management is explicit and never selects a model as a side effect.
+  assert.equal(await page.getByRole('button', { name: 'Legacy Model', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Catalog settings', exact: true }).click()
+  await page.getByRole('switch', { name: 'Legacy models', exact: true }).click()
+  await page.getByRole('button', { name: 'Legacy Model', exact: true }).waitFor()
+  await page.getByRole('switch', { name: 'Legacy models', exact: true }).click()
+  await page.getByRole('switch', { name: 'Manage hidden models', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide Task Model', exact: true }).click()
+  await page.getByRole('button', { name: 'Show Task Model', exact: true }).waitFor()
+  assert(await page.getByRole('button', { name: 'Task Model', exact: true }).isDisabled())
+  await page.getByRole('switch', { name: 'Manage hidden models', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Task Model', exact: true }).count(), 0)
+  await page.getByRole('switch', { name: 'Manage hidden models', exact: true }).click()
+  await page.getByRole('button', { name: 'Show Task Model', exact: true }).click()
+  await page.getByRole('switch', { name: 'Manage hidden models', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide catalog settings', exact: true }).click()
+  assert.equal(await page.evaluate(() => !!window.saved), false)
+
   // An unknown ID can be used straight from search.
   await page.getByRole('textbox', { name: 'Search harnesses and models' }).fill('my-custom-id')
   await page.getByRole('button', { name: 'Use custom model my-custom-id', exact: true }).waitFor()
@@ -421,6 +440,7 @@ try {
       .getAttribute('aria-pressed')) !== 'true'
   )
     throw new Error('The selected model row was not marked as selected')
+  await page.getByRole('button', { name: 'Catalog settings', exact: true }).click()
   // Custom models are reachable from the keyboard: open, type into the focused field, submit.
   await page.getByRole('button', { name: 'Custom model…', exact: true }).focus()
   await page.keyboard.press('Enter')
@@ -503,10 +523,15 @@ try {
   await mode.selectOption('fixed')
   await page.waitForFunction(() => window.saved.input.changes.modelSelection?.after === null)
   await page.evaluate(() => window.finishSave(false))
-  await mode.waitFor({ state: 'detached' })
-  await page.evaluate(() => window.openTask())
-  await page.getByRole('button', { name: 'More settings', exact: true }).click()
   await mode.waitFor()
+  await page.waitForFunction(
+    () => !document.querySelector('select[aria-label="Model selection"]').disabled,
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Back to models', exact: true }).count(),
+    1,
+    'Saving a selection mode closed its settings',
+  )
   if ((await mode.inputValue()) !== 'fixed') throw new Error('Fixed mode reverted after reopening')
   // Favorites belong to one computer: a late save from the previous computer must not leak into
   // another computer whose defaults happen to be identical (here both are empty).
@@ -538,7 +563,16 @@ try {
     await finish(
       beforeHost + index,
       request.path === '/api/agents/models'
-        ? { models: [{ id: 'task-model', name: 'Task Model' }], reasoning: [] }
+        ? {
+            models: [
+              {
+                id: 'task-model',
+                name: 'Task Model',
+                serviceTiers: [{ id: 'priority', name: 'Fast' }],
+              },
+            ],
+            reasoning: [],
+          }
         : [],
     )
   await page.getByLabel(/^Selected on two:/).waitFor()
@@ -551,12 +585,24 @@ try {
   if (await star.isDisabled())
     throw new Error("The previous computer's pending favorite save blocked this computer")
 
+  assert.equal(
+    await page.evaluate(() => window.rawTask.archived),
+    true,
+    'Model changes reopened the settled thread',
+  )
   const defaultsBeforeTurn = await page.evaluate(() => window.rawTask.harness)
   await page.evaluate(() => window.openTurn())
   await page.getByText('Other settings apply only to this message.', { exact: true }).waitFor()
   await page.evaluate(() => window.setPersistent(false))
   await page.getByText('Applies to this message only.', { exact: true }).waitFor()
   await page.evaluate(() => window.setPersistent(true))
+  // Speed is available beside reasoning without leaving the main picker.
+  await page.getByRole('button', { name: 'Task Model', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Speed', exact: true }).selectOption('priority')
+  await page.waitForFunction(() => window.turn?.harness.serviceTier === 'priority')
+  assert.deepEqual(await page.evaluate(() => window.rawTask.harness), defaultsBeforeTurn)
+  await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
+  await page.waitForFunction(() => window.turn === null)
   const more = page.getByRole('button', { name: 'More settings', exact: true })
   await more.click()
   const access = page.getByRole('combobox', { name: 'Access mode', exact: true })

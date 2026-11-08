@@ -1,8 +1,16 @@
 import { Schema } from 'effect'
+import { commitShaSchema } from './local-commits.js'
 import { titleGenerationSettingsSchema } from '../tasks/title-generation.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import { mutableArray, mutableStruct, minValue, maxValue, strictStruct } from '../shared/schema.js'
+import {
+  knownReviewGuideSchema,
+  reviewGuideSchema,
+  reviewGuideStateSchema,
+  reviewGuideAnchorSchema,
+  reviewGuideMoveSchema,
+} from './review-guide.js'
 import type { ChangedFile } from '../workspace.js'
 import type { PullDetail } from './pulls/pulls.js'
 
@@ -16,8 +24,9 @@ export const reviewContextSchema = Schema.Union([
   strictStruct({
     kind: Schema.Literal('task'),
     taskId: id,
-    source: Schema.Literals(['working', 'branch', 'turn']),
+    source: Schema.Literals(['working', 'branch', 'turn', 'commit']),
     turnId: Schema.optional(id),
+    commitSha: Schema.optional(commitShaSchema),
     checkoutId: Schema.optional(id),
   }),
   strictStruct({
@@ -27,15 +36,28 @@ export const reviewContextSchema = Schema.Union([
   }),
 ])
 export type ReviewContext = typeof reviewContextSchema.Type
-export const reviewReadSchema = strictStruct({ context: reviewContextSchema })
+export const reviewReadSchema = strictStruct({
+  context: reviewContextSchema,
+  knownGuide: knownReviewGuideSchema,
+})
+export const reviewGuideSetSchema = strictStruct({
+  context: reviewContextSchema,
+  move: reviewGuideMoveSchema,
+  knownGuide: knownReviewGuideSchema,
+})
 export const reviewSetSchema = strictStruct({
   context: reviewContextSchema,
+  knownGuide: knownReviewGuideSchema,
   path,
   fingerprint: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
   viewed: Schema.Boolean,
   version: integer,
 })
 export const reviewProgressSchema = mutableStruct({
+  revision: Schema.optional(Schema.String),
+  guide: Schema.optional(reviewGuideSchema),
+  /** Replaces `guide` when the request named the same guide. */
+  guideState: Schema.optional(reviewGuideStateSchema),
   files: mutableArray(
     mutableStruct({ path, fingerprint: Schema.String, viewed: Schema.Boolean, version: integer }),
   ),
@@ -57,6 +79,8 @@ export const reviewOrganizeSchema = strictStruct({
   context: reviewContextSchema,
   selection: Schema.optional(titleGenerationSettingsSchema),
   files: maxValue(mutableArray(strictStruct({ path, fingerprint: Schema.String })), 500),
+  guided: Schema.optional(Schema.Boolean),
+  revision: Schema.optional(Schema.String),
 })
 export const featureReviewSchema = strictStruct({
   groups: maxValue(
@@ -67,6 +91,10 @@ export const featureReviewSchema = strictStruct({
           summary: maxValue(minValue(Schema.String, 1), 2000),
           impact: maxValue(minValue(Schema.String, 1), 2000),
           paths: maxValue(minValue(mutableArray(path), 1), 500),
+          excerpts: Schema.optional(maxValue(mutableArray(reviewGuideAnchorSchema), 8)),
+          questions: Schema.optional(
+            maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 500)), 5),
+          ),
         }),
       ),
       1,

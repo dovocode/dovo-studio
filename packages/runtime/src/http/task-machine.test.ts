@@ -52,6 +52,19 @@ it('receives drafts idempotently, verifies Git identity, and never starts a chec
   })
   expect(received.status).toBe(200)
   expect(
+    (
+      await post('/api/tasks/draft-receive', {
+        task: {
+          ...task,
+          id: 'forged-base',
+          worktreeBase: { branch: 'dovo/task', ref: 'refs/heads/other' },
+        },
+        gitIdentity: 'github.com/test/project',
+      })
+    ).status,
+  ).toBe(400)
+  expect(s.store.get().tasks.some((task) => task.id === 'forged-base')).toBe(false)
+  expect(
     (await post('/api/tasks/draft-receive', { task, gitIdentity: 'github.com/test/project' }))
       .status,
   ).toBe(200)

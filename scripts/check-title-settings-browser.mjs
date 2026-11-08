@@ -4,11 +4,11 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-const core = `export const useSettingsDraft=()=>{};export {titleGenerationSettingsSchema,modelCatalogSchema,providerSchema} from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const useWorkspace=()=>window.workspace;`
-const ui = `export {SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';`
+const core = `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const useSettingsDraft=()=>{};export {titleGenerationSettingsSchema,modelCatalogSchema,providerSchema} from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const useWorkspace=()=>window.workspace;`
+const ui = `export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export {SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {TitleSettings} from '${root}/packages/extension-agents/src/title-settings.tsx';window.documentSettings={harness:{provider:'codex',endpoint:'initial'},agentId:'',model:'title-model',reasoning:''};window.reads=0;window.writes=[];window.workspace={connected:true,workspace:{agents:[]},snapshot:{defaults:{},smartModelSelectionEnabled:true},request:async(path,input)=>{if(path.endsWith('/read')){window.reads++;return structuredClone(window.documentSettings)}if(path.endsWith('/save')){if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Title settings changed on another device. Reload before saving.');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)}if(path==='/api/agents/models')return {models:[]};throw Error(path)}};const app=createRoot(document.getElementById('app'));window.showSelection=()=>app.render(<TitleSettings key='selection' selection/>);app.render(<TitleSettings/>);`,
+    contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import {TitleSettings} from '${root}/packages/extension-agents/src/title-settings.tsx';window.documentSettings={harness:{provider:'codex',endpoint:'initial'},agentId:'',model:'title-model',reasoning:''};window.reads=0;window.writes=[];window.workspace={connected:true,workspace:{agents:[]},snapshot:{defaults:{},smartModelSelectionEnabled:true},request:async(path,input)=>{if(path.endsWith('/read')){window.reads++;return structuredClone(window.documentSettings)}if(path.endsWith('/save')){if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Title settings changed on another device. Reload before saving.');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)}if(path==='/api/agents/models')return {models:[]};throw Error(path)}};const app=createRoot(document.getElementById('app'));window.showSelection=()=>app.render(<StudioConfirmationProvider><TitleSettings key='selection' selection/></StudioConfirmationProvider>);app.render(<StudioConfirmationProvider><TitleSettings/></StudioConfirmationProvider>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -29,6 +29,7 @@ const built = await build({
         const mocks = {
           './acp-registry': 'export const AcpRegistry=()=>null;',
           '@dovo/studio-core': core,
+          './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
           '@dovo/studio-ui': ui,
           '@dovo/studio-core/state': "export {useState as useApplicationState} from 'react';",
         }
@@ -70,12 +71,15 @@ try {
     )
     .waitFor()
   const reload = page.getByRole('button', { name: 'Reload settings', exact: true })
-  page.once('dialog', (dialog) => dialog.dismiss())
   await reload.click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
   assert.equal(await endpoint.inputValue(), 'local edit')
   assert.equal(await page.evaluate(() => window.reads), 2)
-  page.once('dialog', (dialog) => dialog.accept())
   await reload.click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Discard and reload', exact: true })
+    .click()
   if (!(await endpoint.isVisible()))
     await page.getByText('Connection (optional)', { exact: true }).click()
   await page.waitForFunction(() => document.querySelector('input')?.value === 'remote edit')

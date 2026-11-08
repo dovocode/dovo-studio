@@ -1,6 +1,6 @@
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
-  taskSnoozeOptions,
+  taskSnoozeMenuChoices,
   taskIsWorking,
   watchRuntimeSettled,
   settledSummaryPageSize,
@@ -15,6 +15,8 @@ import { selectTaskKeys } from './task-selection'
 import { useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  useConfirmation,
+  clientScopeKey,
   readAppPreferences,
   updateAppPreferences,
   latestCompletedTaskTurn,
@@ -42,6 +44,7 @@ import { TaskListRow, type TaskListRowActions, type TaskListWindow } from './tas
 import {
   collectTasks,
   retainTaskOwner,
+  hiddenSideDraft,
   type TaskEntry,
   type TaskOwner,
   type TaskSource,
@@ -100,6 +103,18 @@ export function TaskList({
 }) {
   const host = useStudioHost()
   const store = useTaskActionStore()
+  const scope = JSON.stringify([activeRuntimeId, clientScopeKey(store.connection)])
+  const currentScope = useRef(scope)
+  currentScope.current = scope
+  const currentSources = useRef(sources)
+  currentSources.current = sources
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
   const [showAllSettled, setShowAllSettled] = useApplicationState(false)
   const [settledLimit, setSettledLimit] = useApplicationState(settledSummaryPageSize)
@@ -253,9 +268,6 @@ export function TaskList({
   const preferences = useAppPreferences()
   const sort = preferences.taskSort
   const grouping = preferences.taskGrouping
-  const [expanded, setExpanded, expandedRef] = useApplicationState<Record<string, boolean>>(
-    () => readTaskListViewState(host).expanded ?? {},
-  )
   const scroll = useRef<HTMLDivElement>(null)
   // Rows measure against the container after it commits; a ref is attached after their effects.
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
@@ -273,11 +285,10 @@ export function TaskList({
       saveTaskListViewState(host, {
         query: queryRef.current,
         environment: environmentRef.current,
-        expanded: expandedRef.current,
         scrollTop: scrollTop.current,
         rowHeights: [...rowHeights.current],
       }),
-    [host, queryRef, expandedRef, environmentRef],
+    [host, queryRef, environmentRef],
   )
   const projects = useMemo(
     () => new Map(entries.map((entry) => [entry.projectKey, entry.projectName])),
@@ -308,6 +319,8 @@ export function TaskList({
     const needle = deferredQuery.toLowerCase()
     return (
       entries
+        // Never-started side chat drafts live in their parent's side chats; search still finds them.
+        .filter((entry) => !!needle || entry.key === selectedId || !hiddenSideDraft(entry))
         .filter(
           ({ task: t, source, key, projectKey, projectName }) =>
             key === temporaryEntry?.key ||
@@ -364,32 +377,56 @@ export function TaskList({
   ])
   const searchError = search.error
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
+  const confirm = useConfirmation(
+    JSON.stringify([scope, selectedEntries.map((entry) => entry.key)]),
+  )
   const bulk = async (
     action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread',
-    hours?: number,
+    until?: string,
   ) => {
     if (!selectedEntries.length || bulkLock.current) return
-    if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
-    if (
-      action === 'delete' &&
-      !window.confirm(
-        `Delete ${selectedEntries.length} selected threads? This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.`,
-      )
-    )
-      return
-    if (
-      action === 'archive' &&
-      readAppPreferences().confirmArchive &&
-      !window.confirm(
-        `Archive ${selectedEntries.length} selected threads? You can restore them later.`,
-      )
-    )
-      return
+    if (action === 'snooze' && until === undefined) throw new Error('Choose a snooze duration.')
     bulkLock.current = true
     setBulkBusy(true)
     setActionError('')
+    const capturedEntries = selectedEntries
+    const isCurrent = () => mounted.current && currentScope.current === scope
+    const sourceIsCurrent = (entry: TaskEntry) => {
+      const current = currentSources.current.find(
+        (source) => source.runtimeId === entry.source.runtimeId,
+      )
+      return (
+        current?.online &&
+        current.address === entry.source.address &&
+        clientScopeKey(current.connection ?? null) ===
+          clientScopeKey(entry.source.connection ?? null) &&
+        current.workspace.tasks.some((task) => task.id === entry.task.id)
+      )
+    }
     try {
-      for (const entry of selectedEntries) {
+      if (
+        action === 'delete' &&
+        !(await confirm({
+          title: `Delete ${capturedEntries.length} selected threads?`,
+          description:
+            'This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.',
+          confirmLabel: 'Delete threads',
+          destructive: true,
+        }))
+      )
+        return
+      if (
+        action === 'archive' &&
+        readAppPreferences().confirmArchive &&
+        !(await confirm({
+          title: `Archive ${capturedEntries.length} selected threads?`,
+          description: 'You can restore them from Settings → Archived threads.',
+          confirmLabel: 'Archive threads',
+        }))
+      )
+        return
+      for (const entry of capturedEntries) {
+        if (!isCurrent() || !sourceIsCurrent(entry)) return
         const client = taskActionClient(store, entry.source)
         if (action === 'archive' || action === 'delete')
           await client.request('/api/tasks/lifecycle', { id: entry.task.id, action }, responses.ok)
@@ -415,10 +452,11 @@ export function TaskList({
               responses.ok,
             )
           else await client.patch(entry.task, { archived: false, snoozedUntil: null })
-        } else
+        } else if (until)
           await client.patch(entry.task, {
-            snoozedUntil: new Date(Date.now() + (hours ?? 0) * 3600000).toISOString(),
+            snoozedUntil: until,
           })
+        if (!isCurrent()) return
         if ((action === 'archive' || action === 'delete') && entry.key === selectedMainKey)
           onDeselect()
         setSelected((current) => {
@@ -430,30 +468,29 @@ export function TaskList({
       setSelected(new Set())
       await store.refreshRuntimes()
     } catch (cause) {
+      if (!isCurrent()) return
       setActionError(cause instanceof Error ? cause.message : String(cause))
       await store.refreshRuntimes().catch(() => undefined)
     } finally {
       bulkLock.current = false
-      setBulkBusy(false)
+      if (mounted.current) setBulkBusy(false)
     }
   }
   const revealedEntryKey =
     temporaryEntry?.key ?? (selectedEntry?.task.status === 'draft' ? selectedMainKey : undefined)
   const groups = useMemo(() => {
-    const sectionOpen = (id: string) =>
-      ['working', 'waiting', 'snoozed', 'settled'].includes(id)
-        ? !preferences.collapsedThreadSections.includes(id)
-        : expanded[id]
+    const sectionOpen = (id: string) => !preferences.collapsedThreadSections.includes(id)
 
     const ordered = (
       sections: { id: string; name: string; tasks: TaskEntry[]; open: boolean; total?: number }[],
-    ) =>
-      orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder).map(
-        (group, index) => (index === 0 && group.id === 'active' ? { ...group, open: true } : group),
-      )
+    ) => orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder)
 
+    const pinned = tasks.filter(({ task }) => task.pinned)
+    const pinnedGroups = pinned.length
+      ? [{ id: 'pinned', name: 'Pinned', tasks: pinned, open: true }]
+      : []
     const attention = tasks.filter(
-      ({ task, needsInput }) => needsInput && !task.archived && !task.archivedAt,
+      ({ task, needsInput }) => !task.pinned && needsInput && !task.archived && !task.archivedAt,
     )
     const attentionGroups = attention.length
       ? [
@@ -461,25 +498,28 @@ export function TaskList({
             id: 'needs-input',
             name: 'Needs input',
             tasks: attention,
-            open: expanded['needs-input'] ?? true,
+            open: sectionOpen('needs-input'),
           },
         ]
       : []
     const active = tasks.filter(
       ({ task, needsInput }) =>
+        !task.pinned &&
         !needsInput &&
         !task.archived &&
         !task.archivedAt &&
         !isSnoozed(task, now) &&
         (!task.waitingForFeedback || taskIsWorking(task)),
     )
-    const settledTasks = tasks.filter(({ task }) => task.archived || !!task.archivedAt)
+    const settledTasks = tasks.filter(
+      ({ task }) => !task.pinned && (task.archived || !!task.archivedAt),
+    )
     const statusGroups = [
       ...attentionGroups,
       {
         id: 'pinned',
         name: 'Pinned',
-        tasks: active.filter(({ task }) => task.pinned),
+        tasks: pinned,
         open: true,
       },
       {
@@ -508,6 +548,7 @@ export function TaskList({
         name: 'Waiting',
         tasks: tasks.filter(
           ({ task, needsInput }) =>
+            !task.pinned &&
             task.waitingForFeedback &&
             !taskIsWorking(task) &&
             !needsInput &&
@@ -522,7 +563,11 @@ export function TaskList({
         name: 'Snoozed',
         tasks: tasks.filter(
           ({ task, needsInput }) =>
-            !needsInput && !task.archived && !task.archivedAt && isSnoozed(task, now),
+            !task.pinned &&
+            !needsInput &&
+            !task.archived &&
+            !task.archivedAt &&
+            isSnoozed(task, now),
         ),
         open: false,
       },
@@ -547,14 +592,15 @@ export function TaskList({
       )
       .map((group) => ({
         ...group,
-        open: sectionOpen(group.id) ?? false,
+        open: sectionOpen(group.id),
       }))
     const visibleActive = active.filter(
       ({ task, needsInput }) =>
-        !preferences.workingSection || task.pinned || task.status !== 'running' || needsInput,
+        !preferences.workingSection || task.pinned || !taskIsWorking(task) || needsInput,
     )
     if (grouping === 'none')
       return ordered([
+        ...pinnedGroups,
         ...attentionGroups,
         ...(visibleActive.length
           ? [
@@ -564,7 +610,7 @@ export function TaskList({
                 tasks: visibleActive,
                 open:
                   visibleActive.some((entry) => entry.key === revealedEntryKey) ||
-                  (expanded.active ?? true),
+                  sectionOpen('active'),
               },
             ]
           : []),
@@ -575,8 +621,7 @@ export function TaskList({
         statusGroups.map((group) => ({
           ...group,
           open:
-            group.tasks.some((entry) => entry.key === revealedEntryKey) ||
-            (sectionOpen(group.id) ?? group.open),
+            group.tasks.some((entry) => entry.key === revealedEntryKey) || sectionOpen(group.id),
         })),
       )
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
@@ -598,14 +643,14 @@ export function TaskList({
       byProject.set(key, group)
     }
     return ordered([
+      ...pinnedGroups,
       ...attentionGroups,
       ...[...byProject.values()]
         .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
         .map((group) => ({
           ...group,
           open:
-            group.tasks.some((entry) => entry.key === revealedEntryKey) ||
-            (expanded[group.id] ?? true),
+            group.tasks.some((entry) => entry.key === revealedEntryKey) || sectionOpen(group.id),
         })),
       ...collapsedGroups,
     ])
@@ -613,7 +658,6 @@ export function TaskList({
     tasks,
     now,
     grouping,
-    expanded,
     preferences.projectGrouping,
     preferences.workingSection,
     preferences.threadSectionOrder,
@@ -780,11 +824,14 @@ export function TaskList({
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                  {taskSnoozeOptions.map((option) => (
+                  {taskSnoozeMenuChoices(
+                    preferences.taskSnoozeMinutes,
+                    preferences.taskSnoozeSchedule,
+                  ).map((option) => (
                     <ContextMenu.Item
-                      key={option.hours}
+                      key={option.id}
                       className="rounded-sm px-2 py-1.5 text-xs data-[highlighted]:bg-accent/55"
-                      onSelect={() => void runBulk(id, option.hours)}
+                      onSelect={() => void runBulk(id, option.until())}
                     >
                       {option.label}
                     </ContextMenu.Item>
@@ -805,109 +852,119 @@ export function TaskList({
         )}
       </>
     )
-  }, [selectedCount, blockedKey, runBulk])
+  }, [
+    selectedCount,
+    blockedKey,
+    runBulk,
+    preferences.taskSnoozeMinutes,
+    preferences.taskSnoozeSchedule,
+  ])
+  let bottomSectionIndex = 0
+  groups.forEach((group, index) => {
+    if (group.open) bottomSectionIndex = index + 1
+  })
   return (
     <aside
-      className="studio-task-sidebar flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
-      aria-label="Task sidebar"
+      className="studio-task-sidebar flex h-full w-full min-w-0 flex-col bg-background"
+      aria-label="Thread sidebar"
     >
       <SidebarHeader />
-      <div className="shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <SearchField
-            aria-label="Search threads"
-            value={query}
-            onValueChange={setQuery}
-            placeholder="Search threads…"
-            containerClassName="flex-1"
-            className="h-8 rounded-lg border-border/50 bg-background/40 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
-          />
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8 shrink-0 rounded-lg bg-accent/50 text-foreground/80 hover:bg-accent hover:text-foreground"
-            aria-label="New thread"
-            title="New thread"
-            onClick={onNewThread}
-            disabled={busy}
-          >
-            <Plus className="size-4" aria-hidden="true" />
-          </Button>
-        </div>
-        <div
-          className="flex min-w-0 items-center gap-1"
-          role="group"
-          aria-label="Thread filters and organization"
-        >
-          {sources.length > 1 || (sources.length === 0 && environment) ? (
-            <div className="relative min-w-0 flex-1">
-              <Monitor
-                aria-hidden="true"
-                className="pointer-events-none absolute left-2 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground"
-              />
-              <ChoicePicker
-                aria-label="Filter threads by computer"
-                className="h-7 w-full rounded-md border-transparent bg-transparent pl-7 pr-2 text-xs text-muted-foreground shadow-none hover:bg-accent/40 hover:text-foreground"
-                value={environment}
-                onValueChange={(value) => {
-                  setEnvironment(value)
-                  scrollTop.current = 0
-                  if (scroll.current) scroll.current.scrollTop = 0
-                }}
-              >
-                <option value="">All computers</option>
-                {environment &&
-                  !sources.some((source) => JSON.stringify(source.runtimeId) === environment) && (
-                    <option value={environment}>Unavailable computer</option>
-                  )}
-                {sources.map((source) => (
-                  <option
-                    key={JSON.stringify(source.runtimeId)}
-                    value={JSON.stringify(source.runtimeId)}
-                  >
-                    {source.name}
-                    {source.online ? '' : ' · Offline'}
-                  </option>
-                ))}
-              </ChoicePicker>
-            </div>
-          ) : (
-            <span className="min-w-0 flex-1 px-1 text-xs font-medium text-muted-foreground">
-              Threads
-            </span>
-          )}
-          <div className="flex shrink-0 items-center gap-0.5 [&_button]:size-7 [&_button]:text-muted-foreground [&_button:hover]:text-foreground">
-            <SectionOrderDialog />
-            <ProjectsMenu
-              compact
-              allDevices
-              value={projectId}
-              onChange={onProjectChange}
-              disabled={busy}
+      <div className="studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
+        <div className="studio-thread-sidebar-controls shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <SearchField
+              aria-label="Search threads"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="Search threads…"
+              containerClassName="studio-thread-search flex-1"
+              className="h-8 rounded-lg border-border/50 bg-background/40 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
             />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="studio-thread-new size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
+              aria-label="New thread"
+              title="New thread"
+              onClick={onNewThread}
+              disabled={busy}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <div
+            className="flex min-w-0 items-center gap-1"
+            role="group"
+            aria-label="Thread filters and organization"
+          >
+            {sources.length > 1 || (sources.length === 0 && environment) ? (
+              <div className="relative min-w-0 flex-1">
+                <Monitor
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-2 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground"
+                />
+                <ChoicePicker
+                  aria-label="Filter threads by computer"
+                  className="studio-thread-computer h-7 w-full rounded-md border-transparent bg-transparent pl-7 pr-2 text-xs text-muted-foreground shadow-none hover:bg-accent/40 hover:text-foreground"
+                  value={environment}
+                  onValueChange={(value) => {
+                    setEnvironment(value)
+                    scrollTop.current = 0
+                    if (scroll.current) scroll.current.scrollTop = 0
+                  }}
+                >
+                  <option value="">All computers</option>
+                  {environment &&
+                    !sources.some((source) => JSON.stringify(source.runtimeId) === environment) && (
+                      <option value={environment}>Unavailable computer</option>
+                    )}
+                  {sources.map((source) => (
+                    <option
+                      key={JSON.stringify(source.runtimeId)}
+                      value={JSON.stringify(source.runtimeId)}
+                    >
+                      {source.name}
+                      {source.online ? '' : ' · Offline'}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              </div>
+            ) : (
+              <span className="min-w-0 flex-1 px-1 text-xs font-medium text-muted-foreground">
+                Threads
+              </span>
+            )}
+            <div className="studio-thread-toolbar flex shrink-0 items-center gap-1.5 [&_button]:size-7 [&_button]:text-muted-foreground [&_button:hover]:text-foreground">
+              <SectionOrderDialog />
+              <ProjectsMenu
+                compact
+                allDevices
+                value={projectId}
+                onChange={onProjectChange}
+                disabled={busy}
+              />
+            </div>
           </div>
         </div>
-      </div>
-      {(error || actionError || searchError) && (
-        <p role="alert" className="px-3 pb-2 text-xs text-destructive">
-          {error || actionError || searchError}
-        </p>
-      )}
-      <div
-        ref={attachScroll}
-        onScroll={(event) => {
-          scrollTop.current = event.currentTarget.scrollTop
-        }}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5"
-        aria-busy={busy || search.loading}
-      >
-        {search.loading && (
-          <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-            Searching conversation history…
+        {(error || actionError || searchError) && (
+          <p role="alert" className="px-3 pb-2 text-xs text-destructive">
+            {error || actionError || searchError}
           </p>
         )}
-        {[...groups.filter((group) => group.open), ...groups.filter((group) => !group.open)].map(
-          (group, index, displayed) => {
+        <div
+          ref={attachScroll}
+          onScroll={(event) => {
+            scrollTop.current = event.currentTarget.scrollTop
+          }}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5"
+          aria-busy={busy || search.loading}
+        >
+          {search.loading && (
+            <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
+              Searching conversation history…
+            </p>
+          )}
+          {groups.map((group, index) => {
             // Collapsed sections do not build rows; opening one renders its rows on demand.
             const rows =
               group.open &&
@@ -953,17 +1010,18 @@ export function TaskList({
                   />
                 )
               })
-            if (groups[0]?.id === 'active' && group.id === 'active')
+            if (groups[0]?.id === 'active' && group.id === 'active' && group.open)
               return (
-                <div key={group.id} className="shrink-0">
+                <div key={group.id} className="shrink-0 pt-1">
                   {rows}
                 </div>
               )
             return (
               <details
                 key={group.id}
+                data-section={group.id}
                 open={group.open}
-                className={`group mb-1 shrink-0 ${!group.open && displayed.findIndex((item) => !item.open) === index ? 'mt-auto' : ''}`}
+                className={`group studio-list-section mb-1 shrink-0 ${index === bottomSectionIndex ? 'mt-auto' : ''}`}
               >
                 <summary
                   onClick={(event) => {
@@ -971,28 +1029,34 @@ export function TaskList({
                     // (including keyboard activation), leaving temporary expansion out of preferences.
                     event.preventDefault()
                     const open = !group.open
-                    if (['working', 'waiting', 'snoozed', 'settled'].includes(group.id)) {
-                      const collapsed = new Set(readAppPreferences().collapsedThreadSections)
-                      if (open) collapsed.delete(group.id)
-                      else {
-                        collapsed.add(group.id)
-                        if (group.id === 'settled') {
-                          setShowAllSettled(false)
-                          setSettledLimit(settledSummaryPageSize)
-                        }
+                    const collapsed = new Set(readAppPreferences().collapsedThreadSections)
+                    if (open) collapsed.delete(group.id)
+                    else {
+                      collapsed.add(group.id)
+                      if (group.id === 'settled') {
+                        setShowAllSettled(false)
+                        setSettledLimit(settledSummaryPageSize)
                       }
-                      updateAppPreferences({ collapsedThreadSections: [...collapsed] })
-                    } else {
-                      setExpanded((current) => ({ ...current, [group.id]: open }))
                     }
+                    updateAppPreferences({ collapsedThreadSections: [...collapsed] })
                   }}
-                  className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground"
+                  className="studio-list-section-header"
                 >
-                  <ChevronDown size={11} />
+                  <ChevronDown
+                    size={11}
+                    className="studio-list-section-chevron"
+                    aria-hidden="true"
+                  />
+                  {['needs-input', 'working', 'waiting', 'snoozed', 'settled'].includes(
+                    group.id,
+                  ) && <span className="studio-thread-section-dot" aria-hidden="true" />}
                   <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                  {!group.open && group.tasks.some((entry) => entry.key === selectedMainKey) && (
+                    <span className="text-[10px] font-normal text-primary">Current</span>
+                  )}
                   <span>{group.total ?? group.tasks.length}</span>
                 </summary>
-                {rows}
+                {rows && <div className="pt-1">{rows}</div>}
                 {group.open &&
                   group.id === 'settled' &&
                   (group.total ?? 0) > settledThreadPreviewLimit &&
@@ -1025,37 +1089,39 @@ export function TaskList({
                   )}
               </details>
             )
-          },
-        )}
-        {!tasks.length && !search.loading && (
-          <div className="space-y-2 px-3 py-6 text-xs">
-            <p className="font-medium">
-              {query || projectId || environment ? 'No matching tasks' : 'Ready for your next idea'}
-            </p>
-            <p className="leading-5 text-muted-foreground">
-              {query || projectId || environment
-                ? 'Try a different search or clear your filters.'
-                : 'Start with a question, a fix, or something you want to build.'}
-            </p>
-            {query || projectId || environment ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setQuery('')
-                  setEnvironment('')
-                  onProjectChange('')
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : (
-              <Button size="sm" disabled={busy} onClick={onNewThread}>
-                New thread
-              </Button>
-            )}
-          </div>
-        )}
+          })}
+          {!tasks.length && !search.loading && (
+            <div className="space-y-2 px-3 py-6 text-xs">
+              <p className="font-medium">
+                {query || projectId || environment
+                  ? 'No matching threads'
+                  : 'Ready for your next idea'}
+              </p>
+              <p className="leading-5 text-muted-foreground">
+                {query || projectId || environment
+                  ? 'Try a different search or clear your filters.'
+                  : 'Start with a question, a fix, or something you want to build.'}
+              </p>
+              {query || projectId || environment ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setQuery('')
+                    setEnvironment('')
+                    onProjectChange('')
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : (
+                <Button size="sm" disabled={busy} onClick={onNewThread}>
+                  New thread
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   )

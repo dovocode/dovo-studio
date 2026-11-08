@@ -53,7 +53,11 @@ function AutomationDetail({ automationId }: { automationId: string }) {
             },
           ]}
         >
-          <AutomationCard flow={flow} onEdit={() => setEditing(true)} />
+          <AutomationCard
+            flow={flow}
+            onEdit={() => setEditing(true)}
+            onDeleted={() => backToCollection('/settings/automations')}
+          />
         </ScrollView>
       ) : (
         <View style={styles.content}>

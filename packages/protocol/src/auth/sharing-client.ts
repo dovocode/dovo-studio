@@ -33,7 +33,11 @@ export class SharingClient {
   syncError = ''
   recoveryState: 'checking' | 'ready' | 'missing' | 'empty' | 'unavailable' = 'checking'
   private syncUsers = 0
-  private syncTimer?: ReturnType<typeof setInterval>
+  private syncTimer?: ReturnType<typeof setTimeout>
+  private syncSettled = false
+  private syncFailures = 0
+  private syncGeneration = 0
+  private syncActive = () => true
   private exchange?: { sessionId: string; secret: Uint8Array; publicKey: string }
   private syncing?: { sessionId: string; promise: Promise<boolean> }
   private verifiedKey?: { sessionId: string; hash: string; valid: boolean }
@@ -62,23 +66,50 @@ export class SharingClient {
     },
   ) {}
   /** Shared by every account consumer; sync never generates a replacement sharing key. */
-  startSync = () => {
+  startSync = (active: () => boolean = () => true) => {
     if (!this.sync || !this.storage.readSharingKey || !this.storage.writeSharingKey) return () => {}
-    const refresh = () => {
-      void this.syncKey().catch(() => {
-        // syncError is shown by sharing controls; ordinary account access stays available.
-      })
-    }
     if (this.syncUsers++ === 0) {
-      refresh()
-      this.syncTimer = setInterval(refresh, 10000)
+      this.syncActive = active
+      this.syncFailures = 0
+      this.refreshSync()
     }
+    let released = false
     return () => {
+      if (released) return
+      released = true
       if (--this.syncUsers === 0) {
-        clearInterval(this.syncTimer)
+        this.syncGeneration++
+        clearTimeout(this.syncTimer)
         this.syncTimer = undefined
+        this.syncActive = () => true
       }
     }
+  }
+  /** Foreground and explicit refresh bypass the background cadence. */
+  refreshSync = () => {
+    clearTimeout(this.syncTimer)
+    this.syncTimer = undefined
+    const generation = ++this.syncGeneration
+    if (!this.syncUsers || !this.syncActive()) return
+    void this.syncKey()
+      .then(
+        () => {
+          if (generation === this.syncGeneration) this.syncFailures = 0
+        },
+        () => {
+          if (generation === this.syncGeneration)
+            this.syncFailures = Math.min(this.syncFailures + 1, 6)
+        },
+      )
+      .finally(() => {
+        if (!this.syncUsers || generation !== this.syncGeneration) return
+        const delay = this.syncFailures
+          ? Math.min(10_000 * 2 ** (this.syncFailures - 1), 300_000)
+          : this.syncSettled || this.recoveryState === 'ready' || this.recoveryState === 'empty'
+            ? 300_000
+            : 10_000
+        this.syncTimer = setTimeout(this.refreshSync, delay)
+      })
   }
   syncKey = async (): Promise<boolean> => {
     const session = this.session()
@@ -168,6 +199,7 @@ export class SharingClient {
       }),
     )
     this.check(session)
+    this.syncSettled = !!key && inbox.keyHash === sharingHash(key)
     if (key && inbox.keyHash === sharingHash(key)) {
       for (const recipient of inbox.requests) {
         this.check(session)

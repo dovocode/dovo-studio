@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import { performance } from 'node:perf_hooks'
+import { deflateRawSync } from 'node:zlib'
 
 const modulePath = 'packages/protocol/src/runtime/connection/sync.ts'
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -24,6 +25,9 @@ async function compile(source) {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(process.cwd() + '/package.json');",
+    },
     write: false,
   })
   return import(
@@ -130,12 +134,66 @@ for (const sharedFileBytes of [0, 1024 * 1024, 4 * 1024 * 1024]) {
     ...(baseline ? { baselineMedianMs: measure(baseline, previous, next) } : {}),
   })
 }
+// A scoped navigation previously downloaded the complete workspace again. Compare
+// complete JSON and the opt-in handoff, including independent level-3 compression.
+const { previous: selectionBefore } = workload(0)
+selectionBefore.detailTaskIds = ['thread']
+selectionBefore.workspace.tasks.push(
+  ...Array.from({ length: 300 }, (_, index) => ({
+    ...selectionBefore.workspace.tasks[0],
+    id: `background-${index}`,
+    title: `Background work ${index}`,
+    draft: `Context for background work ${index}. `.repeat(40),
+    messages: [],
+  })),
+)
+const selectionAfter = {
+  ...selectionBefore,
+  detailTaskIds: ['background-1'],
+  workspace: {
+    ...selectionBefore.workspace,
+    tasks: selectionBefore.workspace.tasks.map((task) =>
+      task.id === 'thread'
+        ? { ...task, messages: [] }
+        : task.id === 'background-1'
+          ? { ...task, messages: [{ id: 'reply', role: 'assistant', text: 'Other reply' }] }
+          : task,
+    ),
+  },
+}
+const selectionDelta = current.snapshotDelta(selectionBefore, selectionAfter, true, true)
+if (!isDeepStrictEqual(current.applySnapshotDelta(selectionBefore, selectionDelta), selectionAfter))
+  throw new Error('Selection handoff did not reconstruct the full snapshot')
+const selectionFrame = JSON.stringify({
+  type: 'selection',
+  previousEpoch: 'previous-view',
+  base: 1,
+  epoch: 'selected-view',
+  sequence: 1,
+  tag: 'selected',
+  delta: selectionDelta,
+})
+const fullFrame = JSON.stringify({
+  type: 'snapshot',
+  epoch: 'selected-view',
+  sequence: 1,
+  tag: 'selected',
+  snapshot: selectionAfter,
+})
+const selection = {
+  tasks: selectionAfter.workspace.tasks.length,
+  fullJsonBytes: Buffer.byteLength(fullFrame),
+  handoffJsonBytes: Buffer.byteLength(selectionFrame),
+  fullDeflatedBytes: deflateRawSync(fullFrame, { level: 3 }).length,
+  handoffDeflatedBytes: deflateRawSync(selectionFrame, { level: 3 }).length,
+}
 console.log(
   JSON.stringify(
     {
       scope: 'Isolated snapshotDelta with shared file fields and a streamed text append',
       baselineRef,
       results,
+      selection,
     },
     null,
     2,

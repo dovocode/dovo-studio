@@ -58,7 +58,7 @@ async function bundle(contents, mobile = false) {
               path === 'state'
                 ? state
                 : path === 'runtime'
-                  ? 'export const useRuntime=()=>window.store;'
+                  ? 'export const useRuntime=()=>window.store;export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));'
                   : path === 'controls'
                     ? controls
                     : mocks[path],

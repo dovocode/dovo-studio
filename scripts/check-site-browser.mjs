@@ -36,7 +36,13 @@ assert.ok(address && typeof address === 'object')
 const origin = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({
   headless: true,
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  args: [
+    // Large full-page captures exceed SwiftShader's compositor surface limit; keep WebGL on it.
+    '--disable-gpu-compositing',
+    '--use-gl=angle',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+  ],
 })
 const release = (tag, date, extra = {}) => ({
   tag_name: tag,
@@ -97,7 +103,7 @@ try {
       }
       assert.equal(
         await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
-        'rgb(8, 8, 8)',
+        'rgb(12, 12, 14)',
       )
       if (route !== '/docs/') {
         const mobile = page.getByRole('region', { name: 'Mobile availability' })
@@ -246,8 +252,30 @@ try {
   await fleet.getByRole('button', { name: 'Pause animation', exact: true }).click()
   assert.equal(await fleet.getAttribute('data-running'), 'false')
   const pausedEvent = await fleet.locator('.fleet-event').textContent()
-  await page.waitForTimeout(100)
-  const pausedFrames = await fleet.locator('.fleet-webgl canvas').getAttribute('data-frames')
+  // Pausing stops the loop after an in-flight stage transition finishes. Wait for
+  // the canvas to settle, including on software WebGL, before asserting it stays idle.
+  const pausedFrames = await fleet.locator('.fleet-webgl canvas').evaluate(
+    (element) =>
+      new Promise((resolve, reject) => {
+        let idle
+        const observer = new MutationObserver(() => settle())
+        const deadline = setTimeout(() => {
+          observer.disconnect()
+          clearTimeout(idle)
+          reject(new Error('Paused fleet canvas did not settle within five seconds'))
+        }, 5000)
+        const settle = () => {
+          clearTimeout(idle)
+          idle = setTimeout(() => {
+            observer.disconnect()
+            clearTimeout(deadline)
+            resolve(element.getAttribute('data-frames'))
+          }, 1100)
+        }
+        observer.observe(element, { attributes: true, attributeFilter: ['data-frames'] })
+        settle()
+      }),
+  )
   await page.waitForTimeout(1100)
   assert.equal(await fleet.locator('.fleet-event').textContent(), pausedEvent)
   assert.equal(await fleet.locator('.fleet-webgl canvas').getAttribute('data-frames'), pausedFrames)

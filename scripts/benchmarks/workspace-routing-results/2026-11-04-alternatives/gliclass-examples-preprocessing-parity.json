@@ -1,0 +1,8 @@
+{
+  "modelRevision": "885af1af8a07edf4ed34df83ca0d995ed8201283",
+  "gliclassVersion": "0.1.22",
+  "examples": 10,
+  "verifiedCases": 115,
+  "fields": ["input_ids", "attention_mask"],
+  "result": "All equal to official pipeline preprocessing."
+}

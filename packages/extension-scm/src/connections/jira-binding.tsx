@@ -10,6 +10,7 @@ import {
   type JiraSource,
   jiraSourceSchema,
   useRuntimeSources,
+  useConfirmation,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -41,8 +42,16 @@ export function JiraSourcesDialog({
   const [busy, setBusy] = useApplicationState(false)
   const [notice, setNotice] = useApplicationState('')
   const [dirty, setDirty] = useApplicationState(false)
-  const canClose = () =>
-    !dirty || window.confirm('Close this Jira form without saving your changes?')
+  const [draftRevision, setDraftRevision] = useApplicationState(0)
+  const confirm = useConfirmation(JSON.stringify([selected, busy, draftRevision]))
+  const canClose = async () =>
+    !dirty ||
+    (await confirm({
+      title: 'Discard Jira changes?',
+      description: 'Your unsaved changes to this Jira source will be lost.',
+      confirmLabel: 'Discard changes',
+      destructive: true,
+    }))
   const choose = (runtimeId: string, source?: JiraSource) => {
     if (busy) return
     setSelected({ runtimeId, source })
@@ -50,8 +59,8 @@ export function JiraSourcesDialog({
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
-        if (!open && !busy && canClose()) onClose()
+      onOpenChange={async (open) => {
+        if (!open && !busy && (await canClose())) onClose()
       }}
     >
       <DialogContent className="max-h-[85dvh] overflow-y-auto">
@@ -76,8 +85,8 @@ export function JiraSourcesDialog({
               size="sm"
               className="justify-start"
               disabled={busy}
-              onClick={() => {
-                if (canClose()) {
+              onClick={async () => {
+                if (await canClose()) {
                   setDirty(false)
                   setSelected(undefined)
                 }
@@ -89,7 +98,10 @@ export function JiraSourcesDialog({
               <JiraForm
                 key={JSON.stringify(selected)}
                 initial={selected.source}
-                onDirty={() => setDirty(true)}
+                onDirty={() => {
+                  setDirty(true)
+                  setDraftRevision((revision) => revision + 1)
+                }}
                 busy={busy}
                 setBusy={setBusy}
                 onDone={async () => {

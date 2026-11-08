@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { Disclosure } from '../disclosure'
 import {
   acpInstallationHarness,
   acpHarnessChoiceId,
@@ -14,16 +15,19 @@ import { providers, useFileReview, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Button } from '../components/ui/button'
 import { ChoicePicker } from '../choice-picker'
+import { ReviewGuideCard } from './review-guide'
 import { ModelSettings } from '../model-settings'
 
 export function OrganizeReview({
   review,
   disabled = false,
   onOrganized,
+  onOpenFile,
 }: {
   review: ReturnType<typeof useFileReview>
   disabled?: boolean
   onOrganized: () => void
+  onOpenFile: (path: string) => void
 }) {
   const { workspace, request, connected, snapshot } = useWorkspace()
   const [agent, setAgent] = useApplicationState<Agent | null>(null)
@@ -34,11 +38,14 @@ export function OrganizeReview({
   const blocked =
     disabled || !review.ready || !connected || review.organizing || !review.progress?.files.length
   return (
-    <div className="max-h-[45%] shrink-0 overflow-y-auto border-b px-3 py-2 text-xs">
-      <details>
-        <summary className="cursor-pointer font-medium">
-          Organize review {review.featureGroups ? '· Feature groups active' : '· Harness & model'}
-        </summary>
+    <div className="max-h-[45%] shrink-0 overflow-y-auto px-0 py-2 text-xs">
+      <Disclosure
+        title={
+          <>
+            Organize review {review.featureGroups ? '· Feature groups active' : '· Harness & model'}
+          </>
+        }
+      >
         <div className="mt-2 space-y-3">
           <p className="text-muted-foreground">
             Group changes by feature and explain linked impact. The selected model reads the diff;
@@ -143,6 +150,22 @@ export function OrganizeReview({
                   ? 'Regroup by feature'
                   : 'Organize by feature'}
             </Button>
+            {!!review.progress?.revision && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={blocked}
+                onClick={() => {
+                  void review
+                    .organize(agent ? titleSettingsForHarness(agent) : undefined, true)
+                    .then((success) => {
+                      if (success) onOrganized()
+                    })
+                }}
+              >
+                Generate guided review
+              </Button>
+            )}
             {review.featureGroups && (
               <Button
                 size="sm"
@@ -155,7 +178,21 @@ export function OrganizeReview({
             )}
           </div>
         </div>
-      </details>
+      </Disclosure>
+      {review.progress?.guide && (
+        <ReviewGuideCard
+          guide={review.progress.guide}
+          busy={review.busy}
+          disabled={disabled || !review.ready}
+          onMove={review.moveGuide}
+          onOpenFile={onOpenFile}
+        />
+      )}
+      {!!review.error && (
+        <p role="alert" className="text-destructive">
+          {review.error}
+        </p>
+      )}
       {review.organizeError && (
         <p role="alert" className="mt-2 text-destructive">
           {review.organizeError}

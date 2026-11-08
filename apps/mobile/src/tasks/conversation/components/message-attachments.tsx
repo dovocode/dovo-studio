@@ -2,11 +2,13 @@ import { AttachmentArchive } from './attachment-archive'
 import { SafeModal } from '../../../ui/layout/safe-modal'
 import { EditChatImage } from '../../composer/chat-image-edit-context'
 import { nativeEffect, mobileWorkflow } from '../../../runtime/state/native-effect'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { runClientEffect, clientTaskScope } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { Image, Pressable, View, ScrollView } from 'react-native'
+import { AppState, Image, Pressable, View, ScrollView } from 'react-native'
+import { useIsFocused } from 'expo-router'
+import { WebView } from 'react-native-webview'
 import { Text } from '../../../ui/content/text'
 import { shareAttachment } from './attachment-share'
 import {
@@ -30,6 +32,7 @@ export function MessageAttachments({
   remove,
   disabled,
   onBusy,
+  draftAttachmentDisabled,
 }: {
   taskId: string
   files?: Attachment[]
@@ -38,8 +41,10 @@ export function MessageAttachments({
   remove?: (id: string) => void
   disabled?: boolean
   onBusy?: (busy: boolean) => void
+  draftAttachmentDisabled?: boolean
 }) {
   const { styles, colors } = useTheme()
+  const generation = useRef(0)
 
   const { connected, callEffect } = useRuntime()
   const [archive, setArchive] = useApplicationState<Attachment | null>(null)
@@ -48,8 +53,15 @@ export function MessageAttachments({
       data: string
     } | null>(null),
     [busy, setBusy] = useApplicationState(false),
+    [readingPreview, setReadingPreview] = useApplicationState(false),
     [error, setError] = useApplicationState(''),
     [previewSize, setPreviewSize] = useApplicationState({ width: 0, height: 0 })
+  useEffect(() => {
+    setPreview(null)
+    return () => {
+      generation.current++
+    }
+  }, [taskId])
   const act = (operation: () => Promise<void>) => {
     return runClientEffect(
       mobileWorkflow(function* () {
@@ -81,6 +93,14 @@ export function MessageAttachments({
         gap: 4,
       }}
     >
+      {(readingPreview || preview) && (
+        <PreviewLifecycle
+          onDeactivate={() => {
+            generation.current++
+            setPreview(null)
+          }}
+        />
+      )}
       <ScrollView
         keyboardShouldPersistTaps="always"
         nestedScrollEnabled
@@ -117,26 +137,27 @@ export function MessageAttachments({
                 paddingHorizontal: 6,
                 opacity: !connected || busy || disabled ? 0.4 : pressed ? 0.6 : 1,
               })}
-              onPress={() =>
-                isZipAttachment(file)
-                  ? setArchive(file)
-                  : void act(() => {
-                      return runClientEffect(
-                        mobileWorkflow(function* () {
-                          return setPreview(
-                            yield* callEffect(
-                              '/api/attachments/read',
-                              {
-                                taskId,
-                                id: file.id,
-                              },
-                              attachmentReadSchema,
-                            ),
-                          )
-                        }),
+              onPress={() => {
+                if (isZipAttachment(file)) {
+                  setArchive(file)
+                  return
+                }
+                setReadingPreview(true)
+                void act(() =>
+                  runClientEffect(
+                    mobileWorkflow(function* () {
+                      const current = generation.current
+                      const result = yield* callEffect(
+                        '/api/attachments/read',
+                        { taskId, id: file.id },
+                        attachmentReadSchema,
                       )
-                    })
-              }
+                      if (current === generation.current && AppState.currentState === 'active')
+                        setPreview(result)
+                    }),
+                  ),
+                ).finally(() => setReadingPreview(false))
+              }}
             >
               {isImageAttachment(file) ? (
                 <AttachmentThumbnail taskId={taskId} file={file} />
@@ -213,6 +234,8 @@ export function MessageAttachments({
           taskId={taskId}
           attachment={archive}
           onClose={() => setArchive(null)}
+          onBusy={onBusy}
+          disabled={draftAttachmentDisabled}
         />
       )}
       <SafeModal visible={!!preview} animationType="slide" onRequestClose={() => setPreview(null)}>
@@ -303,6 +326,8 @@ export function MessageAttachments({
                     resizeMode="contain"
                   />
                 </ScrollView>
+              ) : /^(audio|video)\//.test(preview.attachment.mime) ? (
+                <AttachmentMedia key={preview.attachment.id} {...preview} />
               ) : (
                 <ScrollView
                   accessibilityLabel="File preview"
@@ -317,6 +342,76 @@ export function MessageAttachments({
           </View>
         </View>
       </SafeModal>
+    </View>
+  )
+}
+
+function PreviewLifecycle({ onDeactivate }: { onDeactivate: () => void }) {
+  const focused = useIsFocused()
+  const deactivate = useRef(onDeactivate)
+  deactivate.current = onDeactivate
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') deactivate.current()
+    })
+    if (AppState.currentState !== 'active') deactivate.current()
+    return () => subscription.remove()
+  }, [])
+  useEffect(() => {
+    if (!focused) deactivate.current()
+  }, [focused])
+  return null
+}
+
+function AttachmentMedia({ attachment, data }: { attachment: Attachment; data: string }) {
+  const { styles } = useTheme()
+  const [status, setStatus] = useApplicationState<'loading' | 'ready' | 'error'>('loading')
+  const tag = attachment.mime.startsWith('video/') ? 'video' : 'audio'
+  const encoded = JSON.stringify(data).replace(/</g, '\\u003c')
+  const mime = JSON.stringify(attachment.mime).replace(/</g, '\\u003c')
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;height:100vh"><${tag} controls playsinline preload="metadata" aria-label="Media playback" style="width:100%;max-height:100%"></${tag}><script>
+const media=document.querySelector('${tag}');
+const notify=state=>window.ReactNativeWebView.postMessage(state);
+let timer;
+const clear=()=>clearTimeout(timer);
+const ready=()=>{clear();notify('ready')};
+const failed=()=>{clear();notify('error')};
+const waiting=()=>{clear();notify('loading');timer=setTimeout(failed,10000)};
+media.onloadedmetadata=ready;media.onplaying=ready;media.onpause=ready;
+media.onerror=failed;media.onwaiting=waiting;media.onstalled=waiting;
+try{
+  const data=atob(${encoded});const bytes=Uint8Array.from(data,c=>c.charCodeAt(0));
+  const url=URL.createObjectURL(new Blob([bytes],{type:${mime}}));
+  waiting();media.src=url;
+  window.addEventListener('pagehide',()=>{clear();media.pause();URL.revokeObjectURL(url)},{once:true});
+}catch{failed()}
+</script></body></html>`
+  return (
+    <View style={{ flex: 1 }}>
+      <WebView
+        accessibilityLabel={`Play ${attachment.name}`}
+        source={{ html }}
+        originWhitelist={['about:blank']}
+        onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
+        mediaPlaybackRequiresUserAction
+        allowsInlineMediaPlayback
+        onMessage={(event) => {
+          if (
+            event.nativeEvent.data === 'loading' ||
+            event.nativeEvent.data === 'ready' ||
+            event.nativeEvent.data === 'error'
+          )
+            setStatus(event.nativeEvent.data)
+        }}
+        onError={() => setStatus('error')}
+        onHttpError={() => setStatus('error')}
+      />
+      {status === 'loading' && <Text accessibilityRole="status">Loading media…</Text>}
+      {status === 'error' && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          Unable to play this file. Share it to open elsewhere.
+        </Text>
+      )}
     </View>
   )
 }

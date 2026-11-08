@@ -2,7 +2,6 @@ import {
   decode,
   deleteProjectSchema,
   SCRATCH_PROJECT_ID,
-  sharedProjectKey,
   taskFamilyIds,
   type Automation,
 } from '@dovo/protocol'
@@ -39,6 +38,23 @@ export function deleteProjectEffect(s: Services, value: unknown) {
       if (!repository) throw new HttpError(404, 'Project not found')
       if (repositoryId === SCRATCH_PROJECT_ID || repository.kind === 'scratch')
         throw new HttpError(409, 'General cannot be deleted')
+
+      for (const task of workspace.tasks) {
+        if (task.repositoryId === repositoryId) continue
+        if (
+          s.store
+            .task(task.id)
+            .turns?.some(
+              (turn) =>
+                turn.checkpoint?.restorePending &&
+                turn.checkpoint.linked?.some((link) => link.repositoryId === repositoryId),
+            )
+        )
+          throw new HttpError(
+            409,
+            'Finish the pending undo or redo in a linked thread before deleting this project.',
+          )
+      }
 
       const projectTasks = workspace.tasks.filter((task) => task.repositoryId === repositoryId)
       const projectTaskIds = new Set(projectTasks.map((task) => task.id))
@@ -121,29 +137,8 @@ export function deleteProjectEffect(s: Services, value: unknown) {
 
           // Tasks linked to the deleted project remain intact, with only the dangling checkout
           // reference removed. Repository and worktree paths are never passed to a remover here.
-          const sharedKey = sharedProjectKey(repository)
-          const settings = s.defaults.get()
-          if (
-            sharedKey &&
-            !s.store
-              .get()
-              .repositories.some(
-                (entry) => entry.id !== repositoryId && sharedProjectKey(entry) === sharedKey,
-              )
-          ) {
-            const scoped = settings.scopedSettings
-            if (scoped?.shared.some((entry) => entry.key === sharedKey))
-              s.defaults.save(
-                {
-                  ...settings,
-                  scopedSettings: {
-                    ...scoped,
-                    shared: scoped.shared.filter((entry) => entry.key !== sharedKey),
-                  },
-                },
-                false,
-              )
-          }
+          // Removing this checkout must not delete metadata shared with other machines.
+          // Explicit settings resets retain their per-category tombstones through sync.
 
           const deleted = new Set(deletedTaskIds)
           s.store.transaction(() => {

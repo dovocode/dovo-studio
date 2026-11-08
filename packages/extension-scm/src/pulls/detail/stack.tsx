@@ -19,10 +19,19 @@ export function PullStack({
   return (
     <section
       aria-label="Pull request stack"
-      className="space-y-3 rounded-lg border border-border/60 bg-card p-3 text-xs"
+      className={
+        stack
+          ? 'space-y-3 rounded-lg border border-border/60 bg-card p-3 text-xs'
+          : 'border-t py-3 text-xs'
+      }
+      title={
+        !stack
+          ? 'Create the next PR against this PR’s branch to keep its changes separate.'
+          : undefined
+      }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Layers className="size-4 text-violet-700 dark:text-violet-400" aria-hidden />
+        <Layers className="size-4 text-muted-foreground" aria-hidden />
         <span className="mr-auto font-medium">
           {stack ? pullStackLabel(stack) : 'Build a stack'}
         </span>
@@ -62,7 +71,7 @@ export function PullStack({
                   aria-current={pull.number === detail.pull.number ? 'true' : undefined}
                   disabled={pull.number === detail.pull.number}
                   onClick={() => onSelect(pull.number)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/50 aria-[current=true]:bg-accent/50"
+                  className={`flex w-full items-center gap-2 rounded-xl border border-transparent px-2 py-1.5 text-left hover:bg-accent/50 ${pull.number === detail.pull.number ? 'studio-selected-surface' : ''}`}
                 >
                   <span className="shrink-0 font-mono">#{pull.number}</span>
                   <span className="min-w-0 flex-1 truncate">{pull.title}</span>
@@ -79,11 +88,7 @@ export function PullStack({
             agent.
           </p>
         </>
-      ) : (
-        <p className="text-muted-foreground">
-          Create the next PR against this PR’s branch to keep its changes separate.
-        </p>
-      )}
+      ) : null}
     </section>
   )
 }

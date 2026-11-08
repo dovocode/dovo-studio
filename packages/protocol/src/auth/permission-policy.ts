@@ -56,10 +56,21 @@ export function resolveDefaultPermissionPolicy(
 }
 
 export function permissionPolicyLabel(value: PermissionPolicy) {
+  if (
+    value.provider === 'pi' &&
+    !value.approvalPolicy &&
+    !value.sandboxMode &&
+    value.permission === 'read-only'
+  )
+    return 'Text only'
   return value.approvalPolicy || value.sandboxMode ? 'Custom' : accessLabel(value.permission)
 }
 
 export function permissionPolicySummary(value: PermissionPolicy) {
+  if (value.provider === 'pi')
+    return piBuiltinToolsAllowed(value)
+      ? 'Full access · Pi built-in tools run without approval or a sandbox; extensions and MCP are disabled'
+      : 'Text only · Pi tools, extensions and MCP are disabled'
   const policy = effectivePermissionPolicy(value)
   const approvals = policy.automaticReview
     ? 'provider auto-review'
@@ -80,16 +91,20 @@ export function permissionPolicyCapabilities(provider: Agent['provider']) {
     approvalPolicies:
       provider === 'codex'
         ? approvals
-        : ['claude', 'vibe', 'acp', 'copilot', 'opencode'].includes(provider)
-          ? mediatedApprovals
-          : [],
+        : provider === 'pi'
+          ? (['never'] as const)
+          : ['claude', 'vibe', 'acp', 'copilot', 'opencode'].includes(provider)
+            ? mediatedApprovals
+            : [],
     sandboxModes: provider === 'codex' ? sandboxes : [],
     approvalDescription:
       provider === 'codex'
         ? 'Codex enforces the selected approval policy.'
-        : ['claude', 'vibe', 'acp', 'copilot', 'opencode'].includes(provider)
-          ? 'Controls provider permission requests and Dovo tool callbacks. The provider controls which native actions request approval.'
-          : 'This provider does not support separate approval controls. Use its access mode.',
+        : provider === 'pi'
+          ? 'Pi cannot request approval for tools. Tools require full access with approvals set to never.'
+          : ['claude', 'vibe', 'acp', 'copilot', 'opencode'].includes(provider)
+            ? 'Controls provider permission requests and Dovo tool callbacks. The provider controls which native actions request approval.'
+            : 'This provider does not support separate approval controls. Use its access mode.',
     sandboxDescription:
       provider === 'codex'
         ? 'Codex enforces the selected filesystem sandbox.'
@@ -135,6 +150,22 @@ export function effectivePermissionPolicy(
     automaticReview: !readOnly && !agent.approvalPolicy && agent.permission === 'auto',
     autoAcceptEdits: !readOnly && !agent.approvalPolicy && agent.permission === 'workspace-write',
   }
+}
+
+/** Pi has no native approval mediation or filesystem sandbox. */
+export function piBuiltinToolsAllowed(
+  agent: PermissionPolicy,
+  restrictions: { textOnly?: boolean; readOnlyCheckout?: boolean } = {},
+) {
+  const policy = effectivePermissionPolicy(agent, restrictions)
+  return (
+    agent.provider === 'pi' &&
+    agent.permission === 'full-access' &&
+    policy.approvalPolicy === 'never' &&
+    policy.sandboxMode === 'danger-full-access' &&
+    !policy.readOnly &&
+    !policy.textOnly
+  )
 }
 
 /** Also usable by host-owned tools which must check the current saved policy. */

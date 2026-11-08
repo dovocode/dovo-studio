@@ -5,7 +5,8 @@ import {
   changeAgentConnection,
   changeAgentProvider,
 } from './agent-configuration'
-import { defaultTaskHarness, type Agent } from '../workspace'
+import { agentSchema, taskHarnessSchema, defaultTaskHarness, type Agent } from '../workspace'
+import { decode } from '../shared/schema'
 
 const agent: Agent = {
   ...defaultTaskHarness('opencode'),
@@ -14,6 +15,7 @@ const agent: Agent = {
   endpoint: 'http://127.0.0.1:4096',
   executablePath: '/custom/opencode',
   configDirectory: '/accounts/opencode',
+  cloudIntegrations: true,
   model: 'old-model',
   reasoning: 'high',
   args: ['--old-provider'],
@@ -36,9 +38,19 @@ it('does not carry an old executable, account directory or model into a differen
   })
   expect(changed.executablePath).toBeUndefined()
   expect(changed.configDirectory).toBeUndefined()
+  expect(changed.cloudIntegrations).toBeUndefined()
   expect(agent.endpoint).toBe('http://127.0.0.1:4096')
   expect(changeAgentProvider(agent, agent.provider)).toBe(agent)
 })
+
+it.each([undefined, true, false])(
+  'preserves cloud integration preference %s in profiles and task harnesses',
+  (cloudIntegrations) => {
+    const input = { ...agent, provider: 'claude', cloudIntegrations }
+    expect(decode(agentSchema, input).cloudIntegrations).toBe(cloudIntegrations)
+    expect(decode(taskHarnessSchema, input).cloudIntegrations).toBe(cloudIntegrations)
+  },
+)
 
 it('clears installed ACP settings when changing provider', () => {
   const changed = changeAgentProvider(

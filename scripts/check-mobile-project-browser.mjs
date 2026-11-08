@@ -6,6 +6,7 @@ const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
 const flat=style=>Object.assign({},...(Array.isArray(style)?style:[style]));
 export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
+export const Image=({source,style})=><img src={source.uri} style={flat(style)} alt=""/>;
 export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityState,style})=><button style={{display:"flex",...flat(style)}} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;
 export const Text=({children,accessibilityRole,style})=><span style={flat(style)} role={accessibilityRole}>{children}</span>;
 export const Icon=({name})=><span aria-hidden data-icon={name}/>;
@@ -15,12 +16,14 @@ export const Sheet=({title,children,onClose,busy,headerAction})=><div role="dial
 export const useTheme=()=>({styles:{row:{flexDirection:'row',alignItems:'center',gap:8},text:{color:'#eee',fontSize:14},muted:{color:'#999'}},colors:{surface:'#222'}});
 `
 const mocks = {
+  'expo-router': `export const router={push:()=>{throw new Error('Unexpected navigation in project picker fixture')}};`,
   'react-native': controls,
   '../../ui/content/text': controls,
   '../../ui/controls/action': controls,
   '../../ui/controls/icon': controls,
   '../controls/icon': controls,
   '../../ui/controls/field': controls,
+  '../../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../../ui/layout/sheet': controls,
   '../../ui/theme': controls,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
@@ -86,9 +89,12 @@ try {
   const panel = page.getByRole('dialog', { name: 'Project', exact: true })
   await project.click()
   assert.equal(await server.count(), 0)
-  assert.equal(await panel.getByRole('button').nth(1).getAttribute('aria-label'), 'General')
+  assert.equal(await panel.getByRole('button').nth(1).getAttribute('aria-label'), 'No Project')
   await search.fill('Missing')
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
+  assert.equal(
+    await page.getByRole('button', { name: 'No Project', exact: true }).isVisible(),
+    true,
+  )
   await page.getByRole('button', { name: 'Close picker' }).click()
 
   await project.click()
@@ -138,7 +144,7 @@ try {
   }
   await project.click()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'No Project', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Remote notes', exact: true }).isVisible(),
     true,
@@ -213,7 +219,7 @@ try {
   assert.equal(await server.count(), 0)
   await search.fill('local server')
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.repository), 'remote-scratch')
   await page.evaluate(() => window.update({ allow: true }))
@@ -244,11 +250,13 @@ try {
   assert.equal(await page.evaluate(() => window.active), 'local')
   await project.click()
   assert.equal(
-    await page.getByRole('button', { name: 'General', exact: true }).getAttribute('aria-pressed'),
+    await page
+      .getByRole('button', { name: 'No Project', exact: true })
+      .getAttribute('aria-pressed'),
     'false',
   )
-  await page.getByRole('button', { name: 'General', exact: true }).click()
-  assert.match(await project.textContent(), /General/)
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
+  assert.match(await project.textContent(), /No Project/)
   assert.deepEqual(errors, [])
   console.log(
     'Native FolderPicker with browser control adapters: project-first listing, grouped copies, pinned General, preferred server, explicit server changes, offline fallback, retry and machine restrictions passed.',

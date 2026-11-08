@@ -160,6 +160,34 @@ it('forwards browser authentication instructions from stderr', async () => {
   expect(output.join('')).toContain('https://accounts.example.test/sign-in?state=test')
 })
 
+it('accepts a large ACP response fragmented across UTF-8 byte boundaries', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dovo-acp-fragments-'))
+  dirs.push(dir)
+  const script = join(dir, 'agent.cjs')
+  await writeFile(
+    script,
+    `process.stdin.once('data', (data) => {
+      const request = JSON.parse(data.toString())
+      const response = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: {
+        protocolVersion: 1, agentInfo: { name: 'é'.repeat(524288), version: '1' },
+        agentCapabilities: {}, authMethods: []
+      } }) + '\\n')
+      for (let offset = 0; offset < response.length; offset += 8191)
+        process.stdout.write(response.subarray(offset, offset + 8191))
+    })`,
+  )
+  const connection = openAcpConnection(
+    { command: process.execPath, args: [script], env: {} },
+    { requestPermission: () => ({ outcome: { outcome: 'cancelled' } }), sessionUpdate: () => {} },
+  )
+  try {
+    const result = await initializeAcp(connection)
+    expect(result.agentInfo?.name).toBe('é'.repeat(524288))
+  } finally {
+    await connection.close()
+  }
+})
+
 it.each(['closed', 'oversized'] as const)(
   'ends pending requests when ACP input is %s even if the launcher stays alive',
   async (failure) => {

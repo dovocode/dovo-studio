@@ -1,4 +1,9 @@
 import {
+  sharedSettingsVersions,
+  sharedSettingsFromVersions,
+  sharedSettingsVersionEntry,
+} from './shared-state-values.js'
+import {
   DurableState,
   startPolling,
   startReplication,
@@ -19,6 +24,7 @@ import {
   mergeSharedSettings,
   pendingSharedSettings,
   sharedSettingsSyncSchema,
+  projectOrganizationCategories,
 } from './scoped-settings.js'
 
 type Target = Pick<RuntimeOverview, 'profile' | 'connected' | 'snapshot'>
@@ -53,18 +59,7 @@ const key = (target: Target) =>
     target.snapshot?.stateReplicationVersion ?? 0,
   ])
 const sharedValue = (state: DurableState<ScopedSettingsValue>) =>
-  state.latest().flatMap((entry) =>
-    entry.deleted
-      ? []
-      : [
-          {
-            key: entry.key,
-            updatedAt: entry.updatedAt,
-            changeId: entry.changeId,
-            value: entry.value,
-          },
-        ],
-  )
+  sharedSettingsFromVersions(state.latest())
 
 /** One durable app replica shared by all paired-runtime sessions. React and native I/O stay
  * in adapters. Snapshot imports migrate existing preferences without inventing new revisions. */
@@ -91,13 +86,14 @@ export class SharedStateSynchronization {
       validateVersion: (entry) => {
         if (
           entry.deleted ||
-          (entry.key !== 'global' && !/^project:[^/\s]+\/[^\r\n]+$/.test(entry.key))
+          (sharedSettingsVersionEntry(entry).key !== 'global' &&
+            !/^project:[^/\s]+\/[^\r\n]+$/.test(sharedSettingsVersionEntry(entry).key))
         )
           throw new Error('Invalid shared settings state')
-        decode(sharedSettingsSchema, [entry])
+        decode(sharedSettingsSchema, [sharedSettingsVersionEntry(entry)])
       },
       validateState: (latest) => {
-        decode(sharedSettingsSchema, latest)
+        decode(sharedSettingsSchema, sharedSettingsFromVersions(latest))
       },
     }).catch((error: unknown) => {
       this.opening = undefined
@@ -170,12 +166,12 @@ export class SharedStateSynchronization {
     await state.refresh()
     if (!current()) return
     await state.importVersions(
-      [
+      sharedSettingsVersions([
         ...this.options.readShared(),
         ...[...this.targets.values()]
           .filter((target) => target.connected)
           .flatMap((target) => target.snapshot?.defaults?.scopedSettings?.shared ?? []),
-      ].map((entry) => ({ ...entry, deleted: false as const })),
+      ]),
     )
     if (!current()) return
     this.publish(state)
@@ -231,9 +227,7 @@ export class SharedStateSynchronization {
       }
       const prepare = async () => {
         if (!valid()) throw new Error('Shared state connection changed')
-        await state.importVersions(
-          this.options.readShared().map((entry) => ({ ...entry, deleted: false as const })),
-        )
+        await state.importVersions(sharedSettingsVersions(this.options.readShared()))
         if (!valid()) throw new Error('Shared state connection changed')
       }
       if (target.snapshot.stateReplicationVersion === 1) {
@@ -272,7 +266,13 @@ export class SharedStateSynchronization {
             try: async (signal) => {
               await state.refresh()
               await prepare()
-              const pending = pendingSharedSettings(sharedValue(state), session.known)
+              const pending = pendingSharedSettings(
+                sharedValue(state),
+                session.known,
+                session.target.snapshot?.projectOrganizationSupported
+                  ? []
+                  : projectOrganizationCategories,
+              )
               if (!pending.length) {
                 if (valid()) {
                   session.error = ''
@@ -288,9 +288,7 @@ export class SharedStateSynchronization {
               )
               if (signal.aborted || !valid()) return
               const result = decode(sharedSettingsSyncSchema, raw)
-              await state.importVersions(
-                result.shared.map((entry) => ({ ...entry, deleted: false as const })),
-              )
+              await state.importVersions(sharedSettingsVersions(result.shared))
               session.known = mergeSharedSettings(session.known, result.shared)
               await publish()
             },

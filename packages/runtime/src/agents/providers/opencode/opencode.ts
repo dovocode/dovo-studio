@@ -3,13 +3,20 @@ import { opencodeNative } from './opencode-native.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
+import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { mcpServerEnvironment, mcpHeaders } from '../../configuration/mcp-settings.js'
 import { isImageAttachment } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { questionPromptSchema } from '@dovo/protocol'
 import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v2'
 import type { AgentAdapter } from '../../execution/types.js'
-import { OpenCodeServers, opencodeHeaders, isOpencodeV2 } from './opencode-server.js'
+import {
+  OpenCodeServers,
+  opencodeHeaders,
+  isOpencodeV2,
+  type OpenCodeConnection,
+} from './opencode-server.js'
 import { opencodeV2Adapter } from './opencode-v2.js'
 import { OpenCodeClientCache } from './client-cache.js'
 import { readOpencodeThread } from './opencode-thread.js'
@@ -94,6 +101,8 @@ const remoteAdapter: AgentAdapter = {
     const api = lease.value
     const registered: string[] = []
     let ephemeralSessionId: string | undefined
+    let interruption: Promise<void> | undefined
+    let removeAbortListener: (() => void) | undefined
     try {
       const namespace = `dovo_${createHash('sha256')
         // Attempt bindings change each turn; reuse the same managed MCP registration name.
@@ -245,8 +254,9 @@ const remoteAdapter: AgentAdapter = {
       const eventsController = new AbortController()
       const abort = () => {
         eventsController.abort()
-        void api.session
-          .abort(
+        if (interruption) return
+        interruption = (async () => {
+          const stopped = await api.session.abort(
             {
               sessionID,
               directory: run.cwd,
@@ -256,11 +266,26 @@ const remoteAdapter: AgentAdapter = {
               signal: AbortSignal.timeout(5000),
             },
           )
-          .catch((error) => run.onActivity(`Could not interrupt OpenCode: ${String(error)}`))
+          if (!stopped.data) throw new Error('OpenCode did not accept the interruption')
+          // Aborting the HTTP prompt does not prove that the server-side worker stopped.
+          const signal = AbortSignal.timeout(5000)
+          while (true) {
+            const states = await api.session.status(
+              { directory: run.cwd },
+              { throwOnError: true, signal },
+            )
+            const state = states.data[sessionID]
+            if (!state || state.type === 'idle') return
+            await delay(100, undefined, { signal })
+          }
+        })()
+        // The outer finalizer owns this rejection, including event subscription failures.
+        void interruption.catch(() => undefined)
       }
       run.signal.addEventListener('abort', abort, {
         once: true,
       })
+      removeAbortListener = () => run.signal.removeEventListener('abort', abort)
       if (run.signal.aborted) abort()
       const native = opencodeNative(
         run,
@@ -530,7 +555,7 @@ const remoteAdapter: AgentAdapter = {
         throw error
       } finally {
         try {
-          await native.close(!succeeded)
+          await native.close(!succeeded, () => interruption)
         } finally {
           eventsController.abort()
         }
@@ -540,47 +565,73 @@ const remoteAdapter: AgentAdapter = {
         })
       }
     } finally {
-      try {
-        const results = await Promise.allSettled(
-          registered.map((name) =>
-            api.mcp.disconnect(
-              {
-                name,
-                directory: run.cwd,
-              },
-              {
-                throwOnError: true,
-                signal: AbortSignal.timeout(5000),
-              },
+      const finalize = async () => {
+        let shutdownError: OwnedProcessShutdownError | undefined
+        removeAbortListener?.()
+        if (interruption)
+          await interruption.catch((cause: unknown) => {
+            shutdownError = new OwnedProcessShutdownError(
+              'OpenCode shutdown was not confirmed. Review its session before continuing.',
+              { cause },
+            )
+          })
+        try {
+          const results = await Promise.allSettled(
+            registered.map((name) =>
+              api.mcp.disconnect(
+                {
+                  name,
+                  directory: run.cwd,
+                },
+                {
+                  throwOnError: true,
+                  signal: AbortSignal.timeout(5000),
+                },
+              ),
             ),
-          ),
-        )
-        results.forEach((result, index) => {
-          if (result.status === 'rejected')
-            run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
-        })
-        if (ephemeralSessionId)
-          await api.session.delete(
-            { sessionID: ephemeralSessionId, directory: run.cwd },
-            { signal: AbortSignal.timeout(5000), throwOnError: true },
           )
-      } finally {
-        lease.release()
+          results.forEach((result, index) => {
+            if (result.status === 'rejected')
+              run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
+          })
+          if (ephemeralSessionId && !shutdownError)
+            await api.session.delete(
+              { sessionID: ephemeralSessionId, directory: run.cwd },
+              { signal: AbortSignal.timeout(5000), throwOnError: true },
+            )
+        } catch (error) {
+          // Preserve the error that keeps checkout ownership when cleanup also fails.
+          if (!shutdownError) throw error
+        } finally {
+          lease.release()
+        }
+        if (shutdownError) throw shutdownError
       }
+      await finalize()
     }
   },
 }
 
 export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAdapter {
-  const resolve = async <T extends import('@dovo/protocol').AgentDiscovery>(agent: T) =>
-    servers.resolve(agent)
+  /** Holds the local server for the whole call so idle retirement cannot stop it mid-use. */
+  const withServer = async <T extends import('@dovo/protocol').AgentDiscovery, R>(
+    agent: T,
+    use: (agent: T & OpenCodeConnection) => Promise<R>,
+  ) => {
+    const lease = await servers.acquire(agent)
+    try {
+      return await use(lease.agent)
+    } finally {
+      lease.release()
+    }
+  }
   return {
-    readNativeThread: async (agent, id, _sessionId, cwd) =>
-      readOpencodeThread(await resolve(agent), id, cwd),
-    models: async (agent) => remoteAdapter.models!(await resolve(agent)),
+    readNativeThread: (agent, id, _sessionId, cwd) =>
+      withServer(agent, (resolved) => readOpencodeThread(resolved, id, cwd)),
+    models: (agent) => withServer(agent, (resolved) => remoteAdapter.models!(resolved)),
     probe: async (agent) => {
       try {
-        return await remoteAdapter.probe(await resolve(agent))
+        return await withServer(agent, (resolved) => remoteAdapter.probe(resolved))
       } catch (error) {
         return {
           provider: 'opencode',
@@ -591,8 +642,25 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
     },
     run: async (run) => {
       run = checkedPolicyRun(run, 'opencode')
-      return remoteAdapter.run({ ...run, agent: await resolve(run.agent) })
+      const lease = await servers.acquire(run.agent, run.taskId, run.cwd)
+      let completed = false
+      let held = false
+      try {
+        await remoteAdapter.run({ ...run, agent: lease.agent })
+        completed = true
+      } catch (error) {
+        // An unconfirmed stop keeps this turn's lease until the stop itself is confirmed.
+        if (error instanceof OwnedProcessShutdownError && error.confirmed) {
+          held = true
+          void error.confirmed.then(() => lease.release())
+        }
+        throw error
+      } finally {
+        // Successful turns drained their native children; any failure waits for server confirmation.
+        if (!held) lease.release(completed)
+      }
     },
+    releaseTask: (taskId) => servers.releaseTask(taskId),
     dispose: () => servers.dispose(),
   }
 }

@@ -190,6 +190,7 @@ export class Housekeeping {
       | 'activity'
       | 'artifacts'
       | 'attachments'
+      | 'reviewMarks'
       | 'backups'
       | 'db'
       | 'git'
@@ -212,6 +213,7 @@ export class Housekeeping {
           step('prune activity history', () => this.pruneActivity()),
           step('prune expired artifacts', () => this.s.artifacts.prune()),
           step('prune unreferenced attachments', () => this.s.attachments.prune()),
+          step('prune deleted thread review guides', () => this.s.reviewMarks.pruneGuides()),
           step('create and retain verified backups', () => this.s.backups.automatic()),
           step('prune automation runs', () => this.s.jobs.prune()),
           step('remove archived worktrees', () => this.removeArchivedWorktrees()),

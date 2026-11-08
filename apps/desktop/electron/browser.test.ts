@@ -1,11 +1,16 @@
+import { configureBrowserDoNotTrack } from './browser-user-agent'
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { decode, desktopBrowserHostSchema } from '@dovo/protocol'
 const visibilityDirectory = mkdtempSync(join(tmpdir(), 'dovo-browser-unit-'))
 afterAll(() => rmSync(visibilityDirectory, { recursive: true, force: true }))
 const registrations: Array<ReturnType<typeof registerBrowser>> = []
 const mocks = vi.hoisted(() => {
+  const requests: {
+    headers?: Parameters<Electron.Session['webRequest']['onBeforeSendHeaders']>[0]
+  } = {}
   const contents = {
     id: 42,
     mainFrame: {
@@ -24,18 +29,40 @@ const mocks = vi.hoisted(() => {
       >(),
     endFrameSubscription: vi.fn<() => void>(),
     reload: vi.fn<() => void>(),
+    reloadIgnoringCache: vi.fn<() => void>(),
+    inspectElement: vi.fn<(x: number, y: number) => void>(),
+    print: vi.fn<
+      (
+        options: Electron.WebContentsPrintOptions,
+        callback: (success: boolean, reason: string) => void,
+      ) => void
+    >((_options, callback) => callback(true, '')),
+    copyImageAt: vi.fn<(x: number, y: number) => void>(),
+    downloadURL: vi.fn<(url: string) => void>(),
     stop: vi.fn<() => void>(),
     send: vi.fn<(...args: unknown[]) => void>(),
     getUserAgent: () =>
       'Mozilla/5.0 Chrome/148.0.0.0 Safari/537.36 DovoStudio/0.0.9 Electron/45.0.0',
     setUserAgent: vi.fn<(value: string) => void>(),
+    getZoomFactor: vi.fn<() => number>(() => 1),
+    setZoomFactor: vi.fn<(factor: number) => void>(),
     setBackgroundThrottling: vi.fn<(value: boolean) => void>(),
+    isCurrentlyAudible: vi.fn<() => boolean>(() => false),
+    isAudioMuted: vi.fn<() => boolean>(() => false),
+    setAudioMuted: vi.fn<(muted: boolean) => void>(),
     setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
     setIgnoreMenuShortcuts: vi.fn<(ignore: boolean) => void>(),
     session: {
+      on: vi.fn<(...args: unknown[]) => void>(),
+      off: vi.fn<(...args: unknown[]) => void>(),
       registerPreloadScript: vi.fn<(...args: unknown[]) => string>(() => 'visibility'),
       unregisterPreloadScript: vi.fn<(...args: unknown[]) => void>(),
-      webRequest: { onBeforeRequest: vi.fn<(...args: unknown[]) => void>() },
+      webRequest: {
+        onBeforeRequest: vi.fn<(...args: unknown[]) => void>(),
+        onBeforeSendHeaders: vi.fn<(listener: typeof requests.headers) => void>((listener) => {
+          requests.headers = listener
+        }),
+      },
       fetch: vi.fn<(url: string, options?: unknown) => Promise<Response>>(),
       setUserAgent: vi.fn<(value: string) => void>(),
       setPermissionRequestHandler: vi.fn<(...args: unknown[]) => void>(),
@@ -111,6 +138,11 @@ const mocks = vi.hoisted(() => {
     },
   }
   return {
+    requests,
+    searchUrl: vi.fn<(profileId: string, text: string) => string>(
+      (_profileId, text) => `http://search.lan/?q=${encodeURIComponent(text)}`,
+    ),
+    openExternal: vi.fn<(url: string) => Promise<void>>(async () => {}),
     menu: vi.fn<(items: import('electron').MenuItemConstructorOptions[]) => { popup: () => void }>(
       () => ({ popup: () => {} }),
     ),
@@ -161,6 +193,9 @@ const mocks = vi.hoisted(() => {
 vi.mock('./browser-document-pip-controls.js', () => ({
   DOCUMENT_PIP_HEADER_HEIGHT: 36,
   createDocumentPipWindow: mocks.pipWindow,
+  dismissDocumentPipWindow: (window: { isDestroyed: () => boolean; close: () => void }) => {
+    if (!window.isDestroyed()) window.close()
+  },
 }))
 vi.mock('./browser-permissions.js', () => ({
   forgetPrivateBrowserPermissions: () => {},
@@ -189,6 +224,7 @@ vi.mock('./browser-extensions.js', async () => {
 })
 vi.mock('./browser-cdp.js', () => ({ createBrowserCdp: mocks.cdpCreate }))
 vi.mock('./browser-language.js', () => ({
+  websiteSearchUrl: mocks.searchUrl,
   websiteCustomization: () => '',
   websiteLinkProfile: mocks.linkProfile,
   configureBrowserLanguage: (
@@ -213,19 +249,26 @@ vi.mock('electron', () => ({
     on: mocks.on,
     removeListener: vi.fn<(name: string, listener: unknown) => void>(),
   },
-  shell: { openExternal: vi.fn<(url: string) => Promise<void>>() },
+  shell: { openExternal: mocks.openExternal },
 }))
 import { registerBrowser } from './browser'
 afterEach(async () => {
   for (const registration of registrations.splice(0)) await registration.dispose()
   vi.unstubAllEnvs()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.linkProfile.mockReturnValue(undefined)
   mocks.windowFor = undefined
   mocks.automaticPip = false
+  mocks.contents.isDestroyed.mockReturnValue(false)
+  mocks.contents.isCurrentlyAudible.mockReturnValue(false)
+  mocks.contents.isAudioMuted.mockReturnValue(false)
+  mocks.contents.setAudioMuted.mockImplementation((muted) =>
+    mocks.contents.isAudioMuted.mockReturnValue(muted),
+  )
   mocks.view.getVisible.mockReturnValue(true)
   mocks.view.setVisible.mockImplementation((visible) => {
     mocks.view.getVisible.mockReturnValue(Boolean(visible))
@@ -631,6 +674,48 @@ it('replaces the native view when its profile changes, keeping separate persiste
   ])
 })
 
+it('publishes schema-valid CDP endpoints for five window-scoped tabs through preview:browser', async () => {
+  vi.useFakeTimers()
+  const { createBrowserCdp } =
+    await vi.importActual<typeof import('./browser-cdp')>('./browser-cdp.js')
+  mocks.cdpCreate.mockImplementationOnce(createBrowserCdp)
+  registrations.push(registerBrowser('/app/index.html', visibilityDirectory))
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  for (let index = 0; index < 5; index++) {
+    await call(event, {
+      action: 'show',
+      key: `studio:browser:tab-${index}`,
+      taskId: 'studio:browser',
+      tabId: `tab-${index}`,
+      workspaceBrowser: true,
+      url: 'https://example.com',
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      agentAccess: true,
+    })
+  }
+  const host = decode(
+    desktopBrowserHostSchema,
+    JSON.parse(readFileSync(join(visibilityDirectory, 'desktop-browser-host.json'), 'utf8')),
+  )
+  expect(host.targets).toHaveLength(5)
+  expect(new Set(host.targets.map((target) => target.endpoint)).size).toBe(5)
+  expect(host.targets.map((target) => target.tabId)).toEqual([
+    'tab-0',
+    'tab-1',
+    'tab-2',
+    'tab-3',
+    'tab-4',
+  ])
+  // Exercise the real interval -> prune -> remove -> save path from the native crash.
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  const remaining = decode(
+    desktopBrowserHostSchema,
+    JSON.parse(readFileSync(join(visibilityDirectory, 'desktop-browser-host.json'), 'utf8')),
+  )
+  expect(mocks.contents.close).toHaveBeenCalledTimes(4)
+  expect(remaining.targets).toEqual([host.targets[4]])
+})
+
 it('does not re-enable agent access when a pending bridge startup finishes after disabling it', async () => {
   const bridge = {
     connected: vi.fn<(id: string) => boolean>(() => false),
@@ -880,6 +965,30 @@ it('activates automatic PiP when leaving an occluded tab even with a live previe
   expect(allowed(mainFrame)).toBe(false)
 })
 
+it('grants automatic native video PiP only to the approved hidden main frame', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const enter = mocks.contents.ipc.handle.mock.calls.find(
+    ([name]) => name === 'browser:video-pip-auto',
+  )?.[1]
+  if (typeof enter !== 'function') throw new Error('Missing automatic video PiP handler')
+  const main = { senderFrame: mocks.contents.mainFrame }
+  mocks.contents.mainFrame.executeJavaScript.mockClear()
+  mocks.automaticPip = true
+  expect(enter(main)).toBe(false)
+  await call(event, { action: 'hide', key: 'shared' })
+  mocks.automaticPip = false
+  expect(enter(main)).toBe(false)
+  mocks.automaticPip = true
+  expect(enter({ senderFrame: {} })).toBe(false)
+  expect(mocks.contents.mainFrame.executeJavaScript).not.toHaveBeenCalled()
+  await enter(main)
+  expect(mocks.contents.mainFrame.executeJavaScript).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining('requestPictureInPicture'),
+    true,
+  )
+})
+
 it('reports a background page on tab switching and after its document reloads', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -968,6 +1077,31 @@ it('detects native window visibility changes even when the platform emits no win
     hidden.mockRestore()
   }
 })
+
+it.each(['watchdog', 'close'] as const)(
+  'stops visibility tracking after the owner is destroyed during update shutdown (%s)',
+  async (path) => {
+    vi.useFakeTimers()
+    const call = handler()
+    await call(event, workspaceShow)
+    await call(event, { action: 'watch-frames', key: 'shared', enabled: true })
+    vi.spyOn(mocks.window, 'isDestroyed').mockReturnValue(true)
+    const minimized = vi.spyOn(mocks.window, 'isMinimized').mockImplementation(() => {
+      throw new TypeError('Object has been destroyed')
+    })
+    const visible = vi.spyOn(mocks.window, 'isVisible').mockImplementation(() => {
+      throw new TypeError('Object has been destroyed')
+    })
+    mocks.contents.send.mockClear()
+    const closed = mocks.window.once.mock.calls.find(([name]) => name === 'closed')![1]
+    const finish = path === 'watchdog' ? () => vi.advanceTimersByTime(250) : closed
+    expect(() => finish()).not.toThrow()
+    expect(minimized).not.toHaveBeenCalled()
+    expect(visible).not.toHaveBeenCalled()
+    expect(mocks.contents.send).not.toHaveBeenCalled()
+    expect(mocks.contents.endFrameSubscription).toHaveBeenCalledTimes(path === 'close' ? 1 : 0)
+  },
+)
 
 it('cleans up a failed frame subscription', async () => {
   const call = handler()
@@ -1181,7 +1315,95 @@ it('keeps an explicitly awake page loaded and unthrottled until the setting is d
   await vi.advanceTimersByTimeAsync(30_000)
   expect(mocks.contents.close).toHaveBeenCalledOnce()
 })
-it.each(['close', 'reload'] as const)(
+it.each([
+  'https://teams.microsoft.com/v2/',
+  'https://outlook.office.com/mail/',
+  'https://mail.google.com/mail/u/0/',
+  'https://app.slack.com/client/T123/C123',
+  'https://example-workspace.slack.com/',
+  'https://discord.com/channels/@me',
+  'https://canary.discord.com/channels/@me',
+  'https://ptb.discord.com/channels/@me',
+  'https://web.whatsapp.com/',
+  'https://chat.google.com/',
+])(
+  'keeps %s unthrottled and retained by default, respecting an opt-out after reload',
+  async (url) => {
+    vi.useFakeTimers()
+    vi.spyOn(mocks.contents, 'getURL').mockReturnValue(url)
+    const call = handler()
+    await call(event, { ...workspaceShow, url })
+    await call(event, { action: 'hide', key: 'shared' })
+    expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+    await vi.advanceTimersByTimeAsync(6 * 60_000)
+    expect(mocks.contents.close).not.toHaveBeenCalled()
+    await call(event, {
+      action: 'keep-awake',
+      key: 'shared',
+      url,
+      profileId: 'default',
+      enabled: false,
+    })
+    expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mocks.contents.close).toHaveBeenCalledOnce()
+    await call(event, { ...workspaceShow, url, keepAwake: false })
+    expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  },
+)
+
+it('follows communication-app defaults across navigation without applying them to thread previews', async () => {
+  const url = vi.spyOn(mocks.contents, 'getURL').mockReturnValue('https://example.com/')
+  const call = handler()
+  await call(event, workspaceShow)
+  url.mockReturnValue('https://mail.google.com/')
+  listener('did-navigate')?.()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  url.mockReturnValue('https://example.com/')
+  listener('did-navigate')?.()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  await call(event, { action: 'close', key: 'shared' })
+  url.mockReturnValue('https://mail.google.com/')
+  await call(event, { ...workspaceShow, workspaceBrowser: false, url: 'https://mail.google.com/' })
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+})
+
+it('releases a sleeping background page immediately, even when Keep awake was enabled', async () => {
+  const call = handler()
+  await call(event, { ...workspaceShow, keepAwake: true })
+  await call(event, { action: 'sleep', key: 'shared' })
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  await call(event, { action: 'hide', key: 'shared' })
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+})
+
+it('defers sleeping during live media and releases the page after activity ends', async () => {
+  vi.useFakeTimers()
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.media.keepAlive.mockReturnValue(true)
+  await call(event, { action: 'hide', key: 'shared' })
+  await call(event, { action: 'sleep', key: 'shared' })
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  mocks.media.keepAlive.mockReturnValue(false)
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+})
+
+it('throttles sleeping private tabs without deleting their in-memory sign-in data', async () => {
+  vi.useFakeTimers()
+  const call = handler()
+  await call(event, { ...workspaceShow, profileId: 'private-12345678-1234-4234-8234-123456789abc' })
+  await call(event, { action: 'hide', key: 'shared' })
+  await call(event, { action: 'sleep', key: 'shared' })
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  expect(mocks.contents.session.clearStorageData).not.toHaveBeenCalled()
+})
+it.each(['close', 'reload', 'sleep'] as const)(
   'cancels background restoration after tab %s',
   async (reason) => {
     const call = handler()
@@ -1199,7 +1421,7 @@ it.each(['close', 'reload'] as const)(
       profileId: 'default',
       enabled: true,
     })
-    if (reason === 'close') await call(event, { action: 'close', key: 'shared' })
+    if (reason !== 'reload') await call(event, { action: reason, key: 'shared' })
     else
       mocks.window.webContents.on.mock.calls.find(([name]) => name === 'did-start-navigation')?.[1](
         { isMainFrame: true, isSameDocument: false },
@@ -1350,7 +1572,17 @@ function popupWindow() {
     isDestroyed: () => false,
     once: vi.fn<(event: string, callback: () => void) => void>(),
     webContents: {
+      id: 100,
+      session: mocks.contents.session,
+      getUserAgent: mocks.contents.getUserAgent,
+      once: vi.fn<(...args: unknown[]) => void>(),
       mainFrame: {},
+      isDestroyed: () => false,
+      isCurrentlyAudible: () => false,
+      isAudioMuted: () => false,
+      setAudioMuted: vi.fn<(muted: boolean) => void>(),
+      setUserAgent: vi.fn<(value: string) => void>(),
+      getTitle: () => 'Floating call',
       ipc: {
         handle: vi.fn<(name: string, handler: (...args: unknown[]) => unknown) => void>(),
         on: vi.fn<(name: string, handler: (...args: unknown[]) => unknown) => void>(),
@@ -1475,8 +1707,8 @@ it('allows bounded sandboxed OAuth popups that keep the opener and close with th
   const created = listener('did-create-window')
   const first = popupWindow()
   const second = popupWindow()
-  created?.(first)
-  created?.(second)
+  created?.(first, { url: request.url })
+  created?.(second, { url: request.url })
   expect(open(request)).toEqual({ action: 'deny' })
   noOpener.createWindow?.({})
   const navigate = first.webContents.on.mock.calls.find(([name]) => name === 'will-navigate')?.[1]
@@ -1502,13 +1734,13 @@ it('closes popups and stops queueing when a view leaves the workspace browser', 
   const call = handler()
   await call(event, workspaceShow)
   const popup = popupWindow()
-  listener('did-create-window')?.(popup)
+  listener('did-create-window')?.(popup, { url: 'https://example.com/' })
   openHandler()({ url: 'https://example.com/a', disposition: 'foreground-tab', features: '' })
   await call(event, { ...workspaceShow, workspaceBrowser: false })
   expect(popup.close).toHaveBeenCalledOnce()
   expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty('openedLinks')
   const late = popupWindow()
-  listener('did-create-window')?.(late)
+  listener('did-create-window')?.(late, { url: 'https://example.com/' })
   expect(late.close).toHaveBeenCalledOnce()
 })
 
@@ -1632,7 +1864,7 @@ it('keeps app-menu accelerators away from workspace pages and popups, except edi
     expect(mocks.contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(ignored)
   }
   const popup = popupWindow()
-  listener('did-create-window')?.(popup)
+  listener('did-create-window')?.(popup, { url: 'https://example.com/' })
   expect(popup.webContents.setIgnoreMenuShortcuts).toHaveBeenCalledWith(true)
   const popupInput = popup.webContents.on.mock.calls.find(
     ([name]) => name === 'before-input-event',
@@ -1710,7 +1942,7 @@ it('loads validated form POST new-tab requests in the same tab and never replays
   }
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
   const popup = popupWindow()
-  listener('did-create-window')?.(popup)
+  listener('did-create-window')?.(popup, { url: 'https://example.com/' })
   popup.webContents.setWindowOpenHandler.mock.calls[0]?.[0](post)
   await expect(call(event, { action: 'status', key: 'shared' })).rejects.toThrow(
     'This form could not be opened',
@@ -1769,8 +2001,12 @@ it.each([true, false])(
 it('releases a self-closed tab once and can recreate its native view', async () => {
   const call = handler()
   await call(event, workspaceShow)
-  const destroyed = mocks.contents.once.mock.calls.find(([name]) => name === 'destroyed')?.[1]
-  if (typeof destroyed !== 'function') throw new Error('Missing destruction listener')
+  const listeners = mocks.contents.once.mock.calls
+    .filter(([name]) => name === 'destroyed')
+    .map(([, listener]) => listener)
+  const destroyed = () => {
+    for (const listener of listeners) if (typeof listener === 'function') listener()
+  }
   mocks.contents.isDestroyed.mockReturnValue(true)
   Object.defineProperty(mocks.view, 'webContents', { value: undefined, configurable: true })
   try {
@@ -2207,7 +2443,10 @@ it('routes workspace context menus to the selected page and keeps password text 
   const passwordItems = mocks.menu.mock.calls.at(-1)?.[0] ?? []
   expect(
     passwordItems.some(
-      (item) => item.label === 'Copy' || item.label === 'Add selection to thread…',
+      (item) =>
+        item.label === 'Copy' ||
+        item.label === 'Add selection to thread…' ||
+        item.label === 'Search selection in new tab',
     ),
   ).toBe(false)
   expect(passwordItems.find((item) => item.role === 'cut')?.enabled).toBe(false)
@@ -2215,6 +2454,169 @@ it('routes workspace context menus to the selected page and keeps password text 
   mocks.menu.mockClear()
   show()
   expect(mocks.menu).not.toHaveBeenCalled()
+})
+
+it('runs page tools against the clicked page and ignores stale menus after navigation or close', async () => {
+  const call = handler()
+  await call(event, { ...workspaceShow, profileId: 'work' })
+  const contextMenu = listener('context-menu')
+  const menu = (linkURL = 'http://files.lan/report.pdf') => {
+    contextMenu?.(
+      {},
+      {
+        linkURL,
+        selectionText: 'react & hooks',
+        formControlType: 'none',
+        isEditable: false,
+        x: 31,
+        y: 67,
+      },
+    )
+    return mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  }
+  const click = (items: Electron.MenuItemConstructorOptions[], label: string) => {
+    const item = items.find((item) => item.label === label)
+    if (!item?.click) throw new Error(`Missing ${label}`)
+    item.click(
+      {} as Electron.MenuItem,
+      mocks.window as unknown as Electron.BrowserWindow,
+      {} as Electron.KeyboardEvent,
+    )
+  }
+  const items = menu()
+  click(items, 'Reload without cache')
+  expect(mocks.contents.reloadIgnoringCache).toHaveBeenCalledOnce()
+  click(items, 'Download linked file')
+  expect(mocks.contents.downloadURL).toHaveBeenLastCalledWith('http://files.lan/report.pdf')
+  click(items, 'Open link in default browser')
+  expect(mocks.openExternal).toHaveBeenLastCalledWith('http://files.lan/report.pdf')
+  click(items, 'Open page in default browser')
+  expect(mocks.openExternal).toHaveBeenLastCalledWith('https://example.com/')
+  click(items, 'Print…')
+  expect(mocks.contents.print).toHaveBeenCalledWith({ printBackground: true }, expect.any(Function))
+  click(items, 'Inspect element')
+  expect(mocks.contents.inspectElement).toHaveBeenLastCalledWith(31, 67)
+  click(items, 'Search selection in new tab')
+  expect(mocks.searchUrl).toHaveBeenLastCalledWith('work', 'react & hooks')
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    openedLinks: ['http://search.lan/?q=react%20%26%20hooks'],
+  })
+  for (const link of [
+    'javascript:alert(1)',
+    'file:///private/file',
+    'https://user:secret@example.com/',
+  ]) {
+    expect(
+      menu(link).some((item) =>
+        ['Open link in new tab', 'Open link in default browser', 'Download linked file'].includes(
+          item.label ?? '',
+        ),
+      ),
+    ).toBe(false)
+  }
+  const actions = [
+    'Reload without cache',
+    'Download linked file',
+    'Open link in default browser',
+    'Open page in default browser',
+    'Print…',
+    'Inspect element',
+    'Search selection in new tab',
+  ]
+  const stale = menu()
+  listener('did-start-navigation')?.({}, 'https://example.com/next', false, true)
+  vi.clearAllMocks()
+  for (const action of actions) click(stale, action)
+  expect(mocks.contents.reloadIgnoringCache).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
+  expect(mocks.openExternal).not.toHaveBeenCalled()
+  expect(mocks.contents.print).not.toHaveBeenCalled()
+  expect(mocks.contents.inspectElement).not.toHaveBeenCalled()
+  expect(mocks.searchUrl).not.toHaveBeenCalled()
+  const closed = menu()
+  await call(event, { action: 'close', key: 'shared' })
+  for (const action of actions) click(closed, action)
+  expect(mocks.contents.reloadIgnoringCache).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
+  expect(mocks.openExternal).not.toHaveBeenCalled()
+  expect(mocks.contents.print).not.toHaveBeenCalled()
+  expect(mocks.contents.inspectElement).not.toHaveBeenCalled()
+  expect(mocks.searchUrl).not.toHaveBeenCalled()
+})
+
+it('offers native image actions for the clicked image, including linked and generated images', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const params = {
+    mediaType: 'image',
+    hasImageContents: true,
+    srcURL: 'http://images.lan/photo.png',
+    linkURL: 'https://example.com/link',
+    x: 41,
+    y: 72,
+    selectionText: '',
+    formControlType: 'none',
+    isEditable: false,
+  }
+  const menu = (changes: Partial<typeof params> = {}) => {
+    listener('context-menu')?.({}, { ...params, ...changes })
+    return mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  }
+  const click = (items: Electron.MenuItemConstructorOptions[], label: string) => {
+    const item = items.find((item) => item.label === label)
+    if (!item?.click) throw new Error(`Missing ${label}`)
+    item.click(
+      {} as Electron.MenuItem,
+      mocks.window as unknown as Electron.BrowserWindow,
+      {} as Electron.KeyboardEvent,
+    )
+  }
+  const items = menu()
+  click(items, 'Copy image')
+  expect(mocks.contents.copyImageAt).toHaveBeenLastCalledWith(41, 72)
+  click(items, 'Download image')
+  expect(mocks.contents.downloadURL).toHaveBeenLastCalledWith(params.srcURL)
+  click(items, 'Copy image address')
+  expect(mocks.clipboard).toHaveBeenLastCalledWith(params.srcURL)
+  click(items, 'Open image in new tab')
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    openedLinks: [params.srcURL],
+  })
+  expect(
+    menu({ hasImageContents: false }).find((item) => item.label === 'Copy image')?.enabled,
+  ).toBe(false)
+  for (const srcURL of ['data:image/png;base64,cGl4ZWw=', 'blob:https://example.com/image']) {
+    const generated = menu({ srcURL })
+    expect(generated.some((item) => item.label === 'Open image in new tab')).toBe(false)
+    click(generated, 'Download image')
+    expect(mocks.contents.downloadURL).toHaveBeenLastCalledWith(srcURL)
+  }
+  const canvas = menu({ mediaType: 'canvas', srcURL: '' })
+  click(canvas, 'Copy image')
+  expect(
+    canvas.some((item) => item.label === 'Copy image address' || item.label === 'Download image'),
+  ).toBe(false)
+  for (const srcURL of ['file:///private/image.png', 'javascript:alert(1)'])
+    expect(
+      menu({ srcURL }).some(
+        (item) => item.label === 'Download image' || item.label === 'Open image in new tab',
+      ),
+    ).toBe(false)
+  expect(menu({ mediaType: 'none' }).some((item) => item.label === 'Copy image')).toBe(false)
+  const stale = menu()
+  mocks.contents.copyImageAt.mockClear()
+  mocks.contents.downloadURL.mockClear()
+  listener('did-start-navigation')?.({}, 'https://example.com/next', false, true)
+  click(stale, 'Copy image')
+  click(stale, 'Download image')
+  expect(mocks.contents.copyImageAt).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
+  const closed = menu()
+  await call(event, { action: 'close', key: 'shared' })
+  click(closed, 'Copy image')
+  click(closed, 'Download image')
+  expect(mocks.contents.copyImageAt).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
 })
 
 it('offers picture-in-picture only for the selected supported video and its frame', async () => {
@@ -2226,6 +2628,8 @@ it('offers picture-in-picture only for the selected supported video and its fram
     x: 100,
     y: 200,
     mediaType: 'video',
+    srcURL: '',
+    hasImageContents: false,
     mediaFlags: { canShowPictureInPicture: true, isShowingPictureInPicture: false },
     linkURL: '',
     selectionText: '',
@@ -2431,7 +2835,7 @@ it.each(['window', 'page'] as const)(
       bounds: { x: 0, y: 0, width: 800, height: 600 },
     })
     const popup = popupWindow()
-    listener('did-create-window')?.(popup)
+    listener('did-create-window')?.(popup, { url: 'https://example.com/' })
     const pip = popupWindow()
     const authorize = mocks.contents.ipc.handle.mock.calls.find(
       ([name]) => name === 'browser:document-pip-authorize',
@@ -2496,8 +2900,12 @@ it.each(['window', 'page'] as const)(
     target.webContents.focus.mockClear()
     mocks.window.webContents.focus.mockClear()
     if (close === 'page') {
-      const destroyed = mocks.contents.once.mock.calls.find(([name]) => name === 'destroyed')?.[1]
-      if (typeof destroyed !== 'function') throw new Error('Missing destruction listener')
+      const listeners = mocks.contents.once.mock.calls
+        .filter(([name]) => name === 'destroyed')
+        .map(([, listener]) => listener)
+      const destroyed = () => {
+        for (const listener of listeners) if (typeof listener === 'function') listener()
+      }
       mocks.contents.isDestroyed.mockReturnValue(true)
       destroyed()
     } else {
@@ -2615,7 +3023,7 @@ it('queues distinct local and remote link tabs until the workspace consumes them
   })
   await expect(
     call(event, { action: 'status', key: 'workspace', tabCount: 3 }),
-  ).resolves.toBeUndefined()
+  ).resolves.toMatchObject({ tabStates: [expect.objectContaining({ key: 'external:one' })] })
 })
 
 it('rejects unsafe and ownerless external destinations before creating a native page', async () => {
@@ -2694,7 +3102,12 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
   const popup = popupWindow()
   mocks.pipWindow.mockReturnValue({ window: popup as never, contents: popup.webContents as never })
   expect(result.createWindow?.({})).toBe(popup.webContents)
-  expect(mocks.pipWindow).toHaveBeenCalledWith({}, 'https://example.com/', expect.any(Function))
+  expect(mocks.pipWindow).toHaveBeenCalledWith(
+    {},
+    'https://example.com/',
+    expect.any(Function),
+    true,
+  )
   expect(popup.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
   expect(popup.setVisibleOnAllWorkspaces.mock.calls).toEqual(
     process.platform === 'linux' ? [[true]] : [],
@@ -2710,10 +3123,662 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
     'callTabs.0.pictureInPicture',
     true,
   )
+  await call(event, { action: 'set-audio-muted', key: 'shared', muted: true })
+  expect(mocks.contents.setAudioMuted).toHaveBeenCalledWith(true)
+  expect(popup.webContents.setAudioMuted).toHaveBeenCalledWith(true)
   const closed = popup.once.mock.calls.find(([name]) => name === 'closed')?.[1]
   closed?.()
   expect(await call(event, { action: 'tab-activity', key: 'activity' })).toHaveProperty(
     'protectedKeys',
     [],
   )
+})
+
+it.each(['teams.microsoft.com', 'teams.cloud.microsoft', 'teams.live.com'])(
+  'keeps the call restoration callback when Teams hides the Back control at %s',
+  async (host) => {
+    const call = handler()
+    await call(event, workspaceShow)
+    vi.spyOn(mocks.contents, 'getURL').mockReturnValue('https://' + host + '/v2/call')
+    const authorize = mocks.contents.ipc.handle.mock.calls.find(
+      ([name]) => name === 'browser:document-pip-authorize',
+    )?.[1]
+    if (typeof authorize !== 'function') throw new Error('Missing Document PiP authorization')
+    const frameName = authorize({ senderFrame: mocks.contents.mainFrame }, true, false)
+    const result = openHandler()({
+      url: 'about:blank',
+      frameName,
+      disposition: 'new-window',
+      features: 'popup,width=420,height=280',
+    })
+    const popup = popupWindow()
+    mocks.pipWindow.mockReturnValue({
+      window: popup as never,
+      contents: popup.webContents as never,
+    })
+    result.createWindow?.({})
+    expect(mocks.pipWindow).toHaveBeenCalledWith(
+      {},
+      'https://' + host + '/v2/call',
+      expect.any(Function),
+      false,
+    )
+  },
+)
+
+it('reports background tab activity, validates frame reports, and mutes without selecting the tab', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const devices = mocks.contents.ipc.on.mock.calls.find(
+    ([name]) => name === 'browser:tab-devices',
+  )?.[1]
+  const badge = mocks.contents.ipc.on.mock.calls.find(([name]) => name === 'browser:tab-badge')?.[1]
+  if (typeof devices !== 'function' || typeof badge !== 'function')
+    throw new Error('Missing activity listeners')
+  const main = { senderFrame: mocks.contents.mainFrame }
+  devices(main, { camera: true, microphone: true, screenSharing: true })
+  badge(main, 7)
+  devices({ senderFrame: {} }, { camera: false, microphone: false, screenSharing: false })
+  badge({ senderFrame: {} }, 99)
+  mocks.contents.isCurrentlyAudible.mockReturnValue(true)
+  await call(event, { action: 'hide', key: workspaceShow.key })
+  const status = await call(event, { action: 'status', key: 'workspace', tabCount: 1 })
+  expect(status).toMatchObject({
+    tabStates: [
+      {
+        key: workspaceShow.key,
+        badge: 7,
+        camera: true,
+        microphone: true,
+        screenSharing: true,
+        audible: true,
+        muted: false,
+      },
+    ],
+  })
+  mocks.window.focus.mockClear()
+  const muted = await call(event, {
+    action: 'set-audio-muted',
+    key: workspaceShow.key,
+    muted: true,
+  })
+  expect(muted).toMatchObject({ tabStates: [expect.objectContaining({ muted: true })] })
+  expect(mocks.contents.setAudioMuted).toHaveBeenCalledWith(true)
+  expect(mocks.window.focus).not.toHaveBeenCalled()
+  devices(main, { camera: false, microphone: false, screenSharing: false })
+  badge(main, null)
+  expect(await call(event, { action: 'status', key: 'workspace', tabCount: 1 })).toMatchObject({
+    tabStates: [
+      expect.objectContaining({
+        camera: false,
+        microphone: false,
+        screenSharing: false,
+        badge: undefined,
+      }),
+    ],
+  })
+  await call(event, { ...workspaceShow, key: 'preview', workspaceBrowser: false })
+  await expect(
+    call(event, { action: 'set-audio-muted', key: 'preview', muted: true }),
+  ).rejects.toThrow('Browser workspace')
+})
+
+function workspaceTarget(id: number) {
+  return {
+    ...mocks.window,
+    id,
+    once: vi.fn<typeof mocks.window.once>(),
+    on: vi.fn<typeof mocks.window.on>(),
+    contentView: {
+      ...mocks.window.contentView,
+      children: [] as unknown[],
+      addChildView: vi.fn<typeof mocks.window.contentView.addChildView>(),
+      removeChildView: vi.fn<typeof mocks.window.contentView.removeChildView>(),
+    },
+    webContents: {
+      ...mocks.window.webContents,
+      on: vi.fn<typeof mocks.window.webContents.on>(),
+      send: vi.fn<typeof mocks.window.webContents.send>(),
+    },
+  }
+}
+const placeholderState = {
+  action: 'sync-tabs' as const,
+  key: 'workspace',
+  activeId: 'empty',
+  tabs: [
+    {
+      key: 'empty-key',
+      tab: {
+        id: 'empty',
+        url: '',
+        title: '',
+        kind: 'web' as const,
+        profileId: 'default',
+      },
+    },
+  ],
+}
+
+it('detaches and returns pinned, sleeping and remote tabs without replacing the live page', async () => {
+  const target = workspaceTarget(2)
+  const minimized = vi.spyOn(target, 'isMinimized').mockReturnValue(true)
+  const create = vi.fn<() => Promise<import('electron').BrowserWindow>>(async () => {
+    mocks.windowFor = target
+    await call(event, placeholderState)
+    mocks.windowFor = undefined
+    return target as never
+  })
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create,
+    list: () => [target as never],
+    main: async () => mocks.window as never,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  const tabs = [
+    {
+      key: 'shared',
+      tab: {
+        id: 'pinned',
+        title: 'Pinned',
+        url: 'https://example.com/',
+        kind: 'web',
+        profileId: 'default',
+        pinned: true,
+        homeUrl: 'https://example.com/',
+        keepAwake: true,
+      },
+    },
+    {
+      key: 'asleep-key',
+      tab: {
+        id: 'asleep',
+        title: 'Read later',
+        url: 'http://lan.local/',
+        kind: 'web',
+        profileId: 'work',
+        settledAt: 100,
+        keepAwake: false,
+      },
+    },
+    {
+      key: 'remote-key',
+      tab: {
+        id: 'remote',
+        title: 'Remote app',
+        url: 'http://vpn.local/',
+        kind: 'remote',
+        profileId: 'default',
+        runtimeId: 'server',
+        snoozedUntil: Date.now() + 60000,
+      },
+    },
+  ]
+  await call(event, { ...placeholderState, tabs, activeId: 'pinned' })
+  await call(event, { ...workspaceShow, keepAwake: true })
+  expect(
+    await call(event, { action: 'focus-detached-browser', key: 'workspace' }),
+  ).not.toHaveProperty('focusedWindowId')
+  const loads = mocks.contents.loadURL.mock.calls.length
+  mocks.media.keepAlive.mockReturnValue(true)
+  await call(event, { action: 'detach-tabs', key: 'workspace', tabs, activeId: 'pinned' })
+  expect(create).toHaveBeenCalledOnce()
+  expect(await call(event, { action: 'focus-detached-browser', key: 'workspace' })).toMatchObject({
+    focusedWindowId: 2,
+  })
+  expect(target.restore).toHaveBeenCalled()
+  minimized.mockRestore()
+  expect(target.show).toHaveBeenCalled()
+  expect(target.focus).toHaveBeenCalled()
+  expect(mocks.create).toHaveBeenCalledOnce()
+  expect(mocks.media.moveTab).toHaveBeenCalledWith(mocks.contents, 2)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  mocks.windowFor = target
+  const detached = await call(event, { action: 'status', key: 'shared', tabCount: 3 })
+  expect(detached).toMatchObject({
+    movedTabs: [{ key: 'shared', tab: { ...tabs[0].tab, title: 'Example' } }, tabs[1], tabs[2]],
+    focusedTabKey: 'shared',
+  })
+  // Close immediately after event delivery, before the destination renderer can sync again.
+  const returning = bridge.returnWindowTabs(target as never)
+  expect(bridge.returnWindowTabs(target as never)).toBe(returning)
+  let saved = false
+  void returning.then(() => {
+    saved = true
+  })
+  await vi.waitFor(() => expect(mocks.media.moveTab).toHaveBeenLastCalledWith(mocks.contents, 1))
+  mocks.windowFor = undefined
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    tabs,
+    activeId: 'pinned',
+    persisted: false,
+  })
+  expect(saved).toBe(false)
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    tabs,
+    activeId: 'pinned',
+    persisted: true,
+  })
+  await returning
+  expect(
+    await call(event, { action: 'focus-detached-browser', key: 'workspace' }),
+  ).not.toHaveProperty('focusedWindowId')
+  const closed = target.once.mock.calls.find(([name]) => name === 'closed')![1]
+  closed()
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  mocks.windowFor = undefined
+  expect(await call(event, { action: 'status', key: 'shared', tabCount: 0 })).toMatchObject({
+    movedTabs: [{ key: 'shared', tab: { ...tabs[0].tab, title: 'Example' } }, tabs[1], tabs[2]],
+    focusedTabKey: 'shared',
+  })
+  await call(event, { ...workspaceShow, keepAwake: true })
+  expect(mocks.create).toHaveBeenCalledOnce()
+  expect(mocks.contents.loadURL).toHaveBeenCalledTimes(loads)
+})
+
+it.each(['web', 'remote'] as const)(
+  'closes independent %s browser tabs without returning them',
+  async (kind) => {
+    const target = workspaceTarget(2)
+    const main = vi.fn<() => Promise<import('electron').BrowserWindow>>(
+      async () => mocks.window as never,
+    )
+    const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => target as never,
+      list: () => [target as never],
+      main,
+    })
+    registrations.push(bridge)
+    const call = mocks.handle.mock.calls.at(-1)![1]
+    mocks.windowFor = target
+    if (kind === 'web') await call(event, workspaceShow)
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      activeId: 'independent',
+      tabs: [
+        {
+          key: 'shared',
+          tab: {
+            id: 'independent',
+            url: 'http://lan.local/',
+            title: 'Independent',
+            kind,
+            profileId: 'default',
+            ...(kind === 'remote' ? { runtimeId: 'server' } : {}),
+          },
+        },
+      ],
+    })
+    await bridge.returnWindowTabs(target as never)
+    expect(main).not.toHaveBeenCalled()
+    expect(mocks.media.moveTab).not.toHaveBeenCalled()
+    expect(mocks.window.webContents.send).not.toHaveBeenCalled()
+    if (kind === 'web') {
+      target.once.mock.calls.find(([name]) => name === 'closed')![1]()
+    }
+    expect(mocks.contents.close).toHaveBeenCalledTimes(kind === 'web' ? 1 : 0)
+  },
+)
+
+it.each([
+  ['web', false],
+  ['remote', false],
+  ['web', true],
+] as const)(
+  'returns only the detached pinned %s tab (source closed: %s)',
+  async (kind, sourceClosed) => {
+    const source = workspaceTarget(3)
+    const target = workspaceTarget(2)
+    const main = vi.fn<() => Promise<import('electron').BrowserWindow>>(
+      async () => mocks.window as never,
+    )
+    const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => {
+        mocks.windowFor = target
+        await call(event, placeholderState)
+        mocks.windowFor = source
+        return target as never
+      },
+      list: () => [target as never],
+      main,
+    })
+    registrations.push(bridge)
+    const call = mocks.handle.mock.calls.at(-1)![1]
+    await call(event, placeholderState)
+    mocks.windowFor = source
+    const pinned = {
+      key: 'shared',
+      tab: {
+        id: 'pinned',
+        url: 'http://lan.local/',
+        title: 'Pinned',
+        kind,
+        profileId: 'default',
+        pinned: true,
+        homeUrl: 'http://lan.local/',
+        ...(kind === 'remote' ? { runtimeId: 'server' } : {}),
+      },
+    }
+    const other = {
+      key: 'other',
+      tab: {
+        id: 'other',
+        url: 'http://vpn.local/',
+        title: 'Other',
+        kind: 'remote',
+        profileId: 'work',
+        runtimeId: 'server',
+      },
+    }
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: [pinned, other],
+      activeId: 'pinned',
+    })
+    if (kind === 'web') await call(event, { ...workspaceShow, url: pinned.tab.url })
+    await call(event, { action: 'move-tab', key: pinned.key, tab: pinned.tab })
+    mocks.windowFor = target
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: [pinned, { ...other, key: 'extra', tab: { ...other.tab, id: 'extra' } }],
+      activeId: 'extra',
+    })
+    vi.spyOn(source, 'isDestroyed').mockReturnValue(sourceClosed)
+    const destination = sourceClosed ? mocks.window : source
+    const returning = bridge.returnWindowTabs(target as never)
+    await vi.waitFor(() =>
+      expect(destination.webContents.send).toHaveBeenCalledWith('browser:focus-workspace'),
+    )
+    mocks.windowFor = sourceClosed ? undefined : source
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: sourceClosed ? [pinned] : [other, pinned],
+      activeId: 'pinned',
+      persisted: true,
+    })
+    await returning
+    const status = await call(event, {
+      action: 'status',
+      key: 'other',
+      tabCount: sourceClosed ? 1 : 2,
+    })
+    expect(status).toHaveProperty('movedTabs', [
+      expect.objectContaining({
+        key: pinned.key,
+        tab: expect.objectContaining({ id: 'pinned', pinned: true, homeUrl: pinned.tab.homeUrl }),
+      }),
+    ])
+    expect(main).toHaveBeenCalledTimes(sourceClosed ? 1 : 0)
+    expect(mocks.contents.close).not.toHaveBeenCalled()
+  },
+)
+
+it('returns a detached workspace after its source closed and the main workspace must restore', async () => {
+  const target = workspaceTarget(2)
+  const source = workspaceTarget(3)
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create: async () => {
+      mocks.windowFor = target
+      await call(event, placeholderState)
+      mocks.windowFor = source
+      return target as never
+    },
+    list: () => [target as never],
+    main: async () => mocks.window as never,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  mocks.windowFor = source
+  await call(event, workspaceShow)
+  const tab = {
+    id: 'remote',
+    url: 'http://lan.local/',
+    title: 'Remote',
+    kind: 'remote',
+    runtimeId: 'server',
+    profileId: 'work',
+    pinned: true,
+  }
+  await call(event, {
+    action: 'detach-tabs',
+    key: 'workspace',
+    activeId: 'remote',
+    tabs: [{ key: 'remote-key', tab }],
+  })
+  source.once.mock.calls.find(([name]) => name === 'closed')![1]()
+  mocks.windowFor = target
+  const returning = bridge.returnWindowTabs(target as never)
+  await vi.waitFor(() =>
+    expect(mocks.window.webContents.send).toHaveBeenCalledWith('browser:focus-workspace'),
+  )
+  mocks.windowFor = undefined
+  await call(event, placeholderState)
+  await vi.waitFor(() =>
+    expect(
+      mocks.window.webContents.send.mock.calls.filter(
+        ([name]) => name === 'browser:focus-workspace',
+      ),
+    ).toHaveLength(2),
+  )
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    activeId: 'remote',
+    tabs: [{ key: 'remote-key', tab }],
+    persisted: true,
+  })
+  await returning
+  expect(await call(event, { action: 'status', key: 'empty-key', tabCount: 1 })).toMatchObject({
+    movedTabs: [{ key: 'remote-key', tab }],
+  })
+})
+
+it('preserves the detached workspace if returning would exceed the main tab limit', async () => {
+  const target = workspaceTarget(2)
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create: async () => target as never,
+    list: () => [target as never],
+    main: async () => mocks.window as never,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  mocks.windowFor = target
+  await call(event, placeholderState)
+  mocks.windowFor = undefined
+  await call(event, { ...placeholderState, action: 'detach-tabs' })
+  const tabs = Array.from({ length: 100 }, (_, i) => ({
+    key: `main-${i}`,
+    tab: {
+      id: `main-${i}`,
+      title: 'Page',
+      url: 'https://example.com/',
+      kind: 'web',
+      profileId: 'default',
+    },
+  }))
+  await call(event, { action: 'sync-tabs', key: 'workspace', tabs, activeId: 'main-0' })
+  mocks.windowFor = target
+  await call(event, workspaceShow)
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    activeId: 'extra',
+    tabs: [
+      {
+        key: 'shared',
+        tab: {
+          id: 'extra',
+          url: 'https://example.com/',
+          title: 'Extra',
+          kind: 'web',
+          profileId: 'default',
+          pinned: true,
+        },
+      },
+    ],
+  })
+  await expect(bridge.returnWindowTabs(target as never)).rejects.toThrow('limit 100')
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  expect(mocks.media.moveTab).not.toHaveBeenCalled()
+  expect(await call(event, { action: 'status', key: 'shared' })).toHaveProperty(
+    'url',
+    'https://example.com/',
+  )
+})
+
+it.each(['show', 'keep-awake'] as const)(
+  'cancels pending %s when its tab is detached before creation completes',
+  async (action) => {
+    const target = workspaceTarget(2)
+    let finish = () => {}
+    const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => target as never,
+      list: () => [target as never],
+    })
+    registrations.push(bridge)
+    const call = mocks.handle.mock.calls.at(-1)![1]
+    mocks.windowFor = target
+    await call(event, placeholderState)
+    mocks.windowFor = undefined
+    mocks.extensions.prepare.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const tab = {
+      id: 'restoring',
+      title: 'Gmail',
+      url: 'https://mail.google.com/',
+      kind: 'web',
+      profileId: 'default',
+    }
+    const restoring = call(event, {
+      ...workspaceShow,
+      action,
+      key: 'restoring-key',
+      url: tab.url,
+      profileId: 'default',
+    })
+    await call(event, {
+      action: 'detach-tabs',
+      key: 'workspace',
+      activeId: 'restoring',
+      tabs: [{ key: 'restoring-key', tab }],
+    })
+    finish()
+    await restoring
+    expect(mocks.create).not.toHaveBeenCalled()
+    mocks.windowFor = target
+    expect(await call(event, { action: 'status', key: 'empty-key', tabCount: 1 })).toMatchObject({
+      movedTabs: [{ key: 'restoring-key', tab }],
+    })
+  },
+)
+
+it.each(['dovo-studio', 'DovoStudio', 'Dovo-Studio'])(
+  'preserves native identity by default and scopes compatibility for %s',
+  async (name) => {
+    const chrome =
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36'
+    const native = chrome.replace('Chrome/', `${name}/0.0.9 Electron/45.2.1 Chrome/`)
+    vi.spyOn(mocks.contents, 'getUserAgent').mockReturnValue(native)
+    const call = handler()
+    await call(event, workspaceShow)
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(native)
+    expect(mocks.contents.session.setUserAgent).toHaveBeenLastCalledWith(native)
+    await call(event, { ...workspaceShow, url: 'https://web.whatsapp.com/' })
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(chrome)
+    const request = (url: string, webContentsId = mocks.contents.id) => {
+      const respond = vi.fn<(response: Electron.BeforeSendResponse) => void>()
+      mocks.requests.headers?.(
+        {
+          id: 1,
+          url,
+          method: 'GET',
+          webContentsId,
+          resourceType: 'mainFrame',
+          referrer: '',
+          timestamp: 0,
+          requestHeaders: { 'user-agent': 'previous-page', 'Accept-Language': 'en-US' },
+        },
+        respond,
+      )
+      return respond.mock.calls.at(-1)?.[0]
+    }
+    expect(request('https://web.whatsapp.com/')).toEqual({
+      requestHeaders: { 'user-agent': chrome, 'Accept-Language': 'en-US' },
+    })
+    expect(request('https://www.google.com/')).toEqual({
+      requestHeaders: { 'user-agent': native, 'Accept-Language': 'en-US' },
+    })
+    expect(request('https://example.com/', -1)).toEqual({})
+    configureBrowserDoNotTrack(mocks.contents.session as unknown as Electron.Session, true)
+    expect(request('http://lan.local/')).toMatchObject({ requestHeaders: { DNT: '1' } })
+    expect(request('http://lan.local/worker', -1)).toMatchObject({ requestHeaders: { DNT: '1' } })
+    configureBrowserDoNotTrack(mocks.contents.session as unknown as Electron.Session, false)
+    expect(request('http://lan.local/')?.requestHeaders).not.toHaveProperty('DNT')
+    // A tab override must not leak into the profile shared with challenge pages.
+    expect(mocks.contents.session.setUserAgent).toHaveBeenLastCalledWith(native)
+    for (const [name, callback] of mocks.contents.on.mock.calls)
+      if (name === 'will-frame-navigate' && typeof callback === 'function')
+        callback({ url: 'https://www.google.com/', isMainFrame: true })
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(native)
+    for (const [name, callback] of mocks.contents.on.mock.calls)
+      if (name === 'will-redirect' && typeof callback === 'function')
+        callback({}, 'https://teams.microsoft.com/', false, true)
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(chrome)
+    for (const [name, callback] of mocks.contents.on.mock.calls)
+      if (name === 'did-start-navigation' && typeof callback === 'function')
+        callback({}, 'https://solvegate.io/demo/managed', false, true)
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(native)
+  },
+)
+
+it('copies full browser selections while keeping thread quotes bounded', async () => {
+  await handler()(event, workspaceShow)
+  const text = 'Selected text '.repeat(4000)
+  listener('context-menu')?.(
+    {},
+    { selectionText: text, isEditable: false, formControlType: '', linkURL: '' },
+  )
+  const items = mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  const copy = items.find((item) => item.label === 'Copy')
+  if (!copy?.click) throw new Error('Missing Copy action')
+  copy.click(
+    {} as Electron.MenuItem,
+    mocks.window as unknown as Electron.BrowserWindow,
+    {} as Electron.KeyboardEvent,
+  )
+  expect(mocks.clipboard).toHaveBeenLastCalledWith(text)
+})
+
+it('returns a native video PiP to its source tab and restores its minimized owning window', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  await call(event, { action: 'hide', key: 'shared' })
+  vi.spyOn(mocks.window, 'isMinimized').mockReturnValue(true)
+  mocks.contents.executeJavaScript.mockResolvedValue(true)
+  const returned = mocks.contents.ipc.on.mock.calls.find(
+    ([name]) => name === 'browser:video-pip-return',
+  )?.[1]
+  if (typeof returned !== 'function') throw new Error('Missing native video PiP return')
+  returned({ senderFrame: mocks.contents.mainFrame })
+  await vi.waitFor(() => expect(mocks.contents.focus).toHaveBeenCalled())
+  expect(mocks.window.restore).toHaveBeenCalled()
+  expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
+  expect(await call(event, { action: 'status', key: 'shared', tabCount: 1 })).toHaveProperty(
+    'focusedTabKey',
+    'shared',
+  )
+  expect(mocks.contents.loadURL).not.toHaveBeenCalled()
 })

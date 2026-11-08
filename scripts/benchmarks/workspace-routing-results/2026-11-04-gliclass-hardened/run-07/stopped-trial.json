@@ -1,0 +1,17 @@
+{
+  "status": "intentionally-stopped",
+  "reason": "User clarified capability questions keep the current model; updated labels and added contrasting capability/use examples for run-08.",
+  "plannedEpochs": 3,
+  "completedEpochs": 1,
+  "selectedEpoch": 1,
+  "selectedValidation": {
+    "correct": 2952,
+    "total": 2961
+  },
+  "batchSize": 32,
+  "learningRate": 5e-6,
+  "seed": 20261106,
+  "retainBaseline": true,
+  "parentRun": "run-06",
+  "datasetSha256": "14a8874037b9d70156d7a76a387fcbf12b81c8a58e9d9c7a66bde9560c8694f2"
+}

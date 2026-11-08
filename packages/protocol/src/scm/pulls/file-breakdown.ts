@@ -70,7 +70,7 @@ export function pullFileKind(file: File): FileKind {
     /\.(?:generated|gen)\.|\.g\.dart$|\.pb\.(?:go|cc|h)$|_pb2(?:_grpc)?\.py$|\.min\.(?:js|css)$|\.(?:js|css)\.map$/.test(
       name,
     ) ||
-    inside('generated', '__generated__')
+    inside('generated', '__generated__', '_generated')
   )
     return 'generated'
   if (
@@ -92,11 +92,11 @@ export function pullFileKind(file: File): FileKind {
   )
     return 'mocks'
   if (
-    /[._](?:test|spec|e2e|cy)\.[^.]+$|^test_.+\.py$|^conftest\.py$|^(?:vitest|jest)\.setup\.[^.]+$/i.test(
+    /[._](?:test|spec|e2e|cy|eval)\.[^.]+$|^test_.+\.py$|^conftest\.py$|^(?:vitest|jest)\.setup\.[^.]+$/i.test(
       name,
     ) ||
     /(?:Tests?|Spec)\.(?:java|kt|kts|scala|groovy|cs|php|swift|m)$/.test(name) ||
-    inside('__tests__', '__test__', 'test', 'tests', 'spec', 'specs', 'e2e', 'cypress')
+    inside('__tests__', '__test__', 'test', 'tests', 'spec', 'specs', 'e2e', 'cypress', 'evals')
   )
     return 'tests'
   if (

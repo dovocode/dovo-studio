@@ -64,7 +64,7 @@ const mocks = {
     import {createContext,useContext} from 'react';
     import {Effect} from 'effect';
     export const RuntimeContext=createContext(null);
-    export const useRuntime=()=>useContext(RuntimeContext);
+    export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>useContext(RuntimeContext);
     export const RuntimeScope=({runtimeId,children})=>{
       const root=useRuntime();
       const entry=root.overviews.find(entry=>entry.profile.id===runtimeId);
@@ -76,7 +76,7 @@ const mocks = {
     };
   `,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
-  '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;`,
+  '../../runtime/preferences/app-preferences': `export const useCarMode=()=>!!window.carMode;`,
   '../../shell/navigation': `import {createContext,useContext} from 'react';export const FocusContext=createContext(true);export const useNavigation=()=>({focused:useContext(FocusContext),navigate:()=>{}});`,
   '../../shell/use-route-computer': `export const useRouteComputer=()=>({error:'',retry:()=>{}});`,
   '../../ui/content/text': `export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;`,
@@ -97,9 +97,9 @@ const mocks = {
     export const ConversationContext=createContext(null);
     export const useConversation=()=>useContext(ConversationContext);
     export const useConversationSelector=fn=>fn({task:useContext(ConversationContext)});
-    export const ConversationProvider=({children,task,temporary})=>{
+    export const ConversationProvider=({children,task,temporary,openCheckpoint})=>{
       useEffect(()=>{window.providerMounts++;return ()=>window.providerUnmounts++},[]);
-      window.task=task;window.temporary=temporary;
+      window.task=task;window.temporary=temporary;window.openCheckpoint=openCheckpoint;
       return <ConversationContext.Provider value={task}>{children}</ConversationContext.Provider>;
     };
   `,
@@ -116,7 +116,8 @@ const mocks = {
     import {Schema} from 'effect';
     import {runClientEffect} from '@dovo/client-runtime';
     import {useRuntime} from '../../runtime/connection/provider';
-    export const Composer=({task,onSelectRemote,renderAbove})=>{
+    export const Composer=({task,onSelectRemote,renderAbove,onHistoryBrowsingChange})=>{
+      window.setHistoryBrowsing=onHistoryBrowsingChange;
       const runtime=useRuntime();
       const [text,setText]=useState(task.draft);
       const [pending,setPending]=useState(false);
@@ -141,14 +142,16 @@ const mocks = {
     };
   `,
   './use-task-lifecycle': `export const useTaskLifecycle=()=>({enabled:true,error:'',busy:false});export const chooseSnoozeDuration=async()=>3600000;`,
-  './task-project-sheet': `import {TaskWaitingPanel} from '${root}apps/mobile/src/tasks/detail/task-waiting-panel';export const TaskProjectSheet=({task,onClose})=><section><TaskWaitingPanel task={task}/><button onClick={onClose}>Close project information</button></section>;`,
+  './task-project-sheet': `import {TaskWaitingPanel} from '${root}apps/mobile/src/tasks/detail/task-waiting-panel';export const TaskProjectSheet=({task,onClose,inline,onShare})=>{window.projectInfoInline=inline;return <section><TaskWaitingPanel task={task}/>{onShare&&<button onClick={onShare}>Share thread</button>}<button onClick={onClose}>Close project information</button></section>};`,
   './use-task-viewed': `export const useTaskViewed=()=>({error:false});`,
 }
 for (const [path, names] of Object.entries({
   './task-linked-pull-sheet': ['TaskLinkedPullSheet'],
   './task-thread-behavior': ['TaskThreadBehavior'],
   '../preview/browser-pane': ['BrowserPane', 'DevicesPane'],
-  '../composer/composer-activity': ['ComposerActivity'],
+  './side-thread-changes': ['SideThreadChanges'],
+  '../conversation/components/agent-side-chats': ['SideThreadActions', 'SideChatAttention'],
+  './project-approval-rules': ['ProjectApprovalRules'],
   './task-questions': ['TaskQuestions'],
   './linked-projects': ['LinkedProjects'],
   './rename-thread': ['RenameThread'],
@@ -171,9 +174,9 @@ mocks['./task-review'] =
 mocks['./commit-section'] = 'export const CommitSection=()=>null;'
 mocks['./pull-status'] = 'export const PullStatus=()=>null;'
 mocks['../files/saved-file-preview'] =
-  'export const SavedFilePreview=()=> <div>Binary preview</div>;'
+  'export const SavedFilePreview=({checkoutId,file})=> <div>Binary preview {checkoutId} {file.path}</div>;'
 mocks['../preview/diff-view'] =
-  'export const DiffView=()=> <div data-git-controls>Git controls</div>;'
+  'export const DiffView=({path,after})=> <div data-git-controls>Git controls {path} {after}</div>;'
 mocks['../../scm/review/use-file-review'] =
   'export const useFileReview=()=>({progress:null,ready:false,busy:false,error:"",reload:()=>{},setViewed:()=>{}});'
 mocks['../../scm/review/use-task-review'] =
@@ -238,6 +241,8 @@ const built = await build({
         window.openRoute=href=>setRoute(route=>({href:typeof href==='string'?href:href.pathname,params:typeof href==='string'?{}:href.params,key:route.key+1}));
         window.publish=(runtimeId,task,detailed=true)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],detailTaskIds:detailed?[task.id]:[],workspace:{...s[runtimeId].workspace,tasks:[task]}}}));
         window.online=setOnline;
+        window.clearSnapshots=()=>setSnapshots(saved=>{window.snapshotBackup=saved;return {a:null,b:null}});
+        window.restoreSnapshots=()=>setSnapshots(window.snapshotBackup);
         window.selectRuntime=setActiveId;
         window.setLinkedProject=(present)=>setSnapshots(s=>({...s,a:{...s.a,workspace:{...s.a.workspace,repositories:[s.a.workspace.repositories[0],...(present?[{id:'repo',name:'Linked project',path:'/linked',branch:'main'}]:[])]}}}));
         window.makeGit=(runtimeId,kind)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind}))}}}));
@@ -296,6 +301,11 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByLabel('Message')
   await input.waitFor()
+  assert.equal(await page.evaluate(() => window.headerGestures), true)
+  await page.evaluate(() => window.setHistoryBrowsing(true))
+  await page.waitForFunction(() => window.headerGestures === false)
+  await page.evaluate(() => window.setHistoryBrowsing(false))
+  await page.waitForFunction(() => window.headerGestures === true)
   assert.deepEqual(await page.evaluate(() => window.navigation.map((n) => n.kind)), ['redirect'])
   assert.equal(await page.evaluate(() => window.watches.length), 0)
   await page.getByRole('button', { name: 'Link project', exact: true }).click()
@@ -324,7 +334,7 @@ try {
     window.releaseMessage()
   })
   await page.waitForFunction(() => window.params.draft === undefined)
-  await page.getByLabel('General · a', { exact: true }).waitFor()
+  await page.getByLabel('No Project · a', { exact: true }).waitFor()
   assert.ok(!(await page.locator('header').innerText()).includes('No project'))
   await page.waitForFunction(() => window.originalInput.value === '')
   assert.deepEqual(await page.evaluate(() => window.navigation.map((n) => n.kind)), [
@@ -373,7 +383,14 @@ try {
   assert.deepEqual(menuGroups, ['Tools', 'Navigate', 'Thread', 'Project', 'Advanced', 'Delete'])
   assert.equal(await page.getByRole('button', { name: 'Share thread', exact: true }).count(), 0)
   assert.equal(await page.getByRole('dialog', { name: 'Share thread' }).count(), 0)
+  assert.equal(
+    await page.evaluate(() =>
+      window.headerActions.some((action) => action.label === 'Share thread'),
+    ),
+    false,
+  )
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await page.getByRole('button', { name: 'Share thread', exact: true }).click()
   await page.getByRole('dialog', { name: 'Share thread' }).waitFor()
   await page.evaluate(() => window.setSharingAccount(null))
@@ -382,7 +399,7 @@ try {
   await page.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: true }))
   assert.equal(await page.getByRole('button', { name: 'Share thread', exact: true }).count(), 0)
   await page.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: false }))
-  await page.getByRole('button', { name: 'Share thread', exact: true }).waitFor()
+  await page.getByRole('dialog', { name: 'Share thread' }).waitFor()
   await page.getByRole('button', { name: 'Close sharing', exact: true }).click()
   assert.equal(await page.getByRole('dialog', { name: 'Share thread' }).count(), 0)
   assert.deepEqual(await page.evaluate(() => window.headerCollapsedMenuGroups), [
@@ -390,20 +407,18 @@ try {
     'Advanced',
   ])
   assert.equal(
-    await page.evaluate(
-      () => window.headerActions.find((a) => a.label === 'Project information').overflow,
-    ),
+    await page.evaluate(() => window.headerActions.find((a) => a.label === 'Thread info').overflow),
     true,
   )
   // General threads show their linked project's information directly when it is available.
   await page.evaluate(() => window.setLinkedProject(true))
   await page.waitForFunction(
-    () => window.headerActions.find((a) => a.label === 'Project information').overflow === false,
+    () => window.headerActions.find((a) => a.label === 'Thread info').overflow === false,
   )
   assert.ok((await page.locator('header').innerText()).includes('Linked project'))
   await page.evaluate(() => window.setLinkedProject(false))
   await page.waitForFunction(
-    () => window.headerActions.find((a) => a.label === 'Project information').overflow === true,
+    () => window.headerActions.find((a) => a.label === 'Thread info').overflow === true,
   )
   const threadActions = await page.evaluate(() =>
     window.headerActions
@@ -424,7 +439,7 @@ try {
     false,
   )
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
   // Blurred stack screens remain mounted, but must not retain project information.
   const projectClose = page.getByRole('button', { name: 'Close project information', exact: true })
@@ -432,13 +447,13 @@ try {
   await projectClose.waitFor({ state: 'detached' })
   await page.evaluate(() => window.setFocused(true))
   assert.equal(await projectClose.count(), 0)
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.waitFor()
   await page.getByRole('button', { name: 'Files', exact: true }).click()
   await projectClose.waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Chat', exact: true }).click()
   assert.equal(await projectClose.count(), 0)
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.click()
   await page.getByText('First prompt', { exact: true }).waitFor()
   assert.equal(await input.evaluate((element) => element === window.originalInput), true)
@@ -452,7 +467,7 @@ try {
 
   // Moving an unsent draft changes its runtime intentionally; committing it must only
   // update the owning route params, including after a failed upload and a retry.
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.waitFor()
   await page.evaluate(() => window.openRoute('/new'))
   await page.getByRole('button', { name: 'Remote', exact: true }).waitFor()
@@ -512,11 +527,31 @@ try {
     })
   })
   await page.waitForFunction(
-    () => window.headerActions.find((a) => a.label === 'Project information').overflow === false,
+    () => window.headerActions.find((a) => a.label === 'Thread info').overflow === false,
   )
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.waitFor()
   await projectClose.click()
+  await page.evaluate(() => {
+    window.carMode = true
+    window.setLinkedProject(true)
+  })
+  await page.waitForFunction(
+    () => window.headerActions.find((action) => action.label === 'Thread info').overflow === true,
+  )
+  await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
+  await projectClose.waitFor()
+  assert.equal(
+    await page.evaluate(() => window.projectInfoInline),
+    false,
+    'Car mode opens Thread Info as a sheet',
+  )
+  await projectClose.click()
+  await page.evaluate(() => {
+    window.carMode = false
+    window.setLinkedProject(false)
+  })
   // The real thread header exposes checkout copying for Git and plain-folder threads.
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   for (const kind of [undefined, 'folder']) {
@@ -591,12 +626,69 @@ try {
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await page.getByText('No changed files.', { exact: true }).waitFor()
 
+  // The same path exists in three checkouts; route by checkout ID, including deferred previews.
+  await page.evaluate(() => {
+    const file = (after) => ({ path: 'same.ts', before: '', after, viewed: false })
+    window.publish('b', {
+      ...window.created,
+      status: 'done',
+      files: [],
+      turns: [
+        {
+          id: 'turn',
+          status: 'completed',
+          checkpoint: {
+            files: [file('primary')],
+            omitted: [],
+            linked: [
+              { checkoutId: 'first', repositoryId: 'first', files: [file('first')], omitted: [] },
+              {
+                checkoutId: 'second',
+                repositoryId: 'second',
+                files: [file('second')],
+                omitted: ['large.bin'],
+              },
+            ],
+          },
+        },
+      ],
+    })
+  })
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await page.evaluate(() => window.openCheckpoint('turn', 'same.ts', 'second'))
+  await page.getByText('Git controls same.ts second', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await page.evaluate(() => window.openCheckpoint('turn', 'large.bin', 'second'))
+  await page.getByText('Binary preview second large.bin', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await page.evaluate(() => window.openCheckpoint('turn', 'same.ts'))
+  await page.getByText('Git controls same.ts primary', { exact: true }).waitFor()
+
   await page.evaluate(() => {
     window.online(false)
+    window.selectRuntime('a')
+    window.openRoute('/new')
+  })
+  await input.waitFor()
+  assert.equal(await page.evaluate(() => window.runtimeId), 'a')
+  await input.fill('Draft while the computer is unreachable')
+  const offlineRequests = await page.evaluate(() => window.requests.length)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  assert.equal(await input.inputValue(), 'Draft while the computer is unreachable')
+  assert.equal(await page.evaluate(() => window.requests.length), offlineRequests)
+  await page.getByRole('button', { name: 'Remote', exact: true }).click()
+  await page.waitForFunction(() => window.runtimeId === 'b')
+  assert.equal(await input.inputValue(), 'Draft while the computer is unreachable')
+  assert.equal(await page.evaluate(() => window.savedDraft[0]), 'b')
+  assert.equal(await page.evaluate(() => window.requests.length), offlineRequests)
+  // A never-loaded computer still needs its first workspace; do not invent defaults.
+  await page.evaluate(() => {
+    window.clearSnapshots()
     window.openRoute('/new')
   })
   await page.getByText('Connect a computer', { exact: true }).waitFor()
   assert.equal(await input.count(), 0)
+  await page.evaluate(() => window.restoreSnapshots())
 
   // Already decoded history opens without another aggregate read, while live metadata wins.
   await page.evaluate(async () => {

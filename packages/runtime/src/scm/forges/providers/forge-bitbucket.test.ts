@@ -3,6 +3,21 @@ import type { PullAction } from '@dovo/protocol'
 import { ForgeHttp } from '../integration/forge-http.js'
 import { BitbucketForge } from './forge-bitbucket.js'
 const sha = 'a'.repeat(40)
+it('stops at the supported PR page limit instead of offering an invalid next page', async () => {
+  const { forge } = fixture(({ url }) =>
+    url.pathname.endsWith('/pullrequests')
+      ? {
+          data: {
+            values: [pull],
+            next: `https://api.bitbucket.org/2.0/repositories/team/studio/pullrequests?page=${Number(url.searchParams.get('page') ?? 1) + 1}`,
+          },
+        }
+      : undefined,
+  )
+  const page = await forge.list('open', 100)
+  expect(page.hasMore).toBe(false)
+  expect(page.paginationNotice).toContain('Open older requests on Bitbucket')
+})
 const user = {
   uuid: '{author}',
   display_name: 'Dominic',

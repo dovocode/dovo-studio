@@ -5,10 +5,12 @@ export * from './auth/sharing-key-sync.js'
 export * from './auth/people.js'
 export * from './tasks/task-budget.js'
 export * from './tasks/task-summary.js'
+export * from './tasks/codex-session-import.js'
 export * from './conversation/workflow/turn-summary.js'
 export * from './conversation/timeline.js'
 export * from './conversation/workflow/plan-limits.js'
 export * from './runtime/connection/runtime.js'
+export * from './runtime/connection/managed-policy.js'
 export * from './runtime/connection/approval-details.js'
 export * from './conversation/artifact-download.js'
 export * from './runtime/connection/workspace-reconciliation.js'
@@ -32,6 +34,7 @@ export * from './tasks/harness-availability.js'
 export * from './shared/commands.js'
 
 export * from './scm/pulls/pulls.js'
+export * from './scm/pulls/review-handoff.js'
 export * from './scm/pulls/pull-stack.js'
 
 export * from './automation/activity.js'
@@ -51,6 +54,7 @@ export * from './scm/repositories/repository-pickers.js'
 export * from './auth/access.js'
 
 export * from './tasks/title-generation.js'
+export * from './tasks/task-message.js'
 
 export * from './shared/resources.js'
 
@@ -67,8 +71,10 @@ export * from './conversation/presentation/resource-mentions.js'
 export * from './conversation/workflow/plan-mode.js'
 export * from './conversation/workflow/review-mode.js'
 export * from './tasks/task-templates.js'
+export * from './tasks/next-thread-draft.js'
 export * from './conversation/presentation/usage-summary.js'
 export * from './conversation/presentation/context-meter.js'
+export * from './conversation/presentation/thread-info.js'
 export * from './conversation/presentation/native-todos.js'
 export * from './scm/pulls/pull-presentation.js'
 export * from './conversation/presentation/markdown-links.js'
@@ -185,6 +191,7 @@ export * from './runtime/previews/browser-search.js'
 export * from './runtime/previews/browser-website-customization.js'
 export * from './runtime/previews/browser-tab-lifecycle.js'
 export * from './runtime/previews/browser-favicon.js'
+export * from './runtime/previews/browser-tab-badge.js'
 
 export * from './runtime/connection/mutations.js'
 
@@ -204,6 +211,7 @@ export * from './tasks/agent-configuration.js'
 export * from './runtime/connection/scoped-settings.js'
 
 export * from './tasks/delegation.js'
+export * from './tasks/side-thread-attention.js'
 
 export * from './random-uuid.js'
 
@@ -225,6 +233,9 @@ export * from './runtime/previews/device-hosts.js'
 export * from './conversation/tool-images.js'
 export * from './conversation/chat-image.js'
 export * from './scm/review.js'
+export * from './scm/review-guide.js'
+export * from './scm/local-commits.js'
+export * from './tasks/secret-references.js'
 export * from './scm/review-session.js'
 
 export {
@@ -235,6 +246,7 @@ export {
 
 export {
   learnRuntimeRoutes,
+  reconcileRuntimeRoutes,
   runtimeTransportAddress,
   runtimePeerAddress,
   runtimeRouteVersion,
@@ -244,6 +256,7 @@ export {
 
 export * from './conversation/presentation/task-files.js'
 export * from './conversation/presentation/rich-markdown.js'
+export * from './conversation/presentation/markdown-parts-cache.js'
 
 export * from './thread-window.js'
 export * from './runtime/connection/runtime-icon.js'
@@ -271,6 +284,7 @@ export * from './scm/work/pipeline-links.js'
 export * from './tasks/task-project-selection.js'
 
 export * from './runtime/studio-tools.js'
+export * from './runtime/studio-reference.js'
 export * from './runtime/studio-peers.js'
 
 export * from './runtime/linked-project-tools.js'
@@ -338,3 +352,19 @@ export {
 } from './runtime/connection/shared-state-sync.js'
 export * from './runtime/connection/thread-replication.js'
 export * from './runtime/connection/thread-state-sync.js'
+export * from './scm/repositories/project-browser.js'
+
+export * from './conversation/reading-position.js'
+export * from './conversation/pdf-view-state.js'
+
+export { conversationPagesSize, trimConversationPages } from './conversation/history-retention.js'
+export * from './conversation/workflow/provider-retry.js'
+export * from './runtime/previews/browser-element.js'
+
+export * from './terminal-stream.js'
+
+export * from './runtime/connection/terminal-status.js'
+
+export * from './tasks/workspace-suggestions.js'
+
+export * from './runtime/connection/shared-state-values.js'

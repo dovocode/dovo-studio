@@ -16,6 +16,8 @@ import {
   scopedSettingsResultSchema,
   type SettingsScope,
   type ScopedSettingsValue,
+  updateSharedSettingsEntry,
+  taskSchema,
 } from '@dovo/protocol'
 
 async function fixture() {
@@ -56,6 +58,7 @@ async function fixture() {
   }
   return {
     runtime,
+    token,
     icon: (input: unknown) =>
       fetch(`http://127.0.0.1:${runtime.port}/api/scm/repositories/icon`, {
         method: 'POST',
@@ -72,6 +75,82 @@ async function fixture() {
     },
   }
 }
+
+it('syncs independently edited names and defaults across clones and retains local checkout labels', async () => {
+  const a = await fixture(),
+    b = await fixture()
+  try {
+    await a.read('project')
+    await b.read('project')
+    b.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) => ({ ...repo, name: 'app' })),
+    }))
+    expect((await a.save('project', { projectName: 'Customer Portal' })).status).toBe(200)
+    expect(
+      (await b.save('project', { taskDefaults: { setupCommand: 'pnpm install' } })).status,
+    ).toBe(200)
+    const aShared = a.runtime.services.defaults.get().scopedSettings!.shared
+    const bShared = b.runtime.services.defaults.get().scopedSettings!.shared
+    expect((await a.call('settings/sync', { shared: bShared })).status).toBe(200)
+    expect((await b.call('settings/sync', { shared: aShared })).status).toBe(200)
+    for (const [f, local] of [
+      [a, 'Project'],
+      [b, 'app'],
+    ] as const) {
+      expect((await f.read('project')).value).toMatchObject({
+        projectName: 'Customer Portal',
+        taskDefaults: { setupCommand: 'pnpm install' },
+      })
+      const snapshot = await Effect.runPromise(
+        runtimeSnapshot(f.runtime.services, { id: 'owner', owner: true }),
+      )
+      expect(snapshot.workspace.repositories.find((repo) => repo.id === 'project')).toMatchObject({
+        name: 'Customer Portal',
+        localName: local,
+      })
+      expect(f.runtime.services.store.get().repositories[0].name).toBe(local)
+    }
+    expect(
+      (await a.save('project', { ...(await a.read('project')).value, projectName: null })).status,
+    ).toBe(200)
+    expect(
+      (
+        await b.call('settings/sync', {
+          shared: a.runtime.services.defaults.get().scopedSettings!.shared,
+        })
+      ).status,
+    ).toBe(200)
+    const reset = await Effect.runPromise(
+      runtimeSnapshot(b.runtime.services, { id: 'owner', owner: true }),
+    )
+    expect(reset.workspace.repositories.find((repo) => repo.id === 'project')?.name).toBe('app')
+  } finally {
+    await a.close()
+    await b.close()
+  }
+})
+
+it('rejects stale icon saves after the project remote changes', async () => {
+  const f = await fixture()
+  try {
+    await f.read('project')
+    await f.runtime.services.git.command(f.directory, [
+      'remote',
+      'set-url',
+      'origin',
+      'https://github.com/team/different.git',
+    ])
+    const response = await f.icon({
+      repositoryId: 'project',
+      expectedGitIdentity: 'github.com/team/project',
+    })
+    expect(response.status).toBe(409)
+    expect(f.runtime.services.defaults.get().scopedSettings?.shared).toBeUndefined()
+  } finally {
+    await f.close()
+  }
+})
 
 it('exposes built-in profiles before setup, saves only overrides and keeps existing task launches intact', async () => {
   const f = await fixture()
@@ -726,12 +805,14 @@ it('persists, syncs and clears the default server without replacing other projec
     expect(
       (
         await f.call('settings/sync', {
-          shared: shared.map((entry) => ({
-            ...entry,
-            updatedAt: entry.updatedAt + 1,
-            changeId: 'reset',
-            value: { ...entry.value, taskDefaults: { setupCommand: 'pnpm install' } },
-          })),
+          shared: shared.map((entry) =>
+            updateSharedSettingsEntry(
+              entry.key,
+              entry,
+              { ...entry.value, taskDefaults: { setupCommand: 'pnpm install' } },
+              { updatedAt: entry.updatedAt + 1, changeId: 'reset' },
+            ),
+          ),
         })
       ).status,
     ).toBe(200)
@@ -861,6 +942,110 @@ it('clears profiles when an agent-only save omits agents while retaining indepen
       agents: [],
       taskDefaults: { setupCommand: 'keep' },
     })
+  } finally {
+    await f.close()
+  }
+})
+
+it('syncs project pin and archive as independent categories and unarchives a re-added folder', async () => {
+  const a = await fixture(),
+    b = await fixture()
+  try {
+    const organization = async (f: typeof a) =>
+      (
+        await Effect.runPromise(runtimeSnapshot(f.runtime.services, { id: 'owner', owner: true }))
+      ).workspace.repositories.find((repo) => repo.id === 'project')
+    const thread = {
+      id: 'thread',
+      title: 'Existing work',
+      repositoryId: 'project',
+      agentId: '',
+      status: 'done',
+      createdAt: '2026-10-16T00:00:00Z',
+      messages: [],
+      files: [],
+      draft: '',
+      example: false,
+    }
+    b.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      tasks: [...workspace.tasks, decode(taskSchema, thread)],
+    }))
+    const threadsBefore = b.runtime.services.store.get().tasks
+    expect(threadsBefore.map((task) => task.id)).toContain('thread')
+    // Concurrent edits on two computers, each unaware of the other and never online together.
+    expect(
+      (await a.save('project', { ...(await a.read('project')).value, projectPinned: true })).status,
+    ).toBe(200)
+    expect(
+      (await b.save('project', { ...(await b.read('project')).value, projectArchived: true }))
+        .status,
+    ).toBe(200)
+    const aShared = a.runtime.services.defaults.get().scopedSettings!.shared
+    const bShared = b.runtime.services.defaults.get().scopedSettings!.shared
+    expect((await a.call('settings/sync', { shared: bShared })).status).toBe(200)
+    expect((await b.call('settings/sync', { shared: aShared })).status).toBe(200)
+    for (const f of [a, b])
+      expect(await organization(f)).toMatchObject({ pinned: true, archived: true })
+    expect(b.runtime.services.store.get().tasks).toEqual(threadsBefore)
+    // Archiving leaves the stored project record and its local name untouched.
+    expect(b.runtime.services.store.get().repositories[0]).toMatchObject({ name: 'Project' })
+    expect(b.runtime.services.store.get().repositories[0].archived).toBeUndefined()
+
+    const added = await fetch(`http://127.0.0.1:${b.runtime.port}/api/scm/repositories/add`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${b.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ source: 'local', name: 'Project', path: b.directory }),
+    })
+    expect(added.status).toBe(200)
+    expect(b.runtime.services.store.get().repositories).toHaveLength(1)
+    expect(await organization(b)).toMatchObject({ pinned: true, archived: false })
+    // Restoring keeps the same project record, so existing threads stay attached unchanged.
+    expect(b.runtime.services.store.get().tasks).toEqual(threadsBefore)
+    // The unarchive is a newer revision, so it wins once the other computer syncs.
+    expect(
+      (
+        await a.call('settings/sync', {
+          shared: b.runtime.services.defaults.get().scopedSettings!.shared,
+        })
+      ).status,
+    ).toBe(200)
+    expect(await organization(a)).toMatchObject({ pinned: true, archived: false })
+  } finally {
+    await a.close()
+    await b.close()
+  }
+})
+
+it('keeps pin and archive on this computer for local-only projects and rejects broad scopes', async () => {
+  const f = await fixture()
+  try {
+    await f.runtime.services.git.command(f.directory, ['remote', 'remove', 'origin'])
+    const previous = await f.read('environment-project')
+    expect(
+      (
+        await f.save('environment-project', {
+          ...previous.value,
+          projectPinned: true,
+          projectArchived: true,
+        })
+      ).status,
+    ).toBe(200)
+    expect(f.runtime.services.store.get().repositories[0]).toMatchObject({
+      pinned: true,
+      archived: true,
+    })
+    expect(f.runtime.services.defaults.get().scopedSettings?.shared ?? []).toEqual([])
+    const snapshot = await Effect.runPromise(
+      runtimeSnapshot(f.runtime.services, { id: 'owner', owner: true }),
+    )
+    expect(snapshot.projectOrganizationSupported).toBe(true)
+    expect(snapshot.workspace.repositories[0]).toMatchObject({ pinned: true, archived: true })
+    expect((await f.save('global', { projectPinned: true })).status).toBe(400)
+    expect((await f.save('environment', { projectArchived: true })).status).toBe(400)
   } finally {
     await f.close()
   }

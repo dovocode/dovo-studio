@@ -138,7 +138,10 @@ export function forgePullTarget(
         !(provider === 'gitlab' && url.hostname === 'gitlab.com' && !url.port) &&
         !bindings.some(
           (binding) =>
-            (!binding.provider || binding.provider === provider) && binding.identity === identity,
+            (!binding.provider || binding.provider === provider) &&
+            (binding.provider === 'github'
+              ? binding.identity?.toLowerCase() === identity
+              : binding.identity === identity),
         )
       )
         continue

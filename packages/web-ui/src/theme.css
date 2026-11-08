@@ -57,6 +57,7 @@
   }
 }
 :root {
+  --studio-glow-strength: 0.5;
   color-scheme: dark;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -115,4 +116,314 @@
   --status-warning: var(--dovo-status-warning);
   --destructive: var(--dovo-status-error);
   --destructive-foreground: #ffffff;
+}
+
+/* Destructive actions reuse the palette effects with a red accent. */
+.studio-destructive-accent {
+  --primary: var(--destructive);
+  --primary-foreground: var(--destructive-foreground);
+}
+/* Resolve effects locally when an action overrides the inherited palette accent. */
+:root,
+.studio-destructive-accent {
+  --studio-selected-fill: color-mix(in srgb, var(--primary) 14%, var(--sidebar));
+  --studio-selected-gradient: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--primary) 14%, var(--sidebar)),
+    color-mix(in srgb, var(--primary) 8%, var(--sidebar)) 68%,
+    color-mix(in srgb, var(--primary) 11%, var(--sidebar))
+  );
+  --studio-glow: 0 0 calc(14px * var(--studio-glow-strength))
+    color-mix(in srgb, var(--primary) calc(16% * var(--studio-glow-strength)), transparent);
+  --studio-glow-strong: 0 0 calc(20px * var(--studio-glow-strength))
+    color-mix(in srgb, var(--primary) calc(24% * var(--studio-glow-strength)), transparent);
+  --studio-glow-wide: 0 0 calc(36px * var(--studio-glow-strength))
+    color-mix(in srgb, var(--primary) calc(5% * var(--studio-glow-strength)), transparent);
+  --studio-icon-glow: drop-shadow(
+    0 0 calc(5px * var(--studio-glow-strength))
+      color-mix(in srgb, var(--primary) calc(20% * var(--studio-glow-strength)), transparent)
+  );
+}
+/* Light selections leave room for both accent text and secondary labels to stay readable. */
+:root[data-theme='light'],
+:root[data-theme='light'] .studio-destructive-accent {
+  --studio-selected-fill: color-mix(in srgb, var(--primary) 8%, var(--sidebar));
+  --studio-selected-gradient: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--primary) 8%, var(--sidebar)),
+    color-mix(in srgb, var(--primary) 4%, var(--sidebar)) 68%,
+    color-mix(in srgb, var(--primary) 6%, var(--sidebar))
+  );
+}
+:root[data-theme-gradients='false'],
+:root[data-theme-gradients='false'] .studio-destructive-accent {
+  --studio-selected-gradient: none;
+}
+:root[data-theme-glow='0'],
+:root[data-theme-glow='0'] .studio-destructive-accent {
+  --studio-glow: 0 0 0 transparent;
+  --studio-glow-strong: 0 0 0 transparent;
+  --studio-glow-wide: 0 0 0 transparent;
+  --studio-icon-glow: none;
+}
+
+/* Keep a single scrim when a confirmation opens above an existing editor. */
+.dovo-dialog-overlay {
+  background-color: rgb(0 0 0 / 0.28);
+}
+:is(.dark, [data-theme='dark']) .dovo-dialog-overlay {
+  background-color: rgb(0 0 0 / 0.55);
+}
+.dovo-dialog-overlay:has(~ .dovo-dialog-overlay[data-state='open']) {
+  background-color: transparent;
+  backdrop-filter: none;
+}
+
+/* Shared modal surfaces keep the app's compact type and control sizes. */
+.dovo-dialog-content {
+  --dialog-edge: color-mix(in srgb, var(--border) 75%, var(--foreground) 10%);
+  --dialog-field: var(--card);
+  --dialog-inset: color-mix(in srgb, var(--card) 95%, var(--foreground) 5%);
+  border-color: var(--dialog-edge);
+  border-radius: 18px;
+  background-color: var(--card);
+  background-image: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 24px 80px #0004,
+    var(--studio-glow-wide);
+}
+.dovo-dialog-content [data-slot='dialog-title']:not(.sr-only) {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+.dovo-dialog-content [data-slot='dialog-description']:not(.sr-only) {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.dovo-dialog-content [data-dialog-close] {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+.dovo-dialog-content [data-dialog-close]:hover {
+  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
+}
+.dovo-dialog-content
+  :where(
+    input:not(
+      [type='checkbox'],
+      [type='radio'],
+      [type='range'],
+      [type='file'],
+      [type='hidden'],
+      [type='color']
+    ),
+    textarea,
+    select,
+    button[role='combobox']
+  ) {
+  background-color: var(--dialog-field);
+  color: var(--foreground);
+  box-shadow: inset 0 1px 2px #0000000a;
+}
+.dovo-dialog-content
+  :where(input, textarea, select, button[role='combobox']):not([aria-invalid='true']) {
+  border-color: var(--control-edge);
+}
+.dovo-dialog-content textarea {
+  font-size: 0.8125rem;
+  resize: none;
+  border-radius: 8px;
+}
+.dovo-dialog-content input[type='checkbox'],
+.dovo-dialog-content input[type='radio'] {
+  accent-color: var(--primary);
+}
+.dovo-dialog-content [data-slot='button'][data-variant='default'] {
+  border: 1px solid color-mix(in srgb, var(--action) 65%, var(--primary));
+  background-color: var(--action);
+  background-image: linear-gradient(160deg, transparent, #0000000a);
+  color: var(--action-foreground);
+  box-shadow:
+    inset 0 1px 0 #ffffff30,
+    var(--studio-glow);
+}
+.dovo-dialog-content [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--action) 96%, #000);
+  box-shadow:
+    inset 0 1px 0 #ffffff40,
+    var(--studio-glow-strong);
+}
+:is(
+  [data-slot='button'][data-variant='default']:disabled,
+  .dovo-dialog-content [data-slot='button'][data-variant='default']:disabled
+) {
+  border: 1px solid transparent;
+  background-color: color-mix(in srgb, var(--action) 75%, var(--card));
+  background-image: none;
+  color: var(--action-foreground);
+  box-shadow: none;
+  opacity: 0.5;
+}
+:root[data-theme-gradients='false']
+  :is(.dovo-dialog-content, .dovo-dialog-content [data-slot='button'][data-variant='default']) {
+  background-image: none;
+}
+@media (forced-colors: active) {
+  .dovo-dialog-content,
+  .dovo-dialog-content [data-dialog-close],
+  .dovo-dialog-content [data-slot='button'][data-variant='default'] {
+    border-color: ButtonText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+  :is(
+    [data-slot='button'][data-variant='default']:disabled,
+    .dovo-dialog-content [data-slot='button'][data-variant='default']:disabled
+  ) {
+    border-color: GrayText;
+    background: Canvas;
+    color: GrayText;
+    opacity: 1;
+  }
+}
+
+/* Shared controls use palette-derived layers; caller utilities can still override them. */
+.dovo-dialog-content > [data-slot='dialog-title']:not(.sr-only) + [data-slot='dialog-description'] {
+  margin-top: 0;
+}
+.dovo-dialog-content :is([data-choice-picker], [data-slot='select-trigger']) {
+  background-color: var(--dialog-field);
+  color: var(--foreground);
+  border-radius: 8px;
+  padding-inline: 12px;
+  font-size: 0.8125rem;
+}
+@layer base {
+  :where(input, textarea, button):is(
+    [data-slot='input'],
+    [data-slot='textarea'],
+    [data-slot='select-trigger']
+  ) {
+    background-color: var(--card);
+  }
+  :where([data-slot='card']) {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  }
+  :where(.studio-menu-surface) {
+    border-color: var(--border);
+    background-color: var(--popover);
+    color: var(--foreground);
+    box-shadow:
+      0 12px 32px #0003,
+      var(--studio-glow-wide);
+  }
+  :root[data-theme='light'] :where(.studio-menu-surface) {
+    box-shadow:
+      0 8px 24px #00000014,
+      var(--studio-glow-wide);
+  }
+  :where(
+    [data-slot='select-item'][data-highlighted],
+    [data-slot='select-item'][data-state='checked']
+  ) {
+    background-color: var(--studio-selected-fill);
+    background-image: var(--studio-selected-gradient);
+    color: var(--foreground);
+  }
+  :where(select option, select optgroup) {
+    background-color: var(--popover);
+    color: var(--foreground);
+  }
+  :where([data-slot='button'][data-variant='default']:not([data-size='icon']):not(:disabled)) {
+    background-image: linear-gradient(160deg, #ffffff12, #0000000a);
+    box-shadow:
+      inset 0 1px 0 #ffffff24,
+      var(--studio-glow);
+  }
+  :where(
+    [data-slot='button'][data-variant='default']:not([data-size='icon']):not(:disabled):hover
+  ) {
+    box-shadow:
+      inset 0 1px 0 #ffffff30,
+      var(--studio-glow-strong);
+  }
+  :where(
+    [data-slot='checkbox'][data-state='checked'],
+    [data-slot='checkbox'][data-state='indeterminate'],
+    [data-slot='switch'][data-state='checked']
+  ) {
+    box-shadow: var(--studio-glow);
+  }
+  :root[data-theme-gradients='false'] :where([data-slot='button'][data-variant='default']) {
+    background-image: none;
+  }
+  @media (forced-colors: active) {
+    :where(
+      [data-slot='select-item'][data-highlighted],
+      [data-slot='select-item'][data-state='checked']
+    ) {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+}
+
+.is-user .dovo-message-content {
+  background-color: color-mix(in srgb, var(--foreground) 5%, var(--background));
+}
+
+.dovo-dialog-content
+  :is([data-choice-picker], [data-slot='select-trigger']):not([aria-invalid='true']) {
+  border-color: var(--control-edge);
+}
+
+/* Share the title's grid cell so a sticky close control adds no row or gap. */
+.dovo-dialog-content:not(.flex):not(:has(> [data-slot='dialog-title'].sr-only)) > :first-child {
+  grid-area: 1 / 1;
+}
+.dovo-dialog-content:not(.flex):not(:has(> [data-slot='dialog-title'].sr-only))
+  > .dovo-dialog-close-anchor {
+  position: sticky;
+  top: 4px;
+  grid-area: 1 / 1;
+  inset-inline: 0;
+  align-self: start;
+}
+.dovo-dialog-content > [data-slot='dialog-header'] > [data-slot='dialog-title']:not(.sr-only) {
+  min-height: 2rem;
+}
+@media (width < 640px) {
+  /* Leave room for the 44px close target and its keyboard outline. */
+  .dovo-dialog-content > [data-slot='dialog-title']:not(.sr-only) {
+    min-height: 2.25rem;
+  }
+  .dovo-dialog-content > [data-slot='dialog-header'] > [data-slot='dialog-title']:not(.sr-only) {
+    min-height: 2.75rem;
+  }
+}
+
+/* Quiet field edges by default; high-contrast mode keeps stronger boundaries. */
+:root {
+  --control-edge: color-mix(in srgb, var(--foreground) 32%, var(--card));
+}
+.dark,
+[data-theme='dark'] {
+  --control-edge: color-mix(in srgb, var(--foreground) 24%, var(--card));
+}
+[data-high-contrast='true'] {
+  --control-edge: color-mix(in srgb, var(--foreground) 56%, var(--card));
+}
+:is(.dark, [data-theme='dark'])[data-high-contrast='true'] {
+  --control-edge: color-mix(in srgb, var(--foreground) 42%, var(--card));
+}
+:is(
+  [data-slot='input'],
+  [data-slot='textarea'],
+  [data-choice-picker],
+  [data-slot='select-trigger']
+):not([aria-invalid='true']) {
+  border-color: var(--control-edge);
 }

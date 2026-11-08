@@ -66,6 +66,7 @@ const services = {
   devices: { authenticate() {} },
   store: { taskSummary() {} },
   browsers: {
+    async disconnectUploads() {},
     async attach(_id, listener) {
       publish = listener
       listener({

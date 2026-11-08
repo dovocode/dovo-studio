@@ -1,16 +1,31 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
+import { ImageViewer } from '@dovo/studio-ui/image-viewer'
+import { selectConversationConnection } from './workspace-selection'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import {
   createRuntimeClient,
   taskFileShareSchema,
   taskImageReadSchema,
   richMarkdown,
+  cachedMarkdownParts,
   localMarkdownPath,
   markdownFileName,
   artifactTemplatePrompt,
+  randomUUID,
+  parsePdfViewerMessage,
+  type PdfViewState,
 } from '@dovo/protocol'
 import { TaskVisualization } from './task-visualization'
 import { EditChatImage } from '../composer/chat-image-edit-context'
-import { useEffect, useMemo, useState, useCallback, type ComponentProps } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  type ComponentProps,
+} from 'react'
 import {
   MessageResponse,
   FileTypeIcon,
@@ -21,7 +36,9 @@ import {
   DialogContent,
   DialogTitle,
 } from '@dovo/studio-ui'
-import { useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useWorkspaceSelector, sameWorkspaceFields, useStudioHost } from '@dovo/studio-core'
+
+const markdownParts = cachedMarkdownParts(richMarkdown)
 
 function TaskImage({
   taskId,
@@ -34,7 +51,10 @@ function TaskImage({
   alt: string
   onPreview: (path: string) => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [result, setResult] = useState<{ key: string; uri?: string; error?: string }>()
   const [revision, setRevision] = useState(0)
   const key = JSON.stringify([taskId, path, connection?.address, connection?.token])
@@ -92,7 +112,10 @@ export function TaskMessageResponse({
   taskId: string
   onUseTemplate?: (prompt: string) => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const { openExternalLink } = useStudioHost()
   const [error, setError] = useState('')
   const [previewPath, setPreviewPath] = useState<string>()
@@ -138,7 +161,10 @@ export function TaskMessageResponse({
     [taskId, openFile],
   )
   const openRepository = useRepositoryOpen()
-  const parts = useMemo(() => richMarkdown(children), [children])
+  const parts = useMemo(
+    () => markdownParts(children, true, props.isStreaming),
+    [children, props.isStreaming],
+  )
   const fileCard = (path: string, label: string) => (
     <div className="my-2 flex min-w-0 max-w-full flex-wrap items-center gap-2 rounded-xl border bg-card/60 p-3">
       <button
@@ -217,9 +243,9 @@ export function TaskMessageResponse({
                   const prompt = artifactTemplatePrompt(part.template)
                   if (onUseTemplate) onUseTemplate(prompt)
                   else
-                    void navigator.clipboard
-                      .writeText(prompt)
-                      .catch((cause: unknown) => setError(String(cause)))
+                    void copyTextToClipboard(prompt).catch((cause: unknown) =>
+                      setError(String(cause)),
+                    )
                 }}
               >
                 {onUseTemplate ? 'Use template' : 'Copy template prompt'}
@@ -248,16 +274,26 @@ export function TaskMessageResponse({
 }
 
 function RemoteChatImage({ uri, label }: { uri: string; label: string }) {
+  const [open, setOpen] = useState(false)
   return (
     <span className="inline-flex max-w-full flex-col items-start gap-1">
-      <a href={uri} target="_blank" rel="noreferrer">
+      <button type="button" aria-label={`Preview ${label}`} onClick={() => setOpen(true)}>
         <img
           loading="lazy"
           src={uri}
           alt={label}
           className="max-h-96 max-w-full rounded-lg object-contain"
         />
-      </a>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogTitle>{label}</DialogTitle>
+          <ImageViewer src={uri} alt={label} className="h-[55dvh] min-h-48" />
+          <a href={uri} target="_blank" rel="noreferrer" className="text-xs underline">
+            Open original
+          </a>
+        </DialogContent>
+      </Dialog>
       <EditChatImage source={{ uri }} label={label} />
     </span>
   )
@@ -274,7 +310,10 @@ function TaskVideo({
   label: string
   onPreview: (path: string) => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [revision, setRevision] = useState(0)
   const [source, setSource] = useState<{ key: string; url?: string; error?: string }>()
   const key = JSON.stringify([taskId, path, connection?.address, connection?.token])
@@ -349,16 +388,40 @@ function TaskFileDialog({
   path: string
   onClose: () => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [revision, setRevision] = useState(0)
-  const [result, setResult] = useState<{ key: string; url?: string; error?: string }>()
-  const key = JSON.stringify([taskId, path, connection?.address, connection?.token, revision])
+  const [result, setResult] = useState<{
+    key: string
+    url?: string
+    bridgeId?: string
+    error?: string
+  }>()
+  const transportAddress = connection ? createRuntimeClient(connection).url('/') : undefined
+  const identity = JSON.stringify([
+    taskId,
+    path,
+    connection?.address,
+    connection?.token,
+    transportAddress,
+  ])
+  const key = JSON.stringify([identity, revision])
+  const currentKey = useRef(key)
+  currentKey.current = key
+  const saved = useRef<{ identity: string; state: PdfViewState | null }>({ identity, state: null })
+  if (saved.current.identity !== identity) saved.current = { identity, state: null }
+  const frame = useRef<HTMLIFrameElement>(null)
   useEffect(() => {
     if (!connected || !connection) return
     let active = true
     void request('/api/tasks/files/share', { taskId, path }, taskFileShareSchema)
       .then(({ url }) => {
-        if (active) setResult({ key, url: createRuntimeClient(connection).url(url) })
+        if (active) {
+          const bridgeId = randomUUID()
+          setResult({ key, url: createRuntimeClient(connection).url(url), bridgeId })
+        }
       })
       .catch((cause: unknown) => {
         if (active)
@@ -369,6 +432,30 @@ function TaskFileDialog({
     }
   }, [request, connected, connection, taskId, path, key])
   const current = result?.key === key ? result : undefined
+  const sendRestore = useCallback(() => {
+    if (!current?.url || !current.bridgeId || currentKey.current !== key) return
+    frame.current?.contentWindow?.postMessage(
+      { channel: 'dovo-pdf', id: current.bridgeId, type: 'restore', state: saved.current.state },
+      new URL(current.url).origin,
+    )
+  }, [current, key])
+  useLayoutEffect(() => {
+    if (!current?.url || !current.bridgeId) return
+    const origin = new URL(current.url).origin
+    const receive = (event: MessageEvent) => {
+      if (
+        currentKey.current !== key ||
+        event.source !== frame.current?.contentWindow ||
+        event.origin !== origin
+      )
+        return
+      const message = parsePdfViewerMessage(event.data, current.bridgeId!)
+      if (message?.type === 'ready') sendRestore()
+      else if (message?.type === 'state') saved.current.state = message.state
+    }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [current, key, sendRestore])
   const error = !connected ? 'Reconnect to the file’s computer to preview it.' : current?.error
   return (
     <Dialog
@@ -405,8 +492,10 @@ function TaskFileDialog({
           </div>
         ) : current?.url ? (
           <iframe
+            ref={frame}
             title="File preview"
-            src={current.url}
+            src={current.bridgeId ? `${current.url}#dovo-pdf=${current.bridgeId}` : current.url}
+            onLoad={sendRestore}
             referrerPolicy="no-referrer"
             className="min-h-0 w-full flex-1 rounded-md border"
           />

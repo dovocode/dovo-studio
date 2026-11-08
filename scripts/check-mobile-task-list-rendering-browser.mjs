@@ -9,10 +9,10 @@ import { checkMobileTaskSearch } from './browser/mobile-task-search.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const controls = `
-import {createContext,useContext,forwardRef,useImperativeHandle} from 'react';
+import {createContext,useContext,forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
 const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
-export const View=({children,accessibilityLabel,style})=><div aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>;
+export const View=({children,accessibilityLabel,style,testID,ref,onLayout})=>{const node=useRef(null);useImperativeHandle(ref,()=>({nativeElement:node.current,measureLayout:(parent,done)=>{const bounds=node.current.getBoundingClientRect(),origin=parent.nativeElement.getBoundingClientRect();done(bounds.x-origin.x,bounds.y-origin.y,bounds.width,bounds.height)}}));useLayoutEffect(()=>{if(!onLayout)return;const measure=()=>onLayout({nativeEvent:{layout:{height:node.current.getBoundingClientRect().height}}});measure();const observer=new ResizeObserver(measure);observer.observe(node.current);return ()=>observer.disconnect()},[onLayout]);return <div ref={node} data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>};
 export const Text=({children,accessibilityRole,numberOfLines,style})=>{const value=flat(style),scale=window.rowFontScale??1;return <span role={accessibilityRole} style={window.rowLayout?{display:'block',minWidth:0,...nativeStyle({...value,fontSize:(value.fontSize??13)*scale,...(value.lineHeight?{lineHeight:value.lineHeight*scale}:{})}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}:value}>{children}</span>};
 export const Image=()=>null;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
@@ -38,18 +38,17 @@ export const ScreenHeader=({title,buttons})=><header><h1>{title}</h1>{buttons?.m
 export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
-const preferenceModule = `
-import {useSyncExternalStore} from 'react';
-const preferences={threadDensity:'compact',computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed'],confirmArchive:false};
-window.listPreferences??=preferences;window.preferenceListeners??=new Set();window.setListPreferences=changes=>{window.listPreferences={...window.listPreferences,...changes};window.preferenceListeners.forEach(notify=>notify())};
-export const useMobilePreferences=()=>useSyncExternalStore(notify=>{window.preferenceListeners.add(notify);return()=>window.preferenceListeners.delete(notify)},()=>window.listPreferences);export const readMobilePreferences=()=>window.listPreferences;export const updateMobilePreferences=changes=>{window.listPreferences={...window.listPreferences,...changes};window.preferenceListeners.forEach(notify=>notify())};export const preferencesReady=Promise.resolve();export const useCarMode=()=>false;
-`
+const preferenceModule = `export * from '${mobile}runtime/preferences/app-preferences.ts';`
 const stubs = [
+  {
+    path: '@react-native-async-storage/async-storage',
+    contents: `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
+  },
   { path: 'react-native-gesture-handler', contents: controls },
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel,size=12})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Save,Icon as Network};`,
+    contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as SquareTerminal,Icon as Network};`,
   },
   {
     path: '@dovo/protocol',
@@ -103,6 +102,11 @@ export const startRuntimeSync=(connection,options)=>{
     contents: `export const useNavigation=()=>window.navigation;`,
   },
   {
+    path: '../workspace/workspace-modes',
+    importer: mobile + 'screens/tasks.tsx',
+    contents: 'export const WorkspaceModes=()=>null;',
+  },
+  {
     path: '../tasks/list/section-order-sheet',
     importer: mobile + 'screens/tasks.tsx',
     contents: `export const SectionOrderSheet=({onClose})=><div role="dialog" aria-label="Organize sections"><button onClick={onClose}>Close section order</button></div>;`,
@@ -134,6 +138,11 @@ export const startRuntimeSync=(connection,options)=>{
   },
   { path: './settings-controls', importer: mobile + 'screens/tasks.tsx', contents: controls },
   {
+    path: '../../ui/content/runtime-icon',
+    importer: mobile + 'tasks/list/device-label.tsx',
+    contents: `export const RuntimeIcon=({size,color})=><svg data-runtime-icon width={size} height={size} style={{color,flexShrink:0}}/>;`,
+  },
+  {
     path: '../../agents/harness-icon',
     importer: mobile + 'tasks/list/task-list-row.tsx',
     contents: `export const HarnessIcon=({provider,size})=><span data-harness={provider} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0}}/>;`,
@@ -144,15 +153,10 @@ export const startRuntimeSync=(connection,options)=>{
     contents: `export const useCachedModelCatalog=()=>({modelName:'Fixture model',catalog:null});`,
   },
   {
-    path: './device-label',
-    importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const DeviceLabel=()=>null;`,
-  },
-  {
     path: './task-row-menu',
     importer: mobile + 'tasks/list/task-list-row.tsx',
     contents: `
-export const TaskRowMenu=({testID,task,actions,onDetails})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;if(window.rowLayout)return <div data-testid={testID} style={{width:44,height:44}}/>;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
+export const TaskRowMenu=({testID,task,actions,onDetails,contentOffsetY=0})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;if(window.rowLayout)return <div data-testid={testID} style={{width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center'}}><span data-menu-glyph style={{lineHeight:'20px',transform:'translateY('+contentOffsetY+'px)'}}>•••</span></div>;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
   },
   {
     path: './task-swipe-actions',
@@ -175,7 +179,7 @@ for (const [path, importer] of [
   ['../../ui/controls/action', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/layout/sheet', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/content/text', 'tasks/list/'],
-  ['../../ui/controls/icon', 'tasks/list/task-list-row.tsx'],
+  ['../../ui/controls/icon', 'tasks/list/'],
   ['../../ui/theme', 'tasks/list/'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
   ['../theme', 'ui/content/empty-state.tsx'],
@@ -202,8 +206,9 @@ import {studioThemes} from './packages/studio-core/src/themes.ts';
 import {accessibleThemeColors} from './packages/studio-core/src/accessibility.ts';
 window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...accessibleThemeColors(theme[mode],mode,false)})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
-import {RuntimeProvider,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
+import {RuntimeProvider,RuntimeContext,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
 import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.tsx';
+import {updateMobilePreferences,readMobilePreferences,preferencesReady} from '${mobile}runtime/preferences/app-preferences.ts';window.setListPreferences=updateMobilePreferences;Object.defineProperty(window,'listPreferences',{get:readMobilePreferences});window.preferencesReady=preferencesReady;
 import TasksScreen from './apps/mobile/src/screens/tasks.tsx';
 const now=Date.now(),iso=age=>new Date(now-age).toISOString();
 const profile=runtimeProfile({address:'http://mobile-owner.lan:8787',token:'test-token-private-at-least-32-characters'},'Owner');
@@ -228,7 +233,7 @@ window.publish=changes=>flushSync(()=>{
   window.pushSnapshot(window.snapshot);
 });
 function Probe(){window.runtime=useRuntime();return null}
-function PaneProbe({children}){const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider>}
+function PaneProbe({children}){const runtime=useRuntime();const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><TasksScreen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
 `,
     },
@@ -264,6 +269,19 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   await page.goto('http://mobile-task-list.lan/')
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'dovo.mobile-preferences.v1',
+      JSON.stringify({
+        taskSort: 'newest',
+        taskGrouping: 'none',
+        workingSection: false,
+        collapsedThreadSections: ['working', 'snoozed'],
+        computerRefresh: 'manual',
+        threadSectionOrder: ['active', 'working', 'waiting', 'snoozed', 'settled'],
+      }),
+    ),
+  )
   if (process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.evaluate(() => {
@@ -276,6 +294,7 @@ try {
           muted: '#aaa',
           accent: '#69f',
           success: '#4b8',
+          warning: '#e6b450',
         },
       }
     })
@@ -320,7 +339,7 @@ try {
                 },
               ],
             },
-            'task-1': { title: 'General ' + scale, repositoryId: 'scratch', agentId: '' },
+            'task-1': { title: 'General ' + scale, repositoryId: 'scratch', agentId: 'agent' },
             'task-2': { title: 'Settled ' + scale, archived: true },
             'task-3': { title: 'Draft ' + scale, status: 'draft' },
           })
@@ -336,7 +355,7 @@ try {
           sizes.every(
             (size, index) =>
               size &&
-              (index === 4
+              (index === 4 || index === 3
                 ? size.height < sizes[0].height
                 : Math.abs(size.height - sizes[0].height) < 0.5),
           ),
@@ -362,13 +381,52 @@ try {
             )
             .boundingBox()
           if (id === 'task-2') {
-            assert.ok(sizes[4].height >= 44)
-            assert.ok(Math.abs(title.y + title.height / 2 - sizes[4].y - sizes[4].height / 2) < 1)
+            // Rows above can finish measuring between protocol calls. Compare both
+            // centres in one browser task instead of using the earlier row position.
+            const alignment = await row
+              .getByText('Settled ' + scale, { exact: true })
+              .evaluate((element) => {
+                const title = element.getBoundingClientRect()
+                const row = element.closest('[data-testid="Task task-2"]').getBoundingClientRect()
+                return {
+                  height: row.height,
+                  offset: title.y + title.height / 2 - row.y - row.height / 2,
+                }
+              })
+            assert.ok(alignment.height >= 44)
+            assert.ok(Math.abs(alignment.offset) < 1, JSON.stringify({ width, scale, alignment }))
             continue
           }
+          if (id === 'task-3') {
+            assert.equal(await row.getByLabel('Draft', { exact: true }).count(), 1)
+            assert.ok(
+              (await row.getByLabel('Draft', { exact: true }).boundingBox()).x <
+                (await row.getByText('Project', { exact: true }).boundingBox()).x,
+            )
+            assert.equal(
+              await row
+                .locator('xpath=../..')
+                .getByTestId('Draft highlight')
+                .evaluate((el) => getComputedStyle(el).opacity),
+              '0.06',
+            )
+          }
+          if (id === 'task-1') {
+            const execution = await row.getByTestId('thread-execution').boundingBox()
+            assert.ok(
+              Math.abs(title.y + title.height / 2 - execution.y - execution.height / 2) < 1,
+              'Projectless execution metadata shares the title line',
+            )
+          }
           const project = await row
-            .getByText(id === 'task-1' ? 'General' : 'Project', { exact: true })
+            .getByText(id === 'task-1' ? 'No Project' : 'Project', { exact: true })
             .boundingBox()
+          const projectIcon = await row.getByTestId('Thread project icon').boundingBox()
+          assert.ok(
+            Math.abs(projectIcon.y + projectIcon.height / 2 - project.y - project.height / 2) < 1,
+            'Project icons stay inline with their names at every text size',
+          )
+          assert.ok(projectIcon.x + projectIcon.width <= project.x)
           assert.ok(
             project.y + project.height <= title.y,
             JSON.stringify({ id, width, scale, project, title }),
@@ -382,13 +440,23 @@ try {
           .boundingBox()
         const menu = await page.getByTestId('Task parent actions').boundingBox()
         const parentRow = page.getByTestId('Task parent')
+        const statusBounds = await parentRow.getByTestId('Thread status').boundingBox()
+        const menuGlyph = await page
+          .getByTestId('Task parent actions')
+          .locator('[data-menu-glyph]')
+          .boundingBox()
+        assert.ok(
+          Math.abs(statusBounds.y + statusBounds.height / 2 - menuGlyph.y - menuGlyph.height / 2) <
+            1,
+          'Menu glyph aligns with status/time',
+        )
         assert.equal(await parentRow.locator('[data-harness]').count(), 1)
         assert.equal(
           await parentRow
             .locator('[data-harness]')
-            .evaluate((icon) => icon.parentElement.textContent.includes('Project')),
+            .evaluate((icon) => icon.parentElement.textContent.includes('main')),
           true,
-          'Provider belongs beside project and status in the header',
+          'Provider belongs beside branch and PRs in the footer',
         )
         const provider = await parentRow.locator('[data-harness]').boundingBox()
         const glyph = await page
@@ -400,7 +468,7 @@ try {
           .boundingBox()
         assert.ok(
           Math.abs(provider.y + provider.height / 2 - glyph.y - glyph.height / 2) < 1,
-          'Subthread icon aligns with header indicators',
+          'Subthread icon aligns with footer indicators',
         )
         assert.ok(toggle && menu && toggle.width === 44 && toggle.height === 44)
         assert.ok(toggle.x + toggle.width <= menu.x, 'Subthread and menu touch targets overlap')
@@ -441,14 +509,166 @@ try {
         const menu = await page.getByTestId('Task parent actions').boundingBox()
         const touch = await toggle.boundingBox()
         assert.ok(Math.abs(provider.y + provider.height / 2 - icon.y - icon.height / 2) < 1)
-        assert.ok(provider.y >= project.y - 1 && provider.y <= project.y + project.height)
+        assert.ok(
+          provider.y >= project.y + project.height,
+          'Comfortable execution indicators follow the project and title',
+        )
         assert.equal(touch.width, 44)
         assert.equal(touch.height, 44)
         assert.ok(touch.x + touch.width <= menu.x)
-        assert.ok(provider.x + provider.width <= touch.x)
+        assert.ok(icon.x + icon.width <= provider.x, 'Subthreads precede execution indicators')
+        const statusBounds = await row.getByTestId('Thread status').boundingBox()
+        const menuGlyph = await page
+          .getByTestId('Task parent actions')
+          .locator('[data-menu-glyph]')
+          .boundingBox()
+        assert.ok(
+          Math.abs(statusBounds.y + statusBounds.height / 2 - menuGlyph.y - menuGlyph.height / 2) <
+            1,
+          'Comfortable menu aligns at larger text sizes',
+        )
       }
     }
+    await page.evaluate(() => {
+      window.showDevices(true)
+      window.publish({
+        parent: {
+          linkedPullRequests: [
+            {
+              number: 42,
+              url: 'https://github.com/o/r/pull/42',
+              repositoryUrl: 'https://github.com/o/r',
+              title: 'PR',
+            },
+          ],
+          pullStatus: {
+            number: 42,
+            url: 'https://github.com/o/r/pull/42',
+            state: 'open',
+            draft: false,
+            checkedAt: new Date().toISOString(),
+          },
+        },
+      })
+    })
+    for (const repositoryId of ['repo', 'scratch']) {
+      for (const showDevice of [false, true]) {
+        await page.evaluate(
+          ({ repositoryId, showDevice }) => {
+            window.showDevices(showDevice)
+            window.publish({ parent: { repositoryId } })
+          },
+          { repositoryId, showDevice },
+        )
+        for (const density of ['compact', 'comfortable']) {
+          for (const width of [320, 390, 768]) {
+            await page.setViewportSize({ width, height: 844 })
+            await page.evaluate((density) => {
+              window.rowFontScale = 1
+              window.setListPreferences({ threadDensity: density })
+            }, density)
+            const row = page.getByRole('button', {
+              name: /^(Project|No Project), Has several subagents/,
+            })
+            const toggle = page.getByRole('button', {
+              name: /^Subthreads for Has several subagents/,
+            })
+            const indicator = await row.locator('[data-harness]').boundingBox()
+            const anchor = await row.getByTestId('Subthread anchor').boundingBox()
+            const pull = await row.getByText('#42', { exact: true }).boundingBox()
+            await page.waitForFunction(
+              ({ selector, anchor }) => {
+                const glyph = document
+                  .querySelector(selector)
+                  .querySelector('svg')
+                  .getBoundingClientRect()
+                return (
+                  Math.abs(glyph.y + glyph.height / 2 - anchor.y - anchor.height / 2) < 1 &&
+                  Math.abs(glyph.x + glyph.width / 2 - anchor.x - anchor.width / 2) < 1
+                )
+              },
+              { selector: 'button[aria-label^="Subthreads for Has several subagents"]', anchor },
+            )
+            const icon = await toggle.locator('svg').boundingBox()
+            assert.ok(
+              pull.x + pull.width <= icon.x,
+              JSON.stringify({
+                message: 'PRs precede subthreads',
+                repositoryId,
+                showDevice,
+                density,
+                width,
+                pull,
+                icon,
+                indicator,
+              }),
+            )
+            assert.ok(
+              Math.abs(pull.y + pull.height / 2 - icon.y - icon.height / 2) < 1,
+              'PRs and subthreads share a line',
+            )
+            assert.ok(icon.x + icon.width <= indicator.x, 'Subthreads precede harness')
+            const runtimeIcon = row.locator('[data-runtime-icon]')
+            assert.equal(await runtimeIcon.count(), Number(showDevice))
+            if (await runtimeIcon.count()) {
+              const runtime = await runtimeIcon.boundingBox()
+              assert.ok(icon.x + icon.width <= runtime.x, 'Subthreads precede runtime')
+              assert.ok(runtime.x + runtime.width <= indicator.x, 'Runtime precedes harness')
+            }
+            const touch = await toggle.boundingBox()
+            const menu = await page.getByTestId(/Task .*parent.* actions/).boundingBox()
+            assert.equal(touch.width, 44)
+            assert.equal(touch.height, 44)
+            assert.ok(
+              touch.x + touch.width <= menu.x || touch.y >= menu.y + menu.height,
+              'Independent controls do not overlap',
+            )
+            const status = await row.getByTestId('Thread status').boundingBox()
+            const menuGlyph = await page
+              .getByTestId(/Task .*parent.* actions/)
+              .locator('[data-menu-glyph]')
+              .boundingBox()
+            assert.ok(
+              Math.abs(status.y + status.height / 2 - menuGlyph.y - menuGlyph.height / 2) < 1,
+              'Menu aligns with status/time',
+            )
+          }
+        }
+      }
+    }
+    await page.evaluate(() => {
+      window.showDevices(false)
+      window.setListPreferences({ threadDensity: 'comfortable' })
+      window.publish({ parent: { repositoryId: 'repo', agentId: '' } })
+    })
+    const noAgentRow = page.getByTestId('Task parent')
+    const noAgentToggle = page.getByRole('button', {
+      name: /^Subthreads for Has several subagents/,
+    })
+    const noAgentAnchor = await noAgentRow.getByTestId('Subthread anchor').boundingBox()
+    await page.waitForFunction((anchor) => {
+      const glyph = document
+        .querySelector('button[aria-label^="Subthreads for Has several subagents"] svg')
+        .getBoundingClientRect()
+      return Math.abs(glyph.x + glyph.width / 2 - anchor.x - anchor.width / 2) < 1
+    }, noAgentAnchor)
+    const noAgentTouch = await noAgentToggle.boundingBox()
+    const noAgentMenu = await page.getByTestId('Task parent actions').boundingBox()
+    assert.ok(
+      noAgentTouch.x + noAgentTouch.width <= noAgentMenu.x ||
+        noAgentTouch.y >= noAgentMenu.y + noAgentMenu.height,
+      'Disclosure remains clear of menu without a harness/runtime icon',
+    )
+    await page.evaluate(() => window.publish({ parent: { agentId: 'agent' } }))
     await page.screenshot({ path: '/tmp/dovo-compact-uniform-rows.png' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => {
+      window.rowFontScale = 1
+      window.setListPreferences({ threadDensity: 'compact' })
+    })
+    await page.screenshot({ path: '/tmp/dovo-mobile-thread-overview-compact.png' })
+    await page.evaluate(() => window.setListPreferences({ threadDensity: 'comfortable' }))
+    await page.screenshot({ path: '/tmp/dovo-mobile-thread-overview-comfortable.png' })
     assert.deepEqual(errors, [])
     console.log(
       'Single-line settled rows and uniform open rows verified across phone and iPad widths and 1/1.5/2x text sizes.',
@@ -490,12 +710,12 @@ try {
   assert.equal(
     await densityTitle.evaluate((el) => el.parentElement.parentElement.children.length),
     3,
-    'Compact preserves project/status, title and checkout context',
+    'Compact follows desktop project/status, title and checkout hierarchy',
   )
   assert.equal(
     await densityTitle.evaluate((el) => el.parentElement.children.length),
     1,
-    'Compact title has its own row',
+    'Compact gives the title its own line',
   )
   const historyInput = page.getByRole('textbox', { name: 'Search tasks', exact: true })
   await historyInput.fill('old history')
@@ -613,7 +833,7 @@ try {
     await pullBadge
       .getByText('2 PRs', { exact: true })
       .evaluate((element) => getComputedStyle(element).color),
-    'rgb(119, 119, 119)',
+    'rgb(0, 238, 136)',
   )
   assert.equal(
     await pullBadge
@@ -762,6 +982,7 @@ try {
   assert.equal(pin.origin, 'http://mobile-owner.lan:8787')
   assert.equal(pin.method, 'PATCH')
   assert.deepEqual(pin.body.changes, { pinned: { before: true, after: false } })
+  await page.evaluate(() => window.publish({ 'task-4': { pinned: false } }))
   const luminance = (color) => {
     const rgb = color
       .match(/[\d.]+/g)
@@ -883,14 +1104,14 @@ try {
     }),
   )
   const general = page.getByTestId('Task task-5')
-  assert.ok((await general.textContent()).includes('General'))
-  assert.ok(!/stale-branch|Project checkout|No project/.test(await general.textContent()))
+  assert.ok((await general.textContent()).includes('No Project'))
+  assert.ok(!/stale-branch|Project checkout/.test(await general.textContent()))
   assert.ok(!/Local checkout|Worktree/.test(await general.getAttribute('aria-label')))
   await page.getByRole('button', { name: 'Details task-5', exact: true }).click()
   const generalDetails = page.getByRole('dialog', { name: 'Task details' })
   await generalDetails.waitFor()
-  assert.ok((await generalDetails.textContent()).includes('General'))
-  assert.ok(!/stale-branch|Project checkout|No project/.test(await generalDetails.textContent()))
+  assert.ok((await generalDetails.textContent()).includes('No Project'))
+  assert.ok(!/stale-branch|Project checkout/.test(await generalDetails.textContent()))
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
   await page.evaluate(() =>
     window.publish(
@@ -1040,6 +1261,263 @@ try {
   await page.getByRole('button', { name: /^Settled,/ }).click()
   await footer.waitFor()
   assert.equal(await page.getByTestId('Task task-0').count(), 0)
+  await page.evaluate(() => {
+    window.setListPreferences({
+      taskGrouping: 'none',
+      workingSection: true,
+      collapsedThreadSections: ['working'],
+    })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      terminals: [{ id: 'terminal', taskId: 'running', title: 'Shell', exited: false }],
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: window.snapshot.workspace.tasks
+          .filter((task) => task.id === 'running')
+          .map((task) => ({
+            ...task,
+            status: 'review',
+            subagents: [
+              {
+                id: 'shell',
+                provider: 'claude',
+                name: 'Dev server',
+                kind: 'background',
+                sessionLive: true,
+                status: 'working',
+                startedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          })),
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  await page.getByTestId('Task running').waitFor()
+  assert.equal(
+    await page
+      .getByTestId('Task running')
+      .getByLabel('2 active terminals', { exact: true })
+      .count(),
+    1,
+  )
+  await page.evaluate(() => {
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: window.snapshot.workspace.tasks.map((task) => ({
+          ...task,
+          status: 'running',
+          turns: [
+            {
+              id: 'active-turn',
+              assistantId: 'reply',
+              agentId: 'agent',
+              provider: 'codex',
+              model: 'fixture',
+              status: 'running',
+              startedAt: new Date(Date.now() - 65000).toISOString(),
+            },
+          ],
+        })),
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  await page.getByTestId('Task running').waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: /^Working,/ }).click()
+  await page.getByTestId('Task running').waitFor()
+  const groupedStatus = page.getByTestId('Task running').getByTestId('Thread status')
+  assert.ok(
+    !/Working/.test(await groupedStatus.innerText()),
+    'Grouped status keeps only the indicator and elapsed time',
+  )
+  assert.match(await groupedStatus.getAttribute('aria-label'), /^Working/)
+  assert.ok(
+    (await groupedStatus.innerText()).trim().length > 0,
+    'Working elapsed time remains visible',
+  )
+  await page.evaluate(() => {
+    const task = window.snapshot.workspace.tasks[0]
+    window.setListPreferences({
+      threadSectionOrder: ['working', 'active', 'waiting', 'snoozed', 'settled'],
+      collapsedThreadSections: ['working'],
+    })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: [
+          task,
+          { ...task, id: 'pinned-working', title: 'Pinned working', pinned: true },
+          {
+            ...task,
+            id: 'waiting',
+            title: 'Waiting task',
+            status: 'review',
+            subagents: [],
+            waitingForFeedback: true,
+            turns: [
+              {
+                ...task.turns[0],
+                status: 'completed',
+                finishedAt: new Date(Date.now() - 600000).toISOString(),
+              },
+            ],
+          },
+        ],
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  const workingHeader = page.getByRole('button', { name: /^Working,/ })
+  const openHeader = page.getByRole('button', { name: /^Pinned, \d+ tasks$/ })
+  const waitingHeader = page.getByRole('button', { name: /^Waiting,/ })
+  await waitingHeader.waitFor()
+  assert.equal(
+    await workingHeader.evaluate(
+      (element, open) =>
+        !!(element.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_PRECEDING),
+      await openHeader.elementHandle(),
+    ),
+    true,
+  )
+  assert.equal(
+    await openHeader.evaluate(
+      (element, waiting) =>
+        !!(element.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING),
+      await waitingHeader.elementHandle(),
+    ),
+    true,
+  )
+  assert.match(
+    await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
+    /Working/,
+  )
+  const waitingStatus = page.getByTestId('Task waiting').getByTestId('Thread status')
+  assert.doesNotMatch(await waitingStatus.innerText(), /Waiting/)
+  assert.match(await waitingStatus.innerText(), /\d+m/)
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
+  assert.match(
+    await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
+    /Working/,
+  )
+  await page.evaluate(() =>
+    window.setListPreferences({
+      taskGrouping: 'status',
+      workingSection: true,
+      collapsedThreadSections: [],
+    }),
+  )
+  await page.reload()
+  const mount = async () => {
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.evaluate(() => window.preferencesReady)
+    await page.getByRole('button', { name: /^Working,/ }).waitFor()
+  }
+  await mount()
+  const working = page.getByRole('button', { name: /^Working,/ })
+  await working.click()
+  assert.equal(await working.getAttribute('aria-expanded'), 'false')
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
+  const project = page.getByRole('button', { name: /^Project, \d+ tasks$/ })
+  await project.click()
+  assert.equal(await project.getAttribute('aria-expanded'), 'false')
+  await page.waitForFunction(() => {
+    const saved = JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1'))
+    return (
+      saved.collapsedThreadSections.includes('working') &&
+      saved.collapsedThreadSections.some((key) => key.startsWith('project:'))
+    )
+  })
+  await page.reload()
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await project.waitFor()
+  assert.equal(
+    await project.getAttribute('aria-expanded'),
+    'false',
+    'Project collapse survives a full restart using the real preference module',
+  )
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'status' }))
+  await working.waitFor()
+  assert.equal(
+    await working.getAttribute('aria-expanded'),
+    'false',
+    'Working collapse survives a full restart',
+  )
+  await working.click()
+  await page.waitForFunction(
+    () =>
+      !JSON.parse(
+        localStorage.getItem('dovo.mobile-preferences.v1'),
+      ).collapsedThreadSections.includes('working'),
+  )
+  await page.reload()
+  await mount()
+  assert.equal(
+    await working.getAttribute('aria-expanded'),
+    'true',
+    'Explicit expansion survives the next restart',
+  )
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
+  assert.equal(
+    await project.getAttribute('aria-expanded'),
+    'false',
+    'Another section toggle preserves the project choice',
+  )
+  await page.evaluate(() => {
+    const base = window.snapshot.workspace.tasks[0]
+    window.setListPreferences({ collapsedThreadSections: ['waiting', 'snoozed', 'settled'] })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: [
+          { ...base, id: 'ordinary', title: 'Ordinary', pinned: false },
+          ...['running', 'waiting', 'snoozed', 'settled'].map((state) => ({
+            ...base,
+            id: 'pin-' + state,
+            title: 'Pinned ' + state,
+            pinned: true,
+            status: state === 'running' ? 'running' : 'done',
+            turns: [],
+            subagents: [],
+            waitingForFeedback: state === 'waiting',
+            archived: state === 'settled',
+            snoozedUntil: state === 'snoozed' ? new Date(Date.now() + 3600000).toISOString() : null,
+          })),
+        ],
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  for (const grouping of ['status', 'project', 'none']) {
+    await page.evaluate((taskGrouping) => window.setListPreferences({ taskGrouping }), grouping)
+    await page.getByTestId('Task pin-settled').waitFor()
+    assert.equal(await page.getByTestId('Task ordinary').count(), 1)
+    for (const state of ['running', 'waiting', 'snoozed', 'settled']) {
+      const row = page.getByTestId('Task pin-' + state)
+      assert.equal(await row.count(), 1)
+      assert.equal(
+        await row.evaluate(
+          (element, ordinary) =>
+            !!(element.compareDocumentPosition(ordinary) & Node.DOCUMENT_POSITION_FOLLOWING),
+          await page.getByTestId('Task ordinary').elementHandle(),
+        ),
+        true,
+      )
+    }
+  }
+  assert.deepEqual(errors, [])
+  console.log(
+    'Mobile task-list status and project sections persist collapse and expansion through full reloads using real preferences and a storage adapter.',
+  )
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )

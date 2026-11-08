@@ -270,7 +270,13 @@ export class PushNotifications {
         const inputs = this.inputs(task.id)
         for (const input of inputs)
           if (!previousInputs.includes(input.id)) kinds.push({ kind: 'input', input })
-        if (!inputs.length && before?.running && !current.running && !current.cancelled)
+        if (
+          !inputs.length &&
+          before?.running &&
+          !current.running &&
+          !current.cancelled &&
+          (current.failed || (!task.delegation && !task.spawnParent))
+        )
           kinds.push({ kind: current.failed ? 'failed' : 'done' })
         for (const { kind, input } of kinds)
           for (const registration of registrations) {
@@ -399,6 +405,7 @@ export class PushNotifications {
         !task ||
         task.archived ||
         task.example ||
+        (value.data.kind === 'done' && !!(task.delegation || task.spawnParent)) ||
         staleTurn ||
         staleCompletion
       ) {

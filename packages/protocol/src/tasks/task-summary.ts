@@ -1,5 +1,5 @@
 import { Schema, Struct } from 'effect'
-import { checkpointCanUndo, checkpointFileCount } from '../scm/repositories/file-previews.js'
+import { checkpointUndoTurn, checkpointFileCount } from '../scm/repositories/file-previews.js'
 import { pullReferencesInText } from '../scm/pulls/pull-links.js'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 import { taskSchema, turnSchema, type Task, type TaskTurn, type Workspace } from '../workspace.js'
@@ -48,6 +48,24 @@ export type TaskHistorySummary = Schema.Schema.Type<typeof taskHistorySummarySch
 export type TaskSummary = TaskMetadata & { history: TaskHistorySummary }
 export type WorkspaceSummary = Omit<Workspace, 'tasks'> & { tasks: TaskSummary[] }
 
+const scopedTasks = new WeakMap<Task, Task>()
+/** Keep editable metadata and turn totals while excluding conversation and diff bodies.
+ * A projection can also receive a paged task, so preserve its existing history totals. */
+export function scopedTaskSummary(task: Task): Task {
+  const cached = scopedTasks.get(task)
+  if (cached) return cached
+  const summary: Task = {
+    ...task,
+    messages: [],
+    sideChats: task.sideChats?.map((chat) => ({ ...chat, messages: [] })),
+    files: task.files.map(({ path, viewed }) => ({ path, viewed, before: '', after: '' })),
+    forkedFrom: task.forkedFrom ? { ...task.forkedFrom, snapshot: undefined } : undefined,
+    turns: task.turns?.map((turn) => ({ ...turn, checkpoint: undefined })),
+  }
+  scopedTasks.set(task, summary)
+  return summary
+}
+
 const summaries = new WeakMap<object, WeakMap<object, TaskHistorySummary>>()
 const messageReferences = new WeakMap<object, ReturnType<typeof pullReferencesInText>>()
 function pullReferences(messages: Task['messages']) {
@@ -89,14 +107,13 @@ function earlier(turns: readonly TaskTurn[], now: number) {
     const end = turn.finishedAt ? Date.parse(turn.finishedAt) : now
     if (Number.isFinite(start) && Number.isFinite(end)) milliseconds += Math.max(0, end - start)
   }
-  const undoable = [...older]
-    .reverse()
-    .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
+  const undoable = checkpointUndoTurn(older)
   const totals = {
     tokens,
     milliseconds,
     hasChanges: older.some((turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0),
     undoableTurnId: undoable?.id,
+    pendingUndoTurnId: undoable?.checkpoint?.restorePending ? undoable.id : undefined,
   }
   earlierTotals.set(turns, totals)
   return totals

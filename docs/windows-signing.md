@@ -1,8 +1,8 @@
 # Windows signing setup
 
-Release signs Windows x64 and ARM64 apps with Azure Artifact Signing using GitHub OIDC. No client
-secret or certificate export is needed. Use the Azure portal in the intended Dovo account; the local
-Azure CLI account is unrelated.
+Release signs Windows x64 apps with Azure Artifact Signing using GitHub OIDC. No client secret or
+certificate export is needed. Use the Azure portal in the intended Dovo account; the local Azure CLI
+account is unrelated.
 
 ## Azure portal
 
@@ -49,29 +49,28 @@ from another branch needs that branch allowed by the environment. Only the signi
 
 ## Build and verification
 
-Windows builds and server smoke tests run on their native x64/ARM64 runners. The unpacked desktop
-apps transfer to Windows x64 because the
-[Azure signing action](https://github.com/Azure/artifact-signing-action) does not support Windows
-ARM runners. The action signs app/runtime EXE, DLL and native Node modules with Windows PE headers;
-foreign macOS/Linux prebuilds remain intact and are excluded from signing. electron-builder then
-creates and signs the NSIS installer and uninstaller through a custom `signtoolOptions.sign` hook
-using `Invoke-ArtifactSigning` from the action's installed PowerShell module. This avoids the
-retired `Invoke-TrustedSigning` command in electron-builder's built-in Azure adapter. This runs
-after Azure OIDC login and uses the Azure CLI credential on the GitHub runner, not your local Azure
-CLI. Before NSIS embeds the signed uninstaller, a build-time check verifies its embedded
-Authenticode signature and publisher. An unsigned, invalid or unexpected-publisher uninstaller fails
-the build. During an upgrade, `old-uninstaller.exe` is a copy of the previous installation's
-uninstaller; copying preserves its signature, but signing a new release cannot sign an older
-unsigned installation.
+Windows builds and server smoke tests run on Windows x64. Windows ARM64 builds are disabled. The
+unpacked desktop app transfers to the Windows x64 signing job. The
+[Azure signing action](https://github.com/Azure/artifact-signing-action) signs app/runtime EXE, DLL
+and native Node modules with Windows PE headers; foreign macOS/Linux prebuilds remain intact and are
+excluded from signing. electron-builder then creates and signs the NSIS installer and uninstaller
+through a custom `signtoolOptions.sign` hook using `Invoke-ArtifactSigning` from the action's
+installed PowerShell module. This avoids the retired `Invoke-TrustedSigning` command in
+electron-builder's built-in Azure adapter. This runs after Azure OIDC login and uses the Azure CLI
+credential on the GitHub runner, not your local Azure CLI. Before NSIS embeds the signed
+uninstaller, a build-time check verifies its embedded Authenticode signature and publisher. An
+unsigned, invalid or unexpected-publisher uninstaller fails the build. During an upgrade,
+`old-uninstaller.exe` is a copy of the previous installation's uninstaller; copying preserves its
+signature, but signing a new release cannot sign an older unsigned installation.
 
 Update manifests and blockmaps are generated from the final signed installers. The embedded update
-configuration includes the publisher CN. Both architectures keep their existing stable/nightly feed
-names. Signing configuration is mandatory for Release; missing configuration fails the job.
-Standalone server ZIP archives retain their existing packaging; this setup signs desktop artifacts.
-Local `package:platform` builds remain unsigned.
+configuration includes the publisher CN. Windows x64 keeps its existing stable/nightly feed names.
+Signing configuration is mandatory for Release; missing configuration fails the job. Standalone
+server ZIP archives retain their existing packaging; this setup signs desktop artifacts. Local
+`package:platform` builds remain unsigned.
 
-Once configured, run Release for a matching version/tag. Check both `windows-sign` matrix jobs: each
-verifies Authenticode trust and publisher on the app binaries and installer before upload. Test
-installation and an update on both architectures before publishing a stable draft. Existing unsigned
-installations do not yet have the embedded publisher check; after installing a signed build,
-subsequent updates verify that publisher. Signing does not guarantee SmartScreen reputation.
+Once configured, run Release for a matching version/tag. The `windows-sign` x64 job verifies
+Authenticode trust and publisher on the app binaries and installer before upload. Test installation
+and an update on Windows x64 before publishing a stable draft. Existing unsigned installations do
+not yet have the embedded publisher check; after installing a signed build, subsequent updates
+verify that publisher. Signing does not guarantee SmartScreen reputation.

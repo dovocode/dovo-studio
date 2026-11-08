@@ -8,6 +8,7 @@ import {
   conversationMessageTurns,
   conversationToolsByMessage,
   threadTimeline,
+  checkpointFiles,
   type Task,
 } from '@dovo/protocol'
 import {
@@ -19,6 +20,14 @@ import {
 export const convertConversationMessage = (message: ThreadMessageLike) => message
 export type { ToolEvents } from './tool-events'
 type ConversationTask = Pick<Task, 'id' | 'status' | 'messages' | 'turns' | 'compactions'>
+function checkpointCount(
+  checkpoint: NonNullable<NonNullable<Task['turns']>[number]['checkpoint']>,
+) {
+  return (
+    checkpointFiles(checkpoint).length +
+    (checkpoint.linked?.reduce((sum, item) => sum + checkpointFiles(item).length, 0) ?? 0)
+  )
+}
 
 /** Keep native list entries stable and avoid reparsing unchanged historical tool payloads. */
 export function createConversationMessages() {
@@ -64,6 +73,7 @@ export function createConversationMessages() {
         )
           return previous.output
         // Compare large text and payload strings directly; serialize only small metadata.
+        const count = turn?.checkpoint ? checkpointCount(turn.checkpoint) : 0
         const { text, ...metadata } = message
         const input = JSON.stringify([
           metadata,
@@ -73,6 +83,7 @@ export function createConversationMessages() {
           turn?.checkpoint && {
             after: Boolean(turn.checkpoint.after),
             files: turn.checkpoint.files.length,
+            count,
             omitted: turn.checkpoint.omitted.length,
             error: turn.checkpoint.error,
             linked: turn.checkpoint.linked?.map((item) => [
@@ -107,7 +118,7 @@ export function createConversationMessages() {
           })
           return previous.output
         }
-        const output = build()
+        const output = build(count)
         cache.set(message.id, {
           input,
           text,
@@ -138,8 +149,8 @@ export function conversationMessages(
   task: ConversationTask,
   events: ToolEvents,
 ): ThreadMessageLike[] {
-  return projectMessages(task, events, (_message, _turn, _tools, _compactions, _active, build) =>
-    build(),
+  return projectMessages(task, events, (_message, turn, _tools, _compactions, _active, build) =>
+    build(turn?.checkpoint ? checkpointCount(turn.checkpoint) : 0),
   )
 }
 
@@ -152,7 +163,7 @@ function projectMessages(
     tools: ReturnType<typeof taskToolEvents>,
     compactions: NonNullable<Task['compactions']>,
     activeTurnId: string | undefined,
-    build: () => ThreadMessageLike,
+    build: (checkpointCount: number) => ThreadMessageLike,
   ) => ThreadMessageLike,
   tools = taskToolEvents(task, events),
 ): ThreadMessageLike[] {
@@ -184,7 +195,7 @@ function projectMessages(
     const compactions = compactionsByMessage.get(message.id) ?? []
     const summaryTools = turn ? (toolsByTurn.get(turn.id) ?? []) : []
     const cacheTools = turn?.assistantId === message.id ? summaryTools : turnEvents
-    return project(message, turn, cacheTools, compactions, activeTurnId, () => {
+    return project(message, turn, cacheTools, compactions, activeTurnId, (count) => {
       const content: Exclude<ThreadMessageLike['content'], string>[number][] = []
       if (message.attachments?.length)
         content.push({
@@ -255,13 +266,7 @@ function projectMessages(
             name: 'dovo.checkpoint',
             data: {
               turnId: turn.id,
-              files:
-                turn.checkpoint.files.length +
-                turn.checkpoint.omitted.length +
-                (turn.checkpoint.linked?.reduce(
-                  (sum, item) => sum + item.files.length + item.omitted.length,
-                  0,
-                ) ?? 0),
+              files: count,
               omitted: turn.checkpoint.omitted.length,
               error: turn.checkpoint.error,
             },

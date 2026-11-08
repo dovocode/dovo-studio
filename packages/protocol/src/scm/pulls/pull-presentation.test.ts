@@ -1,16 +1,18 @@
 import { decode } from '../../shared/schema.js'
 import { describe, expect, it } from 'vite-plus/test'
-import { pullSummarySchema, type PullComment } from './pulls.js'
+import { pullSummarySchema, type PullComment, type PullDetail } from './pulls.js'
 import {
   comparePulls,
   pullNextStep,
   latestPullReviews,
   matchesPull,
   pullChecks,
+  pullDetailChecks,
   pullNeedsAttention,
   pullState,
   checkSignal,
   pullCommentSignal,
+  pullMergeability,
 } from './pull-presentation.js'
 const pull = decode(pullSummarySchema, {
   number: 7,
@@ -25,6 +27,38 @@ const pull = decode(pullSummarySchema, {
   labels: ['bug'],
 })
 describe('PR presentation', () => {
+  it('distinguishes conflict-free branches from actual merge readiness', () => {
+    const detail: PullDetail['pull'] = {
+      ...pull,
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      repositoryUrl: 'https://github.com/test/repo',
+      body: '',
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    }
+    expect(pullMergeability(detail).label).toBe('No merge conflicts')
+    expect(pullMergeability({ ...detail, draft: true }).label).toBe('Draft · not ready to merge')
+    expect(pullMergeability({ ...detail, inMergeQueue: true }).label).toBe('In merge queue')
+    expect(pullMergeability({ ...detail, mergeStateStatus: 'CLEAN' }).label).toBe('Ready to merge')
+    expect(pullMergeability({ ...detail, mergeStateStatus: 'BLOCKED' }).label).toBe(
+      'Blocked by repository requirements',
+    )
+    expect(pullMergeability({ ...detail, mergeStateStatus: 'BEHIND' }).label).toBe(
+      'Branch update required',
+    )
+    expect(
+      pullMergeability({ ...detail, mergeStateStatus: 'CLEAN', checksState: 'FAILURE' }).tone,
+    ).toBe('danger')
+    expect(
+      pullMergeability({ ...detail, mergeStateStatus: 'CLEAN', reviewDecision: 'REVIEW_REQUIRED' })
+        .label,
+    ).toBe('Waiting for required reviews')
+  })
   it('distinguishes review decisions from discussion and code feedback without relying on body text', () => {
     expect(
       pullCommentSignal({
@@ -90,20 +124,57 @@ describe('PR presentation', () => {
     ).toBe('Code reply')
   })
   it('distinguishes unknown, unavailable and absent checks', () => {
-    expect(pullChecks(pull).label).toBe('Checks not loaded')
+    expect(pullChecks(pull).label).toBe('CI status not loaded')
     expect(
       pullChecks({
         ...pull,
         checksState: null,
       }).label,
-    ).toBe('No checks')
+    ).toBe('No CI status reported')
     expect(
       pullChecks({
         ...pull,
         checksState: 'SUCCESS',
         statusError: 'Offline',
       }).label,
-    ).toBe('Checks unavailable')
+    ).toBe('CI status unavailable')
+  })
+  it('keeps provider CI status independent of individual check reports', () => {
+    const detail = { checks: [], pull: { checksState: 'FAILURE' } }
+    expect(pullDetailChecks(detail)).toEqual({
+      label: 'No check reports returned',
+      tone: 'neutral',
+    })
+    expect(pullChecks({ ...pull, checksState: 'FAILURE' })).toEqual({
+      label: 'CI status: failed',
+      tone: 'danger',
+    })
+    expect(pullDetailChecks({ checks: [{ name: 'Tests', status: 'SUCCESS' }] })).toEqual({
+      label: '1 check passed',
+      tone: 'positive',
+    })
+    expect(pullDetailChecks({ checks: [{ name: 'Tests', status: 'FAILURE' }] })).toEqual({
+      label: '1 failed',
+      tone: 'danger',
+    })
+    expect(pullDetailChecks({ checks: [{ name: 'Tests', status: 'UNKNOWN' }] })).toEqual({
+      label: '1 check reported',
+      tone: 'neutral',
+    })
+  })
+  it('reads provider CI strings without inventing unknown outcomes', () => {
+    expect(pullChecks({ ...pull, checksState: 'failed' })).toEqual({
+      label: 'CI status: failed',
+      tone: 'danger',
+    })
+    expect(pullChecks({ ...pull, checksState: 'running' })).toEqual({
+      label: 'CI status: running',
+      tone: 'warning',
+    })
+    expect(pullChecks({ ...pull, checksState: 'unknown' })).toEqual({
+      label: 'CI status: unknown',
+      tone: 'neutral',
+    })
   })
   it('prioritizes open actionable PRs without claiming all open PRs need attention', () => {
     const failed = {
@@ -175,6 +246,8 @@ describe('PR presentation', () => {
   })
   it('does not count skipped checks as passed or pending', () => {
     expect(checkSignal('success').tone).toBe('positive')
+    expect(checkSignal('failed')).toEqual({ label: 'Failed', tone: 'danger' })
+    expect(checkSignal('running')).toEqual({ label: 'Running', tone: 'warning' })
     expect(checkSignal('SKIPPED').tone).toBe('neutral')
     expect(checkSignal('TIMED_OUT').tone).toBe('danger')
     expect(checkSignal('IN_PROGRESS').tone).toBe('warning')
@@ -197,7 +270,7 @@ it('prioritizes my review requests and my blocked PRs before other work', () => 
   }
   expect([other, mine, review].sort(comparePulls)).toEqual([review, mine, other])
   expect(pullNextStep(review).label).toBe('Your review requested')
-  expect(pullNextStep(mine).label).toBe('Fix failing checks')
+  expect(pullNextStep(mine).label).toBe('Fix failing CI')
   expect(
     pullNeedsAttention({
       ...review,

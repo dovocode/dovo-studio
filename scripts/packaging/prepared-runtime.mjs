@@ -8,6 +8,7 @@ import { releaseVariant } from './release-variant.mjs'
 import { buildDigest } from './build-fingerprint.mjs'
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { execFileSync } from 'node:child_process'
+import { prepareWorkspaceRouterModel } from './workspace-router-model.mjs'
 
 async function stamp(root) {
   const { version } = await releaseVariant(root)
@@ -35,6 +36,7 @@ async function stamp(root) {
   }
 }
 export async function prepareRuntime(root, target) {
+  await prepareWorkspaceRouterModel(join(root, 'packages/runtime/dist/models/workspace-router'))
   const stage = await mkdtemp(join(tmpdir(), 'dovo-prepare-runtime-'))
   try {
     const source = join(stage, 'source')

@@ -326,6 +326,7 @@ it('preserves provider checkout metadata through task creation and an isolated w
       connectionId: connection.id,
       headRef: 'refs/heads/feature',
     }),
+    expect.any(AbortSignal),
   )
   expect(await services.pulls.identity(directory)).toMatch(/^[a-f0-9]{64}$/)
 })

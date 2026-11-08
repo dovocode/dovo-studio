@@ -66,6 +66,8 @@ const SceneContext = createContext<{
 export function WorkbenchTabs() {
   const context = useContext(SceneContext)
   const { colors } = useTheme()
+  const preferences = useMobilePreferences()
+  const unified = preferences.unifiedWorkspaceEnabled && preferences.unifiedWorkspaceActive
   if (!context) return null
   const { hidden, active, car, hasProfiles, hasOnlineComputer, newThread } = context.tabBar
   return (
@@ -86,7 +88,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.tasks} renderingMode="template" />
-        <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{unified ? 'Workspace' : 'Tasks'}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="pulls"
@@ -105,9 +107,9 @@ export function WorkbenchTabs() {
         name="compose"
         role="search"
         hidden={Platform.OS !== 'ios'}
-        accessibilityLabel="New thread"
+        accessibilityLabel={unified ? 'Start something' : 'New thread'}
         testID="New thread"
-        disabled={!hasOnlineComputer}
+        disabled={!hasOnlineComputer && !unified}
         // This is an action: preserve the current tab and its navigation history.
         unstable_nativeProps={{
           preventNativeSelection: true,
@@ -120,7 +122,9 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.add} renderingMode="template" />
-        <NativeTabs.Trigger.Label hidden>New thread</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>
+          {unified ? 'Start something' : 'New thread'}
+        </NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   )
@@ -276,14 +280,34 @@ export function Workbench() {
   ])
   const { tab: active, detail: routeDetail } = workbenchRoute(pathname)
   const car = useCarMode()
-  const { browserWorkspaceEnabled } = useMobilePreferences()
+  const {
+    browserWorkspaceEnabled,
+    terminalWorkspaceEnabled,
+    unifiedWorkspaceEnabled,
+    unifiedWorkspaceActive,
+    ready: workspacePreferencesReady,
+  } = useMobilePreferences()
   const artifactsEnabled = runtime.overviews.some((entry) => entry.snapshot?.artifactsEnabled)
   useEffect(() => {
     if (runtime.ready && active === 'artifacts' && (!artifactsEnabled || car)) router.replace('/')
   }, [runtime.ready, active, artifactsEnabled, car])
   useEffect(() => {
-    if (active === 'browser' && (!browserWorkspaceEnabled || car)) router.replace('/')
-  }, [active, browserWorkspaceEnabled, car])
+    if (!workspacePreferencesReady) return
+    if (
+      (active === 'browser' && !browserWorkspaceEnabled && !unifiedWorkspaceEnabled) ||
+      (active === 'terminal' && !terminalWorkspaceEnabled && !unifiedWorkspaceEnabled) ||
+      (active === 'workspace' && !unifiedWorkspaceEnabled) ||
+      (car && ['browser', 'terminal', 'workspace'].includes(active))
+    )
+      router.replace('/')
+  }, [
+    active,
+    browserWorkspaceEnabled,
+    terminalWorkspaceEnabled,
+    unifiedWorkspaceEnabled,
+    workspacePreferencesReady,
+    car,
+  ])
   const [screens, setScreens] = useApplicationState<Record<string, ComponentType>>({}),
     [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
@@ -293,7 +317,9 @@ export function Workbench() {
       !runtime.profiles.length &&
       active !== 'settings' &&
       active !== 'tasks' &&
-      active !== 'browser'
+      active !== 'browser' &&
+      active !== 'terminal' &&
+      active !== 'workspace'
     )
       router.replace('/')
   }, [runtime.ready, runtime.profiles.length, active])
@@ -316,8 +342,14 @@ export function Workbench() {
   const routedShortcut = useRef('')
   const hasOnlineComputer = runtime.overviews.some((entry) => entry.connected)
   const newThread = useCallback(() => {
-    if (hasOnlineComputer) router.push('/new', { withAnchor: true })
-  }, [hasOnlineComputer])
+    if (
+      active === 'workspace' ||
+      active === 'terminal' ||
+      (active === 'tasks' && unifiedWorkspaceEnabled && unifiedWorkspaceActive)
+    )
+      router.push(active === 'terminal' ? '/terminal/new' : '/workspace/new')
+    else if (hasOnlineComputer) router.push('/new', { withAnchor: true })
+  }, [hasOnlineComputer, active, unifiedWorkspaceEnabled, unifiedWorkspaceActive])
   const searchAvailable = useKeyboardSearchAvailable()
   const keyboardCommands = useMemo<KeyboardCommand[]>(() => {
     const commands: KeyboardCommand[] = []
@@ -381,16 +413,15 @@ export function Workbench() {
     )
   }
   // Without a computer only Tasks (first-run welcome) and Settings have anything to show.
-  const selected =
-    active === 'browser'
-      ? 'browser'
-      : !runtime.profiles.length
-        ? active === 'tasks' && pathname !== '/projects'
-          ? 'tasks'
-          : 'settings'
-        : active === 'tasks' && pathname === '/projects'
-          ? 'scm'
-          : active
+  const selected = ['browser', 'terminal', 'workspace'].includes(active)
+    ? active
+    : !runtime.profiles.length
+      ? active === 'tasks' && pathname !== '/projects'
+        ? 'tasks'
+        : 'settings'
+      : active === 'tasks' && pathname === '/projects'
+        ? 'scm'
+        : active
   useEffect(() => {
     let stopped = false
     setLoadError('')
@@ -463,8 +494,8 @@ export function Workbench() {
           ? 'issues'
           : view === 'pulls'
             ? 'pulls'
-            : view === 'browser'
-              ? 'browser'
+            : view === 'browser' || view === 'terminal' || view === 'workspace'
+              ? view
               : view === 'artifacts'
                 ? 'artifacts'
                 : view === 'settings'
@@ -509,6 +540,8 @@ export function Workbench() {
       pulls: value('pulls'),
       artifacts: value('artifacts'),
       browser: value('browser'),
+      terminal: value('terminal'),
+      workspace: value('workspace'),
       settings: value('settings'),
     }
   }, [active, navigate, work, runtime.activeId])
@@ -522,6 +555,8 @@ export function Workbench() {
       'pulls',
       'artifacts',
       'browser',
+      'terminal',
+      'workspace',
       'settings',
       'scm',
     ] as const) {

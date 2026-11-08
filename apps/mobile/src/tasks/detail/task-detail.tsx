@@ -50,7 +50,6 @@ import { BrowserPane, DevicesPane } from '../preview/browser-pane'
 import { Conversation } from '../conversation/view'
 import { ConversationProvider } from '../conversation/state/provider'
 import { useNavigation } from '../../shell/navigation'
-import { ComposerActivity } from '../composer/composer-activity'
 import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
 import { TaskQuestions } from './task-questions'
 import { LinkedProjects } from './linked-projects'
@@ -89,6 +88,8 @@ import { copyText } from '../../ui/content/clipboard'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
 import { PlanApproval } from '../conversation/components/plan-approval'
+import { SideThreadActions, SideChatAttention } from '../conversation/components/agent-side-chats'
+import { SideThreadChanges } from './side-thread-changes'
 import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
 import { ProjectApprovalRules } from './project-approval-rules'
@@ -97,6 +98,7 @@ import { randomUUID } from 'expo-crypto'
 import { ArtifactBrowser } from '../../ui/content/artifacts'
 type StartupControls = {
   temporary: boolean
+  onStartInBackground: NonNullable<ComponentProps<typeof Composer>['onStartInBackground']>
   onNewThread: () => void
   onSelectRemote: NonNullable<ComponentProps<typeof Composer>['onSelectRemote']>
 }
@@ -350,7 +352,7 @@ function TaskDetailContent({
             ),
         },
         {
-          label: 'Ask a side question',
+          label: 'Side chats',
           group: 'Tools',
           icon: 'chat',
           overflow: true,
@@ -523,6 +525,7 @@ function TaskDetailContent({
                   : 'Draft'
   const [checkpoint, setCheckpoint] = useApplicationState('')
   const [checkpointPath, setCheckpointPath] = useApplicationState('')
+  const [checkpointCheckoutId, setCheckpointCheckoutId] = useApplicationState('')
   const [reviewLine, setReviewLine] = useApplicationState<number | undefined>(undefined)
   const [reviewTab, setReviewTab] = useApplicationState<'diff' | 'findings'>('diff')
   const [terminalId, setTerminalId] = useApplicationState('')
@@ -598,10 +601,13 @@ function TaskDetailContent({
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
+  const [sideChanges, setSideChanges] = useState(false)
   const [projectInfo, setProjectInfo] = useState(false)
-  // Navigation keeps screens mounted; project information belongs only to this view.
+  const [historyBrowsing, setHistoryBrowsing] = useState(false)
+  // Navigation keeps screens mounted; thread info belongs only to this view.
   useEffect(() => {
     setProjectInfo(false)
+    setSideChanges(false)
   }, [focused, activeId, task.id, pane, native?.parentKey])
   const [linkedPulls, setLinkedPulls] = useState(false)
   const [linkedPullUrl, setLinkedPullUrl] = useState<string | undefined>(undefined)
@@ -671,7 +677,12 @@ function TaskDetailContent({
           )
         }
         hidden={!!native || ((pane === 'browser' || pane === 'devices') && expandedPreview)}
-        gestureEnabled={pane !== 'browser' && pane !== 'devices' && pane !== 'diff'}
+        gestureEnabled={
+          pane !== 'browser' &&
+          pane !== 'devices' &&
+          pane !== 'diff' &&
+          !(pane === 'chat' && historyBrowsing)
+        }
         onBack={
           pane === 'diff'
             ? backToChat
@@ -726,7 +737,7 @@ function TaskDetailContent({
                             : tab,
                   group: tab === 'agents' || tab === 'devices' ? 'Tools' : 'Navigate',
                   selected: pane === tab,
-                  // Keep changes and project information beside the menu; car mode uses the menu.
+                  // Keep changes and thread info beside the menu; car mode uses the menu.
                   overflow: car || tab !== 'diff',
                   onPress: () => {
                     Keyboard.dismiss()
@@ -739,7 +750,7 @@ function TaskDetailContent({
                 .concat(
                   [
                     {
-                      label: 'Project information',
+                      label: 'Thread info',
                       group: 'Project',
                       icon: 'info',
                       overflow: car || !hasProject,
@@ -800,20 +811,6 @@ function TaskDetailContent({
                       disabled: !lifecycle.enabled || lifecycle.busy,
                       onPress: lifecycle.togglePinned,
                     },
-                    ...(!task.example && canShare
-                      ? [
-                          {
-                            label: 'Share thread',
-                            group: 'Thread',
-                            icon: 'share' as const,
-                            overflow: true,
-                            onPress: () => {
-                              Keyboard.dismiss()
-                              setSharingTaskId(task.id)
-                            },
-                          },
-                        ]
-                      : []),
                     {
                       label: 'Regenerate title',
                       group: 'Advanced',
@@ -869,10 +866,8 @@ function TaskDetailContent({
                       onPress: () =>
                         task.snoozedUntil
                           ? lifecycle.snooze(null)
-                          : chooseSnoozeDuration('Snooze thread', (hours) =>
-                              lifecycle.snooze(
-                                new Date(Date.now() + hours * 3600000).toISOString(),
-                              ),
+                          : chooseSnoozeDuration('Snooze thread', (until) =>
+                              lifecycle.snooze(until),
                             ),
                     },
                     {
@@ -946,12 +941,32 @@ function TaskDetailContent({
         }
       />
       {!native && !expandedPreview && parentNavigation}
-      {projectInfo && !native && !car && (
+      {!native && !expandedPreview && (
+        <SideThreadActions task={task} onReview={() => setSideChanges(true)} />
+      )}
+      {!native && !expandedPreview && <SideChatAttention task={task} />}
+      {sideChanges && !!task.sideThread && !native && (
+        <SideThreadChanges
+          key={`${activeId}:${task.id}`}
+          taskId={task.id}
+          onClose={() => setSideChanges(false)}
+        />
+      )}
+      {projectInfo && !native && (
         <TaskProjectSheet
           key={`${activeId}:${task.id}`}
-          inline
+          inline={!car}
           task={task}
           scripts={projectActions}
+          onShare={
+            !task.example && !startup?.temporary && canShare
+              ? () => {
+                  Keyboard.dismiss()
+                  setProjectInfo(false)
+                  setSharingTaskId(task.id)
+                }
+              : undefined
+          }
           onBrowser={(url) => {
             setServerLink({ runtimeId: activeId, taskId: task.id, id: randomUUID(), url })
             setProjectInfo(false)
@@ -1010,6 +1025,7 @@ function TaskDetailContent({
             focused &&
             !native &&
             pane === 'chat' &&
+            !projectInfo &&
             !linkingProjects &&
             !renaming &&
             !asking &&
@@ -1025,10 +1041,11 @@ function TaskDetailContent({
             setTerminalId(id)
             setPane('terminal')
           }}
-          openCheckpoint={(id, path) => {
+          openCheckpoint={(id, path, checkoutId) => {
             setReviewLine(undefined)
             setReviewTab('diff')
             setCheckpointPath(path ?? '')
+            setCheckpointCheckoutId(checkoutId ?? '')
             setCheckpoint(id)
             setPane('diff')
           }}
@@ -1044,9 +1061,10 @@ function TaskDetailContent({
             }}
           >
             <Composer
-              queuedMessages={<ComposerActivity task={task} />}
-              renderAbove={(setup, starters, startModes) => (
-                <Conversation setup={setup} starters={starters} startModes={startModes}>
+              onHistoryBrowsingChange={setHistoryBrowsing}
+              onStartInBackground={startup?.onStartInBackground}
+              renderAbove={(setup, startModes) => (
+                <Conversation setup={setup} startModes={startModes}>
                   {preparation ? (
                     <PreparationProgress
                       preparation={preparation}
@@ -1251,6 +1269,7 @@ function TaskDetailContent({
             <TaskReview
               initialCheckpoint={checkpoint}
               initialPath={checkpointPath}
+              initialCheckoutId={checkpoint ? checkpointCheckoutId : ''}
               initialLine={!checkpoint ? reviewLine : undefined}
               initialTab={!checkpoint ? reviewTab : 'diff'}
               edit={detailDraft.file}
@@ -1258,7 +1277,26 @@ function TaskDetailContent({
             />
           )}
           {pane === 'terminal' && (
-            <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />
+            <TerminalPane
+              task={task}
+              selected={terminalId}
+              onSelect={setTerminalId}
+              visible={
+                focused &&
+                !native &&
+                !projectInfo &&
+                !linkingProjects &&
+                !renaming &&
+                !asking &&
+                !transferring &&
+                !sharingTaskId &&
+                !artifactsOpen &&
+                !linkedPulls &&
+                !threadBehavior &&
+                !editingInstructions &&
+                !editingApprovalRules
+              }
+            />
           )}
         </ConversationProvider>
       </View>

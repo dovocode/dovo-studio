@@ -1,4 +1,5 @@
 import { detectRuntimeType } from './runtime-type.js'
+import type { ManagedPolicy } from '../policy/managed-policy.js'
 import type Database from 'better-sqlite3'
 import { decode, mutableStruct, runtimePreferencesSchema } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -13,27 +14,32 @@ export class RuntimePreferences {
   constructor(
     private db: Database.Database,
     private onWatchSettingsChange?: () => void,
+    private policy?: ManagedPolicy,
   ) {
     this.settingsPath =
       db.name === ':memory:'
         ? null
         : (process.env.DOVO_SETTINGS_PATH ?? join(dirname(resolve(db.name)), 'settings.json'))
   }
-  get() {
+  private read(): unknown {
     const saved = this.settingsPath && readLocalSettingsSection('runtime', this.settingsPath)
-    if (saved !== undefined && saved !== null) return this.decode(saved)
+    if (saved !== undefined && saved !== null) return saved
     const row = decode(
       Schema.UndefinedOr(mutableStruct({ value: Schema.String })),
       this.db.prepare('SELECT value FROM documents WHERE id = ?').get('runtime-preferences'),
     )
-    const settings = this.decode(row ? JSON.parse(row.value) : {})
+    const settings: unknown = row ? JSON.parse(row.value) : {}
     if (row && this.settingsPath)
       writeLocalSettingsSection('runtime', () => settings, this.settingsPath)
     return settings
   }
+  get() {
+    return this.decode(this.read())
+  }
   private decode(value: unknown) {
-    const settings = decode(runtimePreferencesSchema, value)
-    if (value && typeof value === 'object' && !('runtimeIcon' in value))
+    const effective = this.policy?.preferences(value) ?? value
+    const settings = decode(runtimePreferencesSchema, effective)
+    if (effective && typeof effective === 'object' && !('runtimeIcon' in effective))
       settings.runtimeIcon = this.detectedType
     return settings
   }
@@ -43,17 +49,19 @@ export class RuntimePreferences {
     const changes = value && typeof value === 'object' ? value : {}
     const previous = this.get()
     const settings = decode(runtimePreferencesSchema, { ...previous, ...changes })
+    this.policy?.validatePreferences(settings)
     const root = settings.worktreesRoot.trim()
     if (root && root !== '~' && !root.startsWith('~/') && !isAbsolute(root))
       throw new HttpError(400, 'Worktree location must be an absolute path on this computer')
     settings.worktreesRoot = root
-    if (this.settingsPath) writeLocalSettingsSection('runtime', () => settings, this.settingsPath)
+    const stored = this.policy?.storedPreferences(this.read(), previous, settings) ?? settings
+    if (this.settingsPath) writeLocalSettingsSection('runtime', () => stored, this.settingsPath)
     else
       this.db
         .prepare(
           'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
         )
-        .run('runtime-preferences', JSON.stringify(settings))
+        .run('runtime-preferences', JSON.stringify(stored))
     if (
       previous.enablePipelineWatching !== settings.enablePipelineWatching ||
       previous.enablePullRequestWatching !== settings.enablePullRequestWatching

@@ -11,7 +11,7 @@ export function PullSectionStatus({
   const error = section.error || section.detail?.refreshError || section.detail?.pull.statusError
   const warnings = section.detail?.warnings ?? []
   if (section.enabled === false) return null
-  if (section.ready && !error && !warnings.length && !section.detail?.stale) return null
+  if (section.ready && !error && !warnings.length) return null
   return (
     <div
       className="my-2 min-w-0 space-y-1 text-xs [overflow-wrap:anywhere]"
@@ -24,9 +24,7 @@ export function PullSectionStatus({
         {error
           ? `${label}: ${error}`
           : section.ready
-            ? section.detail?.stale
-              ? `${label}: showing cached data.`
-              : `${label}: some data could not be loaded.`
+            ? `${label}: some data could not be loaded.`
             : section.readConnected
               ? `Loading ${label.toLowerCase()}…`
               : `${label}: connect to load this section.`}

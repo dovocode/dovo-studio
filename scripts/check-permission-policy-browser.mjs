@@ -19,7 +19,7 @@ const moduleMocks = new Map([
   ],
   [
     `${ui}src/harness-catalog.ts`,
-    `export const useHarnessCatalog=()=>({catalog:{models:[{id:'model',name:'Model',isDefault:true}],reasoning:[]},loading:false,error:null});`,
+    `export const useHarnessCatalog=()=>({catalog:{models:[{id:'model',name:'Model',isDefault:true,reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}],reasoning:[]},loading:false,error:null});`,
   ],
   [
     `${ui}src/use-harness-availability.ts`,
@@ -90,9 +90,10 @@ const moduleMocks = new Map([
 ])
 const mocks = {
   '@dovo/protocol': `export * from '${root}packages/protocol/src/index.ts';`,
+  './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export {providers} from '${root}packages/studio-core/src/providers';export {updateTask} from '${root}packages/studio-core/src/workspace/actions';import {createContext,useContext} from 'react';export const WorkspaceContext=createContext(null);export const useWorkspace=()=>useContext(WorkspaceContext);export const useSettingsDraft=()=>{};`,
-  '@dovo/studio-ui': `export {SettingsSaveBar} from '${ui}src/settings-layout';export {ComposerSettingsControls} from '${ui}src/composer-settings-controls';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${ui}src/permission-policy-fields';export {AgentAvatar,agentIconChoices} from '${ui}src/agent-avatar';export {FormField} from '${ui}src/components/form-field';export {Button} from '${ui}src/components/ui/button';export {Input} from '${ui}src/components/ui/input';export {Textarea} from '${ui}src/components/ui/textarea';export * from '${ui}src/components/ui/select';export * from '${ui}src/components/ui/dialog';`,
+  '@dovo/studio-core': `export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';export * from '@dovo/protocol';export {providers} from '${root}packages/studio-core/src/providers';export {updateTask} from '${root}packages/studio-core/src/workspace/actions';import {createContext,useContext} from 'react';export const WorkspaceContext=createContext(null);export const useWorkspace=()=>useContext(WorkspaceContext);export const useSettingsDraft=()=>{};`,
+  '@dovo/studio-ui': `export {Disclosure} from '${ui}src/disclosure';export {SettingsSaveBar} from '${ui}src/settings-layout';export {ComposerSettingsControls} from '${ui}src/composer-settings-controls';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${ui}src/permission-policy-fields';export {AgentAvatar,agentIconChoices} from '${ui}src/agent-avatar';export {FormField} from '${ui}src/components/form-field';export {Button} from '${ui}src/components/ui/button';export {Input} from '${ui}src/components/ui/input';export {Textarea} from '${ui}src/components/ui/textarea';export * from '${ui}src/components/ui/select';export * from '${ui}src/components/ui/dialog';`,
   'react-native': `
     export const Platform={OS:'android'};
     export const Alert={alert:()=>{}};
@@ -141,7 +142,7 @@ const result = await build({
         const change=async(next)=>{setValue(next);window.changed=next;window.taskChanged=changeTaskHarness(task,[initial],decode(taskHarnessSchema,next));return true};
         const save=async(next)=>{window.saved.push(next)};
         window.value=value;window.setSupported=setSupported;window.setDisabled=setDisabled;
-        const workspace={connected:!disabled,workspace:snapshot.workspace,snapshot,request,runtimes:[],flush:async()=>{},setWorkspace:update=>setStoredTask(current=>update({...snapshot.workspace,tasks:[current]}).tasks[0])};
+        const workspace={connected:!disabled,workspace:snapshot.workspace,snapshot,request,runtimes:[],flush:async()=>{if(window.holdFlush)await new Promise((resolve,reject)=>{window.finishFlush=fail=>fail?reject(new Error('Settings save failed')):resolve()})},setWorkspace:update=>setStoredTask(current=>update({...snapshot.workspace,tasks:[current]}).tasks[0])};
         const runtime={connected:!disabled,snapshot,profile:{id:'runtime',name:'Runtime',connection:{address:'http://fixture',token:'fixture'}},overviews:[],call:request,callEffect:(...args)=>Effect.tryPromise(()=>request(...args)),previewTaskEffect:(_profile,_id,preview,effect)=>effect.pipe(Effect.tap(()=>Effect.sync(()=>setStoredTask(current=>({...current,...preview})))))};
         const kind=window.fixture.kind;
         return <WorkspaceContext.Provider value={workspace}><RuntimeContext.Provider value={runtime}>
@@ -227,7 +228,7 @@ async function expandAdvanced(page) {
   for (const details of await page.locator('details').all()) {
     if (
       /^(Advanced|Custom agent defaults)/.test(
-        (await details.locator(':scope > summary').textContent()) ?? '',
+        ((await details.locator(':scope > summary').textContent()) ?? '').trim(),
       ) &&
       (await details.getAttribute('open')) === null
     )
@@ -247,8 +248,13 @@ async function nativeChoice(page, label, name, index = 0) {
   await page.getByRole('button', { name: label, exact: true }).nth(index).click()
   await page.getByRole('button', { name, exact: true }).click()
 }
+async function openComposerPicker(page) {
+  if (!(await page.locator('[data-model-picker]').count()))
+    await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+}
 async function composerChoice(page, label, name) {
-  await page.getByRole('button', { name: 'Configure task permissions' }).click()
+  await openComposerPicker(page)
+  await page.getByRole('button', { name: 'Configure thread permissions' }).click()
   const trigger = page.getByRole('menuitem', { name: label, exact: true })
   await trigger.focus()
   await page.keyboard.press('ArrowRight')
@@ -257,10 +263,37 @@ async function composerChoice(page, label, name) {
 try {
   // Actual composer advanced menus, custom task overrides, access changes and clear semantics.
   const composer = await pageFor({ kind: 'composer', custom: true })
+  await openComposerPicker(composer)
+  const accessField = composer.getByRole('button', { name: 'Configure thread permissions' })
+  const daybreakField = composer.getByRole('button', { name: 'Daybreak mode', exact: true })
+  assert.equal(await accessField.getAttribute('data-variant'), 'outline')
+  for (const viewport of [
+    { width: 380, height: 500 },
+    { width: 1100, height: 1000 },
+  ]) {
+    await composer.setViewportSize(viewport)
+    const accessBounds = await accessField.boundingBox()
+    const daybreakBounds = await daybreakField.boundingBox()
+    assert.equal(accessBounds.width, daybreakBounds.width, 'Picker footer fields share a width')
+    assert.equal(accessBounds.height, daybreakBounds.height, 'Picker footer fields share a height')
+    assert.equal(
+      await accessField.evaluate((element) => getComputedStyle(element).borderColor),
+      await daybreakField.evaluate((element) => getComputedStyle(element).borderColor),
+      'Picker footer fields use the same visible boundary',
+    )
+    assert.ok(
+      accessBounds.x >= 0 &&
+        accessBounds.x + accessBounds.width <= viewport.width &&
+        accessBounds.y >= 0 &&
+        accessBounds.y + accessBounds.height <= viewport.height,
+      'Access remains visible in the pinned picker footer at narrow sizes',
+    )
+  }
   await composerChoice(composer, 'Approval policy', 'On request')
   await composerChoice(composer, 'Sandbox', 'Workspace write')
   await composer.waitForFunction(() => window.value.sandboxMode === 'workspace-write')
-  await composer.getByRole('button', { name: 'Configure task permissions' }).click()
+  await openComposerPicker(composer)
+  await composer.getByRole('button', { name: 'Configure thread permissions' }).click()
   await composer.screenshot({ path: `${screenshotDir}/composer-permissions.png` })
   await composer.keyboard.press('Escape')
   assert.equal(
@@ -268,7 +301,8 @@ try {
     'on-request',
   )
   // Repeat selection of Full access must reset controls even when it is the underlying preset.
-  await composer.getByRole('button', { name: 'Configure task permissions' }).click()
+  await openComposerPicker(composer)
+  await composer.getByRole('button', { name: 'Configure thread permissions' }).click()
   await composer.getByRole('menuitemradio', { name: /^Full access/ }).click()
   assert.deepEqual(
     await composer.evaluate(() => [window.value.approvalPolicy, window.value.sandboxMode]),
@@ -276,14 +310,15 @@ try {
   )
   await composerChoice(composer, 'Approval policy', 'On request')
   await composerChoice(composer, 'Sandbox', 'Workspace write')
-  await composer.getByRole('button', { name: 'Configure task permissions' }).click()
+  await openComposerPicker(composer)
+  await composer.getByRole('button', { name: 'Configure thread permissions' }).click()
   await composer.getByRole('menuitemradio', { name: /Supervised/ }).click()
   assert.deepEqual(
     await composer.evaluate(() => [window.value.approvalPolicy, window.value.sandboxMode]),
     [undefined, undefined],
   )
   assert.equal(
-    await composer.getByRole('button', { name: 'Configure task permissions' }).textContent(),
+    await composer.getByRole('button', { name: 'Configure thread permissions' }).textContent(),
     'Supervised',
   )
   await composerChoice(composer, 'Approval policy', 'Inherit from access mode')
@@ -294,7 +329,7 @@ try {
   await composerChoice(composer, 'Sandbox', 'Inherit from access mode')
   assert.equal(await composer.evaluate(() => window.taskChanged.agentOverrides.sandboxMode), null)
   await composerChoice(composer, 'Sandbox', 'Read only')
-  await composer.getByRole('button', { name: 'Choose agent and model' }).click()
+  await openComposerPicker(composer)
   await composer.getByRole('button', { name: 'Claude models', exact: true }).click()
   await composer.getByRole('option', { name: /Model/ }).click()
   assert.deepEqual(
@@ -326,7 +361,7 @@ try {
     await composerHarness.evaluate(() => window.task.agentOverrides.sandboxMode),
     'read-only',
   )
-  await composerHarness.getByRole('button', { name: 'Choose agent and model' }).click()
+  await openComposerPicker(composerHarness)
   await composerHarness.getByRole('button', { name: 'Codex models', exact: true }).click()
   await composerHarness.getByRole('button', { name: 'Use Codex directly', exact: true }).click()
   await composerHarness.waitForFunction(() => window.task.agentId === '')
@@ -337,7 +372,8 @@ try {
     supported: undefined,
     policy: { sandboxMode: 'read-only' },
   })
-  await oldComposerHarness.getByRole('button', { name: 'Configure task permissions' }).click()
+  await openComposerPicker(oldComposerHarness)
+  await oldComposerHarness.getByRole('button', { name: 'Configure thread permissions' }).click()
   await oldComposerHarness.getByRole('menuitemradio', { name: /Supervised/ }).click()
   await oldComposerHarness.waitForFunction(() => window.task.harness.permission === 'ask')
   assert.deepEqual(
@@ -348,6 +384,42 @@ try {
     ['ask', undefined],
   )
   await oldComposerHarness.close()
+
+  // The combined picker remains mounted while a task save is pending or fails.
+  const pendingPicker = await pageFor({ kind: 'composer-harness' })
+  await openComposerPicker(pendingPicker)
+  const mountedPicker = await pendingPicker.locator('[data-model-picker]').elementHandle()
+  await pendingPicker.evaluate(() => {
+    window.holdFlush = true
+  })
+  await pendingPicker.getByRole('radio', { name: 'High', exact: true }).click()
+  await pendingPicker.waitForFunction(() => typeof window.finishFlush === 'function')
+  assert(await pendingPicker.getByRole('radio', { name: 'Low', exact: true }).isDisabled())
+  assert(
+    await pendingPicker
+      .locator('[data-model-picker]')
+      .evaluate((node, original) => node === original, mountedPicker),
+  )
+  await pendingPicker.evaluate(() => window.finishFlush(false))
+  await pendingPicker.waitForFunction(
+    () => !document.querySelector('[role=radio][aria-checked=true]').disabled,
+  )
+  assert.equal(
+    await pendingPicker
+      .getByRole('radio', { name: 'High', exact: true })
+      .getAttribute('aria-checked'),
+    'true',
+  )
+  await pendingPicker.getByRole('radio', { name: 'Low', exact: true }).click()
+  await pendingPicker.evaluate(() => window.finishFlush(true))
+  await pendingPicker.getByRole('alert').filter({ hasText: 'Settings save failed' }).waitFor()
+  assert(
+    await pendingPicker
+      .locator('[data-model-picker]')
+      .evaluate((node, original) => node === original, mountedPicker),
+  )
+  assert(await pendingPicker.getByRole('radio', { name: 'High', exact: true }).isEnabled())
+  await pendingPicker.close()
 
   // Preserve setup's save/provider-switch/old-runtime coverage on the shipped defaults form.
   for (const providerSwitch of [false, true]) {
@@ -466,8 +538,10 @@ try {
       supported: undefined,
       policy: { sandboxMode: 'read-only', approvalPolicy: 'on-request' },
     })
-    if (kind === 'composer')
-      await page.getByRole('button', { name: 'Configure task permissions' }).click()
+    if (kind === 'composer') {
+      await openComposerPicker(page)
+      await page.getByRole('button', { name: 'Configure thread permissions' }).click()
+    }
     const role = kind === 'composer' ? 'menuitem' : 'button'
     assert.equal(
       await page.getByRole(role, { name: 'Approval policy', exact: true }).isDisabled(),
@@ -476,10 +550,7 @@ try {
     assert.equal(await page.getByRole(role, { name: 'Sandbox', exact: true }).isDisabled(), true)
     assert.ok((await page.getByText(/Update this runtime/).count()) > 0)
     if (kind === 'desktop-agent')
-      assert.equal(
-        await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
-        true,
-      )
+      assert.equal(await page.getByRole('button', { name: 'Save changes', exact: true }).count(), 0)
     if (kind === 'native-agent')
       assert.equal(
         await page.getByRole('button', { name: 'Save agent', exact: true }).isDisabled(),
@@ -594,7 +665,7 @@ try {
     })
     if (kind === 'composer') {
       assert.equal(
-        await page.getByRole('button', { name: 'Configure task permissions' }).isDisabled(),
+        await page.getByRole('button', { name: 'Choose agent and model' }).isDisabled(),
         true,
       )
     } else {

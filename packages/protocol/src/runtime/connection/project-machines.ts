@@ -49,9 +49,41 @@ export function gitRemoteIdentity(remote: string): string | undefined {
   const port = url.port && !standardSshPort ? `:${url.port}` : ''
   return `${host}${port}/${path}`
 }
-export function projectMachineGroups<
-  T extends { repository: Repository; runtimeId: string | null },
->(entries: readonly T[], groupMatching = true) {
+type ProjectEntry = {
+  repository: Repository
+  runtimeId: string | null
+  /** Lets cached copies from offline computers lose to newer shared revisions. */
+  defaults?: RuntimeDefaults
+}
+export type ProjectOrganization = { pinned: boolean; archived: boolean }
+
+/**
+ * Shared revisions win across every known copy, so no computer must be online. Without a shared
+ * value a group stays visible: pinned when any copy is pinned, archived only when all are.
+ */
+export function projectOrganization(entries: readonly ProjectEntry[]): ProjectOrganization {
+  const key = entries.map((entry) => sharedProjectKey(entry.repository)).find(Boolean)
+  const shared = key
+    ? mergeSharedSettings(
+        ...entries.map((entry) => entry.defaults?.scopedSettings?.shared ?? []),
+      ).find((entry) => entry.key === key)?.value
+    : undefined
+  return {
+    pinned: shared?.projectPinned ?? entries.some((entry) => !!entry.repository.pinned),
+    archived:
+      shared?.projectArchived ??
+      (entries.length > 0 && entries.every((entry) => !!entry.repository.archived)),
+  }
+}
+/** Favorites lead while each caller keeps its own order within pinned and other projects. */
+export function pinnedFirst(a: { pinned: boolean }, b: { pinned: boolean }) {
+  return Number(b.pinned) - Number(a.pinned)
+}
+
+export function projectMachineGroups<T extends ProjectEntry>(
+  entries: readonly T[],
+  groupMatching = true,
+) {
   const groups = new Map<string, { key: string; name: string; entries: T[] }>()
   for (const entry of entries) {
     const key =
@@ -70,27 +102,43 @@ export function projectMachineGroups<
       // Choose a stable label regardless of which runtime is currently selected.
       name:
         group.entries[0].repository.kind === 'scratch'
-          ? 'General'
-          : [...new Set(group.entries.map((entry) => entry.repository.name))].sort(
-              (a, b) => a.length - b.length || a.localeCompare(b),
-            )[0],
+          ? 'No Project'
+          : (group.entries
+              .map(({ repository }) => repository.sharedName)
+              .filter((name) => name !== undefined)
+              .sort((a, b) => a.localeCompare(b))[0] ??
+            [...new Set(group.entries.map((entry) => entry.repository.name))].sort((a, b) =>
+              a.localeCompare(b),
+            )[0]),
       identity: sharedProjectKey(group.entries[0].repository)
         ? group.entries[0].repository.gitIdentity
         : undefined,
+      ...(group.entries[0].repository.kind === 'scratch'
+        ? { pinned: false, archived: false }
+        : projectOrganization(group.entries)),
     }))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key))
+    .sort((a, b) => pinnedFirst(a, b) || a.name.localeCompare(b.name) || a.key.localeCompare(b.key))
 }
 
-/** A project-first task picker has one pinned scratch choice across all servers. */
-export function taskProjectGroups<T extends { repository: Repository; runtimeId: string | null }>(
-  entries: readonly T[],
-) {
+/** New-thread choices: one scratch choice across all servers, favorites, then open projects. */
+export function taskProjectGroups<T extends ProjectEntry>(entries: readonly T[]) {
   const scratch = entries.filter((entry) => entry.repository.kind === 'scratch')
   return [
     ...(scratch.length
-      ? [{ key: 'scratch', name: 'General', entries: scratch, identity: undefined }]
+      ? [
+          {
+            key: 'scratch',
+            name: 'No Project',
+            entries: scratch,
+            identity: undefined,
+            pinned: false,
+            archived: false,
+          },
+        ]
       : []),
-    ...projectMachineGroups(entries.filter((entry) => entry.repository.kind !== 'scratch')),
+    ...projectMachineGroups(entries.filter((entry) => entry.repository.kind !== 'scratch')).filter(
+      (group) => !group.archived,
+    ),
   ]
 }
 

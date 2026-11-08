@@ -1,9 +1,15 @@
 import { githubRead } from '../../retrieval/request.js'
 import { retrievalContext, retrievalLocal, type RetrievalHook } from '../../retrieval/context.js'
 import { includedWorktreeFiles, copyWorktreeFiles } from './worktree-include.js'
-import { stopOwnedChild } from '../../agents/execution/stop-owned-child.js'
-import { createHash } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { worktreeRecords } from './worktree-records.js'
+import { workingGitStatus } from './working-status.js'
+import {
+  stopOwnedChild,
+  OwnedProcessShutdownError,
+} from '../../agents/execution/stop-owned-child.js'
+import { createHash, randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { spawn, execFile } from 'node:child_process'
 import { createFilePreview } from './file-preview.js'
 import { GitBlobReader } from './cat-file-batch.js'
 import { detectInstalledOpeners, type InstalledOpener } from './installed-openers.js'
@@ -12,6 +18,11 @@ import type { RepositoryOpenTarget } from '@dovo/protocol'
 import type { FilePreviewMetadata } from '@dovo/protocol'
 import { GithubBudget } from './github-budget.js'
 import type { GithubResponseInfo } from './github-rate-limit.js'
+import {
+  githubAccessError,
+  githubRequestRepository,
+  type GithubAccessContext,
+} from './github-access.js'
 import {
   GithubApiError,
   GithubCredentials,
@@ -30,31 +41,54 @@ import {
   readlink,
   open,
   mkdir,
+  rmdir,
   mkdtemp,
   rm,
   copyFile,
+  utimes,
   realpath,
 } from 'node:fs/promises'
-import { join, dirname, basename } from 'node:path'
+import { join, dirname, basename, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { Schema } from 'effect'
 import { commandsSchema, REPOSITORY_CLONE_TIMEOUT_MS, type CommandSettings } from '@dovo/protocol'
 import type { ChangedFile } from '@dovo/protocol'
 import type { Task } from '@dovo/protocol'
-import { exec, processEnvironment } from '../../process.js'
+import { exec, ProcessError, processEnvironment } from '../../process.js'
 import { HttpError, errorMessage } from '../../errors.js'
 import { repositoryPath, safeFile } from '../repositories/paths.js'
+import { withFileWrite } from '../repositories/file-writes.js'
+/** Recorded fork point of a task branch; see `Task['worktreeBase']`. */
+export type BranchBase = { branch?: string; ref?: string; commit?: string }
 export type GithubAccount = {
   host: string
   token: string
   env?: Record<string, string>
   onUnauthorized?: () => void
   beforeDispatch?: () => void
+  access?: GithubAccessContext
 }
 // Shared between service instances; linked worktrees write the same config file. Entries
 // exist only while Studio owns or is waiting for a write. External Git keeps its own locks.
 const sharedConfigWrites = new Map<string, Promise<void>>()
-const draftFileWrites = new Map<string, Promise<void>>()
+const unconfirmedCheckoutCommands = new Map<string, Set<OwnedProcessShutdownError>>()
+const preparationOwnership = new AsyncLocalStorage<ReadonlyMap<string, string>>()
+function changesRepositoryIdentity(args: readonly string[]) {
+  // Branch switches can change includeIf.onbranch, even without editing config.
+  if (args[0] === 'checkout' || args[0] === 'switch') return true
+  if (args[0] === 'remote')
+    return ['add', 'rename', 'remove', 'rm', 'set-head', 'set-branches', 'set-url'].includes(
+      args[1] ?? '',
+    )
+  return (
+    args[0] === 'config' &&
+    args[1] !== 'get' &&
+    args[1] !== 'list' &&
+    !args.some((arg) =>
+      ['--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l'].includes(arg),
+    )
+  )
+}
 export class GitService {
   retrieval?: RetrievalHook
   private sharedReaders = new Map<string, { until: number; value: Promise<string> }>()
@@ -109,6 +143,7 @@ export class GitService {
     maxBytes?: number,
     onUnauthorized?: () => void,
     beforeDispatch?: () => void,
+    access?: GithubAccessContext,
   ) {
     const request = parseGithubApiArgs(args, input)
     const audited = [this.settings().gh, ...args]
@@ -121,8 +156,19 @@ export class GitService {
       background,
       responses,
     }
+    const accessContext = {
+      ...access,
+      host: request.host,
+      repository: access?.repository ?? githubRequestRepository(request),
+      source: access
+        ? access.source
+        : GithubCredentials.environmentToken(request.host, env)
+          ? 'environment'
+          : 'gh',
+    } satisfies GithubAccessContext
     try {
-      const token = await this.githubCredentials.token(request.host, cwd, env)
+      const credential = await this.githubCredentials.capture(request.host, cwd, env)
+      const token = credential.token
       const key = createHash('sha256')
         .update(JSON.stringify([request.host, token]))
         .digest('hex')
@@ -138,7 +184,7 @@ export class GitService {
                 if (info.quota) this.githubBudget.observe(key, info.quota, info.resource)
               },
               onUnauthorized: () => {
-                this.githubCredentials.invalidate(request.host, cwd, env)
+                credential.onUnauthorized()
                 onUnauthorized?.()
               },
             })
@@ -180,8 +226,9 @@ export class GitService {
       this.audit?.(cwd, audited, { github: diagnostics })
       return result
     } catch (error) {
-      this.audit?.(cwd, audited, { error: errorMessage(error), github: diagnostics })
-      throw error
+      const failure = githubAccessError(error, accessContext)
+      this.audit?.(cwd, audited, { error: errorMessage(failure), github: diagnostics })
+      throw failure
     }
   }
   private async githubRequest(
@@ -195,6 +242,7 @@ export class GitService {
     onUnauthorized?: () => void,
     beforeDispatch?: () => void,
     discoveredHost?: string,
+    access?: GithubAccessContext,
   ) {
     if (args[0] === 'api')
       return this.githubApiRequest(
@@ -206,6 +254,7 @@ export class GitService {
         maxBuffer,
         onUnauthorized,
         beforeDispatch,
+        access,
       )
     if (input !== undefined) throw new HttpError(400, 'Only gh api requests accept a body')
     const hostIndex = args.indexOf('--hostname')
@@ -255,6 +304,7 @@ export class GitService {
       args: string[],
       result?: {
         error?: string
+        durationMs?: number
         github?: {
           host: string
           method: string
@@ -271,6 +321,7 @@ export class GitService {
     ) => string | Promise<string>,
     private repositoryGithubEnvironment?: (cwd: string) => Promise<Record<string, string>>,
     private worktreeCreated?: (common: string, directory: string) => void,
+    private repositoryProvider?: (identity: string) => 'github' | undefined,
   ) {}
   async githubEnvironment(cwd: string) {
     return this.repositoryGithubEnvironment?.(cwd) ?? {}
@@ -282,6 +333,7 @@ export class GitService {
     timeout: number,
     maxBuffer: number,
     env = processEnvironment(),
+    signal?: AbortSignal,
   ) {
     this.audit?.(cwd, [executable, ...args])
     try {
@@ -290,6 +342,7 @@ export class GitService {
         env,
         timeout,
         maxBuffer,
+        signal,
       })
       this.audit?.(cwd, [executable, ...args], {})
       return result.stdout
@@ -312,11 +365,111 @@ export class GitService {
             `$ErrorActionPreference = 'Stop';\n${script}\nif ($LASTEXITCODE) { exit $LASTEXITCODE }`,
           ]
         : [...shellArguments(settings), '-c', `set -e\n${script}`]
+    return this.runOwnedCommand(cwd, command, args, 'Worktree setup', 2 * 1024 * 1024, signal)
+  }
+  /** A crashed runtime cannot prove that its detached setup commands have stopped. */
+  async withWorktreePreparation<T>(
+    directory: string,
+    operation: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    signal?.throwIfAborted()
+    const canonical = await realpath(directory)
+    await this.assertCheckoutAvailable(canonical)
+    const reason = `dovo-preparing ${randomUUID()}`
+    const records = worktreeRecords(
+      await this.command(canonical, ['worktree', 'list', '--porcelain', '-z']),
+    )
+    const record = records.find((item) => item.path && resolve(item.path) === resolve(canonical))
+    if (!record || record.main)
+      throw new HttpError(409, 'Worktree preparation requires a registered linked worktree.')
+    await this.command(canonical, ['worktree', 'lock', '--reason', reason, canonical])
+    const unlock = async () => {
+      const output = await this.command(canonical, ['worktree', 'list', '--porcelain', '-z'])
+      const own = output.split('\0\0').some((block) => {
+        const lines = block.split('\0')
+        const path = lines.find((line) => line.startsWith('worktree '))?.slice(9)
+        return path && resolve(path) === resolve(canonical) && lines.includes(`locked ${reason}`)
+      })
+      if (!own)
+        throw new HttpError(
+          409,
+          `Worktree preparation ownership changed at ${canonical}; its lock was preserved.`,
+        )
+      await this.command(canonical, ['worktree', 'unlock', canonical])
+    }
+    let outcome: { ok: true; value: T } | { ok: false; error: unknown }
+    try {
+      signal?.throwIfAborted()
+      const ownership = new Map(preparationOwnership.getStore())
+      ownership.set(canonical, reason)
+      outcome = { ok: true, value: await preparationOwnership.run(ownership, operation) }
+    } catch (error) {
+      if (error instanceof OwnedProcessShutdownError) {
+        // Keep the durable lock as well as the live quarantine until exit is positively confirmed.
+        void error.confirmed?.then(unlock).catch((cause: unknown) => {
+          this.audit?.(canonical, ['worktree', 'unlock', canonical], { error: errorMessage(cause) })
+        })
+        throw error
+      }
+      outcome = { ok: false, error }
+    }
+    try {
+      await unlock()
+    } catch (error) {
+      if (!outcome.ok)
+        throw new AggregateError(
+          [outcome.error, error],
+          `Worktree preparation failed at ${canonical}; inspect its Git lock before retrying.`,
+        )
+      throw error
+    }
+    if (!outcome.ok) throw outcome.error
+    return outcome.value
+  }
+  /** Preparation commands may run hooks or checkout descendants; Stop owns the entire tree. */
+  async checkoutCommand(
+    cwd: string,
+    args: string[],
+    signal?: AbortSignal,
+    env: NodeJS.ProcessEnv = this.nonInteractive(),
+    timeoutMs = 300000,
+  ) {
+    const changesIdentity = changesRepositoryIdentity(args)
+    if (changesIdentity) this.identities.clear()
+    try {
+      return await this.runOwnedCommand(
+        cwd,
+        this.settings().git,
+        args,
+        'Git checkout',
+        12 * 1024 * 1024,
+        signal,
+        env,
+        timeoutMs,
+      )
+    } finally {
+      if (changesIdentity) this.identities.clear()
+    }
+  }
+  private async runOwnedCommand(
+    cwd: string,
+    command: string,
+    args: string[],
+    label: string,
+    maxBuffer: number,
+    signal?: AbortSignal,
+    env = processEnvironment(),
+    timeoutMs = 300000,
+  ) {
+    signal?.throwIfAborted()
+    const ownedPath = await realpath(cwd)
+    await this.assertCheckoutAvailable(ownedPath)
     this.audit?.(cwd, [command, ...args])
     const child = spawn(command, args, {
       windowsHide: true,
       cwd,
-      env: processEnvironment(),
+      env,
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -325,6 +478,12 @@ export class GitService {
     let bytes = 0
     let stdout = ''
     let stderr = ''
+    let pipeDeadline: ReturnType<typeof setTimeout> | undefined
+    let confirmPipes!: () => void
+    const pipesClosed = new Promise<void>((resolve) => {
+      confirmPipes = resolve
+    })
+    child.once('close', confirmPipes)
     let rejectShutdown!: (error: unknown) => void
     const shutdownFailed = new Promise<never>((_resolve, reject) => {
       rejectShutdown = reject
@@ -337,17 +496,35 @@ export class GitService {
         void cleanup.catch(rejectShutdown)
       }
     }
-    const aborted = () => stop(new Error('Worktree setup cancelled', { cause: signal?.reason }))
+    const aborted = () => stop(new Error(`${label} cancelled`, { cause: signal?.reason }))
+    child.once('exit', () => {
+      // Start draining descendants on launcher exit, even when they inherited its pipes.
+      // An escaped group retaining those pipes cannot prove shutdown: report a bounded
+      // failure and retain ownership until genuine EOF, rather than destroying the evidence.
+      cleanup ??= stopOwnedChild(child)
+      void cleanup.then(() => {
+        if (child.stdout.readableEnded && child.stderr.readableEnded) return
+        pipeDeadline = setTimeout(
+          () =>
+            rejectShutdown(
+              new OwnedProcessShutdownError(`${label} output did not drain after launcher exit`, {
+                confirmed: pipesClosed,
+              }),
+            ),
+          1000,
+        )
+      }, rejectShutdown)
+    })
     const closed = new Promise<void>((resolve, reject) => {
       child.once('error', reject)
       child.once('close', (code) => {
         if (code === 0 || failure) resolve()
-        else reject(new Error(`Worktree setup exited ${code}: ${stderr}`))
+        else reject(new Error(`${label} exited ${code}: ${stderr}`))
       })
       const output = (data: string, error: boolean) => {
         bytes += Buffer.byteLength(data)
-        if (bytes > 2 * 1024 * 1024) {
-          stop(new Error('Worktree setup output exceeded 2 MiB'))
+        if (bytes > maxBuffer) {
+          stop(new Error(`${label} output exceeded ${maxBuffer} bytes`))
           return
         }
         if (error) stderr += data
@@ -358,72 +535,355 @@ export class GitService {
     })
     signal?.addEventListener('abort', aborted, { once: true })
     if (signal?.aborted) aborted()
-    const timeout = setTimeout(() => stop(new Error('Worktree setup timed out')), 300000)
+    const timeout = setTimeout(() => stop(new Error(`${label} timed out`)), timeoutMs)
+    let outcome: { error: unknown } | undefined
     try {
       await Promise.race([closed, shutdownFailed])
       if (cleanup) await cleanup
       if (failure) throw failure
-      this.audit?.(cwd, [command, ...args], {})
-      return stdout
     } catch (error) {
-      this.audit?.(cwd, [command, ...args], { error: errorMessage(error) })
-      throw error
+      outcome = { error }
     } finally {
       clearTimeout(timeout)
+      clearTimeout(pipeDeadline)
       signal?.removeEventListener('abort', aborted)
-      // Retain checkout ownership until the process group has stopped.
-      if (cleanup) await cleanup
+    }
+    // Even an exited hook can leave descendants with redirected stdio writing this checkout.
+    cleanup ??= stopOwnedChild(child)
+    try {
+      await cleanup
+    } catch (error) {
+      if (error instanceof OwnedProcessShutdownError) this.quarantineCheckout(ownedPath, error)
+      this.audit?.(cwd, [command, ...args], { error: errorMessage(error) })
+      throw error
+    }
+    if (outcome) {
+      if (outcome.error instanceof OwnedProcessShutdownError) {
+        this.quarantineCheckout(ownedPath, outcome.error)
+      }
+      this.audit?.(cwd, [command, ...args], { error: errorMessage(outcome.error) })
+      throw outcome.error
+    }
+    this.audit?.(cwd, [command, ...args], {})
+    return stdout
+  }
+  private quarantineCheckout(path: string, error: OwnedProcessShutdownError) {
+    const pending = unconfirmedCheckoutCommands.get(path) ?? new Set<OwnedProcessShutdownError>()
+    pending.add(error)
+    unconfirmedCheckoutCommands.set(path, pending)
+    void error.confirmed?.then(() => {
+      pending.delete(error)
+      if (!pending.size && unconfirmedCheckoutCommands.get(path) === pending)
+        unconfirmedCheckoutCommands.delete(path)
+    })
+  }
+  /** Preparation may fail before Tasks has admitted a provider and recorded its directories. */
+  async assertCheckoutAvailable(path: string) {
+    const canonical = await realpath(path)
+    const error = unconfirmedCheckoutCommands.get(canonical)?.values().next().value
+    if (error)
+      throw new HttpError(
+        409,
+        `The checkout at ${canonical} is waiting for a previous command to confirm shutdown; its files were preserved.`,
+      )
+    // A linked checkout's Git lock survives runtime death. Only the preparation that owns
+    // this exact reason may inspect/write it while its detached commands are still alive.
+    const gitFile = join(canonical, '.git')
+    const entry = await stat(gitFile).catch((cause: unknown) => {
+      if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') return undefined
+      throw cause
+    })
+    if (!entry?.isFile()) return
+    const gitDirectory = (await readFile(gitFile, 'utf8')).replace(/\r?\n$/, '')
+    if (!gitDirectory.startsWith('gitdir: ')) return
+    const lock = await readFile(
+      join(resolve(canonical, gitDirectory.slice(8)), 'locked'),
+      'utf8',
+    ).catch((cause: unknown) => {
+      if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') return undefined
+      throw cause
+    })
+    const reason = lock?.replace(/\r?\n$/, '')
+    if (
+      reason &&
+      /^(?:dovo-creating|dovo-preparing) /.test(reason) &&
+      preparationOwnership.getStore()?.get(canonical) !== reason
+    )
+      throw new HttpError(
+        409,
+        `The checkout at ${canonical} has unfinished preparation (${reason}). Confirm its commands have stopped before unlocking its Git registration; files were preserved.`,
+      )
+  }
+  async command(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
+    const changesIdentity = changesRepositoryIdentity(args)
+    // Config can be global or shared by linked worktrees. Fence reads on both sides
+    // of a write, including partially failed writes; explicit refresh remains available.
+    if (changesIdentity) this.identities.clear()
+    try {
+      return await this.run(cwd, this.settings().git, args, 30000, 12 * 1024 * 1024, env)
+    } finally {
+      if (changesIdentity) this.identities.clear()
     }
   }
-  command(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
-    return this.run(cwd, this.settings().git, args, 30000, 12 * 1024 * 1024, env)
+  /** Bounded, interruptible reads for interactive project browsing and search. */
+  readCommand(
+    cwd: string,
+    args: string[],
+    limits: { signal?: AbortSignal; timeout?: number; maxBuffer?: number; input?: string } = {},
+  ) {
+    if (limits.input === undefined)
+      return this.run(
+        cwd,
+        this.settings().git,
+        args,
+        limits.timeout ?? 5_000,
+        limits.maxBuffer ?? 2 * 1024 * 1024,
+        undefined,
+        limits.signal,
+      )
+    const executable = this.settings().git
+    this.audit?.(cwd, [executable, ...args])
+    return new Promise<string>((resolve, reject) => {
+      const child = execFile(
+        executable,
+        args,
+        {
+          cwd,
+          env: processEnvironment(),
+          windowsHide: true,
+          signal: limits.signal,
+          timeout: limits.timeout ?? 5_000,
+          maxBuffer: limits.maxBuffer ?? 2 * 1024 * 1024,
+        },
+        (cause, stdout, stderr) => {
+          if (cause) {
+            this.audit?.(cwd, [executable, ...args], { error: cause.message })
+            reject(
+              new ProcessError({
+                message: cause.message,
+                cause,
+                code: cause.code,
+                signal: cause.signal,
+                stdout,
+                stderr,
+              }),
+            )
+          } else {
+            this.audit?.(cwd, [executable, ...args], {})
+            resolve(stdout)
+          }
+        },
+      )
+      child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EPIPE') reject(error)
+      })
+      child.stdin?.end(limits.input)
+    })
+  }
+  /** Preparation timings are retained with command activity for startup diagnostics. */
+  async measureCheckout<T>(cwd: string, stage: string, operation: () => Promise<T>): Promise<T> {
+    const started = performance.now()
+    let failure: string | undefined
+    try {
+      return await operation()
+    } catch (error) {
+      failure = errorMessage(error)
+      throw error
+    } finally {
+      this.audit?.(cwd, ['worktree-prepare', stage], {
+        durationMs: Math.round((performance.now() - started) * 100) / 100,
+        ...(failure ? { error: failure } : {}),
+      })
+    }
   }
   /** Git operations that write repository configuration shared by every linked worktree. */
   sharedConfigCommand(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
     return this.withSharedConfig(cwd, () => this.command(cwd, args, env))
   }
-  async withSharedConfig<T>(cwd: string, operation: () => Promise<T>): Promise<T> {
+  async withSharedConfig<T>(
+    cwd: string,
+    operation: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    signal?.throwIfAborted()
     const common = (
       await this.command(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     ).replace(/\r?\n$/, '')
     const key = await realpath(common)
-    const previous = sharedConfigWrites.get(key)
+    const previous = sharedConfigWrites.get(key) ?? Promise.resolve()
     let release!: () => void
-    const pending = new Promise<void>((resolve) => {
+    const own = new Promise<void>((resolve) => {
       release = resolve
     })
+    // A cancelled waiter must not let its successors pass the still-active earlier writer.
+    const pending = previous.then(() => own)
     sharedConfigWrites.set(key, pending)
-    try {
-      await previous
-      return await operation()
-    } finally {
-      release()
+    void pending.then(() => {
       if (sharedConfigWrites.get(key) === pending) sharedConfigWrites.delete(key)
+    })
+    let held = false
+    try {
+      await this.measureCheckout(cwd, 'config-wait', async () => {
+        if (signal)
+          await new Promise<void>((resolve, reject) => {
+            const aborted = () => {
+              signal.removeEventListener('abort', aborted)
+              reject(signal.reason)
+            }
+            signal.addEventListener('abort', aborted, { once: true })
+            if (signal.aborted) aborted()
+            void previous.then(() => {
+              signal.removeEventListener('abort', aborted)
+              resolve()
+            })
+          })
+        else await previous
+      })
+      signal?.throwIfAborted()
+      this.identities.clear()
+      return await operation()
+    } catch (error) {
+      if (error instanceof OwnedProcessShutdownError) {
+        // A rejected Stop is not proof that Git stopped writing shared config.
+        held = true
+        void error.confirmed?.then(release)
+      }
+      throw error
+    } finally {
+      this.identities.clear()
+      if (!held) release()
     }
   }
   /** Copy project-local files only into freshly created checkouts, before setup runs. */
-  async addWorktree(root: string, directory: string, args: string[]) {
-    const files = await includedWorktreeFiles(root)
-    // Creating a branch from a remote ref can also record its tracking configuration.
-    await this.sharedConfigCommand(root, ['worktree', 'add', ...args])
+  async addWorktree(root: string, directory: string, args: string[], signal?: AbortSignal) {
+    signal?.throwIfAborted()
+    const version = await this.command(root, ['--version'])
+    const parts = /git version (\d+)\.(\d+)/.exec(version)
+    if (!parts || Number(parts[1]) < 2 || (Number(parts[1]) === 2 && Number(parts[2]) < 36))
+      throw new HttpError(409, 'Git 2.36 or newer is required for safely owned worktree creation.')
+    const files = await this.measureCheckout(root, 'include-files', () =>
+      includedWorktreeFiles(root, signal),
+    )
+    const reason = `dovo-creating ${randomUUID()}`
+    let identity: Awaited<ReturnType<typeof lstat>> | undefined
+    let canonical: string | undefined
+    const registration = async () => {
+      const records = (await this.command(root, ['worktree', 'list', '--porcelain', '-z']))
+        .split('\0\0')
+        .map((block) => block.split('\0'))
+      return records.find((record) => {
+        const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
+        return path && canonical && resolve(path) === resolve(canonical)
+      })
+    }
+    const owns = async () => (await registration())?.includes(`locked ${reason}`) ?? false
     try {
-      const canonicalDirectory = await realpath(directory)
-      await copyWorktreeFiles(root, canonicalDirectory, files)
-      if (this.worktreeCreated) {
-        const common = (
-          await this.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-        ).trim()
-        this.worktreeCreated(common, canonicalDirectory)
-      }
+      await this.withSharedConfig(
+        root,
+        async () => {
+          await this.assertCheckoutAvailable(root)
+          // Git accepts an empty folder. Creating it exclusively gives us an identity before
+          // checkout hooks run, so a confirmed cancellation can clean only this attempt.
+          try {
+            await mkdir(directory)
+          } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
+              throw new HttpError(
+                409,
+                `The checkout path ${directory} already exists; its files were preserved.`,
+              )
+            throw error
+          }
+          canonical = await realpath(directory)
+          identity = await lstat(canonical)
+          await this.measureCheckout(root, 'checkout', () =>
+            this.checkoutCommand(
+              root,
+              ['worktree', 'add', '--lock', '--reason', reason, ...args],
+              signal,
+            ),
+          )
+          signal?.throwIfAborted()
+          const created = await lstat(canonical)
+          if (created.dev !== identity.dev || created.ino !== identity.ino || !(await owns()))
+            throw new HttpError(
+              409,
+              'The worktree registration changed during creation; its files were preserved.',
+            )
+        },
+        signal,
+      )
+      // The durable dovo-creating registration fences this checkout while independent
+      // worktrees can acquire the shared config lock and start their own checkout.
+      if (!canonical) throw new Error('Missing newly created worktree path')
+      const checkout = canonical
+      await this.measureCheckout(root, 'copy', () =>
+        copyWorktreeFiles(root, checkout, files, signal),
+      )
+      await this.withSharedConfig(
+        root,
+        async () => {
+          signal?.throwIfAborted()
+          if (!canonical || !identity) throw new Error('Missing worktree ownership')
+          const current = await lstat(canonical)
+          if (current.dev !== identity.dev || current.ino !== identity.ino || !(await owns()))
+            throw new HttpError(
+              409,
+              'The worktree changed during preparation; its files were preserved.',
+            )
+          if (this.worktreeCreated) {
+            const common = (
+              await this.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+            ).trim()
+            this.worktreeCreated(common, canonical)
+          }
+          await this.command(root, ['worktree', 'unlock', canonical])
+        },
+        signal,
+      )
     } catch (error) {
-      // A failed copy must not leave a checkout that subsequent attempts treat as prepared.
-      // The branch is retained, so retrying can reattach it.
-      try {
-        await this.command(root, ['worktree', 'remove', '--force', directory])
-      } catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], 'Worktree file copy and cleanup failed')
-      }
-      throw error
+      // Never clean while a process may still be writing or before identity was captured.
+      if (error instanceof OwnedProcessShutdownError) throw error
+      await this.withSharedConfig(root, async () => {
+        let cleaned = false
+        if (canonical && identity) {
+          const current = await lstat(canonical).catch(() => undefined)
+          if (current?.dev === identity.dev && current.ino === identity.ino) {
+            try {
+              const record = await registration()
+              // Keep the owned registration fenced if deleting the directory fails. Git's
+              // own remove can erase the registration even when files could not be removed.
+              if (record?.includes(`locked ${reason}`)) {
+                await rm(canonical, { recursive: true, maxRetries: 3, retryDelay: 100 })
+                await this.checkoutCommand(root, [
+                  'worktree',
+                  'remove',
+                  '--force',
+                  '--force',
+                  canonical,
+                ])
+                cleaned = true
+              } else {
+                // A failure before registration may leave our empty directory. Never recurse
+                // here: nonempty unregistered folders require explicit inspection.
+                await rmdir(canonical)
+                cleaned = true
+              }
+            } catch (cleanupError) {
+              if (cleanupError instanceof OwnedProcessShutdownError) throw cleanupError
+              throw new AggregateError(
+                [error, cleanupError],
+                `Worktree preparation failed; inspect ${directory} (${reason}).`,
+              )
+            }
+          }
+        }
+        if (cleaned || signal?.aborted) throw error
+        throw new HttpError(
+          409,
+          `${errorMessage(error)} Worktree preparation did not complete. Inspect ${directory} and its Git registration (${reason}) before retrying; existing files were preserved.`,
+        )
+      })
     }
   }
   // Credential helpers answer or fail; git must never wait on a terminal prompt.
@@ -566,18 +1026,31 @@ export class GitService {
     string,
     { expires: number; pending: boolean; result: Promise<string | undefined> }
   >()
+  private githubIdentityHosts = new Set<string>()
+  /** Called only after the selected provider credential successfully verifies with GitHub. */
+  confirmGithubHost(host: string) {
+    if (this.githubIdentityHosts.has(host.toLowerCase())) return
+    this.githubIdentityHosts.add(host.toLowerCase())
+    this.identities.clear()
+  }
+  canonicalRepositoryIdentity(identity: string) {
+    return this.githubIdentityHosts.has(identity.split('/')[0].toLowerCase()) ||
+      this.repositoryProvider?.(identity) === 'github'
+      ? identity.toLowerCase()
+      : identity
+  }
   repositoryIdentity(path: string, refresh = false) {
     const now = Date.now()
     const cached = this.identities.get(path)
     for (const [key, entry] of this.identities)
       if (key !== path && !entry.pending && entry.expires <= now) this.identities.delete(key)
-    if (cached && (cached.pending || (!refresh && cached.expires > now))) {
+    if (cached && !refresh && (cached.pending || cached.expires > now)) {
       this.identities.delete(path)
       this.identities.set(path, cached)
       return cached.result
     }
     const result = this.readRepositoryIdentity(path)
-    const entry = { expires: now + 60000, pending: true, result }
+    const entry = { expires: now + 300000, pending: true, result }
     if (this.identities.size >= 256 && !this.identities.has(path))
       for (const [key, old] of this.identities) {
         if (old.pending) continue
@@ -588,10 +1061,14 @@ export class GitService {
     result.then(
       () => {
         entry.pending = false
-        entry.expires = Date.now() + 60000
+        // External Git/config/includeIf changes still converge without a watcher per
+        // checkout; identity-sensitive writes explicitly refresh before proceeding.
+        entry.expires = Date.now() + 300000
       },
       () => {
-        if (this.identities.get(path) === entry) this.identities.delete(path)
+        // Keep a bounded unavailable state instead of alternating error/pending every snapshot.
+        entry.pending = false
+        entry.expires = Date.now() + 15000
       },
     )
     return result
@@ -604,14 +1081,16 @@ export class GitService {
     return cached?.result
   }
   private async readRepositoryIdentity(path: string) {
+    const identity = (remote: string) => {
+      const raw = gitRemoteIdentity(remote)
+      return raw ? this.canonicalRepositoryIdentity(raw) : undefined
+    }
     const remotes = (await this.command(path, ['remote'])).trim().split('\n').filter(Boolean)
     // Prefer the clone's origin: merging every remote would incorrectly merge forks.
     if (remotes.includes('origin'))
-      return gitRemoteIdentity(await this.command(path, ['remote', 'get-url', 'origin']))
+      return identity(await this.command(path, ['remote', 'get-url', 'origin']))
     const identities = await Promise.all(
-      remotes.map(async (name) =>
-        gitRemoteIdentity(await this.command(path, ['remote', 'get-url', name])),
-      ),
+      remotes.map(async (name) => identity(await this.command(path, ['remote', 'get-url', name]))),
     )
     const unique = new Set(identities)
     if (unique.size === 1) return identities[0]
@@ -636,6 +1115,7 @@ export class GitService {
   async inspect(path: string) {
     const cwd = await repositoryPath(path)
     const root = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '')
+    await this.assertCheckoutAvailable(root)
     const branch = (await this.command(cwd, ['branch', '--show-current'])).trim() || 'detached HEAD'
     return {
       path: root,
@@ -787,18 +1267,18 @@ export class GitService {
   async changes(path: string): Promise<ChangedFile[]> {
     const { path: root } = await this.inspect(path)
     const tracked = (await this.command(root, ['ls-files', '-z'])).split('\0').filter(Boolean)
-    const changed = (
-      await this.command(root, [
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--untracked-files=all',
-        '--no-renames',
-      ])
+    const changed = new Map(
+      (
+        await this.command(
+          root,
+          ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
+          { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+        )
+      )
+        .split('\0')
+        .filter(Boolean)
+        .map((line) => [line.slice(3), workingGitStatus(line.slice(0, 2))] as const),
     )
-      .split('\0')
-      .filter(Boolean)
-      .map((line) => line.slice(3))
     let hasHead = true
     try {
       await this.command(root, ['rev-parse', '--verify', 'HEAD'])
@@ -810,13 +1290,13 @@ export class GitService {
         hasHead = false
       else throw error
     }
-    const names = [...new Set(changed)]
+    const names = [...changed.keys()]
     const old = hasHead
       ? await this.treeFiles(root, 'HEAD', names)
       : new Map<string, NonNullable<FilePreviewMetadata['before']>>()
     const files: ChangedFile[] = []
     let remaining = 1024 * 1024
-    for (const name of names) {
+    for (const [name, gitStatus] of changed) {
       const before = old.get(name)
       let unreadable = false
       const after = await this.workingFile(root, name).catch(() => {
@@ -855,6 +1335,7 @@ export class GitService {
               after: text,
               diskContents: text,
               viewed: false,
+              gitStatus,
             })
             remaining -= entries.reduce((sum, side) => sum + side.size, 0)
             continue
@@ -864,7 +1345,14 @@ export class GitService {
           // Keep an unreadable or concurrently removed path visible; opening it reports the error.
         }
       }
-      files.push({ path: name, before: '', after: '', viewed: false, preview: { kind, ...sides } })
+      files.push({
+        path: name,
+        before: '',
+        after: '',
+        viewed: false,
+        gitStatus,
+        preview: { kind, ...sides },
+      })
     }
     return files
   }
@@ -909,6 +1397,7 @@ export class GitService {
     name: string,
     metadata?: Pick<FilePreviewMetadata, 'before' | 'after'>,
     full = false,
+    includePatch = false,
   ) {
     // Validate the requested working path before passing it to any Git command.
     const after = metadata ? undefined : await this.workingFile(root, name)
@@ -936,7 +1425,7 @@ export class GitService {
             ? join(root, basename(name))
             : join(await safeFile(root, parent), basename(name))
         const info = await lstat(file)
-        if (full && info.size !== sides.after?.size)
+        if (info.size !== sides.after?.size)
           throw new HttpError(409, 'The file changed while loading its diff. Reload and try again.')
         if (info.isSymbolicLink()) return Buffer.from(await readlink(file)).subarray(0, limit)
         const handle = await open(await safeFile(root, name), 'r')
@@ -948,21 +1437,90 @@ export class GitService {
             if (!result.bytesRead) break
             offset += result.bytesRead
           }
-          if (full) {
-            const current = await handle.stat()
-            if (current.size !== info.size || current.mtimeMs !== info.mtimeMs)
-              throw new HttpError(
-                409,
-                'The file changed while loading its diff. Reload and try again.',
-              )
-          }
+          const current = await handle.stat()
+          if (current.size !== info.size || current.mtimeMs !== info.mtimeMs)
+            throw new HttpError(
+              409,
+              'The file changed while loading its diff. Reload and try again.',
+            )
           return bytes.subarray(0, offset)
         } finally {
           await handle.close()
         }
       },
       full,
+      includePatch,
     )
+  }
+
+  /** Read commit-dialog comparisons without writing an index, tree, or working file. */
+  async stagingFilePreview(cwd: string, name: string, comparison: 'staged' | 'unstaged') {
+    const { path: root } = await this.inspect(cwd)
+    await safeFile(root, name, { followFinalSymlink: false })
+    if (name.includes('\\') || name.split('/').some((part) => part === '..' || part === '.'))
+      throw new HttpError(400, 'Invalid file path')
+    const indexEntries = () =>
+      this.readCommand(root, ['--literal-pathspecs', 'ls-files', '--stage', '-z', '--', name], {
+        maxBuffer: 64 * 1024,
+      })
+    const head = async () => {
+      try {
+        return (await this.command(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).trim()
+      } catch (error) {
+        if (!(error instanceof ProcessError) || error.code !== 1) throw error
+        const ref = (await this.command(root, ['symbolic-ref', '-q', 'HEAD'])).trim()
+        // Only an absent branch is unborn. Do not hide corrupt refs or Git read errors.
+        if ((await this.command(root, ['for-each-ref', '--format=%(refname)', ref])).trim())
+          throw error
+        return undefined
+      }
+    }
+    const [entries, revision] = await Promise.all([indexEntries(), head()])
+    let indexed: FilePreviewMetadata['before']
+    for (const entry of entries.split('\0').filter(Boolean)) {
+      const tab = entry.indexOf('\t')
+      if (entry.slice(tab + 1) !== name) continue
+      const [mode, hash, stage] = entry.slice(0, tab).split(' ')
+      if (stage !== '0')
+        throw new HttpError(
+          409,
+          'This file has unresolved conflicts. Resolve them before reviewing its staged comparison.',
+        )
+      const size =
+        mode === '160000' ? 0 : Number((await this.command(root, ['cat-file', '-s', hash])).trim())
+      indexed = { mode, hash, size }
+    }
+    const preview =
+      comparison === 'staged'
+        ? await this.workingFilePreview(
+            root,
+            name,
+            {
+              before: revision
+                ? (await this.treeFiles(root, revision, [name])).get(name)
+                : undefined,
+              after: indexed,
+            },
+            false,
+            true,
+          )
+        : await this.workingFilePreview(
+            root,
+            name,
+            {
+              before: indexed,
+              after: await this.workingFile(root, name),
+            },
+            false,
+            true,
+          )
+    const [currentEntries, currentHead] = await Promise.all([indexEntries(), head()])
+    if (entries !== currentEntries || revision !== currentHead)
+      throw new HttpError(
+        409,
+        'Git changed while loading this comparison. Return to staging, refresh Git, and try again.',
+      )
+    return preview
   }
 
   // An alternate index captures staged and unstaged contents without touching the user's index.
@@ -991,7 +1549,8 @@ export class GitService {
       await rm(directory, { recursive: true, force: true })
     }
   }
-  async snapshot(cwd: string, ref: string) {
+  async snapshot(cwd: string, ref: string, signal?: AbortSignal) {
+    signal?.throwIfAborted()
     const directory = await mkdtemp(join(tmpdir(), 'dovo-checkpoint-'))
     const index = join(directory, 'index')
     try {
@@ -999,17 +1558,22 @@ export class GitService {
         await this.command(cwd, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])
       ).trim()
       try {
+        const sourceStat = await stat(source)
         await copyFile(source, index)
+        // Git uses the index mtime to rehash racily clean entries. A fresh copy's
+        // timestamp can hide same-size edits made within the filesystem's clock tick.
+        await utimes(index, sourceStat.atime, sourceStat.mtime)
       } catch (error) {
         if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
       }
       const run = (args: string[]) =>
-        this.run(cwd, this.settings().git, args, 120000, 12 * 1024 * 1024, {
+        this.checkoutCommand(cwd, args, signal, {
           ...processEnvironment(),
           GIT_INDEX_FILE: index,
         })
       await run(['add', '-A', '--', '.'])
       const tree = (await run(['write-tree'])).trim()
+      signal?.throwIfAborted()
       await this.command(cwd, ['update-ref', ref, tree])
       return tree
     } finally {
@@ -1022,12 +1586,22 @@ export class GitService {
   /** Makes the working tree match a snapshot tree, without touching HEAD, the branch or the
    * index. The current state is saved to `backupRef` first and returned, so it can be restored.
    * Only paths that differ are written or removed. */
-  async restoreSnapshot(cwd: string, target: string, backupRef: string, only?: string[]) {
-    const current = await this.snapshot(cwd, backupRef)
+  async restoreSnapshot(
+    cwd: string,
+    target: string,
+    backupRef: string,
+    only?: string[],
+    signal?: AbortSignal,
+  ) {
+    // Snapshot paths belong to the repository tree, even for a thread started in a subfolder.
+    cwd = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).trim()
+    const current = await this.snapshot(cwd, backupRef, signal)
     if (current === target) return current
     const names = (
       await this.command(cwd, [
         '--literal-pathspecs',
+        '-c',
+        'diff.relative=false',
         'diff',
         '--name-only',
         '--no-renames',
@@ -1044,7 +1618,7 @@ export class GitService {
     const index = join(directory, 'index')
     try {
       const run = (args: string[]) =>
-        this.run(cwd, this.settings().git, args, 120000, 12 * 1024 * 1024, {
+        this.checkoutCommand(cwd, args, signal, {
           ...processEnvironment(),
           GIT_INDEX_FILE: index,
         })
@@ -1060,8 +1634,11 @@ export class GitService {
         ).split('\0'))
           if (name) present.add(name)
       // Remove first, so a file replaced by a folder (or the reverse) can be written after.
-      for (const name of names)
-        if (!present.has(name)) await rm(await safeFile(cwd, name), { force: true })
+      for (const name of names) {
+        signal?.throwIfAborted()
+        if (!present.has(name))
+          await rm(await safeFile(cwd, name, { followFinalSymlink: false }), { force: true })
+      }
       const write = names.filter((name) => present.has(name))
       for (const chunk of chunks(write))
         await run(['--literal-pathspecs', 'checkout-index', '-f', '--', ...chunk])
@@ -1080,16 +1657,37 @@ export class GitService {
   }
   async checkpointChanges(
     cwd: string,
-    before: string,
+    before: string | undefined,
     after: string,
   ): Promise<{ files: ChangedFile[]; omitted: string[] }> {
     const names = (
-      await this.command(cwd, ['diff', '--name-only', '--no-renames', '-z', before, after, '--'])
+      await this.command(
+        cwd,
+        before
+          ? [
+              '-c',
+              'diff.relative=false',
+              'diff',
+              '--name-only',
+              '--no-renames',
+              '-z',
+              before,
+              after,
+              '--',
+            ]
+          : ['ls-tree', '--full-tree', '-r', '--name-only', '-z', after, '--'],
+      )
     )
       .split('\0')
       .filter(Boolean)
     const files: ChangedFile[] = []
-    const trees = await Promise.all([before, after].map((tree) => this.treeFiles(cwd, tree, names)))
+    const trees = await Promise.all(
+      [before, after].map(async (tree) =>
+        tree
+          ? this.treeFiles(cwd, tree, names)
+          : new Map<string, NonNullable<FilePreviewMetadata['before']>>(),
+      ),
+    )
     // These limits bound embedded previews, never the list of saved files.
     let remaining = 1024 * 1024
     let previews = 0
@@ -1162,6 +1760,7 @@ export class GitService {
       const output = await this.command(cwd, [
         '--literal-pathspecs',
         'ls-tree',
+        '--full-tree',
         '-z',
         '-l',
         tree,
@@ -1178,13 +1777,18 @@ export class GitService {
   }
   async checkpointFilePreview(
     cwd: string,
-    before: string,
+    before: string | undefined,
     after: string,
     path: string,
     full = false,
+    includePatch = false,
   ) {
     const sides = await Promise.all(
-      [before, after].map((tree) => this.treeFiles(cwd, tree, [path])),
+      [before, after].map(async (tree) =>
+        tree
+          ? this.treeFiles(cwd, tree, [path])
+          : new Map<string, NonNullable<FilePreviewMetadata['before']>>(),
+      ),
     )
     const old = sides[0].get(path),
       next = sides[1].get(path)
@@ -1194,6 +1798,7 @@ export class GitService {
       { before: old, after: next },
       (hash, limit) => this.blobPrefix(cwd, hash, limit),
       full,
+      includePatch,
     )
   }
   /** Read a bounded prefix without buffering the rest of a potentially huge saved blob. */
@@ -1238,19 +1843,41 @@ export class GitService {
     })
   }
 
-  /** Committed changes on this branch since its merge base with the default branch. */
-  async branchChangesFiles(cwd: string) {
-    const { before, after, base } = await this.branchTrees(cwd)
+  /** Committed changes on this branch since its merge base with its recorded or default base. */
+  async branchChangesFiles(cwd: string, recorded?: BranchBase) {
+    const { before, after, base } = await this.branchTrees(cwd, recorded)
     return { ...(await this.checkpointChanges(cwd, before, after)), base, before, after }
   }
   /** Whole branch against the merge base, including staged, unstaged and untracked files. */
-  async reviewBranchChangesFiles(cwd: string) {
-    const { before, base } = await this.branchTrees(cwd)
+  async reviewBranchChangesFiles(cwd: string, recorded?: BranchBase) {
+    const { before, base } = await this.branchTrees(cwd, recorded)
     const after = await this.snapshot(cwd, 'refs/dovo/reviews/branch-preview')
     return { ...(await this.checkpointChanges(cwd, before, after)), base, before, after }
   }
-  async branchTrees(cwd: string) {
+  /** A recorded base applies only while its branch is checked out: its ref first, then the
+   * commit the branch started from once that ref is deleted. Otherwise the default branch is
+   * used. The checked-out branch is never its own base: comparing it finds no changes. */
+  async branchTrees(cwd: string, recorded?: BranchBase) {
     const head = (await this.command(cwd, ['rev-parse', '--verify', 'HEAD'])).trim()
+    const current = (await this.command(cwd, ['symbolic-ref', '-q', 'HEAD']).catch(() => '')).trim()
+    const commit = async (ref: string) =>
+      (
+        await this.command(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).catch(
+          () => '',
+        )
+      ).trim()
+    const ancestor = (base: string) =>
+      this.command(cwd, ['merge-base', base, head]).then(
+        (value) => value.trim(),
+        () => '',
+      )
+    if (recorded && (!recorded.branch || current === `refs/heads/${recorded.branch}`)) {
+      for (const base of [recorded.ref, recorded.commit]) {
+        if (!base || base === current || `refs/heads/${base}` === current) continue
+        const before = (await commit(base)) && (await ancestor(base))
+        if (before) return { before, after: head, base }
+      }
+    }
     const originHead = await this.command(cwd, [
       'symbolic-ref',
       '-q',
@@ -1262,14 +1889,13 @@ export class GitService {
       'refs/remotes/origin/master',
       'refs/heads/main',
       'refs/heads/master',
-    ].filter(Boolean)
+    ]
+      .filter(Boolean)
+      // Prefer another branch; comparing a default branch with itself just finds no changes.
+      .sort((a, b) => Number(a === current) - Number(b === current))
     let base: string | undefined
     for (const candidate of candidates) {
-      if (
-        (
-          await this.command(cwd, ['rev-parse', '--verify', '--quiet', candidate]).catch(() => '')
-        ).trim()
-      ) {
+      if (await commit(candidate)) {
         base = candidate
         break
       }
@@ -1279,24 +1905,13 @@ export class GitService {
         409,
         'No default branch was found. Set origin/HEAD or create a main or master branch.',
       )
-    const ancestor = (await this.command(cwd, ['merge-base', base, head])).trim()
-    return { before: ancestor, after: head, base }
+    const before = (await this.command(cwd, ['merge-base', base, head])).trim()
+    return { before, after: head, base }
   }
   async save(path: string, name: string, expected: string, contents: string) {
     const { path: root } = await this.inspect(path)
     const full = await safeFile(root, name)
-    const key = await realpath(full).catch(async (error: unknown) => {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
-      return join(await realpath(dirname(full)), basename(full))
-    })
-    const previous = draftFileWrites.get(key)
-    let release!: () => void
-    const pending = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    draftFileWrites.set(key, pending)
-    try {
-      await previous
+    return withFileWrite(full, async () => {
       // Compare after admission: another Studio client may have applied a draft while
       // this operation waited. External editors continue to own their own writes.
       const target = await safeFile(root, name)
@@ -1309,16 +1924,21 @@ export class GitService {
       if (current !== expected)
         throw new HttpError(409, 'File changed on disk. Refresh before applying your draft.')
       await writeFile(target, contents)
-    } finally {
-      release()
-      if (draftFileWrites.get(key) === pending) draftFileWrites.delete(key)
-    }
+    })
   }
   async stage(path: string, names: string[]) {
     const { path: root } = await this.inspect(path)
     for (const name of names) await safeFile(root, name)
     // Literal names: a path such as a[1].txt must not stage every glob match.
     if (names.length) await this.command(root, ['--literal-pathspecs', 'add', '--', ...names])
+  }
+  async unstage(path: string, names: string[]) {
+    const { path: root } = await this.inspect(path)
+    for (const name of names) await safeFile(root, name)
+    // A path-scoped reset changes only the index. Git also uses the empty tree for
+    // an unborn HEAD, so newly added files remain on disk as untracked files.
+    if (names.length)
+      await this.command(root, ['--literal-pathspecs', 'reset', '-q', '--', ...names])
   }
   async commit(path: string, message: string) {
     const { path: root } = await this.inspect(path)
@@ -1331,7 +1951,13 @@ export class GitService {
     number: number,
     ref: string,
     source?: NonNullable<Task['pullRequest']>,
+    signal?: AbortSignal,
   ) {
+    signal?.throwIfAborted()
+    const fetch = (args: string[], env: NodeJS.ProcessEnv, timeout = 60000) =>
+      signal
+        ? this.checkoutCommand(cwd, args, signal, env, timeout)
+        : this.run(cwd, this.settings().git, args, timeout, 12 * 1024 * 1024, env)
     // Only disposable Studio attribute refs may move backwards after a force-push.
     const refspec = (head: string) =>
       `${ref.startsWith('refs/dovo/pull-attributes/') ? '+' : ''}${head}:${ref}`
@@ -1346,9 +1972,7 @@ export class GitService {
       const authorization = source.connectionId
         ? await this.forgeAuthorization?.(source.connectionId, source.cloneUrl, cwd)
         : undefined
-      await this.run(
-        cwd,
-        this.settings().git,
+      await fetch(
         [
           'fetch',
           '--no-tags',
@@ -1357,8 +1981,6 @@ export class GitService {
           source.cloneUrl,
           refspec(source.headRef),
         ],
-        60000,
-        12 * 1024 * 1024,
         this.remoteEnvironment(source.cloneUrl, authorization),
       )
       return
@@ -1368,9 +1990,7 @@ export class GitService {
       ? await this.forgeAuthorization?.(source.connectionId, remote, cwd)
       : undefined
     if (authorization) {
-      await this.run(
-        cwd,
-        this.settings().git,
+      await fetch(
         [
           'fetch',
           '--no-tags',
@@ -1379,15 +1999,12 @@ export class GitService {
           remote,
           refspec(`refs/pull/${number}/head`),
         ],
-        60000,
-        12 * 1024 * 1024,
         this.remoteEnvironment(remote, authorization),
       )
       return
     }
     const gh = "'" + this.settings().gh.replaceAll("'", "'\"'\"'") + "'"
-    await this.command(
-      cwd,
+    await fetch(
       [
         '-c',
         'credential.helper=',
@@ -1401,6 +2018,7 @@ export class GitService {
         refspec(`refs/pull/${number}/head`),
       ],
       this.nonInteractive(),
+      30000,
     )
   }
   private githubRepositories = new Map<
@@ -1513,11 +2131,12 @@ export class GitService {
   ): Promise<GithubAccount> {
     const context = { ...processEnvironment(), ...(env ?? (await this.githubEnvironment(cwd))) }
     if (refresh) this.githubCredentials.invalidate(host, cwd, context)
+    const credential = await this.githubCredentials.capture(host, cwd, context)
     return {
       host,
-      token: await this.githubCredentials.token(host, cwd, context),
+      ...credential,
+      access: { host, source: credential.source },
       ...(env ? { env } : {}),
-      onUnauthorized: () => this.githubCredentials.invalidate(host, cwd, context),
     }
   }
   async githubAccount(
@@ -1555,6 +2174,8 @@ export class GitService {
       input,
       account?.onUnauthorized,
       account?.beforeDispatch,
+      undefined,
+      account?.access,
     )
   }
   async pullRequests(path: string) {

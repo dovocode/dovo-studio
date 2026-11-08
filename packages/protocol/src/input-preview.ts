@@ -17,6 +17,8 @@ export const inputPreviewItemSchema = mutableStruct({
 })
 export const inputPreviewSyncSchema = mutableStruct({
   enabled: Schema.Boolean,
+  /** Foreground Browser mode has no inline form; independent of background popup preferences. */
+  showWhileFocused: Schema.optional(Schema.Boolean),
   items: mutableArray(inputPreviewItemSchema),
 })
 export const inputPreviewAnswerSchema = mutableStruct({

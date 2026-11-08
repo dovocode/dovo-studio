@@ -9,6 +9,10 @@
   ],
   "type": "module",
   "exports": {
+    "./dialog": {
+      "types": "./src/dialog.tsx",
+      "import": "./dist/dialog.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./dist/index.js"
@@ -68,7 +72,7 @@
     "@radix-ui/react-slot": "^1.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.61.0",
+    "lucide-react": "^1.66.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tailwind-merge": "^3.7.0",

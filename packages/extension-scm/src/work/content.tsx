@@ -879,7 +879,7 @@ export function WorkContent({
                 <button
                   type="button"
                   key={row.id}
-                  className="block w-full min-w-0 p-3 text-left hover:bg-muted/50"
+                  className="block w-full min-w-0 rounded-xl p-3 text-left hover:bg-muted/50"
                   onClick={() => setSelected(row.id)}
                 >
                   <div className="flex min-w-0 items-center gap-3">

@@ -11,6 +11,7 @@ import { Button, IconButton } from '@dovo/studio-ui'
 import { Mic, Square, X, LoaderCircle } from 'lucide-react'
 import type { createComposerDraft } from './composer-draft'
 import { recordDictation, insertDictation } from './dictation-audio'
+import { composerSelection } from './composer-input'
 
 type Session = {
   id: string
@@ -30,7 +31,7 @@ export function ComposerDictation({
   onActive,
 }: {
   controller: ReturnType<typeof createComposerDraft>
-  input: RefObject<HTMLTextAreaElement | null>
+  input: RefObject<HTMLElement | null>
   disabled: boolean
   onActive: (active: boolean) => void
 }) {
@@ -85,8 +86,8 @@ export function ComposerDictation({
     abort: new AbortController(),
     pending: Promise.resolve(),
     draft: controller.text,
-    start: input.current?.selectionStart ?? controller.text.length,
-    end: input.current?.selectionEnd ?? controller.text.length,
+    // Markdown source offsets in both the textarea and the rich editor.
+    ...composerSelection(input.current, controller.text.length),
   })
   const finish = async () => {
     const current = active.current
@@ -262,14 +263,8 @@ export function ComposerDictation({
                 size="sm"
                 disabled={disabled}
                 onClick={() => {
-                  controller.update(
-                    insertDictation(
-                      controller.text,
-                      retained,
-                      input.current?.selectionStart ?? controller.text.length,
-                      input.current?.selectionEnd ?? controller.text.length,
-                    ),
-                  )
+                  const { start, end } = composerSelection(input.current, controller.text.length)
+                  controller.update(insertDictation(controller.text, retained, start, end))
                   setRetained('')
                   setError('')
                   input.current?.focus()

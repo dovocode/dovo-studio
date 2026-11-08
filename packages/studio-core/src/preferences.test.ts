@@ -1,6 +1,19 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 
+const subscriptions = vi.hoisted(() => ({ cleanups: [] as (() => void)[] }))
+vi.mock('react', async (original) => ({
+  ...(await original<typeof import('react')>()),
+  useSyncExternalStore: (
+    subscribe: (notify: () => void) => () => void,
+    snapshot: () => unknown,
+  ) => {
+    subscriptions.cleanups.push(subscribe(() => snapshot()))
+    return snapshot()
+  },
+}))
+
 afterEach(() => {
+  for (const cleanup of subscriptions.cleanups.splice(0)) cleanup()
   vi.unstubAllGlobals()
   vi.resetModules()
 })
@@ -89,6 +102,23 @@ it('hides finished subagents by default and remembers showing their history', as
   expect(reopened.readAppPreferences().hideFinishedSubagents).toBe(false)
 })
 
+it('restores Thread Info customization across restarts and resets it independently', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const preferences = await import('./preferences')
+  preferences.updateAppPreferences({
+    threadInfoSections: { usage: false, scripts: false },
+    theme: 'light',
+  })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences().threadInfoSections).toEqual({ usage: false, scripts: false })
+  reopened.updateAppPreferences({ threadInfoSections: {} })
+  expect(reopened.readAppPreferences().theme).toBe('light')
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences().threadInfoSections).toEqual({})
+})
+
 it('persists a palette independently of color scheme and restores it on reopening', async () => {
   vi.stubGlobal('localStorage', storage())
   const { updateAppPreferences } = await import('./preferences')
@@ -116,6 +146,60 @@ it('falls back from an unknown palette without losing other saved preferences', 
     theme: 'system',
     textSize: 'large',
   })
+})
+
+it.each(['showContextUsage', 'minimalComposer'] as const)(
+  'persists %s independently',
+  async (key) => {
+    vi.stubGlobal('localStorage', storage())
+    const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+    expect(readAppPreferences()[key]).toBe(true)
+    updateAppPreferences({ [key]: false })
+    vi.resetModules()
+    const reopened = await import('./preferences')
+    expect(reopened.readAppPreferences()[key]).toBe(false)
+    reopened.updateAppPreferences({ [key]: true })
+    expect(reopened.readAppPreferences()[key]).toBe(true)
+  },
+)
+
+it('persists glow intensity and gradients independently of the palette', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({ themeGlow: 0, themeGradients: false })
+  updateAppPreferences({ themeGlow: 0.35, themeGradients: false, themePalette: 'iris' })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences()).toMatchObject({
+    themeGlow: 0.35,
+    themeGradients: false,
+    themePalette: 'iris',
+  })
+  reopened.updateAppPreferences({ themePalette: 'dovo' })
+  expect(reopened.readAppPreferences()).toMatchObject({ themeGlow: 0.35, themeGradients: false })
+})
+
+it.each([0, 1, -0.1, 1.1])('validates saved glow intensity %s', async (themeGlow) => {
+  vi.stubGlobal(
+    'localStorage',
+    storage({
+      'dovo.app-preferences.v1': JSON.stringify({ themeGlow }),
+    }),
+  )
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().themeGlow).toBe(themeGlow < 0 || themeGlow > 1 ? 0 : themeGlow)
+})
+
+it('preserves the previous effects-off preference', async () => {
+  vi.stubGlobal(
+    'localStorage',
+    storage({
+      'dovo.app-preferences.v1': JSON.stringify({ themeEffects: false }),
+    }),
+  )
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({ themeGlow: 0, themeGradients: false })
 })
 
 it('persists browser profiles, per-thread selections and opt-in agent access', async () => {
@@ -316,6 +400,16 @@ it('keeps the experimental Browser disabled until explicitly enabled', async () 
   updateAppPreferences({ browserWorkspaceEnabled: false })
   expect(readAppPreferences().browserWorkspaceEnabled).toBe(false)
 })
+it('keeps the unified workspace opt-in and persists it independently from Browser', async () => {
+  const saved = storage()
+  vi.stubGlobal('localStorage', saved)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().unifiedWorkspaceEnabled).toBe(false)
+  updateAppPreferences({ unifiedWorkspaceEnabled: true })
+  expect(readAppPreferences().unifiedWorkspaceEnabled).toBe(true)
+  expect(readAppPreferences().browserWorkspaceEnabled).toBe(false)
+  expect(JSON.parse(saved.getItem('dovo.app-preferences.v1')!).unifiedWorkspaceEnabled).toBe(true)
+})
 
 it('merges desktop updates with the latest settings from another window', async () => {
   let saved: Record<string, unknown> = { theme: 'dark', browserWorkspaceEnabled: false }
@@ -341,4 +435,135 @@ it('defaults to activity sorting and remembers manual sorting across reloads', a
   vi.resetModules()
   const reopened = await import('./preferences')
   expect(reopened.readAppPreferences().browserSortByActivity).toBe(false)
+})
+
+it.each(['showPlanButton', 'showSendOptions'] as const)(
+  'keeps %s opt-in and persists it independently',
+  async (key) => {
+    vi.stubGlobal('localStorage', storage())
+    const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+    expect(readAppPreferences()[key]).toBe(false)
+    updateAppPreferences({ [key]: true })
+    vi.resetModules()
+    const reopened = await import('./preferences')
+    expect(reopened.readAppPreferences()[key]).toBe(true)
+    expect(
+      reopened.readAppPreferences()[
+        key === 'showPlanButton' ? 'showSendOptions' : 'showPlanButton'
+      ],
+    ).toBe(false)
+  },
+)
+
+it('persists custom snooze durations and falls back only that field for invalid saved lists', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const preferences = await import('./preferences')
+  preferences.updateAppPreferences({ taskSnoozeMinutes: [15, 90, 2880], theme: 'light' })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences().taskSnoozeMinutes).toEqual([15, 90, 2880])
+  local.setItem(
+    'dovo.app-preferences.v1',
+    JSON.stringify({ taskSnoozeMinutes: [0], theme: 'light' }),
+  )
+  vi.resetModules()
+  const invalid = await import('./preferences')
+  expect(invalid.readAppPreferences().taskSnoozeMinutes).toEqual([60, 240, 1440, 2880, 4320, 10080])
+  expect(invalid.readAppPreferences().theme).toBe('light')
+})
+
+it('persists calendar snoozes and info order independently of visibility and older defaults', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const first = await import('./preferences')
+  const schedule = {
+    morningTime: '08:30',
+    eveningTime: '20:15',
+    weekStartsOn: 0,
+    presets: ['next-week', 'tomorrow-morning'] as ('next-week' | 'tomorrow-morning')[],
+  }
+  first.updateAppPreferences({
+    taskSnoozeSchedule: schedule,
+    threadInfoOrder: ['usage', 'project'],
+    threadInfoSections: { scripts: false },
+  })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences()).toMatchObject({
+    taskSnoozeSchedule: schedule,
+    threadInfoOrder: ['usage', 'project'],
+    threadInfoSections: { scripts: false },
+  })
+  local.setItem(
+    'dovo.app-preferences.v1',
+    JSON.stringify({
+      taskSnoozeSchedule: { ...schedule, morningTime: '27:00' },
+      threadInfoOrder: [12],
+      theme: 'light',
+    }),
+  )
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences()).toMatchObject({
+    theme: 'light',
+    threadInfoOrder: [],
+    taskSnoozeSchedule: { morningTime: '09:00', eveningTime: '18:00', weekStartsOn: 1 },
+  })
+})
+
+it('keeps hiding normal modes opt-in and persisted separately from unified', async () => {
+  const saved = storage()
+  vi.stubGlobal('localStorage', saved)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().unifiedWorkspaceHideNormalModes).toBe(false)
+  updateAppPreferences({ unifiedWorkspaceHideNormalModes: true })
+  expect(readAppPreferences()).toMatchObject({
+    unifiedWorkspaceHideNormalModes: true,
+    unifiedWorkspaceEnabled: false,
+  })
+  expect(
+    JSON.parse(saved.getItem('dovo.app-preferences.v1')!).unifiedWorkspaceHideNormalModes,
+  ).toBe(true)
+})
+
+it('shares one native settings read across all consumers after another window changes settings', async () => {
+  let saved = { theme: 'dark' }
+  const read = vi.fn<() => { theme: string }>(() => saved)
+  const callbacks = new Set<() => void>()
+  const stop = vi.fn<() => void>()
+  const subscribe = vi.fn<(callback: () => void) => () => void>((callback) => {
+    callbacks.add(callback)
+    return () => {
+      callbacks.delete(callback)
+      stop()
+    }
+  })
+  vi.stubGlobal('dovo', {
+    readAppSettings: read,
+    writeAppSettings: vi.fn<(value: string) => void>(),
+    subscribeAppSettings: subscribe,
+  })
+  const preferences = await import('./preferences')
+  for (let i = 0; i < 100; i++) preferences.useAppPreferences()
+  expect(subscribe).toHaveBeenCalledTimes(1)
+  expect(read).toHaveBeenCalledTimes(1)
+  saved = { theme: 'light' }
+  for (const callback of callbacks) callback()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(preferences.readAppPreferences().theme).toBe('light')
+  for (const cleanup of subscriptions.cleanups.splice(0)) cleanup()
+  expect(stop).toHaveBeenCalledTimes(1)
+})
+
+it('does not broadcast unchanged desktop settings when browser windows receive focus', async () => {
+  const write = vi.fn<(value: string) => void>()
+  vi.stubGlobal('dovo', {
+    readAppSettings: () => ({ browserWorkspaceEnabled: true }),
+    writeAppSettings: write,
+  })
+  const preferences = await import('./preferences')
+  preferences.updateAppPreferences({ browserWorkspaceEnabled: true })
+  expect(write).not.toHaveBeenCalled()
+  preferences.updateAppPreferences({ browserWorkspaceEnabled: false })
+  expect(write).toHaveBeenCalledTimes(1)
 })

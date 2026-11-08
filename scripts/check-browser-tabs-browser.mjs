@@ -40,10 +40,13 @@ const built = await build({
         builder.onLoad({ filter: /.*/, namespace: 'shared-panel-fixture' }, ({ path }) => ({
           contents: `export function ${path === './browser-thread-panel' ? 'BrowserThreadPanel' : 'ResizableSidebar'}(){throw new Error('Shared browser panel rendered in per-thread browser fixture')}`,
         }))
-        builder.onResolve({ filter: /^@dovo\/studio-core(\/state)?$/ }, ({ path }) => ({
-          path,
-          namespace: 'fixture',
-        }))
+        builder.onResolve(
+          { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
+          ({ path }) => ({
+            path: path.endsWith('/state') ? path : '@dovo/studio-core',
+            namespace: 'fixture',
+          }),
+        )
         builder.onResolve(
           { filter: /^\.\/(device-list|physical-controls|screenshot-attachment)$/ },
           ({ path }) => ({
@@ -66,6 +69,7 @@ const built = await build({
 import {createContext,createElement,useContext,useState} from 'react';
 import {resolveSettingsTarget} from '@dovo/protocol';
 export * from '@dovo/protocol';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
@@ -148,7 +152,7 @@ try {
     throw new Error('Browser options submitted the address form')
   if (!(await page.evaluate(() => window.preferences.length)))
     throw new Error('Agent browser access control stopped working')
-  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.getByRole('combobox', { name: 'Viewport', exact: true }).waitFor({ state: 'hidden' })
   await input.press('Enter')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
   const shown = await page.evaluate(() => window.calls.find((call) => call.action === 'show'))
@@ -388,6 +392,7 @@ try {
   const browserActions = await page.evaluate(() => window.calls.map((call) => call.action))
   if (!['hard-reload', 'devtools', 'external'].every((action) => browserActions.includes(action)))
     throw new Error('Advanced browser actions stopped working')
+  await page.getByText('Tab & page actions', { exact: true }).click()
   await page.getByRole('button', { name: 'Close current tab', exact: true }).click()
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'close'))
@@ -430,7 +435,7 @@ try {
   await page.waitForFunction(() =>
     window.browserViewports.some((viewport) => viewport.preset === 'tablet'),
   )
-  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.getByRole('combobox', { name: 'Viewport', exact: true }).waitFor({ state: 'hidden' })
   if (await page.getByText('Choose a device', { exact: true }).count())
     throw new Error('Device panel leaked into remote browser')
   const first = await page.getByRole('tab', { name: /Page/ }).textContent()

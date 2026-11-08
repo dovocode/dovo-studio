@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { DOCUMENT_PIP_HEADER_HEIGHT } from './browser-document-pip-controls.js'
-export { createDocumentPipWindow } from './browser-document-pip-controls.js'
+import { enterAutomaticVideoPip } from './browser-video-pip.js'
+export {
+  createDocumentPipWindow,
+  dismissDocumentPipWindow,
+} from './browser-document-pip-controls.js'
 
 /** A regular same-origin window avoids Electron's broken native Document PiP owner. */
 export const DOCUMENT_PIP_NAME = '__dovo_document_picture_in_picture__'
@@ -15,6 +19,13 @@ export function authorizeDocumentPip(
     'browser:document-pip-auto',
     (event) => event.senderFrame === contents.mainFrame && automaticAllowed(),
   )
+  contents.ipc.handle('browser:video-pip-auto', (event) => {
+    if (event.senderFrame !== contents.mainFrame || !automaticAllowed()) return false
+    return event.senderFrame.executeJavaScript(
+      `(${enterAutomaticVideoPip.toString()})(${JSON.stringify(contents.getURL())})`,
+      true,
+    )
+  })
   contents.ipc.handle(
     'browser:document-pip-authorize',
     (event, active: unknown, automatic: unknown) => {
@@ -85,14 +96,19 @@ export function documentPipWindowOptions(
 export function installDocumentPictureInPicture(
   automaticAllowed: () => Promise<boolean>,
   authorize: (automatic: boolean) => Promise<string | null>,
+  enterVideo: () => Promise<boolean>,
+  pipName: string,
 ) {
+  // Capture the guest identity before a site replaces its document or window name.
+  const pipGuest = !!window.opener && window.name.startsWith(`${pipName}:`)
   if (
     window !== window.top ||
     !window.isSecureContext ||
-    window.opener ||
-    !/^https?:$/.test(location.protocol)
+    (!/^https?:$/.test(location.protocol) && !(pipGuest && location.href === 'about:blank'))
   )
     return
+  // Chromium exposes the interface in PiP too, but forbids opening another window.
+  // Sites use this presence check to register their call-return/close lifecycle.
   type Options = {
     width?: number
     height?: number
@@ -111,7 +127,12 @@ export function installDocumentPictureInPicture(
     EventTarget.prototype.addEventListener,
   )
   let current: Window | null = null
-  let automatic = false
+  let visibilityRevision = 0
+  let automaticRevision: number | undefined
+  let automaticWindow: Window | null = null
+  let automaticVideo: HTMLVideoElement | null = null
+  const automaticActive = () =>
+    automaticRevision !== undefined && automaticRevision === visibilityRevision && document.hidden
   let enterHandler: ((event: Event) => void) | null = null
   const token = Symbol()
   class DocumentPictureInPictureEvent extends Event {
@@ -130,7 +151,13 @@ export function installDocumentPictureInPicture(
     }
     async requestWindow(options: Options = {}) {
       if (this !== api) throw new TypeError('Illegal invocation')
-      if (!navigator.userActivation.isActive && !automatic)
+      if (pipGuest)
+        throw new DOMException(
+          'Opening a PiP window from a PiP window is not allowed.',
+          'NotAllowedError',
+        )
+      const revision = automaticRevision
+      if (!navigator.userActivation.isActive && !automaticActive())
         throw new DOMException('Document PiP requires a user gesture.', 'NotAllowedError')
       const width = Number(options.width ?? 0)
       const height = Number(options.height ?? 0)
@@ -138,7 +165,9 @@ export function installDocumentPictureInPicture(
         throw new TypeError('PiP dimensions must be finite non-negative numbers.')
       if (width > 0 !== height > 0)
         throw new RangeError('Provide both a width and a height, or neither.')
-      const name = await authorize(automatic)
+      const name = await authorize(revision !== undefined)
+      if (revision !== undefined && (revision !== visibilityRevision || !document.hidden))
+        throw new DOMException('The tab became visible before PiP could open.', 'AbortError')
       if (!name)
         throw new DOMException(
           'Document PiP requires a user gesture or automatic-PiP approval.',
@@ -153,6 +182,7 @@ export function installDocumentPictureInPicture(
       )
       if (!child) throw new DOMException('The PiP window could not open.', 'NotAllowedError')
       current = child
+      if (revision !== undefined) automaticWindow = child
       // Relative links and assets retain the opener's base, just as in Document PiP.
       const base = child.document.createElement('base')
       base.href = document.baseURI
@@ -188,12 +218,13 @@ export function installDocumentPictureInPicture(
     DocumentPictureInPictureEvent: { value: DocumentPictureInPictureEvent, configurable: true },
     documentPictureInPicture: { value: api, configurable: true },
   })
+  if (pipGuest) return
   add(window, 'pagehide', () => {
     if (current && !current.closed) apply(close, current, [])
     current = null
   })
-  // Electron lacks Chrome's automatic Media Session action. Sites still own their call UI;
-  // Studio invokes it only when the site has an explicit automatic-PiP approval.
+  // Prefer the site's call UI; ordinary video sites use native video PiP instead.
+  // Both paths require the site's explicit automatic-PiP approval.
   if (!navigator.mediaSession) return
   const nativeSet = navigator.mediaSession.setActionHandler.bind(navigator.mediaSession)
   let handler: ((details: { reason: string }) => unknown) | null = null
@@ -206,28 +237,77 @@ export function installDocumentPictureInPicture(
   }
   let entering = false
   let wasHidden = document.hidden
-  add(document, 'visibilitychange', async () => {
-    const hidden = document.hidden
-    const changed = hidden !== wasHidden
-    wasHidden = hidden
-    // Native occlusion events can repeat while Studio already considers this page hidden.
-    // Closing a PiP should not immediately reopen it without another leave transition.
-    if (!changed || !hidden || !handler || current || entering) return
+  const exitAutomaticVideo = () => {
+    if (automaticVideo && document.pictureInPictureElement === automaticVideo)
+      void document
+        .exitPictureInPicture()
+        .catch((error) => console.warn('Could not return automatic PiP to the tab.', error))
+    automaticVideo = null
+  }
+  add(
+    document,
+    'enterpictureinpicture',
+    (event: Event) => {
+      if (automaticRevision === undefined || !(event.target instanceof HTMLVideoElement)) return
+      automaticVideo = event.target
+      if (!automaticActive()) exitAutomaticVideo()
+    },
+    true,
+  )
+  add(
+    document,
+    'leavepictureinpicture',
+    () => {
+      automaticVideo = null
+    },
+    true,
+  )
+  const enterAutomatic = async (revision: number) => {
+    if (entering || !document.hidden || api.window || document.pictureInPictureElement) return
     entering = true
     try {
       if (
         !(await automaticAllowed()) ||
-        document.visibilityState !== 'hidden' ||
-        !handler ||
-        current
+        revision !== visibilityRevision ||
+        !document.hidden ||
+        api.window
       )
         return
-      automatic = true
-      await handler({ reason: 'contentoccluded' })
+      automaticRevision = revision
+      if (handler) {
+        try {
+          await handler({ reason: 'contentoccluded' })
+        } catch (error) {
+          if (!automaticActive()) return
+          // Native video requests from a site's handler lack activation in Electron.
+          if (!(error instanceof DOMException) || error.name !== 'NotAllowedError') throw error
+          if (api.window || !(await enterVideo())) throw error
+        }
+      }
+      if (automaticActive() && !api.window && !document.pictureInPictureElement) await enterVideo()
+    } catch (error) {
+      if (revision === visibilityRevision && document.hidden)
+        console.warn('Could not enter automatic picture-in-picture.', error)
     } finally {
-      automatic = false
+      automaticRevision = undefined
       entering = false
+      // A newer leave may have arrived while the previous authorization/handler was pending.
+      if (document.hidden && revision !== visibilityRevision)
+        void enterAutomatic(visibilityRevision)
     }
+  }
+  add(document, 'visibilitychange', () => {
+    const hidden = document.hidden
+    if (hidden === wasHidden) return
+    wasHidden = hidden
+    visibilityRevision++
+    if (!hidden) {
+      if (automaticWindow && !automaticWindow.closed) apply(close, automaticWindow, [])
+      automaticWindow = null
+      exitAutomaticVideo()
+      return
+    }
+    void enterAutomatic(visibilityRevision)
   })
 }
 
@@ -238,6 +318,8 @@ contextBridge.executeInMainWorld({
   args: [
     () => ipcRenderer.invoke('browser:document-pip-auto'),
     (automatic) => ipcRenderer.invoke('browser:document-pip-authorize', navigator.userActivation.isActive, automatic),
+    () => ipcRenderer.invoke('browser:video-pip-auto'),
+    ${JSON.stringify(DOCUMENT_PIP_NAME)},
   ],
 })
 }

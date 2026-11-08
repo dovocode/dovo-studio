@@ -1,4 +1,3 @@
-import { createTwoFilesPatch } from 'diff'
 import { DiffView } from '../preview/diff-view'
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Pressable, ScrollView, View } from 'react-native'
@@ -19,18 +18,22 @@ export function SavedFilePreview({
   file,
   taskId,
   turnId,
+  commitSha,
   checkoutId,
   working = false,
+  sideThreadSnapshot,
 }: {
   file: ChangedFile
   taskId: string
   turnId?: string
+  commitSha?: string
   checkoutId?: string
   working?: boolean
+  sideThreadSnapshot?: { before: string; after: string }
 }) {
   const { styles } = useTheme()
 
-  const { call, connection } = useRuntime()
+  const { read, connection } = useRuntime()
   const [fullKey, setFullKey] = useState('')
   const [attempt, setAttempt] = useState(0)
   const ownerKey = JSON.stringify([
@@ -38,8 +41,11 @@ export function SavedFilePreview({
     connection?.token,
     taskId,
     turnId,
+    commitSha,
     checkoutId,
     working,
+    sideThreadSnapshot?.before,
+    sideThreadSnapshot?.after,
     file.path,
   ])
   const full = fullKey === ownerKey
@@ -71,9 +77,29 @@ export function SavedFilePreview({
   const error = result?.key === key && result.file === file ? result.error : ''
   useEffect(() => {
     let active = true
-    void call(
-      '/api/tasks/file/preview',
-      { id: taskId, path: file.path, turnId, checkoutId, working, full },
+    void read(
+      sideThreadSnapshot
+        ? '/api/tasks/side-thread/file-preview'
+        : commitSha
+          ? '/api/tasks/commits/file-preview'
+          : '/api/tasks/file/preview',
+      sideThreadSnapshot
+        ? {
+            id: taskId,
+            path: file.path,
+            ...sideThreadSnapshot,
+            full,
+          }
+        : {
+            id: taskId,
+            path: file.path,
+            turnId,
+            checkoutId,
+            working,
+            full,
+            patch: true,
+            sha: commitSha,
+          },
       filePreviewSchema,
     ).then(
       (result) => {
@@ -92,17 +118,10 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [call, taskId, turnId, checkoutId, working, file.path, key, full, file])
-  const patch = useMemo(
-    () =>
-      diff
-        ? createTwoFilesPatch(diff.path, diff.path, diff.before, diff.after, undefined, undefined, {
-            timeout: 1000,
-          })
-        : '',
-    [diff],
-  )
-  if (diff && patch)
+  }, [read, taskId, turnId, commitSha, checkoutId, working, file.path, key, full, file])
+  const patch = preview?.patch
+  const displayDiff = diff && patch && patch.length <= 512 * 1024
+  if (displayDiff)
     return <DiffView path={diff.path} before={diff.before} after={diff.after} patch={patch} />
   return (
     <ScrollView contentContainerStyle={[styles.content, { gap: 12 }]}>
@@ -116,10 +135,9 @@ export function SavedFilePreview({
             ? 'Submodule commit references saved in Git.'
             : 'Full contents saved in Git.'}
       </Text>
-      {diff && !patch && (
+      {diff && !displayDiff && (
         <Text accessibilityRole="alert" style={styles.error}>
-          This diff could not be computed within the viewer limit. Complete contents are shown
-          below.
+          The diff is unavailable or too large for the viewer. Complete contents are shown below.
         </Text>
       )}
       {error ? (
@@ -131,6 +149,7 @@ export function SavedFilePreview({
       ) : null}
       {((preview &&
         [preview.before, preview.after].some((side) => side?.kind === 'text' && side.truncated)) ||
+        (diff && !full && !patch) ||
         error) && (
         <Pressable
           accessibilityRole="button"
@@ -184,7 +203,14 @@ export function SavedFilePreview({
                 resizeMode="contain"
               />
             ) : side?.text !== undefined ? (
-              <CodeBlock content={side.text || '(empty file)'} language={fileLanguage(file.path)} />
+              side.text.length > 256 * 1024 ? (
+                <Text selectable>{side.text}</Text>
+              ) : (
+                <CodeBlock
+                  content={side.text || '(empty file)'}
+                  language={fileLanguage(file.path)}
+                />
+              )
             ) : side ? (
               <Text style={styles.muted}>
                 {side.notice ?? 'Binary contents saved. No text preview.'}

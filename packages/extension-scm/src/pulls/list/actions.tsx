@@ -1,10 +1,11 @@
 import { integrationMutationError } from '../../connections/mutation-error'
 import { PullMarkdownEditor } from '../detail/markdown-editor'
+import { PullStatusSources, Signal } from '../detail/status'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
-import { MoreHorizontal } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { MoreHorizontal, RefreshCw } from 'lucide-react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import {
   forgeLabels,
   pullActionResultSchema,
@@ -12,6 +13,7 @@ import {
   type PullAction,
   type PullComment,
   type PullDetail,
+  type PullSignal,
   readAppPreferences,
 } from '@dovo/studio-core'
 import {
@@ -23,9 +25,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Disclosure,
   DropdownMenu,
   FormField,
   Input,
+  Textarea,
 } from '@dovo/studio-ui'
 export type PullActionContext = {
   repositoryId: string
@@ -33,6 +37,20 @@ export type PullActionContext = {
   onDone: () => void
 }
 type ActionKind = PullAction['action']
+type MergeStatus = {
+  headSha: string
+  signals: PullSignal[]
+  providerReadiness: PullSignal
+  sources: { name: string; signal: PullSignal }[]
+  warnings: string[]
+  checks: {
+    busy: boolean
+    ready: boolean
+    error: string
+    readConnected: boolean
+    refresh: () => void
+  }
+}
 const titles: Record<ActionKind, string> = {
   comment: 'Comment on PR',
   review: 'Submit review',
@@ -41,37 +59,63 @@ const titles: Record<ActionKind, string> = {
   edit: 'Edit pull request',
   reviewers: 'Manage reviewers',
   merge: 'Merge pull request',
+  draft: 'Change draft status',
+  'auto-merge': 'Change auto-merge',
   close: 'Close pull request',
   reopen: 'Reopen pull request',
 }
 export function PullActions(
   props: PullActionContext & {
+    mergeStatus: MergeStatus
     onStartTask?: () => void
+    extraMenuItems?: ReactNode
   },
 ) {
   const { connected } = useWorkspace()
   const [action, setAction] = useApplicationState<ActionKind | null>(null)
   const [notice, setNotice] = useApplicationState('')
   const supported = props.detail.capabilities?.actions ?? []
-  const items: ActionKind[] = ['comment', 'review', 'edit', 'reviewers', 'merge', 'close', 'reopen']
+  const items: ActionKind[] = [
+    'comment',
+    'review',
+    'edit',
+    'reviewers',
+    'draft',
+    'auto-merge',
+    'merge',
+    'close',
+    'reopen',
+  ]
   const available = items.filter(
     (item) =>
       supported.includes(item) &&
       (item !== 'merge' ||
         (props.detail.pull.state === 'open' &&
           !props.detail.pull.draft &&
+          !props.detail.pull.inMergeQueue &&
           !!props.detail.capabilities?.mergeMethods.length)) &&
       (item !== 'close' || props.detail.pull.state === 'open') &&
       (item !== 'reopen' || props.detail.pull.state === 'closed') &&
+      (!['draft', 'auto-merge'].includes(item) || props.detail.pull.state === 'open') &&
+      (item !== 'auto-merge' ||
+        !!props.detail.pull.autoMergeEnabled ||
+        (!props.detail.pull.draft && !!props.detail.capabilities?.mergeMethods.length)) &&
       (item !== 'review' || props.detail.pull.state === 'open'),
   )
-  if (!available.length && !props.onStartTask) return null
+  const mergeReady =
+    props.mergeStatus.checks.ready &&
+    !props.mergeStatus.warnings.length &&
+    props.mergeStatus.signals.every(
+      (signal) => signal.tone === 'positive' || signal.tone === 'accent',
+    )
+  if (!available.length && !props.onStartTask && !props.extraMenuItems) return null
   return (
     <>
       {available.includes('review') && (
         <Button
           size="sm"
           variant="outline"
+          className="max-sm:hidden @max-sm/pr-detail:hidden"
           disabled={!connected}
           onClick={() => {
             setNotice('')
@@ -84,6 +128,8 @@ export function PullActions(
       {available.includes('merge') && (
         <Button
           size="sm"
+          variant={mergeReady ? 'default' : 'outline'}
+          className="max-sm:hidden @max-sm/pr-detail:hidden"
           disabled={!connected || !!props.detail.stale || !!props.detail.refreshError}
           onClick={() => {
             setNotice('')
@@ -111,20 +157,31 @@ export function PullActions(
             sideOffset={6}
             className="z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
           >
-            {available
-              .filter((item) => item !== 'review' && item !== 'merge')
-              .map((item) => (
-                <DropdownMenu.Item
-                  key={item}
-                  onSelect={() => {
-                    setNotice('')
-                    setAction(item)
-                  }}
-                  className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent"
-                >
-                  {titles[item]}
-                </DropdownMenu.Item>
-              ))}
+            {available.map((item) => (
+              <DropdownMenu.Item
+                key={item}
+                onSelect={() => {
+                  setNotice('')
+                  setAction(item)
+                }}
+                disabled={
+                  ['merge', 'draft', 'auto-merge'].includes(item) &&
+                  (!!props.detail.stale || !!props.detail.refreshError)
+                }
+                className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+              >
+                {item === 'draft'
+                  ? props.detail.pull.draft
+                    ? 'Mark ready for review'
+                    : 'Convert to draft'
+                  : item === 'auto-merge'
+                    ? props.detail.pull.autoMergeEnabled
+                      ? 'Disable auto-merge'
+                      : 'Enable auto-merge'
+                    : titles[item]}
+              </DropdownMenu.Item>
+            ))}
+            {props.extraMenuItems}
             {props.onStartTask && (
               <>
                 <DropdownMenu.Separator className="my-1 h-px bg-border" />
@@ -132,7 +189,7 @@ export function PullActions(
                   className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent"
                   onSelect={props.onStartTask}
                 >
-                  Start task from PR
+                  Start thread from PR
                 </DropdownMenu.Item>
               </>
             )}
@@ -205,17 +262,22 @@ export function PullCommentActions({
 }
 function PullActionDialog({
   repositoryId,
-  detail,
+  detail: initialDetail,
   kind,
+  mergeStatus,
   comment,
   onClose,
   onCompleted,
 }: PullActionContext & {
   kind: ActionKind
+  mergeStatus?: MergeStatus
   comment?: PullComment
   onClose: () => void
   onCompleted: (message: string) => void
 }) {
+  // A background refresh must not reverse the operation being confirmed.
+  // The server still validates this captured head and account before writing.
+  const detail = useRef(initialDetail).current
   const { request, connected } = useWorkspace()
   const [body, setBody] = useApplicationState(kind === 'edit' ? detail.pull.body : '')
   const [title, setTitle] = useApplicationState(detail.pull.title)
@@ -239,6 +301,8 @@ function PullActionDialog({
   const [teams, setTeams] = useApplicationState('')
   const [operation, setOperation] = useApplicationState<'add' | 'remove'>('add')
   const [confirmed, setConfirmed] = useApplicationState(false)
+  const readinessHeading = useRef<HTMLHeadingElement>(null)
+  const failuresId = useId()
   const [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   const [error, setError] = useApplicationState('')
@@ -250,6 +314,19 @@ function PullActionDialog({
     expectedDestination: detail.destination ?? detail.pull.destination,
     connectionId: detail.pull.connectionId,
   })
+  const currentFailures =
+    mergeStatus?.headSha === scope.headSha
+      ? mergeStatus.signals
+          .filter((signal) => signal.tone === 'danger')
+          .map((signal) => signal.label)
+      : []
+  const failureIdentity = JSON.stringify(currentFailures)
+  const failureLabels = currentFailures.map((failure) =>
+    failure === 'CI failed'
+      ? 'Repository CI: failed'
+      : failure.replace(/^Pipeline runs: /, 'Linked pipelines: '),
+  )
+  useEffect(() => setConfirmed(false), [failureIdentity, setConfirmed])
   const provider = forgeLabels[detail.pull.provider ?? 'github']
   const list = (value: string) => [...new Set(value.split(/[\s,]+/).filter(Boolean))]
   const payload = (): PullAction => {
@@ -317,6 +394,10 @@ function PullActionDialog({
               }
             : {}),
         }
+      case 'draft':
+        return { ...scope, action: kind, draft: !detail.pull.draft }
+      case 'auto-merge':
+        return { ...scope, action: kind, enabled: !detail.pull.autoMergeEnabled, method }
       case 'close':
       case 'reopen':
         return {
@@ -332,9 +413,12 @@ function PullActionDialog({
       event !== 'approve' &&
       !(detail.pull.provider === 'bitbucket' && event === 'request-changes'))
   const valid =
+    !initialDetail.stale &&
+    !initialDetail.refreshError &&
     (!needsBody || !!body.trim()) &&
     (kind !== 'edit' || !!title.trim()) &&
-    (kind !== 'merge' || confirmed) &&
+    ((kind !== 'merge' && !(kind === 'auto-merge' && !detail.pull.autoMergeEnabled)) ||
+      confirmed) &&
     (kind !== 'reviewers' || !!(list(reviewers).length + list(teams).length))
   const submit = async () => {
     if (!valid || !connected || pending.current) return
@@ -379,7 +463,25 @@ function PullActionDialog({
     }
   }
   const label =
-    kind === 'resolve' ? (comment?.resolved ? 'Reopen thread' : 'Resolve thread') : titles[kind]
+    kind === 'resolve'
+      ? comment?.resolved
+        ? 'Reopen thread'
+        : 'Resolve thread'
+      : kind === 'draft'
+        ? detail.pull.draft
+          ? 'Mark ready for review'
+          : 'Convert to draft'
+        : kind === 'auto-merge'
+          ? detail.pull.autoMergeEnabled
+            ? 'Disable auto-merge'
+            : 'Enable auto-merge'
+          : kind === 'edit'
+            ? 'Save changes'
+            : kind === 'reviewers'
+              ? operation === 'add'
+                ? 'Request review'
+                : 'Remove requests'
+              : titles[kind]
   return (
     <Dialog
       open
@@ -388,7 +490,13 @@ function PullActionDialog({
       }}
     >
       <DialogContent
-        className="max-h-[85vh] overflow-y-auto"
+        className="flex max-h-[85dvh] flex-col overflow-hidden"
+        onOpenAutoFocus={(event) => {
+          if (readinessHeading.current) {
+            event.preventDefault()
+            readinessHeading.current.focus({ preventScroll: true })
+          }
+        }}
         onEscapeKeyDown={(e) => {
           if (busy) e.preventDefault()
         }}
@@ -396,218 +504,330 @@ function PullActionDialog({
           if (busy) e.preventDefault()
         }}
       >
-        <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
+        <DialogHeader className="shrink-0">
+          <DialogTitle>{kind === 'edit' ? 'Edit pull request' : label}</DialogTitle>
           <DialogDescription>
             {provider} · #{scope.number} · commit {scope.headSha.slice(0, 8)}
           </DialogDescription>
         </DialogHeader>
         <form
-          className="grid gap-4"
+          className="flex min-h-0 flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault()
             void submit()
           }}
         >
-          {kind === 'edit' && (
-            <>
-              <FormField label="Title">
-                <Input
-                  aria-label="PR title"
-                  value={title}
-                  disabled={busy}
-                  maxLength={300}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </FormField>
-              <FormField label="Base branch">
-                <Input
-                  aria-label="PR base branch"
-                  value={base}
-                  disabled={busy}
-                  onChange={(e) => setBase(e.target.value)}
-                />
-              </FormField>
-            </>
-          )}
-          {kind === 'review' && (
-            <fieldset className="grid gap-3">
-              <legend className="mb-3 text-sm font-medium">Review decision</legend>
-              {detail.capabilities?.reviewDecisions.map((value) => (
-                <label
-                  key={value}
-                  className="flex items-start gap-3 rounded-lg p-2 hover:bg-muted/30"
-                >
-                  <input
-                    type="radio"
-                    name="review-decision"
-                    value={value}
-                    checked={event === value}
-                    disabled={busy}
-                    onChange={() => setEvent(value)}
-                    className="mt-1 accent-primary"
-                  />
-                  <span>
-                    <span className="block text-sm font-medium">
-                      {value === 'approve'
-                        ? 'Approve'
-                        : value === 'request-changes'
-                          ? 'Request changes'
-                          : 'Comment'}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {value === 'approve'
-                        ? 'Approve merging these changes.'
-                        : value === 'request-changes'
-                          ? 'Request changes before merging.'
-                          : 'Submit feedback without an approval decision.'}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {kind === 'reviewers' && (
-            <>
-              <FormField label="Reviewer action">
-                <ChoicePicker
-                  aria-label="Reviewer action"
-                  value={operation}
-                  disabled={busy}
-                  onValueChange={(value) => {
-                    if (value === 'add' || value === 'remove') setOperation(value)
-                  }}
-                >
-                  <option value="add">Request review</option>
-                  <option value="remove">Remove review request</option>
-                </ChoicePicker>
-              </FormField>
-              <FormField label="Reviewers">
-                <Input
-                  aria-label="Reviewers"
-                  placeholder="Usernames separated by commas"
-                  value={reviewers}
-                  disabled={busy}
-                  onChange={(e) => setReviewers(e.target.value)}
-                />
-              </FormField>
-              {(detail.pull.provider === 'github' || !detail.pull.provider) && (
-                <FormField label="Teams">
+          <div data-pull-action-body className="-mx-1 grid min-h-0 gap-4 overflow-y-auto px-1">
+            {kind === 'edit' && (
+              <>
+                <FormField label="Title">
                   <Input
-                    aria-label="Review teams"
-                    placeholder="Team slugs separated by commas"
-                    value={teams}
+                    aria-label="PR title"
+                    value={title}
                     disabled={busy}
-                    onChange={(e) => setTeams(e.target.value)}
+                    maxLength={300}
+                    onChange={(e) => setTitle(e.target.value)}
                   />
                 </FormField>
-              )}
-              <p className="text-xs text-muted-foreground">
-                {operation === 'remove'
-                  ? 'Removes requests for the selected people'
-                  : 'Requests review from the selected people'}
-                {detail.pull.provider === 'github' ? ' and teams' : ''}. Other requests remain.
-              </p>
-            </>
-          )}
-          {kind === 'merge' && (
-            <>
-              <p className="break-words text-sm">
-                Merge <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
-              </p>
-              <FormField label="Merge method">
-                <ChoicePicker
-                  aria-label="Merge method"
-                  value={method}
-                  disabled={busy}
-                  onValueChange={(value) => {
-                    if (value === 'merge' || value === 'squash' || value === 'rebase')
-                      setMethod(value)
-                  }}
-                >
-                  {detail.capabilities?.mergeMethods.map((value) => (
-                    <option key={value} value={value}>
-                      {value === 'merge'
-                        ? 'Merge commit'
-                        : value === 'squash'
-                          ? 'Squash and merge'
-                          : 'Rebase and merge'}
-                    </option>
-                  ))}
-                </ChoicePicker>
-              </FormField>
-              <label className="flex items-start gap-2 text-sm">
-                <Checkbox
-                  checked={confirmed}
-                  disabled={busy}
-                  onCheckedChange={(value) => setConfirmed(value === true)}
-                  aria-label={
-                    detail.pull.provider === 'bitbucket'
-                      ? 'Confirm merge of current source branch'
-                      : 'Confirm merge of reviewed commit'
-                  }
-                />
-                <span>
-                  {detail.pull.provider === 'bitbucket' ? (
+                <FormField label="Base branch">
+                  <Input
+                    aria-label="PR base branch"
+                    value={base}
+                    disabled={busy}
+                    onChange={(e) => setBase(e.target.value)}
+                  />
+                </FormField>
+              </>
+            )}
+            {kind === 'review' && (
+              <fieldset className="grid gap-3">
+                <legend className="mb-3 text-sm font-medium">Review decision</legend>
+                {detail.capabilities?.reviewDecisions.map((value) => (
+                  <label
+                    key={value}
+                    className="flex items-start gap-3 rounded-lg p-2 hover:bg-muted/30"
+                  >
+                    <input
+                      type="radio"
+                      name="review-decision"
+                      value={value}
+                      checked={event === value}
+                      disabled={busy}
+                      onChange={() => setEvent(value)}
+                      className="mt-1 accent-primary"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium">
+                        {value === 'approve'
+                          ? 'Approve'
+                          : value === 'request-changes'
+                            ? 'Request changes'
+                            : 'Comment'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {value === 'approve'
+                          ? 'Approve merging these changes.'
+                          : value === 'request-changes'
+                            ? 'Request changes before merging.'
+                            : 'Submit feedback without an approval decision.'}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            {kind === 'reviewers' && (
+              <>
+                <FormField label="Reviewer action">
+                  <ChoicePicker
+                    aria-label="Reviewer action"
+                    value={operation}
+                    disabled={busy}
+                    onValueChange={(value) => {
+                      if (value === 'add' || value === 'remove') setOperation(value)
+                    }}
+                  >
+                    <option value="add">Request review</option>
+                    <option value="remove">Remove review request</option>
+                  </ChoicePicker>
+                </FormField>
+                <FormField label="Reviewers">
+                  <Input
+                    aria-label="Reviewers"
+                    placeholder="Usernames separated by commas"
+                    value={reviewers}
+                    disabled={busy}
+                    onChange={(e) => setReviewers(e.target.value)}
+                  />
+                </FormField>
+                {(detail.pull.provider === 'github' || !detail.pull.provider) && (
+                  <FormField label="Teams">
+                    <Input
+                      aria-label="Review teams"
+                      placeholder="Team slugs separated by commas"
+                      value={teams}
+                      disabled={busy}
+                      onChange={(e) => setTeams(e.target.value)}
+                    />
+                  </FormField>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {operation === 'remove'
+                    ? 'Removes requests for the selected people'
+                    : 'Requests review from the selected people'}
+                  {detail.pull.provider === 'github' ? ' and teams' : ''}. Other requests remain.
+                </p>
+              </>
+            )}
+            {(kind === 'merge' || (kind === 'auto-merge' && !detail.pull.autoMergeEnabled)) && (
+              <>
+                <p className="break-words text-sm">
+                  {kind === 'auto-merge' ? 'Automatically merge' : 'Merge'}{' '}
+                  <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
+                </p>
+                <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3
+                      ref={readinessHeading}
+                      tabIndex={-1}
+                      className="text-sm font-medium outline-none!"
+                    >
+                      Repository merge status
+                    </h3>
+                    {mergeStatus?.headSha === scope.headSha && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={
+                          busy || mergeStatus.checks.busy || !mergeStatus.checks.readConnected
+                        }
+                        onClick={mergeStatus.checks.refresh}
+                      >
+                        <RefreshCw
+                          aria-hidden
+                          className={`size-3.5 ${mergeStatus.checks.busy ? 'animate-spin' : ''}`}
+                        />
+                        {mergeStatus.checks.busy
+                          ? 'Loading…'
+                          : mergeStatus.checks.error
+                            ? 'Retry checks'
+                            : mergeStatus.checks.ready
+                              ? 'Refresh checks'
+                              : 'Load checks'}
+                      </Button>
+                    )}
+                  </div>
+                  {mergeStatus?.headSha === scope.headSha ? (
                     <>
-                      Merge the current source branch. Studio checks viewed revision{' '}
-                      {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
-                      merged. Repository rules still apply.
+                      <Signal signal={mergeStatus.providerReadiness} />
+                      {currentFailures.length > 0 && (
+                        <ul
+                          id={failuresId}
+                          aria-label="Current merge failures"
+                          className="space-y-1 text-xs text-status-error"
+                        >
+                          {failureLabels.map((failure) => (
+                            <li key={failure}>{failure}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <Disclosure title="Status sources">
+                        <div className="pt-3">
+                          <PullStatusSources sources={mergeStatus.sources} />
+                        </div>
+                      </Disclosure>
+                      {mergeStatus.warnings.map((warning) => (
+                        <p
+                          key={warning}
+                          className="text-xs text-muted-foreground [overflow-wrap:anywhere]"
+                        >
+                          {warning}
+                        </p>
+                      ))}
                     </>
                   ) : (
-                    <>
-                      Merge the reviewed commit {scope.headSha.slice(0, 8)}. Repository rules still
-                      apply.
-                    </>
+                    <p className="text-xs text-muted-foreground">
+                      Status for reviewed commit {scope.headSha.slice(0, 8)} is not loaded. Close
+                      this dialog to review the current revision.
+                    </p>
                   )}
-                </span>
-              </label>
-            </>
-          )}
-          {['comment', 'reply', 'review', 'edit', 'merge'].includes(kind) && (
-            <FormField
-              label={
-                kind === 'edit'
-                  ? 'Description'
-                  : kind === 'merge'
-                    ? 'Commit message (optional)'
-                    : kind === 'review' && !needsBody
-                      ? 'Review (optional)'
-                      : 'Comment'
-              }
-            >
-              <PullMarkdownEditor
-                value={body}
-                onChange={setBody}
-                disabled={busy}
-                baseURL={detail.pull.url}
-              />
-            </FormField>
-          )}
-          {kind === 'close' && (
-            <p className="text-sm">Close this pull request without merging its changes?</p>
-          )}
-          {kind === 'reopen' && <p className="text-sm">Reopen this pull request for review?</p>}
-          {kind === 'resolve' && (
-            <p className="text-sm">
-              {comment?.resolved
-                ? 'Mark this review thread as needing attention again?'
-                : 'Mark this review thread as resolved?'}
-            </p>
-          )}
-          {error && (
-            <div role="alert" className="space-y-2 text-xs text-destructive">
-              <p>{error}</p>
-              <p>If the response was lost after submission, refresh the PR before retrying.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {kind === 'auto-merge'
+                      ? 'Auto-merge waits for the provider’s requirements. Later commits may change these statuses.'
+                      : 'The provider enforces repository requirements.'}
+                  </p>
+                </section>
+                <FormField label="Merge method">
+                  <ChoicePicker
+                    aria-label="Merge method"
+                    value={method}
+                    disabled={busy}
+                    onValueChange={(value) => {
+                      if (value === 'merge' || value === 'squash' || value === 'rebase')
+                        setMethod(value)
+                    }}
+                  >
+                    {detail.capabilities?.mergeMethods.map((value) => (
+                      <option key={value} value={value}>
+                        {value === 'merge'
+                          ? 'Merge commit'
+                          : value === 'squash'
+                            ? 'Squash and merge'
+                            : 'Rebase and merge'}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                </FormField>
+                <label className="flex items-start gap-2 text-xs leading-relaxed">
+                  <Checkbox
+                    checked={confirmed}
+                    aria-describedby={currentFailures.length > 0 ? failuresId : undefined}
+                    disabled={busy}
+                    onCheckedChange={(value) => setConfirmed(value === true)}
+                    aria-label={
+                      (kind === 'auto-merge'
+                        ? 'Confirm automatic merge when GitHub’s requirements pass, including later commits pushed to this PR'
+                        : detail.pull.provider === 'bitbucket'
+                          ? `Confirm merge of current source branch. Studio checks viewed revision ${scope.headSha.slice(0, 8)} before submitting; later pushes may also be merged`
+                          : 'Confirm merge of reviewed commit') +
+                      (currentFailures.length > 0
+                        ? `. Acknowledge current failures: ${failureLabels.join('; ')}`
+                        : '')
+                    }
+                  />
+                  <span>
+                    {kind === 'auto-merge' ? (
+                      <>
+                        I understand this PR will merge when GitHub’s requirements pass, including
+                        later commits pushed to this PR.
+                      </>
+                    ) : detail.pull.provider === 'bitbucket' ? (
+                      <>
+                        I confirm merging the current source branch. Studio checks viewed revision{' '}
+                        {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
+                        merged.
+                      </>
+                    ) : (
+                      <>I confirm merging reviewed commit {scope.headSha.slice(0, 8)}.</>
+                    )}
+                    {currentFailures.length > 0 && <> I acknowledge the failures listed above.</>}
+                  </span>
+                </label>
+              </>
+            )}
+            {['comment', 'reply', 'review', 'edit', 'merge'].includes(kind) && (
+              <FormField
+                label={
+                  kind === 'edit'
+                    ? 'Description'
+                    : kind === 'merge'
+                      ? 'Commit message (optional)'
+                      : kind === 'review' && !needsBody
+                        ? 'Review (optional)'
+                        : 'Comment'
+                }
+              >
+                {kind === 'merge' ? (
+                  <Textarea
+                    placeholder="Optional commit message…"
+                    value={body}
+                    onChange={(event) => setBody(event.target.value)}
+                    disabled={busy}
+                    rows={4}
+                  />
+                ) : (
+                  <PullMarkdownEditor
+                    placeholder={kind === 'edit' ? 'Describe this pull request…' : undefined}
+                    value={body}
+                    onChange={setBody}
+                    disabled={busy}
+                    baseURL={detail.pull.url}
+                  />
+                )}
+              </FormField>
+            )}
+            {kind === 'close' && (
+              <p className="text-sm">Close this pull request without merging its changes?</p>
+            )}
+            {kind === 'draft' && (
+              <p className="text-sm">
+                {detail.pull.draft
+                  ? 'Mark this pull request ready and notify its reviewers?'
+                  : 'Return this pull request to draft while work continues?'}
+              </p>
+            )}
+            {kind === 'auto-merge' && detail.pull.autoMergeEnabled && (
+              <p className="text-sm">
+                Stop automatically merging this pull request when its requirements pass?
+              </p>
+            )}
+            {kind === 'reopen' && <p className="text-sm">Reopen this pull request for review?</p>}
+            {kind === 'resolve' && (
+              <p className="text-sm">
+                {comment?.resolved
+                  ? 'Mark this review thread as needing attention again?'
+                  : 'Mark this review thread as resolved?'}
+              </p>
+            )}
+          </div>
+          <div className="studio-scroll-gutter-match -mx-1 -mb-1 shrink-0 px-1 pb-1">
+            <div className="space-y-4 border-t pt-4">
+              {error && (
+                <div role="alert" className="space-y-2 text-xs text-destructive">
+                  <p>{error}</p>
+                  <p>If the response was lost after submission, refresh the PR before retrying.</p>
+                </div>
+              )}
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!valid || busy || !connected}>
+                  {busy ? 'Submitting…' : label}
+                </Button>
+              </div>
             </div>
-          )}
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!valid || busy || !connected}>
-              {busy ? 'Submitting…' : label}
-            </Button>
           </div>
         </form>
       </DialogContent>

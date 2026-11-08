@@ -155,9 +155,22 @@ it.each([1, 2])(
           .prepare("SELECT 1 FROM documents WHERE id LIKE 'workspace-backup:%' AND value=?")
           .get(raw),
       ).toBeDefined()
-      recovered.store.update((current) => ({ ...current, tasks: [...current.tasks, task] }))
-      expect(recovered.artifacts.read(task.id, f.first.id).content).toBe('second revision')
-      expect(recovered.artifacts.read(task.id, f.first.id, 1).content).toBe('first revision')
+      expect(recovered.activity.list('', 'task-activity', 0, task.id).events).toHaveLength(2)
+      let updateError: unknown
+      try {
+        recovered.store.update((current) => ({ ...current, tasks: [...current.tasks, task] }))
+      } catch (error) {
+        updateError = error
+      }
+      const unreadable = expect.objectContaining({ message: expect.stringMatching(/unreadable/) })
+      expect(updateError).toEqual(version === 2 ? unreadable : undefined)
+      expect(f.revisions()).toEqual([1, 2])
+      expect(recovered.activity.list('', 'task-activity', 0, task.id).events).toHaveLength(2)
+      const repaired = version === 2 ? f.repair() : recovered
+      expect(repaired.artifacts.read(task.id, f.first.id).content).toBe('second revision')
+      expect(repaired.artifacts.read(task.id, f.first.id, 1).content).toBe('first revision')
+      expect(f.revisions()).toEqual([1, 2])
+      expect(repaired.activity.list('', 'task-activity', 0, task.id).events).toHaveLength(2)
     } finally {
       error.mockRestore()
       f.db.close()

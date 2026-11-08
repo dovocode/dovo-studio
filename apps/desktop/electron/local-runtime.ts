@@ -4,8 +4,15 @@ import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { homedir, uptime } from 'node:os'
 import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+  appendFileSync,
+  createWriteStream,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  type WriteStream,
+} from 'node:fs'
+import { dirname, join } from 'node:path'
 import { app, dialog } from 'electron'
 import { Effect, Exit, Scope, Schema, Semaphore } from 'effect'
 import { readConnection } from '@dovo/api/connection'
@@ -34,16 +41,73 @@ let owned:
 let relaunches = 0
 let relaunchTimer: ReturnType<typeof setTimeout> | undefined
 let relaunchAfter = 0
+/** True from a detected crash until a replacement reaches readiness, so a replacement that
+ * dies before `ready` (busy port, corrupt database) re-enters the bounded relaunch cycle. */
+let recovering = false
 let quitting = false
+const MAX_RELAUNCHES = 6
 const failure = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)))
 const exited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
 class RuntimeCompatibilityError extends Error {}
+/** Owned children share the supervised service's log name, so the runtime's own rotation
+ * (`rotateRuntimeLogs`) bounds it and every error message names one file per data directory. */
+const ownedRuntimeLogPath = () => join(desktopRuntimeDirectory(), 'runtime-service.log')
+/** Bytes the log stream may buffer before output is dropped rather than growing memory. */
+const LOG_BUFFER_LIMIT = 4 * 1024 * 1024
+/** Durable output for an owned child: packaged apps have no console, and the in-memory tail
+ * only holds the last few kilobytes of stderr. Append-only so rotation's truncate stays valid.
+ * Failures degrade to the console; they never fail or stop the runtime. */
+function openOwnedRuntimeLog(path: string) {
+  let stream: WriteStream | undefined
+  let dropped = false
+  try {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    stream = createWriteStream(path, { flags: 'a', mode: 0o600 })
+    stream.on('error', (error) => {
+      console.error(`Local runtime log is unavailable (${path}):`, error)
+      stream?.destroy()
+      // Retain ownership until `close`: destruction can precede descriptor closure.
+    })
+  } catch (error) {
+    console.error(`Local runtime log is unavailable (${path}):`, error)
+    stream = undefined
+  }
+  return {
+    write: (chunk: string) => {
+      if (!stream || stream.destroyed || stream.writableEnded) return
+      if (stream.writableLength > LOG_BUFFER_LIMIT) {
+        if (!dropped) {
+          dropped = true
+          stream.write(`[desktop] runtime output dropped: log is not keeping up\n`)
+        }
+        return
+      }
+      dropped = false
+      stream.write(chunk)
+    },
+    /** Resolves once the descriptor is really closed, so a scope that ends during startup
+     * cannot leave a pending open or write that recreates the file after shutdown. */
+    close: () =>
+      new Promise<void>((resolve) => {
+        const current = stream
+        stream = undefined
+        if (!current || current.closed) {
+          resolve()
+          return
+        }
+        current.once('close', () => resolve())
+        // A stream that is still opening queues `end` until the descriptor exists, then
+        // finishes and auto-closes. An error destroys it, which also emits `close`.
+        current.end()
+      }),
+  }
+}
 /** launchd restarts a runtime that fails at startup every few seconds. Name the reason from
  * its log instead of a generic timeout, so a busy port or stale lock can be acted on. */
 function backgroundStartupFailure(port: string) {
   let tail = ''
   try {
-    tail = readFileSync(join(desktopRuntimeDirectory(), 'runtime-service.log'), 'utf8').slice(-4000)
+    tail = readFileSync(ownedRuntimeLogPath(), 'utf8').slice(-4000)
   } catch {
     /* No log yet: launchd has not started the runtime. */
   }
@@ -261,12 +325,61 @@ const runtimeOptions = () =>
     catch: failure,
   })
 
+/** The per-launch stream is closed with its child's scope, so supervisor decisions made after
+ * that (a replacement that never became ready, the final give-up) are appended separately.
+ * The reason carries the child's last stderr, which otherwise lives only in memory. */
+function noteInRuntimeLog(message: string) {
+  try {
+    appendFileSync(
+      ownedRuntimeLogPath(),
+      `[desktop] ${new Date().toISOString()} ${message.trim().replaceAll('\n', '\n[desktop] ')}\n`,
+      { mode: 0o600 },
+    )
+  } catch (error) {
+    console.error('Local runtime log is unavailable:', error)
+  }
+}
+/** One bounded relaunch cycle for every way an owned runtime can die: after readiness (the
+ * `exit` listener) or while a replacement is still starting (the launch failure). Six attempts
+ * with exponential backoff, then a dialog naming the log; nothing restarts after that. */
+function scheduleRelaunch(directory: string, reason: string) {
+  console.error(reason)
+  if (relaunches >= MAX_RELAUNCHES) {
+    relaunchAfter = Infinity
+    recovering = false
+    console.error('Local runtime keeps exiting; not relaunching. Restart Dovo Studio.')
+    noteInRuntimeLog(`${reason}\nGiving up after ${MAX_RELAUNCHES} relaunches.`)
+    void dialog.showMessageBox({
+      type: 'error',
+      title: app.getName(),
+      message: 'The local runtime keeps stopping.',
+      detail: `${reason.slice(-1500)}\n\nRestart Dovo Studio after fixing the cause. The full runtime output is in ${ownedRuntimeLogPath()}.`,
+      buttons: ['OK'],
+    })
+    return
+  }
+  recovering = true
+  const delay = Math.min(60_000, 2_000 * 2 ** relaunches)
+  relaunchAfter = Date.now() + delay
+  relaunches++
+  noteInRuntimeLog(`${reason}\nRelaunch ${relaunches}/${MAX_RELAUNCHES} in ${delay / 1000}s.`)
+  clearTimeout(relaunchTimer)
+  relaunchTimer = setTimeout(() => {
+    relaunchTimer = undefined
+    if (quitting) return
+    // A replacement that fails before readiness schedules the next attempt itself.
+    void startLocalRuntime(directory).catch((error: unknown) =>
+      console.error('Local runtime relaunch failed:', error),
+    )
+  }, delay)
+  relaunchTimer.unref()
+}
 function launch(directory: string) {
   return Effect.gen(function* () {
     const options = yield* runtimeOptions()
     const { token, listenPath, env } = options
-    let cleanupProcess = () => {}
-    yield* Effect.addFinalizer(() => Effect.sync(() => cleanupProcess()))
+    let cleanupProcess = (): Promise<void> => Promise.resolve()
+    yield* Effect.addFinalizer(() => Effect.promise(() => cleanupProcess()))
     const child = yield* Effect.acquireRelease(
       Effect.try({
         try: () =>
@@ -294,46 +407,33 @@ function launch(directory: string) {
       stopChild,
     )
     let diagnostics = ''
-    const stdout = (data: Buffer) => console.log(String(data).trim())
+    const log = openOwnedRuntimeLog(ownedRuntimeLogPath())
+    log.write(
+      `[desktop] ${new Date().toISOString()} started local runtime (pid ${child.pid ?? 'unknown'})\n`,
+    )
+    const stdout = (data: Buffer) => {
+      log.write(String(data))
+      console.log(String(data).trim())
+    }
     const stderr = (data: Buffer) => {
+      log.write(String(data))
       diagnostics = (diagnostics + String(data)).slice(-4000)
     }
-    const reportError = (error: Error) => console.error('Local runtime process error:', error)
+    const reportError = (error: Error) => {
+      log.write(`[desktop] local runtime process error: ${error.message}\n`)
+      console.error('Local runtime process error:', error)
+    }
     const startedAt = Date.now()
     // A runtime that dies after startup (native crash, OOM) is otherwise never noticed: the
     // renderer keeps retrying a dead address. Relaunch it on the same saved port, with a cap.
     const crashed = (code: number | null, signal: NodeJS.Signals | null) => {
+      log.write(`[desktop] ${new Date().toISOString()} local runtime exited (${signal ?? code})\n`)
       // Leave `owned` in place: startLocalRuntime sees the exited child and closes its scope.
       if (owned?.child !== child || owned.stopping || quitting) return
-      const reason = `Local runtime exited (${signal ?? code}). ${diagnostics}`.trim()
-      console.error(reason)
       // A runtime that stayed up for a while earned a fresh budget; one that dies at startup
       // backs off from two seconds to a minute so a bad port or lock does not spin.
       if (Date.now() - startedAt > 60_000) relaunches = 0
-      if (relaunches >= 6) {
-        relaunchAfter = Infinity
-        console.error('Local runtime keeps exiting; not relaunching. Restart Dovo Studio.')
-        void dialog.showMessageBox({
-          type: 'error',
-          title: app.getName(),
-          message: 'The local runtime keeps stopping.',
-          detail: `${reason.slice(-1500)}\n\nRestart Dovo Studio after fixing the cause. The runtime log in the data directory has the full output.`,
-          buttons: ['OK'],
-        })
-        return
-      }
-      const delay = Math.min(60_000, 2_000 * 2 ** relaunches)
-      relaunchAfter = Date.now() + delay
-      relaunches++
-      clearTimeout(relaunchTimer)
-      relaunchTimer = setTimeout(() => {
-        relaunchTimer = undefined
-        if (quitting) return
-        void startLocalRuntime(directory).catch((error: unknown) =>
-          console.error('Local runtime relaunch failed:', error),
-        )
-      }, delay)
-      relaunchTimer.unref()
+      scheduleRelaunch(directory, `Local runtime exited (${signal ?? code}). ${diagnostics}`.trim())
     }
     child.stdout?.on('data', stdout)
     child.stderr?.on('data', stderr)
@@ -344,6 +444,7 @@ function launch(directory: string) {
       child.stderr?.removeListener('data', stderr)
       child.removeListener('error', reportError)
       child.removeListener('exit', crashed)
+      return log.close()
     }
     let cleanup = () => {}
     const connection = yield* Effect.callback<Connection, Error>((resume) => {
@@ -431,7 +532,9 @@ export function startLocalRuntime(
         if (Date.now() < relaunchAfter)
           return yield* Effect.fail(
             new Error(
-              'Local runtime recovery is paused after a crash. Wait for automatic recovery or restart Dovo Studio.',
+              relaunchAfter === Infinity
+                ? `The local runtime stopped repeatedly and automatic recovery has given up. Check ${ownedRuntimeLogPath()}, then restart Dovo Studio.`
+                : 'Local runtime recovery is paused after a crash. Wait for automatic recovery or restart Dovo Studio.',
             ),
           )
         if (owned) {
@@ -477,7 +580,19 @@ export function startLocalRuntime(
         const result = yield* launch(directory).pipe(
           Scope.provide(scope),
           Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
+          // The `exit` listener only relaunches an adopted runtime. A replacement that dies
+          // before readiness must stay inside the same bounded cycle instead of ending it.
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              if (recovering && !quitting)
+                scheduleRelaunch(
+                  directory,
+                  `Local runtime replacement failed before it became ready: ${error.message}`,
+                )
+            }),
+          ),
         )
+        recovering = false
         owned = {
           ...result,
           scope,
@@ -490,6 +605,10 @@ export function startLocalRuntime(
 function stopOwnedRuntime() {
   return Effect.gen(function* () {
     yield* Effect.tryPromise({ try: stopWslRuntime, catch: failure })
+    // An explicit stop ends any crash cycle; the next deliberate start begins with a full budget.
+    recovering = false
+    relaunches = 0
+    relaunchAfter = 0
     if (!owned) return
     owned.stopping = true
     yield* Scope.close(owned.scope, Exit.void)

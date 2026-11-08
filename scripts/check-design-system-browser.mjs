@@ -18,6 +18,12 @@ import {
 // Shard selection: positional `[shard] [count]` or DOVO_DESIGN_SHARD / DOVO_DESIGN_SHARD_COUNT.
 // Shards split the story and hosted matrices; interactions run once (DOVO_DESIGN_INTERACTIONS_ONLY
 // in the browser job, or DOVO_DESIGN_INTERACTIONS=1 on one nominated shard). See scripts/ci/.
+// Production composers can expose either the rich editor or Markdown source field.
+const composerText = (field) =>
+  field.evaluate((element) =>
+    element instanceof HTMLTextAreaElement ? element.value : element.innerText,
+  )
+
 const plan = resolveDesignPlan({ env: process.env, argv: process.argv.slice(2) })
 console.log(describePlan(plan))
 const output = resolve('apps/design-system/storybook-static')
@@ -223,20 +229,17 @@ try {
       await page.locator('#storybook-root > *').first().waitFor()
     }
     await openStory('dovo-settings-desktop-settings--scoped-lifecycle-settings')
-    await page
-      .getByRole('status')
-      .filter({ hasText: 'Changes apply to existing tasks too' })
-      .waitFor()
+    await page.getByText('Changes apply to existing threads too.', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Settings project', exact: true }).click()
     await page.getByRole('option', { name: 'Dovo Studio', exact: true }).click()
-    await page.getByText('Dovo Studio project defaults', { exact: true }).waitFor()
-    assert.equal(
-      await page.getByRole('button', { name: 'Settings machine', exact: true }).count(),
-      0,
-    )
-    await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).waitFor()
+    await page.getByText('Editing Dovo Studio on all computers', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Settings computer', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Settings computer', exact: true }).click()
+    await page.getByRole('option', { name: 'All computers', exact: true }).waitFor()
+    await page.getByRole('option', { name: 'Preview computer', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
     const inactiveSetting = page.getByRole('combobox', {
-      name: 'Auto-settle inactive tasks',
+      name: 'Auto-settle inactive threads',
       exact: true,
     })
     await inactiveSetting.click()
@@ -248,7 +251,7 @@ try {
     assert.equal(await inactiveSetting.innerText(), 'Off')
     await page
       .getByRole('button', {
-        name: 'View inheritance for auto-settle inactive tasks',
+        name: 'View inheritance for auto-settle inactive threads',
         exact: true,
       })
       .click()
@@ -520,28 +523,31 @@ try {
     await openStory('dovo-patterns-task-conversation--editable-queued-follow-ups')
     await page.getByRole('button', { name: 'Confirmed', exact: true }).click()
     await page.locator('summary').filter({ hasText: '2 queued' }).click()
-    const queueComposer = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const queueComposer = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await queueComposer.fill('Keep my ordinary draft')
+    await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
     assert.equal(
-      await queueComposer.inputValue(),
+      await composerText(queueComposer),
       'Keep the existing blue accent, but soften the background.',
     )
     await queueComposer.fill('Cancelled edit')
     await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
-    assert.equal(await queueComposer.inputValue(), 'Keep my ordinary draft')
+    assert.equal(await composerText(queueComposer), 'Keep my ordinary draft')
     await page
       .getByTitle('Keep the existing blue accent, but soften the background.', { exact: true })
       .waitFor()
+    await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
     await queueComposer.fill('Edited local follow-up')
     await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page.getByTitle('Edited local follow-up', { exact: true }).waitFor()
-    assert.equal(await queueComposer.inputValue(), 'Keep my ordinary draft')
+    assert.equal(await composerText(queueComposer), 'Keep my ordinary draft')
     await page
       .getByRole('button', { name: 'Drag queued message 2 to reorder', exact: true })
       .focus()
     await page.keyboard.press('ArrowUp')
+    await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Pause queued message 1', exact: true }).click()
     await page.getByRole('button', { name: 'Resume queued message 1', exact: true }).click()
     await page.getByRole('button', { name: 'Steer with queued message 1', exact: true }).click()
@@ -552,40 +558,46 @@ try {
 
     await openStory('dovo-composers-production-task-composer--full-production-composer')
     await page.getByRole('button', { name: 'New task', exact: true }).click()
+    // A toolbar click from the empty focused editor must survive focus leaving the editor.
+    await page.getByRole('textbox', { name: 'Message thread', exact: true }).focus()
     await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
     await page.getByRole('combobox').waitFor()
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Remove preview.png', exact: true }).click()
+    await page.getByRole('button', { name: 'Remove workspace.png', exact: true }).click()
     await page
-      .getByRole('button', { name: 'Remove preview.png', exact: true })
+      .getByRole('button', { name: 'Remove workspace.png', exact: true })
       .waitFor({ state: 'hidden' })
-    const mentionField = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const mentionField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await mentionField.fill('@src')
     await page.getByRole('listbox', { name: 'Files and MCP servers', exact: true }).waitFor()
     await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
-    assert.ok((await mentionField.inputValue()).includes('src/App.tsx'))
+    assert.ok((await composerText(mentionField)).includes('src/App.tsx'))
     await page.getByRole('button', { name: 'Idle task', exact: true }).click()
-    const composerField = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const composerField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await composerField.fill('Verify a full production composer')
     await page.getByRole('button', { name: 'Fail next send', exact: true }).click()
     await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
     await page.getByRole('alert').filter({ hasText: 'set to fail' }).waitFor()
     assert.equal(
-      await composerField.inputValue(),
+      await composerText(composerField),
       'Verify a full production composer',
       'Failed sends retain the draft',
     )
     await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
-    await page.waitForFunction(
-      () => document.querySelector('textarea[aria-label="Message task"]')?.value === '',
-    )
+    await page.waitForFunction(() => {
+      const field = document.querySelector('[aria-label="Message thread"]')
+      if (!field) return false
+      return field instanceof HTMLTextAreaElement
+        ? field.value === ''
+        : field.innerText.trim() === ''
+    })
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
     assert.ok(
-      await page.getByRole('button', { name: 'Save message to task', exact: true }).isDisabled(),
+      await page.getByRole('button', { name: 'Save message to thread', exact: true }).isDisabled(),
     )
     await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
     await page.getByRole('button', { name: 'Long draft', exact: true }).click()
-    assert.ok((await composerField.inputValue()).includes('A detailed local preview draft'))
+    assert.ok((await composerText(composerField)).includes('A detailed local preview draft'))
 
     const touch = await browser.newContext({
       hasTouch: true,

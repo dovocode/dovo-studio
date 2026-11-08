@@ -1,0 +1,878 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "test": {
+      "fp32": {
+        "correct": 1449,
+        "total": 1461,
+        "accuracy": 0.9917864476386037,
+        "confusion": {
+          "browser": {
+            "browser": 303,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 267,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 12,
+            "thread": 254
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 824,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 175,
+            "total": 175
+          },
+          "model": {
+            "correct": 145,
+            "total": 145
+          },
+          "project": {
+            "correct": 160,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "mistakes": [
+          {
+            "input": "Help: top -l 1 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.509000001766253,
+            "logits": [-20.344709396362305, 7.227440357208252, -6.309086322784424],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 530,
+              341, 1406, 376, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: ansible-playbook deploy.yml --check isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.464791006816085,
+            "logits": [-20.25882339477539, 4.0272417068481445, -4.944100856781006],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 299,
+              57837, 271, 7829, 5749, 10983, 260, 608, 8365, 341, 271, 11295, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: fd --extension ts isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 19.936707998567726,
+            "logits": [-20.433935165405273, 7.355647087097168, -6.198985576629639],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 2994,
+              407, 341, 271, 48968, 1941, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: vercel env ls isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 19.697042000188958,
+            "logits": [-20.249832153320312, 2.4571657180786133, -4.370379447937012],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 10459,
+              19369, 72684, 2531, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: pnpm dlx create-vite@latest demo isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.272166999347974,
+            "logits": [-20.332670211791992, 4.472533702850342, -4.440672397613525],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 845,
+              673, 2086, 61609, 982, 676, 271, 57520, 1683, 69992, 6731, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: claude -p 'inspect this repository' isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.272499998100102,
+            "logits": [-20.066268920898438, 9.662504196166992, -6.789956092834473],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 36579,
+              25806, 341, 1492, 382, 547, 37831, 291, 12499, 280, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: magick logo.png -resize 120x120 thumb.png isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.2138750028098,
+            "logits": [-19.896974563598633, 4.636929035186768, -5.355003833770752],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 77707,
+              3784, 260, 25057, 341, 368, 7283, 4811, 982, 9648, 9406, 260, 25057, 928, 280, 297,
+              560, 2
+            ]
+          },
+          {
+            "input": "Help: opencode --continue isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 19.779375004873145,
+            "logits": [-20.060903549194336, 6.371016979217529, -6.3780951499938965],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 615,
+              11478, 341, 271, 48625, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: az account show isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 22.3180829998455,
+            "logits": [-20.221099853515625, -3.071774482727051, -3.719285726547241],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 266,
+              1895, 914, 553, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: journalctl -n 20 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 19.759916001930833,
+            "logits": [-20.21251106262207, 6.914918422698975, -6.2726287841796875],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 4881,
+              64116, 341, 673, 602, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: nc -vz 10.11.12.13 443 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 22.784207998483907,
+            "logits": [-20.126110076904297, 8.969344139099121, -7.349554538726807],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 35567,
+              341, 2179, 1895, 466, 260, 1554, 260, 1432, 260, 2209, 47990, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: zellij attach work isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 19.826790994557086,
+            "logits": [-20.065109252929688, 7.868259906768799, -6.54036283493042],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 24881,
+              436, 19951, 8934, 374, 928, 280, 297, 560, 2
+            ]
+          }
+        ],
+        "medianMs": 20.055665998370387,
+        "p95Ms": 22.914124994713347
+      },
+      "q8": {
+        "correct": 1450,
+        "total": 1461,
+        "accuracy": 0.9924709103353867,
+        "confusion": {
+          "browser": {
+            "browser": 303,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 267,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 11,
+            "thread": 255
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 825,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 175,
+            "total": 175
+          },
+          "model": {
+            "correct": 145,
+            "total": 145
+          },
+          "project": {
+            "correct": 160,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "mistakes": [
+          {
+            "input": "Help: top -l 1 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 42.27445900323801,
+            "logits": [-20.193675994873047, 6.870896339416504, -6.450075149536133],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 530,
+              341, 1406, 376, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: ansible-playbook deploy.yml --check isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 42.137875003390945,
+            "logits": [-20.142356872558594, 4.162457466125488, -5.149437427520752],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 299,
+              57837, 271, 7829, 5749, 10983, 260, 608, 8365, 341, 271, 11295, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: fd --extension ts isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.65820900379913,
+            "logits": [-20.2860050201416, 7.290114879608154, -6.366415500640869],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 2994,
+              407, 341, 271, 48968, 1941, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: vercel env ls isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.60337499342859,
+            "logits": [-20.061458587646484, 1.6830894947052002, -4.300812244415283],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 10459,
+              19369, 72684, 2531, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: pnpm dlx create-vite@latest demo isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.99650000373367,
+            "logits": [-20.187191009521484, 3.8683745861053467, -4.589466571807861],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 845,
+              673, 2086, 61609, 982, 676, 271, 57520, 1683, 69992, 6731, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: claude -p 'inspect this repository' isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 42.00237499753712,
+            "logits": [-19.958038330078125, 9.634222984313965, -6.990919589996338],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 36579,
+              25806, 341, 1492, 382, 547, 37831, 291, 12499, 280, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: magick logo.png -resize 120x120 thumb.png isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.98299999552546,
+            "logits": [-19.764738082885742, 4.559504985809326, -5.574734210968018],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 77707,
+              3784, 260, 25057, 341, 368, 7283, 4811, 982, 9648, 9406, 260, 25057, 928, 280, 297,
+              560, 2
+            ]
+          },
+          {
+            "input": "Help: opencode --continue isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.591540997615084,
+            "logits": [-19.8677978515625, 6.17817497253418, -6.507114410400391],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 615,
+              11478, 341, 271, 48625, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: journalctl -n 20 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.62787500536069,
+            "logits": [-20.038999557495117, 6.734233856201172, -6.43633508682251],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 4881,
+              64116, 341, 673, 602, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: nc -vz 10.11.12.13 443 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 40.911249998316634,
+            "logits": [-19.952661514282227, 8.835864067077637, -7.5023908615112305],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 35567,
+              341, 2179, 1895, 466, 260, 1554, 260, 1432, 260, 2209, 47990, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: zellij attach work isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.63958300341619,
+            "logits": [-19.873672485351562, 7.88408088684082, -6.674334526062012],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 24881,
+              436, 19951, 8934, 374, 928, 280, 297, 560, 2
+            ]
+          }
+        ],
+        "medianMs": 41.43479200138245,
+        "p95Ms": 42.490583000471815
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 0.00023889541625976562,
+      "quantizedChangedPredictions": ["Help: az account show isn't working"]
+    }
+  },
+  "challengeSha256": "2114a7cf11eaf6ff2427ea4bc190bd7d0719a06a7a11b19a3c315539c1ed3682",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-08/"
+}

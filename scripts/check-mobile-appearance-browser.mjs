@@ -8,6 +8,7 @@ import { studioThemeIds, studioThemes } from '../packages/studio-core/src/themes
 const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise native input identity and imperative updates; RN Web replacements are covered by Storybook.
 const mocks = {
+  'react-native-reanimated': `import {View} from 'react-native';const transition={duration:()=>transition,easing:()=>transition,reduceMotion:()=>transition};export const Easing={bezier:()=>undefined},LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View};`,
   'expo-document-picker': `export const getDocumentAsync=async()=>window.themeFile?{canceled:false,assets:[{uri:'theme.jsonc',name:'native.jsonc'}]}:{canceled:true};`,
   'expo-file-system': `export class File{get size(){return window.themeFile.length}async text(){return window.themeFile}}`,
   'react-native': `
@@ -73,7 +74,7 @@ const built = await build({
         window.currentTheme={colors,mode,palette,code};window.preferences=preferences;
         window.configure=updateMobilePreferences;window.setSending=setSending;
         return <div id="draft" style={{background:colors.background,color:colors.text}}>
-          <ComposerField value={sending?'':draft.text} revision={JSON.stringify([draft.revision,sending])} onChangeText={text=>draft.update(text,'keyboard')} onSelectionChange={()=>{}} editable={draft.ready&&!sending} showOptions/>
+          <ComposerField value={sending?'':draft.text} revision={JSON.stringify([draft.revision,sending])} onChangeText={text=>draft.update(text,'keyboard')} onSelectionChange={()=>{}} editable={draft.ready&&!sending} showOptions trailingControlCount={0}/>
           <span id="error" style={{color:colors.error}}>Send failed</span>
         </div>;
       }

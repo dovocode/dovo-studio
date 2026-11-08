@@ -7,9 +7,12 @@ import { desktopMiseArchive } from './desktop-mise-archive.mjs'
 import { verifyDesktopImports } from './desktop-imports.mjs'
 import { verifyDesktopBuild } from './desktop-build-stamp.mjs'
 import { copyPreparedRuntime } from './prepared-runtime.mjs'
+import { prepareWorkspaceRouterModel } from './workspace-router-model.mjs'
 import { windowsReleaseConfig } from './windows-signing.mjs'
 import { releaseVariant } from './release-variant.mjs'
 import { createTiming, timeMacSigning } from './release-timing.mjs'
+import { configureMacNotarization } from './mac-notarization.mjs'
+import { configureMacSigning } from './mac-parallel-signing.mjs'
 import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
@@ -56,12 +59,26 @@ const require = createRequire(join(root, 'apps/desktop/package.json'))
 const electron = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'))
 const variant = await releaseVariant(root)
 const timing = createTiming()
+const restoreNotarization =
+  process.platform === 'darwin' ? configureMacNotarization(timing) : undefined
+/** @type {Promise<PromiseSettledResult<string>[]> | undefined} */
+let miseArchive
+function startMiseArchive() {
+  // afterSign runs after notarization/stapling. Both this archive and the builder's
+  // DMG/ZIP targets can now read the immutable app concurrently. Observe errors
+  // immediately, and wait before cleaning up even if another target fails.
+  return (miseArchive ??= Promise.allSettled([
+    timing.measure('Mise archive', () => desktopMiseArchive(root)),
+  ]))
+}
 const endStaging = timing.start('Stage runtime and desktop dependencies')
 
 try {
   const runtime = join(stage, 'runtime'),
     application = join(stage, 'application')
   const source = join(stage, 'source')
+  if (!process.env.DOVO_PREPARED_RUNTIME)
+    await prepareWorkspaceRouterModel(join(root, 'packages/runtime/dist/models/workspace-router'))
   const dependencies = await stageDesktopWorkspace(root, source)
   if (process.env.DOVO_PREPARED_RUNTIME) await copyPreparedRuntime(root, runtime)
   else
@@ -168,6 +185,7 @@ try {
       },
       afterPack: async (context) => {
         endElectronPack?.()
+        if (process.platform === 'darwin') configureMacSigning(context.packager)
         timeMacSigning(timing, context.packager)
         const endRuntime = timing.start('Bundle and smoke-test runtime')
         const destination = join(
@@ -194,10 +212,13 @@ try {
       // Ad-hoc sign that fallback so Apple Silicon can launch it.
       afterSign: async (context) => {
         if (macSigningIdentity) endArtifacts = timing.start('Installers and update archives')
-        if (process.platform !== 'darwin' || macSigningIdentity) return
-        const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
-        execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
-        execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' })
+        if (process.platform !== 'darwin') return
+        if (!macSigningIdentity) {
+          const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+          execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
+          execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' })
+        }
+        void startMiseArchive()
       },
       npmRebuild: false,
       asar: true,
@@ -258,9 +279,14 @@ try {
   })
   endArtifacts?.()
   endBuilder()
-  if (process.platform === 'darwin')
-    await timing.measure('Mise archive', () => desktopMiseArchive(root))
+  if (process.platform === 'darwin') {
+    // Unsigned --dir builds may not emit afterSign.
+    const [result] = await startMiseArchive()
+    if (result.status === 'rejected') throw result.reason
+  }
 } finally {
+  if (miseArchive) await miseArchive
+  restoreNotarization?.()
   timing.report()
   // Windows may briefly retain file handles after the PTY child exits.
   await rm(stage, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })

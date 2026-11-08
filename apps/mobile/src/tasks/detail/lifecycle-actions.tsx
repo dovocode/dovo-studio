@@ -72,11 +72,7 @@ export function LifecycleActions({
               label="Snooze"
               icon="snooze"
               disabled={!enabled || busy}
-              onPress={() =>
-                chooseSnoozeDuration('Snooze thread', (hours) =>
-                  snooze(new Date(Date.now() + hours * 3600000).toISOString()),
-                )
-              }
+              onPress={() => chooseSnoozeDuration('Snooze thread', (until) => snooze(until))}
             />
           )}
         </View>

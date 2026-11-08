@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { createSocket } from 'node:dgram'
 import { randomBytes } from 'node:crypto'
-import { spawn, execFileSync } from 'node:child_process'
+import { spawn, spawnSync, execFileSync } from 'node:child_process'
 import { createServer as netServer } from 'node:net'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -356,6 +356,14 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
   )
   const roots = getCACertificates('default')
   setDefaultCACertificates([...roots, await readFile(cert, 'utf8')])
+  // New coturn versions removed switches for protocols that are already disabled by
+  // default. Keep the same fixture usable with CI's packaged coturn and current releases.
+  const help = spawnSync(process.env.DOVO_TEST_TURN_BINARY, ['-h'], { encoding: 'utf8' })
+  if (help.error) throw help.error
+  const supported = `${help.stdout ?? ''}\n${help.stderr ?? ''}`
+  const legacyOptions = ['--no-cli', '--no-tlsv1', '--no-tlsv1_1', '--no-dtls'].filter((flag) =>
+    new RegExp(`\\s${flag}(?:\\s|$)`).test(supported),
+  )
   const turn = spawn(
     process.env.DOVO_TEST_TURN_BINARY,
     [
@@ -373,10 +381,7 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
       '--static-auth-secret=local-test-only-turn-secret-1234567890',
       '--allow-loopback-peers',
       '--no-multicast-peers',
-      '--no-cli',
-      '--no-tlsv1',
-      '--no-tlsv1_1',
-      '--no-dtls',
+      ...legacyOptions,
       '--no-stun',
       '--no-rfc5780',
       '--max-allocate-lifetime=600',
@@ -387,6 +392,9 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
     ],
     { stdio: ['ignore', 'pipe', 'pipe'] },
   )
+  const turnExit = once(turn, 'exit')
+  // Cleanup owns spawn failures too, even if startup fails before it awaits exit.
+  void turnExit.catch(() => undefined)
   let output = ''
   turn.stdout.on('data', (chunk) => {
     output += chunk
@@ -486,7 +494,7 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
     }
   } finally {
     turn.kill()
-    await once(turn, 'exit')
+    await turnExit
     setDefaultCACertificates(roots)
     await rm(directory, { recursive: true, force: true })
   }

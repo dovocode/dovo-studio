@@ -22,6 +22,38 @@ export type BrowserTabLifecycle = {
   previewOf?: string
 }
 export type BrowserTabCategory = 'active' | 'snoozed' | 'settled'
+/** Communication apps need background execution for incoming messages and calls. */
+export function browserDefaultKeepAwake(input: string) {
+  try {
+    const url = new URL(input)
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      ([
+        'teams.microsoft.com',
+        'teams.cloud.microsoft',
+        'teams.live.com',
+        'outlook.office.com',
+        'outlook.office365.com',
+        'outlook.live.com',
+        'outlook.cloud.microsoft',
+        'mail.google.com',
+        'discord.com',
+        'canary.discord.com',
+        'ptb.discord.com',
+        'web.whatsapp.com',
+        'chat.google.com',
+      ].includes(url.hostname) ||
+        // Slack uses both app.slack.com and individual workspace subdomains.
+        /^[a-z0-9-]+\.slack\.com$/.test(url.hostname))
+    )
+  } catch {
+    return false
+  }
+}
+/** Undefined follows the app default; false is a persisted, deliberate opt-out. */
+export function browserTabKeepsAwake(tab: Pick<BrowserTabLifecycle, 'url' | 'keepAwake'>) {
+  return tab.keepAwake ?? browserDefaultKeepAwake(tab.url)
+}
 export function browserTabCategory(tab: BrowserTabLifecycle, now = Date.now()): BrowserTabCategory {
   if (tab.snoozedUntil !== undefined && tab.snoozedUntil > now) return 'snoozed'
   return tab.settledAt !== undefined ? 'settled' : 'active'

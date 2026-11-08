@@ -1,5 +1,6 @@
 import { serveRetrieval } from './retrieval/host.js'
 import { disposeRuntimeSync } from './http/support/runtime-sync.js'
+import { disposeMemoryAttribution } from './diagnostics/memory-attribution.js'
 import { Housekeeping } from './agents/tasks/housekeeping.js'
 import { TaskPullWatcher } from './scm/tasks/task-pulls.js'
 import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect'
@@ -7,11 +8,14 @@ import { openDatabase } from './storage/database.js'
 import { createServices, type Services } from './services.js'
 import { createRuntimeServer } from './http/server.js'
 import { ExternalListener } from './http/external-listener.js'
+import { startupProfile } from './diagnostics/startup-profile.js'
+export { startupProfile } from './diagnostics/startup-profile.js'
 export { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './storage/backups.js'
 export { exportRuntimeRecovery } from './storage/recovery.js'
 export { rotateRuntimeLogs } from './storage/log-rotation.js'
 export { recordLastCrash } from './storage/last-crash.js'
 export { backupRuntimeDatabase } from './storage/backup.js'
+export { stopOwnedChild } from './agents/execution/stop-owned-child.js'
 export { checkAdapterUpdates, type AdapterDiagnostic } from './agents/execution/diagnostics.js'
 
 export interface RuntimeOptions {
@@ -47,6 +51,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
   Layer.effect(
     RuntimeHost,
     Effect.gen(function* () {
+      const profile = startupProfile('runtime')
+      profile?.('begin')
       const db = yield* Effect.acquireRelease(
         Effect.try({
           try: () => openDatabase(options.databasePath),
@@ -55,6 +61,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         }),
         (db) => Effect.sync(() => db.close()),
       )
+      profile?.('database opened')
       const services = yield* Effect.try({
         try: () => createServices(db, options.ownerToken),
         catch: (cause) => new RuntimeStartupError({ operation: 'service initialization', cause }),
@@ -73,6 +80,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
             }),
           ),
         )
+      profile?.('services initialized')
       // Scope runs every finalizer even if one fails. This list is shutdown order;
       // register it backwards because Effect releases in last-in-first-out order.
       // Dependants stop first and SQLite remains available through the final flush.
@@ -102,6 +110,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         closeTitles,
         closeTasks,
         () => services.agents.dispose(),
+        () => services.forges.dispose(),
         () => services.runCredentials.dispose(),
         () => services.store.usageHubs.dispose(),
         () => services.artifactFeeds.dispose(),
@@ -122,6 +131,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.approvals.dispose(),
         () => services.pullCache.dispose(),
         () => disposeRuntimeSync(services),
+        () => disposeMemoryAttribution(services),
       ]
       for (const close of [...finalizers].reverse())
         yield* Effect.addFinalizer(() => release(close))
@@ -207,6 +217,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         return Effect.sync(cleanup)
       })
       const address = http.server.address()
+      profile?.('HTTP listening')
       if (!address || typeof address === 'string')
         return yield* Effect.fail(
           new RuntimeStartupError({
@@ -270,6 +281,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         ['Thread watcher', () => services.threadWatch.start()],
       ] as const)
         yield* startOptional(name, start)
+      profile?.('workers started')
       return { services, port: address.port }
     }),
   )

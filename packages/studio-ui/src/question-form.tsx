@@ -1,11 +1,14 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { MessageCircleQuestion, LoaderCircle } from 'lucide-react'
 import {
   questionAnswerError,
   questionDraftAnswers,
   toggleQuestionChoice,
   type QuestionAnswers,
+  type QuestionOutcomes,
+  type QuestionAttachmentIds,
+  type AgentQuestion,
   type QuestionDraft,
   type PendingQuestion,
 } from '@dovo/protocol'
@@ -16,10 +19,16 @@ export function QuestionForm({
   request,
   connected,
   onAnswer,
+  attachmentIdsByQuestion = {},
+  renderAttachments,
+  attachmentsBusy = false,
 }: {
   request: PendingQuestion
   connected: boolean
-  onAnswer: (answers: QuestionAnswers | null) => Promise<void>
+  onAnswer: (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => Promise<void>
+  attachmentIdsByQuestion?: QuestionAttachmentIds
+  renderAttachments?: (question: AgentQuestion, disabled: boolean) => ReactNode
+  attachmentsBusy?: boolean
 }) {
   const [drafts, setDrafts] = useApplicationState<Record<string, QuestionDraft>>(() =>
       Object.fromEntries(
@@ -64,9 +73,10 @@ export function QuestionForm({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [request, connected, busy])
-  const submit = async (answers: QuestionAnswers | null) => {
-    if (submitting.current || !connected) return
-    const invalid = answers && questionAnswerError(request.prompt.questions, answers)
+  const submit = async (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => {
+    if (submitting.current || !connected || attachmentsBusy) return
+    const invalid =
+      answers && questionAnswerError(request.prompt.questions, answers, attachmentIdsByQuestion)
     if (invalid) {
       setError(invalid)
       return
@@ -75,7 +85,7 @@ export function QuestionForm({
     setError('')
     setBusy(true)
     try {
-      await onAnswer(answers)
+      await onAnswer(answers, outcomes)
     } catch (error) {
       setError(String(error))
       submitting.current = false
@@ -108,24 +118,31 @@ export function QuestionForm({
         className="max-h-64 space-y-4 overflow-auto p-3"
       >
         {request.prompt.questions.map((q, index) => (
-          <QuestionField
-            key={q.id}
-            question={q}
-            value={drafts[q.id]}
-            disabled={busy || !connected}
-            shortcutNumbers={index === 0}
-            onChange={(draft) => {
-              setDrafts((current) => ({
-                ...current,
-                [q.id]: draft,
-              }))
-              setError('')
-            }}
-          />
+          <div key={q.id} className="space-y-2">
+            <QuestionField
+              question={q}
+              value={drafts[q.id]}
+              disabled={busy || !connected || attachmentsBusy}
+              shortcutNumbers={index === 0}
+              onChange={(draft) => {
+                setDrafts((current) => ({
+                  ...current,
+                  [q.id]: draft,
+                }))
+                setError('')
+              }}
+            />
+            {renderAttachments?.(q, busy || !connected || attachmentsBusy)}
+          </div>
         ))}
       </div>
       <div className="flex items-center gap-2 border-t px-3 py-2">
-        <Button type="submit" size="sm" className="h-7 text-xs" disabled={busy || !connected}>
+        <Button
+          type="submit"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={busy || !connected || attachmentsBusy}
+        >
           {busy && <LoaderCircle className="size-3 animate-spin" />}Send answers
         </Button>
         <Button
@@ -133,11 +150,28 @@ export function QuestionForm({
           variant="ghost"
           size="sm"
           className="h-7 text-xs"
-          disabled={busy || !connected}
+          disabled={busy || !connected || attachmentsBusy}
           onClick={() => void submit(null)}
         >
-          Decline
+          {request.prompt.unanswered ? 'Dismiss' : 'Decline'}
         </Button>
+        {request.prompt.unanswered && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            disabled={busy || !connected || attachmentsBusy}
+            onClick={() =>
+              void submit(
+                {},
+                Object.fromEntries(request.prompt.questions.map((q) => [q.id, 'replied_in_chat'])),
+              )
+            }
+          >
+            I replied in chat
+          </Button>
+        )}
         {!connected && (
           <span className="text-[0.625rem] text-muted-foreground">Reconnect to answer</span>
         )}

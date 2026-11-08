@@ -23,6 +23,8 @@ import {
   agentPresetSchema,
   sharedProjectKey,
   mergeSharedSettings,
+  updateSharedSettingsEntry,
+  canonicalSharedSettings,
   type ScopedSettingsValue,
 } from '@dovo/protocol'
 import { RuntimeServices } from '../../runtime-services.js'
@@ -37,10 +39,16 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
     const raw = yield* serviceResult(body(request))
     let current = s.defaults.get()
     let scoped = initializeScopedSettings(current)
+    const canonicalize = (identity: string) => s.git.canonicalRepositoryIdentity(identity)
+    const canonical = canonicalSharedSettings(scoped.shared, canonicalize)
+    if (canonical !== scoped.shared) {
+      scoped = { ...scoped, shared: canonical }
+      current = s.defaults.save({ ...current, scopedSettings: scoped }, false)
+    }
     if (path === '/api/agents/settings/sync') {
       const { shared } = decode(sharedSettingsSyncSchema, raw)
       for (const entry of shared) validateSharedEntry(entry)
-      return { shared: s.defaults.mergeShared(shared) }
+      return { shared: s.defaults.mergeShared(canonicalSharedSettings(shared, canonicalize)) }
     }
     const input = decode(
       path.endsWith('/save') ? scopedSettingsSaveSchema : scopedSettingsReadSchema,
@@ -140,6 +148,11 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         stored,
       )
       validatePrompts(after)
+      if (
+        (input.scope === 'global' || input.scope === 'environment') &&
+        (after.projectPinned !== undefined || after.projectArchived !== undefined)
+      )
+        throw new HttpError(400, 'Pin and archive apply to one project.')
       if (input.scope === 'global' || input.scope === 'project') {
         after = prepareShared(after)
         validateShared(after)
@@ -180,6 +193,8 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
             repo.id === id
               ? {
                   ...repo,
+                  pinned: after.projectPinned,
+                  archived: after.projectArchived,
                   taskDefaults: after.taskDefaults,
                   taskBehavior: after.taskBehavior,
                   resources: after.resources,
@@ -191,6 +206,8 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         }))
         repository = {
           ...repository,
+          pinned: after.projectPinned,
+          archived: after.projectArchived,
           taskDefaults: after.taskDefaults,
           taskBehavior: after.taskBehavior,
           resources: after.resources,
@@ -206,7 +223,12 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         if (!key) throw new HttpError(400, 'The project has no shared identity')
         const updatedAt = Math.max(Date.now(), ...scoped.shared.map((entry) => entry.updatedAt + 1))
         scoped.shared = mergeSharedSettings(scoped.shared, [
-          { key, updatedAt, changeId: randomUUID(), value: after },
+          updateSharedSettingsEntry(
+            key,
+            scoped.shared.find((entry) => entry.key === key),
+            after,
+            { updatedAt, changeId: randomUUID() },
+          ),
         ])
         s.defaults.save({ ...current, scopedSettings: scoped }, false)
       }

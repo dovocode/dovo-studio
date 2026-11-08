@@ -1,3 +1,8 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
+import { BrowserAddressInput } from './browser-address-input'
+import { BrowserElementFeedback } from './browser-element-feedback'
+import { browserElementCaptureSchema, browserElementResultSchema } from '@dovo/protocol'
+import { BrowserDownloadsPanel } from './browser-downloads-panel'
 import { browserPageFavicon } from '@dovo/protocol'
 import { flushSync } from 'react-dom'
 import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
@@ -12,7 +17,6 @@ import {
   SHARED_BROWSER_LIBRARY_KEY,
   saveSharedBrowserTabs,
   recentBrowserTabs,
-  visitBrowserTab,
   reorderBrowserTabs,
   browserTabDragGroup,
   browserAddress,
@@ -32,28 +36,37 @@ import {
   browserLinkProfile,
   isPrivateBrowserProfile,
   browserTabCategory,
+  browserTabKeepsAwake,
   wakeBrowserTab,
   settleBrowserTab,
   snoozeBrowserTab,
   tomorrowBrowserTabWake,
   cleanBrowserTabs,
+  STUDIO_BROWSER_SCOPE,
+  studioReference,
   browserTabActivitySchema,
   type BrowserTabCategory,
+  type BrowserTabState,
   type BrowserWebsiteCustomization,
 } from '@dovo/protocol'
 import { Effect } from 'effect'
+import { useCommittedCallback } from '../detail/use-committed-callback'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  useCallback,
   useEffect,
   useRef,
   useId,
   useState,
+  type Dispatch,
   type DragEvent,
+  type SetStateAction,
   type ReactNode,
   type RefObject,
 } from 'react'
 import {
   Home,
+  ChevronDown,
   ArrowLeft,
   ArrowRight,
   RotateCw,
@@ -74,6 +87,20 @@ import {
   PinOff,
   MessageSquare,
   Paintbrush,
+  Settings,
+  Monitor,
+  UserRound,
+  Link,
+  Search,
+  CodeXml,
+  ExternalLink,
+  Rotate3D,
+  Printer,
+  FileDown,
+  Archive,
+  Clock,
+  BookOpen,
+  History,
 } from 'lucide-react'
 import {
   useWorkspace,
@@ -104,6 +131,9 @@ import {
   DialogTitle,
   DialogDescription,
   Popover,
+  HeaderContent,
+  SidebarHeader,
+  Toggle,
   useNavigationSidebar,
 } from '@dovo/studio-ui'
 import { useScreenshotAttachment } from './screenshot-attachment'
@@ -111,12 +141,48 @@ import { RemoteBrowser, type RemoteBrowserControls } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 import { DeviceDeployment } from './device-deployment'
+import { BrowserFindBar } from './browser-find-bar'
 import { FloatingPreview, type PreviewPlacement } from '../detail/floating-preview'
 import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 // A popped-out thread has its own renderer and must never share main-window tabs.
 const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
-type OpenLink = { id: string; url: string; remote?: boolean }
+export type BrowserWorkspaceControl = {
+  focusTabId?: string
+  onSelect: (id: string) => void
+  onTabsChange: (tabs: BrowserTab[], activeId: string) => void
+  /** Live native activity indexed by Studio tab ID, shared with the unified sidebar. */
+  onActivityChange?: (states: Record<string, BrowserTabState>) => void
+  newTabRequest?: string
+  /**
+   * Optional owner of the authoritative tab list (including previews). Until `tabs` is set,
+   * the pane keeps its own restored list and hands it to `onSetTabs` once to hydrate the owner.
+   */
+  tabs?: BrowserTab[]
+  onSetTabs?: Dispatch<SetStateAction<BrowserTab[]>>
+  /**
+   * False while another workspace item is shown. The pane stays mounted so tab cleanup, native
+   * sync and persistence keep running, but it releases the native view, header and shortcuts.
+   */
+  visible?: boolean
+  /** Runs the pane's own Pin / Settle / Snooze / Wake path once per request ID. */
+  lifecycleRequest?: BrowserLifecycleRequest
+  /** Called once each request has been applied, ignored (unknown page) or failed. */
+  onLifecycleHandled?: (requestId: string) => void
+  /** Errors raised while `visible` is false, when the pane's own banner cannot be seen. */
+  onError?: (message: string) => void
+}
+export type BrowserLifecycleRequest = { requestId: string; tabId: string } & (
+  | { action: 'pin' | 'unpin' | 'settle' | 'wake' | 'toggle-mute' }
+  | { action: 'snooze'; until: number }
+)
+type OpenLink = {
+  id: string
+  url: string
+  remote?: boolean
+  runtimeId?: string | null
+  profileId?: string
+}
 type BrowserPreviewBackground = { tabId: string; url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
@@ -125,18 +191,53 @@ const restorableTab = (tab: BrowserTab) =>
   !tab.previewOf &&
   !isPrivateBrowserProfile(tab.profileId) &&
   (!tab.url || /^https?:\/\//i.test(tab.url))
+const sharedBrowserScope = (windowId?: string) => `studio:browser:${windowId ?? 'main'}`
+/** Storage window for shared tabs; pop-out threads never overwrite the main browser workspace. */
+export function sharedBrowserWindowId(host: { browserWindowId?: string; threadWindow?: boolean }) {
+  return host.browserWindowId ?? (host.threadWindow ? threadBrowserWindowId : undefined)
+}
+/** Latest shared tabs for this renderer session, exactly as a remounted BrowserPane restores them. */
+export function restoredSharedBrowserTabs(windowId?: string): BrowserTab[] | undefined {
+  return (
+    savedTabs.get(sharedBrowserScope(windowId))?.tabs ?? readSharedBrowserTabs(windowId).state?.tabs
+  )
+}
+const emptyBrowserTab: BrowserTab = {
+  id: 'empty',
+  url: '',
+  title: '',
+  kind: 'web',
+  profileId: 'default',
+}
+/** Storage projection: an empty fallback replaces stale pages when nothing is restorable. */
+function persistedBrowserTabs(
+  tabs: BrowserTab[],
+  active: string,
+  closed: BrowserTab[],
+  fallback: BrowserTab,
+): BrowserTabs {
+  const restorable = tabs.filter(restorableTab)
+  const saved = restorable.length ? restorable : [fallback]
+  return {
+    tabs: saved,
+    active: saved.some((tab) => tab.id === active) ? active : saved[0].id,
+    closed: closed.filter(restorableTab),
+  }
+}
 export function BrowserPane({
   taskId,
   onClose,
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   taskId: string
   onClose?: () => void
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
 }) {
   return (
     <PreviewPane
@@ -146,6 +247,7 @@ export function BrowserPane({
       openLink={openLink}
       onLinkOpened={onLinkOpened}
       shared={shared}
+      workspaceControl={workspaceControl}
     />
   )
 }
@@ -159,6 +261,7 @@ function PreviewPane({
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   taskId: string
   onClose?: () => void
@@ -166,15 +269,16 @@ function PreviewPane({
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
 }) {
   const { connection } = useWorkspace()
   const { browserWindowId, threadWindow } = useStudioHost()
   // Pop-out threads must not overwrite the main browser workspace.
-  const [storageWindowId] = useApplicationState(
-    () => browserWindowId ?? (threadWindow ? threadBrowserWindowId : undefined),
+  const [storageWindowId] = useApplicationState(() =>
+    sharedBrowserWindowId({ browserWindowId, threadWindow }),
   )
   const scope = shared
-    ? `studio:browser:${storageWindowId ?? 'main'}`
+    ? sharedBrowserScope(storageWindowId)
     : `${connection?.address ?? ''}:${taskId}`
   return (
     <BrowserContent
@@ -187,6 +291,7 @@ function PreviewPane({
       openLink={openLink}
       onLinkOpened={onLinkOpened}
       shared={shared}
+      workspaceControl={workspaceControl}
     />
   )
 }
@@ -199,19 +304,30 @@ function BrowserContent({
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   scope: string
   storageWindowId?: string
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
   initialMode: 'remote' | 'devices'
   taskId: string
   onClose?: () => void
 }) {
   const store = useWorkspace()
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
-    { browser, browserFrames, openBrowserWindow } = useStudioHost()
+    {
+      browser,
+      browserFrames,
+      browserWindowId,
+      openBrowserWindow,
+      onBrowserContextAction,
+      onBrowserWorkspaceFocus,
+      navigate: navigateStudio,
+      registerCommand,
+    } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
@@ -223,6 +339,31 @@ function BrowserContent({
     ? preferences.browserProfiles
     : [{ id: 'default', name: 'Default' }]
   const agentAccess = preferences.browserAgentAccess[scope] ?? false
+  // Shared workspace tabs join the desktop CDP host while Studio Browsers is on locally.
+  const localOverview = runtimes.find((entry) => entry.profile.id === store.localRuntimeId)
+  const studioBrowsersLocal =
+    (localOverview?.snapshot ?? (store.localRuntimeId === activeRuntimeId ? snapshot : null))
+      ?.studioTools?.browsers ?? false
+  /** Unified Studio reference for one sidebar tab. */
+  const tabStudio = (tab: BrowserTab) => {
+    if (isPrivateBrowserProfile(tab.profileId)) return {}
+    const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+    const reachable = tab.kind === 'remote' || !!browser
+    if (!reachable) return {}
+    const runtime =
+      owner?.snapshot?.runtimeId ?? owner?.profile.connection.runtimeId ?? tab.runtimeId ?? 'local'
+    try {
+      return {
+        studioId: studioReference(
+          runtime,
+          'browser',
+          tab.kind === 'web' ? `desktop:${tab.id}` : `workspace:${tab.id}`,
+        ),
+      }
+    } catch {
+      return {}
+    }
+  }
   const previewLinks = useRef(true)
   previewLinks.current = preferences.browserLinkOpening !== 'tab'
   const [homeEditor, setHomeEditor] = useApplicationState<{ tabId: string; url: string } | null>(
@@ -250,7 +391,7 @@ function BrowserContent({
     back: false,
     forward: false,
   })
-  const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
+  const [ownTabs, setOwnTabs] = useApplicationState<BrowserTab[]>(
     () =>
       saved?.tabs ?? [
         {
@@ -267,11 +408,30 @@ function BrowserContent({
         },
       ],
   )
+  // A workspace owner may hold the authoritative list so it stays current while this pane is hidden.
+  const tabsControl = useRef(workspaceControl)
+  tabsControl.current = workspaceControl
+  const tabs = (workspaceControl?.onSetTabs && workspaceControl.tabs) || ownTabs
+  const setTabs = useCallback<Dispatch<SetStateAction<BrowserTab[]>>>(
+    (action) => {
+      const control = tabsControl.current
+      if (control?.onSetTabs && control.tabs) control.onSetTabs(action)
+      else setOwnTabs(action)
+    },
+    [setOwnTabs],
+  )
+  const tabsHydrated = !!workspaceControl?.tabs
+  // Owners keep a hidden pane mounted as a background service; only presentation is gated.
+  const paneVisible = workspaceControl?.visible !== false
+  useEffect(() => {
+    if (!tabsHydrated) tabsControl.current?.onSetTabs?.(ownTabs)
+  }, [tabsHydrated, ownTabs])
   const [activeTab, setActiveTab] = useApplicationState(() => saved?.active ?? tabs[0].id)
   const activeTabRef = useRef(activeTab)
   activeTabRef.current = activeTab
   const [clock, setClock] = useApplicationState(() => Date.now())
   const [bookmarks, setBookmarks] = useApplicationState<BrowserTab[]>(() => library.bookmarks)
+  const [libraryView, setLibraryView] = useState<'bookmarks' | 'history' | null>(null)
   const [closed, setClosed] = useApplicationState<BrowserTab[]>(() => saved?.closed ?? [])
   const [visits, setVisits] = useApplicationState<BrowserTab[]>(() => library.visits)
   const [openedTabs, setOpenedTabs] = useApplicationState(() => new Set([activeTab]))
@@ -332,29 +492,51 @@ function BrowserContent({
   const routingProfiles = useRef(profiles)
   routingProfiles.current = profiles
   const awakeCommands = useRef(new Map<string, string>())
+  const [tabStates, setTabStates] = useState<BrowserTabState[]>([])
   useEffect(() => {
     if (!shared || !browser) return
     for (const tab of tabs) {
       if (tab.kind !== 'web' || !/^https?:\/\//i.test(tab.url)) continue
       const key = nativeKey(tab.id)
-      if (!tab.keepAwake && !awakeCommands.current.has(key)) continue
-      const command = {
-        action: 'keep-awake' as const,
-        key,
-        enabled: !!tab.keepAwake,
-        url: tab.url,
-        profileId: tab.profileId,
-      }
+      const sleeping = browserTabCategory(tab) !== 'active'
+      if (!sleeping && !browserTabKeepsAwake(tab) && !awakeCommands.current.has(key)) continue
+      const command = sleeping
+        ? { action: 'sleep' as const, key }
+        : {
+            action: 'keep-awake' as const,
+            key,
+            enabled: tab.keepAwake,
+            url: tab.url,
+            profileId: tab.profileId,
+          }
       const signature = JSON.stringify(command)
       if (awakeCommands.current.get(key) === signature) continue
       awakeCommands.current.set(key, signature)
       void browser(command).catch((cause) => {
         awakeCommands.current.delete(key)
-        setError(`Could not update Keep awake: ${String(cause)}`)
+        setError(`Could not update tab sleep: ${String(cause)}`)
       })
     }
   }, [browser, shared, tabs])
   const browserKey = nativeKey(activeTab)
+  const [findOpen, setFindOpen] = useState(false)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const [findRequest, setFindRequest] = useState(0)
+  const [pageRevision, setPageRevision] = useState(0)
+  const [zoomFactor, setZoomFactor] = useState(1)
+  useEffect(
+    () =>
+      paneVisible
+        ? onBrowserContextAction?.((action) => {
+            if (action.action === 'close-find' && action.key === browserKey) setFindOpen(false)
+            if (action.action === 'find' && action.key === browserKey) {
+              setFindOpen(true)
+              setFindRequest((value) => value + 1)
+            }
+          })
+        : undefined,
+    [onBrowserContextAction, browserKey, paneVisible],
+  )
   useEffect(() => {
     if (!browser || !shared) return
     const sources = tabs.flatMap((tab) => {
@@ -380,6 +562,13 @@ function BrowserContent({
       setError(`Remote sharing sources could not be updated: ${String(cause)}`),
     )
   }, [browser, shared, tabs, runtimes])
+  const openedWorkspaceTab = useRef('')
+  useEffect(() => {
+    const request = workspaceControl?.newTabRequest
+    if (!request || openedWorkspaceTab.current === request) return
+    openedWorkspaceTab.current = request
+    if (!newTab()) workspaceControl?.onSelect(activeTab)
+  }, [workspaceControl?.newTabRequest])
   const openedLink = useRef('')
   const controlsId = useId()
   const [frozenPage, setFrozenPage] = useApplicationState<{
@@ -408,13 +597,54 @@ function BrowserContent({
   useEffect(() => {
     savedTabs.set(scope, { tabs, active: activeTab, closed })
   }, [scope, tabs, activeTab, closed])
-  const selectTab = (tab: BrowserTab) => {
+  const workspaceControlRef = useRef(workspaceControl)
+  workspaceControlRef.current = workspaceControl
+  const reportedActivity = useRef('')
+  useEffect(() => {
+    const report = workspaceControlRef.current?.onActivityChange
+    if (!report) return
+    const activity = Object.fromEntries(
+      tabs.flatMap((tab) => {
+        const state =
+          tab.kind === 'web'
+            ? tabStates.find((state) => state.key === nativeKey(tab.id))
+            : undefined
+        return state ? [[tab.id, state]] : []
+      }),
+    )
+    // Native status polls return fresh objects even when nothing changed. Do not
+    // rerender the entire unified workspace for an unchanged activity snapshot.
+    const encoded = JSON.stringify(activity)
+    if (encoded === reportedActivity.current) return
+    reportedActivity.current = encoded
+    report(activity)
+  }, [tabs, tabStates])
+  useEffect(() => {
+    workspaceControlRef.current?.onTabsChange(
+      tabs.filter((tab) => !tab.previewOf),
+      activeTab,
+    )
+  }, [tabs, activeTab])
+  useEffect(() => {
+    const tab = tabs.find((tab) => tab.id === workspaceControl?.focusTabId)
+    if (tab) selectTab(tab, false)
+  }, [workspaceControl?.focusTabId])
+  const selectTab = (tab: BrowserTab, notify = true) => {
+    // A hidden pane may follow native/agent focus, but never pulls the owner to the browser.
+    if (notify && paneVisible) workspaceControl?.onSelect(tab.id)
     previewRequest.current++
     setPendingPreview(undefined)
-    if (tab.id === activeTab) return
+    if (tab.id === activeTab) {
+      // A page settled or snoozed elsewhere while selected wakes when it is chosen again.
+      if (browserTabCategory(tab) !== 'active')
+        setTabs((previous) =>
+          previous.map((item) => (item.id === tab.id ? wakeBrowserTab(item) : item)),
+        )
+      return
+    }
     const now = Date.now()
     setTabs((previous) =>
-      visitBrowserTab(previous, tab.id, now).map((item) =>
+      previous.map((item) =>
         item.id === tab.id
           ? wakeBrowserTab(item, now)
           : item.id === activeTab
@@ -504,6 +734,7 @@ function BrowserContent({
     initialMode === 'devices'
       ? 'devices'
       : (tabs.find((tab) => tab.id === activeTab)?.kind ?? 'web')
+  useEffect(() => setFindOpen(false), [browserKey, mode])
   const tabProfiles = mode === 'remote' ? (remoteProfiles.profiles ?? []) : profiles
   useEffect(() => setCustomization(null), [activeTab, profileId])
   const websiteProfile = tabProfiles.find((profile) => profile.id === profileId)
@@ -558,13 +789,21 @@ function BrowserContent({
     if (
       !newTab(
         previewUrl(openLink.url),
-        browser && !openLink.remote ? 'web' : 'remote',
-        browser && !openLink.remote
-          ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
-          : 'default',
+        browser &&
+          !openLink.remote &&
+          (!openLink.runtimeId || openLink.runtimeId === store.localRuntimeId)
+          ? 'web'
+          : 'remote',
+        openLink.profileId ??
+          (browser && !openLink.remote
+            ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
+            : 'default'),
+        openLink.runtimeId ?? activeRuntimeId ?? undefined,
       )
-    )
+    ) {
+      workspaceControl?.onSelect(activeTab)
       return
+    }
     openedLink.current = openLink.id
     onLinkOpened?.()
   }, [openLink?.id, browser, onLinkOpened, tabs.length])
@@ -572,11 +811,21 @@ function BrowserContent({
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(restored.error ?? library.error ?? ''),
     [reload, setReload] = useApplicationState(0)
+  const reportedError = useRef('')
+  /** Hidden panes hand failures to their owner; the banner still shows them once visible. */
+  const reportHidden = (message: string) => {
+    reportedError.current = message
+    if (message && !paneVisible) workspaceControlRef.current?.onError?.(message)
+  }
+  useEffect(() => {
+    if (error === reportedError.current) return
+    reportHidden(error)
+  }, [error])
   useEffect(() => {
     if (!shared) return
+    let persisted = false
     try {
       // Extension pages require their existing native view; never restore stale extension URLs.
-      const restorable = tabs.filter(restorableTab)
       let source = selectedTab
       const seen = new Set<string>()
       while (source.previewOf && !seen.has(source.id)) {
@@ -585,30 +834,32 @@ function BrowserContent({
         if (!parent) break
         source = parent
       }
-      const fallback: BrowserTab = {
-        id: 'empty',
-        url: '',
-        title: '',
-        kind: browser ? 'web' : 'remote',
-        profileId: 'default',
-        runtimeId: activeRuntimeId ?? undefined,
-      }
       saveSharedBrowserTabs(
-        {
-          tabs: restorable.length ? restorable : [fallback],
-          active: restorable.some((tab) => tab.id === activeTab)
-            ? activeTab
-            : (restorable.find((tab) => tab.id === source.id)?.id ??
-              restorable[0]?.id ??
-              fallback.id),
-          closed: closed.filter(restorableTab),
-        },
+        persistedBrowserTabs(tabs, restorableTab(selectedTab) ? activeTab : source.id, closed, {
+          ...emptyBrowserTab,
+          kind: browser ? 'web' : 'remote',
+          runtimeId: activeRuntimeId ?? undefined,
+        }),
         storageWindowId,
       )
+      persisted = true
     } catch {
       setError('Could not save browser tabs. They will remain in this session.')
     }
-  }, [shared, tabs, activeTab, closed, storageWindowId, browser, activeRuntimeId])
+    if (browser)
+      void browser({
+        action: 'sync-tabs',
+        key: scope,
+        tabs: workspaceTabs(tabs),
+        activeId: activeTab,
+        persisted,
+      }).catch((cause) => setError(`Could not sync browser tabs: ${String(cause)}`))
+  }, [shared, tabs, activeTab, closed, storageWindowId, browser, activeRuntimeId, scope])
+  const workspaceTabs = (snapshot = currentTabs.current) =>
+    snapshot.map((tab) => ({
+      key: nativeKey(tab.id),
+      tab: { ...tab, title: tab.title.slice(0, 4096) },
+    }))
   const lastLibrary = useRef({ bookmarks, visits })
   useEffect(() => {
     if (!shared) return
@@ -734,6 +985,49 @@ function BrowserContent({
       if (mount.current) setBusy(false)
     }
   }
+  const detachBrowser = useCommittedCallback(() => {
+    if (!browser) return
+    void act(async () => {
+      const moving = workspaceTabs()
+      await browser({
+        action: 'detach-tabs',
+        key: scope,
+        tabs: moving,
+        activeId: activeTabRef.current,
+      })
+      const ids = new Set(moving.map(({ tab }) => tab.id))
+      for (const id of ids) nativeTabKeys.delete(`${scope}:${id}`)
+      const remaining = currentTabs.current.filter((tab) => !ids.has(tab.id))
+      const next = remaining.length
+        ? remaining
+        : [
+            {
+              id: randomUUID(),
+              url: '',
+              title: '',
+              kind: 'web' as const,
+              profileId: 'default',
+              runtimeId: store.localRuntimeId ?? undefined,
+            },
+          ]
+      // Commit and persist the source workspace before navigation unmounts it.
+      // Otherwise its saved tab list still contains pages owned by the new window.
+      flushSync(() => {
+        currentTabs.current = next
+        setTabs(next)
+        selectTab(next[0])
+      })
+      if (!browserWindowId) navigateStudio({ viewId: 'tasks' })
+    })
+  })
+  useEffect(() => {
+    if (!shared || !browser || !openBrowserWindow || !paneVisible) return
+    return registerCommand({
+      id: 'browser.detach',
+      title: 'Detach browser',
+      run: detachBrowser,
+    })
+  }, [shared, browser, openBrowserWindow, registerCommand, detachBrowser, paneVisible])
   const loadDevices = async () => {
     const hosts = await request(
       '/api/device-hosts',
@@ -762,6 +1056,32 @@ function BrowserContent({
   useEffect(() => {
     if (initialMode === 'devices' && connected) void act(loadDevices)
   }, [initialMode, connected])
+  const changeProfile = (next: string) => {
+    const target = history.url || selectedTab.url || url
+    setUrl(target)
+    setInput(target)
+    addresses.set(scope, target)
+    setHistory({
+      url: '',
+      title: '',
+      cdp: undefined,
+      back: false,
+      forward: false,
+    })
+    setTabs((previous) =>
+      previous.map((tab) =>
+        tab.id === activeTab ? { ...tab, url: target, profileId: next } : tab,
+      ),
+    )
+    if (mode === 'remote')
+      void act(() =>
+        tabRequest(
+          '/api/previews/browser/close',
+          { taskId, tabId: activeTab, profileId },
+          responses.ok,
+        ),
+      )
+  }
   const navigate = (address = input) => {
     try {
       if (shared && mode === 'remote' && !remoteProfiles.profiles)
@@ -831,7 +1151,10 @@ function BrowserContent({
       Effect.tap((state) =>
         Effect.sync(() => {
           if (!alive || !state) return
+          if (state.zoomFactor !== undefined) setZoomFactor(state.zoomFactor)
+          setPageRevision(state.documentRevision ?? 0)
           if (shared) {
+            if (state.tabStates) setTabStates(state.tabStates)
             if (state.faviconUpdates?.length) {
               setTabs((previous) =>
                 previous.map((tab) => {
@@ -851,7 +1174,12 @@ function BrowserContent({
                 .filter((tab) => closedKeys.has(nativeKey(tab.id)))
                 .map((tab) => tab.id),
             )
-            const remaining = currentTabs.current.filter((tab) => !closedIds.has(tab.id))
+            const hasIncoming = !!state.movedTabs?.length
+            const placeholder = (tab: BrowserTab) =>
+              hasIncoming && !tab.url && !tab.pinned && !tab.previewOf && !tab.thread
+            const remaining = currentTabs.current.filter(
+              (tab) => !closedIds.has(tab.id) && !placeholder(tab),
+            )
             const incoming = (state.movedTabs ?? [])
               .map(({ key, tab }) => {
                 nativeTabKeys.set(`${scope}:${tab.id}`, key)
@@ -907,7 +1235,7 @@ function BrowserContent({
               const next = [...remaining, ...incoming, ...adopted]
               currentTabs.current = next.length ? next : [fallback]
               setTabs((previous) => {
-                const kept = previous.filter((tab) => !closedIds.has(tab.id))
+                const kept = previous.filter((tab) => !closedIds.has(tab.id) && !placeholder(tab))
                 const next = [...kept, ...incoming, ...adopted].slice(0, 100)
                 return next.length ? next : [fallback]
               })
@@ -1033,11 +1361,15 @@ function BrowserContent({
         if (alive) setError(error.message)
       },
     })
+    // The destination already has a native view, but cannot display it until
+    // its tab state is adopted. Do not leave that waiting for the next 1s tick.
+    const stopHandoff = shared ? onBrowserWorkspaceFocus?.(polling.refresh) : undefined
     return () => {
       alive = false
+      stopHandoff?.()
       void polling.stop()
     }
-  }, [browser, url, mode, scope, browserKey, profileId, shared])
+  }, [browser, url, mode, scope, browserKey, profileId, shared, onBrowserWorkspaceFocus])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   useEffect(() => {
     if (!browser || mode !== 'web') return
@@ -1056,7 +1388,7 @@ function BrowserContent({
     const update = () => {
       frame = undefined
       if (!alive) return
-      const rect = slot.current && nativeBrowserBounds(slot.current)
+      const rect = paneVisible && slot.current ? nativeBrowserBounds(slot.current) : undefined
       const occlusion = slot.current && rect && nativeBrowserOcclusion(slot.current, rect)
       const obscured = !!occlusion
       const command =
@@ -1064,9 +1396,13 @@ function BrowserContent({
           ? {
               action: 'show' as const,
               workspaceBrowser: shared,
+              keepAwake: selectedTab.keepAwake,
               profileId,
-              taskId: shared ? undefined : taskId,
-              agentAccess: shared ? false : agentAccess,
+              taskId: shared ? STUDIO_BROWSER_SCOPE : taskId,
+              tabId: shared ? selectedTab.id : undefined,
+              agentAccess: shared
+                ? studioBrowsersLocal && !isPrivateBrowserProfile(profileId)
+                : agentAccess,
               key: browserKey,
               url: url || 'about:blank',
               viewport:
@@ -1197,6 +1533,10 @@ function BrowserContent({
     profileId,
     taskId,
     agentAccess,
+    studioBrowsersLocal,
+    selectedTab.id,
+    selectedTab.keepAwake,
+    paneVisible,
   ])
   const deviceAction = (
     device: PreviewDevice,
@@ -1279,6 +1619,7 @@ function BrowserContent({
     for (const tab of candidates)
       if (
         tab.keepAwake ||
+        (tab.kind === 'web' && browserTabCategory(tab) === 'active' && browserTabKeepsAwake(tab)) ||
         (tab.kind === 'web' &&
           (!activity?.protectedKeys || activity.protectedKeys.includes(nativeKey(tab.id))))
       )
@@ -1403,7 +1744,7 @@ function BrowserContent({
     preferences.browserAutoSettleMinutes,
     preferences.browserCloseSettledMinutes,
   ])
-  const moveTab = (tab: BrowserTab, until?: number) => {
+  const moveTab = (tab: BrowserTab, until?: number, notify = true) => {
     const now = Date.now()
     const next = currentTabs.current.map((item) =>
       item.id === tab.id
@@ -1418,8 +1759,9 @@ function BrowserContent({
     const available = recentBrowserTabs(next, sortByActivity).filter((item) => item.id !== tab.id)
     const target =
       available.find((item) => browserTabCategory(item, now) === 'active') ?? available[0]
-    if (target) selectTab(target)
-    else
+    if (target) selectTab(target, notify)
+    // A hidden pane never opens a page in front of the user; the settled page stays selected.
+    else if (notify)
       newTab(
         '',
         tab.kind,
@@ -1463,7 +1805,7 @@ function BrowserContent({
     if (key === 'd') toggleBookmark()
   }
   useEffect(() => {
-    if (!shared) return
+    if (!shared || !paneVisible) return
     const shortcuts = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented) return
       if (
@@ -1472,6 +1814,20 @@ function BrowserContent({
       )
         return
       const key = event.key.toLowerCase()
+      if (mode === 'web' && browser && url && ['+', '=', '-', '0', 'p'].includes(key)) {
+        event.preventDefault()
+        if (key === 'p') void act(() => browser({ action: 'print', key: browserKey }))
+        else
+          void act(async () => {
+            const result = await browser({
+              action: 'zoom',
+              key: browserKey,
+              direction: key === '0' ? 'reset' : key === '-' ? 'out' : 'in',
+            })
+            if (result?.zoomFactor !== undefined) setZoomFactor(result.zoomFactor)
+          })
+        return
+      }
       if (!['l', 't', 'w', 'd', 'r', 'n'].includes(key)) return
       if (key === 'n' && !openBrowserWindow) return
       event.preventDefault()
@@ -1515,6 +1871,48 @@ function BrowserContent({
       ),
     )
   }
+  const lifecycleRequest = workspaceControl?.lifecycleRequest
+  const handledLifecycle = useRef('')
+  useEffect(() => {
+    if (!lifecycleRequest || handledLifecycle.current === lifecycleRequest.requestId) return
+    handledLifecycle.current = lifecycleRequest.requestId
+    const tab = currentTabs.current.find((item) => item.id === lifecycleRequest.tabId)
+    try {
+      if (!tab) return
+      if (lifecycleRequest.action === 'toggle-mute') {
+        if (browser && tab.kind === 'web')
+          void act(async () => {
+            const state = tabStates.find((state) => state.key === nativeKey(tab.id))
+            const result = await browser({
+              action: 'set-audio-muted',
+              key: nativeKey(tab.id),
+              muted: !state?.muted,
+            })
+            if (result?.tabStates) setTabStates(result.tabStates)
+          })
+      } else if (lifecycleRequest.action === 'pin' || lifecycleRequest.action === 'unpin') {
+        if (!!tab.pinned !== (lifecycleRequest.action === 'pin')) togglePin(tab)
+      } else if (lifecycleRequest.action === 'wake')
+        setTabs((previous) =>
+          previous.map((item) => (item.id === tab.id ? wakeBrowserTab(item) : item)),
+        )
+      // Same path as the pane's own menu: a selected page hands focus to the next active page,
+      // but only notifies the owner while visible so a hidden pane never steals focus.
+      else
+        moveTab(
+          tab,
+          lifecycleRequest.action === 'snooze' ? lifecycleRequest.until : undefined,
+          paneVisible,
+        )
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      // Report every failed request, even when it repeats the current banner message.
+      reportHidden(message)
+      setError(message)
+    } finally {
+      workspaceControlRef.current?.onLifecycleHandled?.(lifecycleRequest.requestId)
+    }
+  }, [lifecycleRequest?.requestId])
   const returnHome = (tab: BrowserTab) => {
     if (!tab.homeUrl) return
     selectTab(tab)
@@ -1554,10 +1952,32 @@ function BrowserContent({
         ? 'before'
         : 'after'
   }
+  const sidebarTabs = recentBrowserTabs(tabs, sortByActivity)
+  const pinnedTabs = sidebarTabs.filter((tab) => tab.pinned)
   const renderTab = (tab: BrowserTab) => (
     <BrowserTabRow
       key={tab.id}
+      onError={setError}
       tab={tab}
+      state={
+        tab.kind === 'web' ? tabStates.find((state) => state.key === nativeKey(tab.id)) : undefined
+      }
+      {...(shared ? tabStudio(tab) : {})}
+      onMute={
+        browser && tab.kind === 'web'
+          ? () => {
+              const state = tabStates.find((state) => state.key === nativeKey(tab.id))
+              void act(async () => {
+                const result = await browser({
+                  action: 'set-audio-muted',
+                  key: nativeKey(tab.id),
+                  muted: !state?.muted,
+                })
+                if (result?.tabStates) setTabStates(result.tabStates)
+              })
+            }
+          : undefined
+      }
       active={activeTab === tab.id}
       busy={busy}
       reorder={
@@ -1629,7 +2049,13 @@ function BrowserContent({
               setTabs((previous) =>
                 previous.map((item) =>
                   item.id === tab.id
-                    ? { ...wakeBrowserTab(item), previewOf: undefined, keepAwake: !item.keepAwake }
+                    ? {
+                        ...wakeBrowserTab(item),
+                        previewOf: undefined,
+                        keepAwake: !(
+                          browserTabCategory(item) === 'active' && browserTabKeepsAwake(item)
+                        ),
+                      }
                     : item,
                 ),
               )
@@ -1662,7 +2088,12 @@ function BrowserContent({
   const newTabMenu = (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <IconButton type="button" label="New browser tab" className="ml-auto size-7 shrink-0">
+        <IconButton
+          type="button"
+          label="New browser tab"
+          variant="ghost"
+          className="studio-browser-library-button ml-auto size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
+        >
           <Plus size={14} />
         </IconButton>
       </DropdownMenu.Trigger>
@@ -1670,19 +2101,8 @@ function BrowserContent({
         <DropdownMenu.Content
           align="end"
           collisionPadding={8}
-          className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-lg border bg-popover p-1 text-sm shadow-lg"
+          className="studio-browser-tab-menu z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-lg border bg-popover p-1 text-sm shadow-lg"
         >
-          {shared && openBrowserWindow && (
-            <>
-              <DropdownMenu.Item
-                className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
-                onSelect={() => void act(openBrowserWindow)}
-              >
-                New browser window
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator className="my-1 h-px bg-border" />
-            </>
-          )}
           <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
             New tab
           </DropdownMenu.Label>
@@ -1745,6 +2165,17 @@ function BrowserContent({
               {remoteProfiles.error || 'Loading remote profiles…'}
             </p>
           )}
+          {shared && openBrowserWindow && (
+            <>
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              <DropdownMenu.Item
+                className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                onSelect={() => void act(openBrowserWindow)}
+              >
+                New browser window
+              </DropdownMenu.Item>
+            </>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -1765,29 +2196,58 @@ function BrowserContent({
     if (mode === 'remote' && remoteOnline) remote.current?.viewport(preset, landscape)
   }, [mode, activeTab, preset, landscape, remoteOnline])
   const browserOptions = (pageActions?: ReactNode) => (
-    <Popover.Root>
+    <Popover.Root open={optionsOpen} onOpenChange={setOptionsOpen}>
       <Popover.Trigger asChild>
-        <IconButton type="button" label="Browser options" className="size-8 shrink-0">
-          <Ellipsis size={16} />
+        <IconButton
+          type="button"
+          label="Browser options"
+          className="studio-browser-options size-8 shrink-0"
+        >
+          <Ellipsis size={18} className="rotate-90" />
         </IconButton>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
           align="end"
-          sideOffset={8}
+          sideOffset={10}
           collisionPadding={8}
           aria-label="Browser settings"
-          className="z-50 flex max-h-[var(--radix-popover-content-available-height)] w-72 max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto rounded-xl border bg-popover p-3 text-popover-foreground shadow-xl"
+          onCloseAutoFocus={(event) => {
+            if (findOpen) event.preventDefault()
+          }}
+          className="studio-browser-settings z-50 flex max-h-[var(--radix-popover-content-available-height)] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto border bg-popover text-popover-foreground"
         >
-          <div className="space-y-1 px-1">
-            <h2 className="text-sm font-medium">Browser settings</h2>
-            <p className="text-xs text-muted-foreground">
-              {mode === 'remote'
-                ? 'Runs on the connected computer'
-                : browser
-                  ? 'Runs on this computer'
-                  : 'Embedded website preview'}
-            </p>
+          <div className="studio-browser-settings-heading">
+            <span className="studio-browser-settings-icon" aria-hidden="true">
+              <Settings size={21} />
+            </span>
+            <div className="min-w-0 space-y-1">
+              <h2 className="text-sm font-medium">Browser settings</h2>
+              <p className="text-xs text-muted-foreground">
+                {mode === 'remote'
+                  ? 'Runs on the connected computer'
+                  : browser
+                    ? 'Runs on this computer'
+                    : 'Embedded website preview'}
+              </p>
+            </div>
+            {shared && (
+              <div className="ml-auto">
+                {' '}
+                <Popover.Close asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-xs"
+                    onClick={() => setLibraryView('history')}
+                  >
+                    <History size={16} />
+                    History
+                  </Button>
+                </Popover.Close>
+              </div>
+            )}
           </div>
           {mode === 'remote' && (
             <div className="space-y-2">
@@ -1807,101 +2267,100 @@ function BrowserContent({
             </div>
           )}
           {shared && (
-            <div className="space-y-2">
+            <div className="studio-browser-settings-section space-y-2">
               <label htmlFor={`${controlsId}-links`} className="text-xs font-medium">
                 Open links in
               </label>
-              <select
-                id={`${controlsId}-links`}
-                aria-label="Open links in"
-                className="w-full rounded-md border bg-background p-2 text-xs"
-                value={preferences.browserLinkOpening ?? 'preview'}
-                onChange={(event) =>
-                  updateAppPreferences({
-                    browserLinkOpening: event.target.value === 'tab' ? 'tab' : 'preview',
-                  })
-                }
-              >
-                <option value="preview">Link preview</option>
-                <option value="tab">New tab</option>
-              </select>
-              <label className="flex items-center gap-2 text-xs font-medium">
-                <input
-                  type="checkbox"
-                  checked={sortByActivity}
+              <div className="studio-browser-select studio-browser-select-leading">
+                <Link size={16} aria-hidden="true" />
+                <select
+                  id={`${controlsId}-links`}
+                  aria-label="Open links in"
+                  className="w-full"
+                  value={preferences.browserLinkOpening ?? 'preview'}
                   onChange={(event) =>
-                    updateAppPreferences({ browserSortByActivity: event.target.checked })
+                    updateAppPreferences({
+                      browserLinkOpening: event.target.value === 'tab' ? 'tab' : 'preview',
+                    })
                   }
+                >
+                  <option value="preview">Link preview</option>
+                  <option value="tab">New tab</option>
+                </select>
+                <ChevronDown size={14} aria-hidden="true" />
+              </div>
+              <div className="studio-browser-activity-toggle">
+                <span>Order tabs by activity</span>
+                <Toggle
+                  label="Order tabs by activity"
+                  checked={sortByActivity}
+                  onChange={(checked) => updateAppPreferences({ browserSortByActivity: checked })}
                 />
-                Order tabs by activity
-              </label>
-              <p className="text-xs text-muted-foreground">
+              </div>
+              <p className="studio-browser-activity-description text-xs text-muted-foreground">
                 Pinned tabs always keep their manual order. Turn this off to drag other tabs into
                 order.
               </p>
+            </div>
+          )}
+          {shared && (
+            <div className="studio-browser-settings-section space-y-2">
               <p className="text-xs font-medium">Browser location</p>
-              <p className="text-xs text-muted-foreground">
-                Location stays with this tab. Open another tab to use a different computer.
-              </p>
-              <p className="text-xs">
-                {mode === 'web'
-                  ? 'Local · this device'
-                  : `Remote · ${selectedRuntime ? runtimeComputerName(selectedRuntime) : 'Unavailable computer'}`}
-              </p>
+              <div className="studio-browser-setting-control studio-browser-location-summary">
+                <span className="studio-browser-setting-icon" aria-hidden="true">
+                  <Monitor size={17} />
+                </span>
+                <p
+                  className="studio-browser-location"
+                  title="Location stays with this tab. Open another tab to use a different computer."
+                >
+                  {mode === 'web'
+                    ? 'Local · this computer'
+                    : `Remote · ${selectedRuntime ? runtimeComputerName(selectedRuntime) : 'Unavailable computer'}`}
+                </p>
+              </div>
             </div>
           )}
           {(mode === 'remote' || browser) && (
-            <div className="flex flex-col gap-2 text-xs">
+            <div className="studio-browser-settings-section flex flex-col gap-2 text-xs">
               <label htmlFor={`${controlsId}-profile`} className="text-xs text-muted-foreground">
                 Browser profile
               </label>
-              <select
-                id={`${controlsId}-profile`}
-                aria-label="Profile for this tab"
-                className="min-w-0 flex-1 rounded border bg-background p-1"
-                value={profileId}
-                disabled={
-                  busy ||
-                  isPrivateBrowserProfile(profileId) ||
-                  (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
-                }
-                onChange={(event) => {
-                  const next = event.target.value
-                  const target = history.url || selectedTab.url || url
-                  setUrl(target)
-                  setInput(target)
-                  addresses.set(scope, target)
-                  setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
-                  setTabs((previous) =>
-                    previous.map((tab) =>
-                      tab.id === activeTab ? { ...tab, url: target, profileId: next } : tab,
-                    ),
-                  )
-                  if (mode === 'remote')
-                    void act(() =>
-                      tabRequest(
-                        '/api/previews/browser/close',
-                        { taskId, tabId: activeTab, profileId },
-                        responses.ok,
-                      ),
-                    )
-                }}
-              >
-                {!tabProfiles.some((profile) => profile.id === profileId) && (
-                  <option value={profileId} disabled>
-                    {isPrivateBrowserProfile(profileId)
-                      ? 'Private · temporary'
-                      : mode === 'remote' && !remoteProfiles.profiles
-                        ? 'Loading remote profiles…'
-                        : 'Unavailable profile'}
-                  </option>
-                )}
-                {tabProfiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
+              <div className="studio-browser-setting-control">
+                <span className="studio-browser-setting-icon" aria-hidden="true">
+                  <UserRound size={17} />
+                </span>
+                <div className="studio-browser-select min-w-0 flex-1">
+                  <select
+                    id={`${controlsId}-profile`}
+                    aria-label="Profile for this tab"
+                    className="w-full"
+                    value={profileId}
+                    disabled={
+                      busy ||
+                      isPrivateBrowserProfile(profileId) ||
+                      (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
+                    }
+                    onChange={(event) => changeProfile(event.target.value)}
+                  >
+                    {!tabProfiles.some((profile) => profile.id === profileId) && (
+                      <option value={profileId} disabled>
+                        {isPrivateBrowserProfile(profileId)
+                          ? 'Private · temporary'
+                          : mode === 'remote' && !remoteProfiles.profiles
+                            ? 'Loading remote profiles…'
+                            : 'Unavailable profile'}
+                      </option>
+                    )}
+                    {tabProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </div>
+              </div>
               {!shared && browser && mode === 'web' && (
                 <Button
                   type="button"
@@ -1928,9 +2387,9 @@ function BrowserContent({
                   size="sm"
                   className="h-7 px-2 text-xs"
                   onClick={() =>
-                    void navigator.clipboard
-                      .writeText(history.cdp ?? '')
-                      .catch((cause) => setError(String(cause)))
+                    void copyTextToClipboard(history.cdp ?? '').catch((cause) =>
+                      setError(String(cause)),
+                    )
                   }
                 >
                   Copy CDP
@@ -1940,7 +2399,7 @@ function BrowserContent({
           )}
 
           {(mode === 'web' || mode === 'remote') && (
-            <div className="flex flex-col gap-1">
+            <div className="studio-browser-page-settings flex flex-col">
               {!shared && mode === 'remote' && (
                 <Button
                   type="button"
@@ -1955,6 +2414,17 @@ function BrowserContent({
               )}
               {mode === 'web' && browser && url && (
                 <>
+                  <Popover.Close asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="studio-browser-menu-action"
+                      onClick={() => setFindOpen(true)}
+                    >
+                      <Search size={17} /> <span>Find on page</span>
+                    </Button>
+                  </Popover.Close>
                   {!shared && (
                     <Button
                       type="button"
@@ -1971,63 +2441,82 @@ function BrowserContent({
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="justify-start text-xs"
+                    className="studio-browser-menu-action"
                     onClick={() =>
                       void act(() => browser({ action: 'hard-reload', key: browserKey }))
                     }
                   >
-                    Hard reload
+                    <RotateCw size={17} /> <span>Hard reload</span>
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="justify-start text-xs"
+                    className="studio-browser-menu-action"
                     onClick={() => void act(() => browser({ action: 'devtools', key: browserKey }))}
                   >
-                    Open DevTools
+                    <CodeXml size={17} /> <span>Open DevTools</span>
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="justify-start text-xs"
+                    className="studio-browser-menu-action"
                     onClick={() =>
                       void act(() =>
                         browser({ action: 'external', key: browserKey, url: history.url || url }),
                       )
                     }
                   >
-                    Open in default browser
+                    <ExternalLink size={17} /> <span>Open in default browser</span>
                   </Button>
-                  <div className="h-px bg-border" />
                 </>
               )}
-              <label className="text-xs text-muted-foreground" htmlFor={`${controlsId}-viewport`}>
-                Viewport
-              </label>
-              <select
-                id={`${controlsId}-viewport`}
-                aria-label="Viewport"
-                className="rounded border bg-background p-1.5 text-xs"
-                value={preset}
-                onChange={(e) => setPreset(e.target.value)}
-              >
-                {previewPresets.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={preset === 'fill'}
-                onClick={() => setLandscape((v) => !v)}
-              >
-                Rotate
-              </Button>
+              <div className="studio-browser-viewport space-y-2">
+                <label
+                  className="block text-xs text-muted-foreground"
+                  htmlFor={`${controlsId}-viewport`}
+                >
+                  Viewport
+                </label>
+                <div className="studio-browser-viewport-controls">
+                  <span className="studio-browser-setting-icon" aria-hidden="true">
+                    <Monitor size={17} />
+                  </span>
+                  <div className="studio-browser-select min-w-0 flex-1">
+                    <select
+                      id={`${controlsId}-viewport`}
+                      aria-label="Viewport"
+                      className="w-full"
+                      value={preset}
+                      onChange={(e) => {
+                        setPreset(e.target.value)
+                        setOptionsOpen(false)
+                      }}
+                    >
+                      {previewPresets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="studio-browser-rotate"
+                    disabled={preset === 'fill'}
+                    onClick={() => {
+                      setLandscape((v) => !v)
+                      setOptionsOpen(false)
+                    }}
+                  >
+                    <Rotate3D size={17} /> Rotate
+                  </Button>
+                </div>
+              </div>
 
               {!browser && url && (
                 <a
@@ -2042,77 +2531,154 @@ function BrowserContent({
               )}
             </div>
           )}
-          {pageActions}
-          {shared && (
-            <>
+          {mode === 'web' && browser && url && (
+            <div className="studio-browser-zoom-print">
+              <div className="studio-browser-zoom">
+                <span>Zoom</span>
+                <div className="flex items-center gap-1">
+                  {(['out', 'reset', 'in'] as const).map((direction) => (
+                    <Button
+                      key={direction}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={
+                        direction === 'out'
+                          ? 'Zoom out'
+                          : direction === 'in'
+                            ? 'Zoom in'
+                            : 'Reset zoom'
+                      }
+                      disabled={
+                        busy ||
+                        (direction === 'out' && zoomFactor <= 0.25) ||
+                        (direction === 'in' && zoomFactor >= 5)
+                      }
+                      onClick={() =>
+                        void act(async () => {
+                          const result = await browser({
+                            action: 'zoom',
+                            key: browserKey,
+                            direction,
+                          })
+                          if (result?.zoomFactor !== undefined) setZoomFactor(result.zoomFactor)
+                        })
+                      }
+                    >
+                      {direction === 'out'
+                        ? '−'
+                        : direction === 'in'
+                          ? '+'
+                          : `${Math.round(zoomFactor * 100)}%`}
+                    </Button>
+                  ))}
+                </div>
+              </div>
               <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="studio-browser-print"
+                disabled={busy}
+                onClick={() => void act(() => browser({ action: 'print', key: browserKey }))}
+              >
+                <Printer size={17} /> Print…
+              </Button>
+            </div>
+          )}
+          <details className="studio-browser-more-actions">
+            <summary>
+              <ChevronDown size={14} aria-hidden="true" />
+              Tab & page actions
+            </summary>
+            <div className="studio-browser-secondary-actions">
+              {mode === 'web' && browser && url && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start text-xs"
+                  disabled={busy}
+                  onClick={() => void act(() => browser({ action: 'save-pdf', key: browserKey }))}
+                >
+                  <FileDown size={16} /> Save as PDF…
+                </Button>
+              )}
+              {pageActions}
+              {shared && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="justify-start text-xs"
+                    disabled={busy}
+                    onClick={() => moveTab(selectedTab)}
+                  >
+                    <Archive size={16} /> Settle tab
+                  </Button>
+                  <details className="text-xs">
+                    <summary className="flex cursor-pointer items-center gap-2 rounded px-3 py-2">
+                      <Clock size={16} /> Snooze tab
+                    </summary>
+                    {(
+                      [
+                        [60, 'Snooze for 1 hour'],
+                        [240, 'Snooze for 4 hours'],
+                        [0, 'Snooze until tomorrow'],
+                      ] as const
+                    ).map(([minutes, label]) => (
+                      <Button
+                        key={label}
+                        size="sm"
+                        variant="ghost"
+                        className="w-full justify-start text-xs"
+                        disabled={busy}
+                        onClick={() =>
+                          moveTab(
+                            selectedTab,
+                            minutes ? Date.now() + minutes * 60000 : tomorrowBrowserTabWake(),
+                          )
+                        }
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </details>
+                </>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="justify-start gap-2 text-xs"
+                onClick={() => togglePin(selectedTab)}
+              >
+                {selectedTab.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                {selectedTab.pinned ? 'Unpin tab' : 'Pin tab'}
+              </Button>
+              <Button
+                type="button"
                 size="sm"
                 variant="ghost"
                 className="justify-start text-xs"
-                disabled={busy}
-                onClick={() => moveTab(selectedTab)}
+                disabled={busy || selectedTab.pinned}
+                onClick={() => closeTab(selectedTab)}
               >
-                Settle tab
+                <X size={16} /> Close current tab
               </Button>
-              <details className="text-xs">
-                <summary className="cursor-pointer rounded px-3 py-2">Snooze tab</summary>
-                {(
-                  [
-                    [60, 'Snooze for 1 hour'],
-                    [240, 'Snooze for 4 hours'],
-                    [0, 'Snooze until tomorrow'],
-                  ] as const
-                ).map(([minutes, label]) => (
-                  <Button
-                    key={label}
-                    size="sm"
-                    variant="ghost"
-                    className="w-full justify-start text-xs"
-                    disabled={busy}
-                    onClick={() =>
-                      moveTab(
-                        selectedTab,
-                        minutes ? Date.now() + minutes * 60000 : tomorrowBrowserTabWake(),
-                      )
-                    }
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </details>
-            </>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="justify-start gap-2 text-xs"
-            onClick={() => togglePin(selectedTab)}
-          >
-            {selectedTab.pinned ? <PinOff size={14} /> : <Pin size={14} />}
-            {selectedTab.pinned ? 'Unpin tab' : 'Pin tab'}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="justify-start text-xs"
-            disabled={busy || selectedTab.pinned}
-            onClick={() => closeTab(selectedTab)}
-          >
-            Close current tab
-          </Button>
-          {onClose && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="justify-start text-xs"
-              onClick={onClose}
-            >
-              Hide preview sidebar
-            </Button>
-          )}
+              {onClose && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start text-xs"
+                  onClick={onClose}
+                >
+                  Hide preview sidebar
+                </Button>
+              )}
+            </div>
+          </details>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -2120,7 +2686,7 @@ function BrowserContent({
   const renderNavigation = (pageActions?: ReactNode) => (
     <form
       aria-label="Browser navigation"
-      className="flex min-h-12 shrink-0 items-center gap-1 border-b bg-sidebar/50 px-2 py-2 @max-[480px]/browser:flex-wrap"
+      className="studio-browser-toolbar flex shrink-0 items-center gap-1 @max-[620px]/browser:flex-wrap"
       onSubmit={(event) => {
         event.preventDefault()
         navigate()
@@ -2172,41 +2738,44 @@ function BrowserContent({
           <Home size={15} />
         </IconButton>
       )}
-      <div className="studio-browser-address flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
-        <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
-          {shared && mode === 'web' ? (
-            <BrowserSiteControls
-              key={`${browserKey}:${history.url || url}`}
-              tabKey={browserKey}
-              url={history.url || url}
-              profileName={
-                profiles.find((profile) => profile.id === profileId)?.name ??
-                (isPrivateBrowserProfile(profileId) ? 'Private' : 'Unavailable profile')
-              }
-            />
-          ) : (
-            <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
-          )}
-        </span>
-        <Input
-          type="text"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onFocus={(event) => {
-            editing.current = true
-            event.currentTarget.select()
-          }}
-          onBlur={() => {
-            editing.current = false
-          }}
-          ref={addressField}
-          aria-label="Preview URL"
-          disabled={mode === 'remote' && !remoteOnline}
+      {shared && mode === 'web' && (
+        <BrowserSiteControls
+          key={`${browserKey}:${history.url || url}`}
+          tabKey={browserKey}
+          url={history.url || url}
+          profileName={
+            profiles.find((profile) => profile.id === profileId)?.name ??
+            (isPrivateBrowserProfile(profileId) ? 'Private' : 'Unavailable profile')
+          }
+        />
+      )}
+      <div className="studio-browser-address relative z-20 flex min-w-0 flex-1 items-center @max-[620px]/browser:order-first @max-[620px]/browser:basis-full">
+        <BrowserAddressInput
           value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder={shared ? 'Search or enter address' : 'Enter website address'}
-          className="h-full min-w-0 flex-1 border-0 bg-transparent px-0 text-center text-[13px] shadow-none focus:text-left focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
+          search={
+            (websiteProfile ?? tabProfiles.find((profile) => profile.id === 'default'))?.search
+          }
+          onNavigate={(target, openInNewTab) => {
+            if (openInNewTab)
+              newTab(target, selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
+            else navigate(target)
+          }}
+          onChange={setInput}
+          inputRef={addressField}
+          disabled={mode === 'remote' && !remoteOnline}
+          shared={shared}
+          tabs={tabs}
+          bookmarks={bookmarks}
+          visits={visits}
+          profileId={profileId}
+          onChoose={(tab, openInNewTab) => {
+            if (openInNewTab)
+              newTab(tab.url, selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
+            else navigate(tab.url)
+          }}
+          onEditing={(value) => {
+            editing.current = value
+          }}
         />
         <IconButton
           label="Go to address"
@@ -2216,6 +2785,43 @@ function BrowserContent({
         >
           <ArrowUpRight size={14} />
         </IconButton>
+        {(mode === 'remote' || browser) && (
+          <div
+            className="relative mr-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-xs text-foreground focus-within:ring-2 focus-within:ring-ring has-[:disabled]:opacity-60 [@media(pointer:coarse)]:size-9"
+            title={`Browser profile: ${isPrivateBrowserProfile(profileId) ? 'Private · temporary' : (websiteProfile?.name ?? 'Unavailable profile')}`}
+          >
+            <span aria-hidden="true">
+              {isPrivateBrowserProfile(profileId)
+                ? '🔒'
+                : websiteProfile?.emoji || <UserRound size={13} />}
+            </span>
+            <select
+              aria-label="Switch browser profile"
+              value={profileId}
+              disabled={
+                busy ||
+                isPrivateBrowserProfile(profileId) ||
+                (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
+              }
+              onChange={(event) => changeProfile(event.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer rounded-full opacity-0 disabled:cursor-default"
+            >
+              {!tabProfiles.some((profile) => profile.id === profileId) && (
+                <option value={profileId} disabled>
+                  {isPrivateBrowserProfile(profileId)
+                    ? 'Private · temporary'
+                    : 'Unavailable profile'}
+                </option>
+              )}
+              {tabProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.emoji ? `${profile.emoji} ` : ''}
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
       {mode === 'remote' && (
         <IconButton
@@ -2239,6 +2845,9 @@ function BrowserContent({
         >
           <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
         </IconButton>
+      )}
+      {shared && mode === 'web' && browser && (
+        <BrowserDownloadsPanel key={profileId} profileId={profileId} tabKey={browserKey} />
       )}
       {shared && mode === 'web' && !isPrivateBrowserProfile(profileId) && (
         <BrowserExtensions
@@ -2281,6 +2890,43 @@ function BrowserContent({
         </>
       )}
       {newTabMenu}
+      {!shared && mode !== 'devices' && (
+        <BrowserElementFeedback
+          key={`${activeRuntimeId}:${taskId}:${browserKey}:${mode}`}
+          taskId={taskId}
+          enabled={!!url && connected && (mode === 'web' ? !!browser : remoteOnline)}
+          capture={async () => {
+            if (mode === 'web' && browser) {
+              const result = await browser({ action: 'element-snapshot', key: browserKey })
+              if (!result?.elementCapture)
+                throw new Error(
+                  'Element selection is unavailable. Update the desktop app and try again.',
+                )
+              return result.elementCapture
+            }
+            return tabRequest(
+              '/api/previews/browser/element-snapshot',
+              { taskId, tabId: activeTab, profileId },
+              browserElementCaptureSchema,
+            )
+          }}
+          inspect={async (point) => {
+            if (mode === 'web' && browser) {
+              const result = await browser({ action: 'element-inspect', key: browserKey, ...point })
+              if (!result?.element)
+                throw new Error('The selected element is unavailable. Capture the page again.')
+              return result.element
+            }
+            return (
+              await tabRequest(
+                '/api/previews/browser/element-inspect',
+                { taskId, tabId: activeTab, profileId, ...point },
+                browserElementResultSchema,
+              )
+            ).element
+          }}
+        />
+      )}
       {browserOptions(pageActions)}
     </form>
   )
@@ -2428,7 +3074,7 @@ function BrowserContent({
           : undefined
       }
       sidebar={
-        shared ? (
+        shared && !workspaceControl ? (
           <ResizableSidebar
             preference="browserSidebarWidth"
             side="left"
@@ -2436,55 +3082,85 @@ function BrowserContent({
             maxFraction={0.4}
             maxWidth={480}
             aria-label="Recent browser tabs"
-            className="flex shrink-0 flex-col border-r bg-sidebar"
+            className="flex min-h-0 shrink-0 flex-col bg-background"
           >
-            <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-sm font-medium">
-              <Globe2 size={16} /> Browser {newTabMenu}
-            </div>
-            <div className="border-b px-2 py-1">
-              <BrowserLibrary
-                bookmarks={bookmarks}
-                closed={closed}
-                visits={visits}
-                onOpen={openSavedPage}
-                onReopen={reopenTab}
-                onRemoveBookmark={(tab) =>
-                  setBookmarks((previous) =>
-                    previous.filter((item) => browserPageKey(item) !== browserPageKey(tab)),
+            <SidebarHeader enabled={!browserWindowId} />
+            <div className="studio-browser-sidebar studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
+              <div className="studio-browser-sidebar-library shrink-0 p-2">
+                <div className="studio-browser-library flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="studio-browser-library-button h-8 min-w-0 flex-1 justify-start rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
+                    onClick={() => setLibraryView('bookmarks')}
+                  >
+                    <BookOpen size={14} className="shrink-0" />
+                    <span className="min-w-0 truncate">Bookmarks</span>
+                  </Button>
+                  {newTabMenu}
+                </div>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col">
+                {(['active', 'snoozed', 'settled'] as const).map((category) => {
+                  const groupTabs = sidebarTabs.filter(
+                    (tab) => !tab.pinned && browserTabCategory(tab, clock) === category,
                   )
-                }
-                onClearHistory={() => setVisits([])}
-              />
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col">
-              {(['active', 'snoozed', 'settled'] as const).map((category) => (
-                <BrowserTabGroup
-                  key={category}
-                  category={category}
-                  count={
-                    regularTabs.filter((tab) => browserTabCategory(tab, clock) === category).length
-                  }
-                >
-                  {category === 'active' && (
-                    <div
-                      aria-label="Pinned browser tabs"
-                      className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-1.5"
-                    >
-                      {recentBrowserTabs(tabs, sortByActivity)
-                        .filter((tab) => tab.pinned)
-                        .map(renderTab)}
-                    </div>
-                  )}
-                  {recentBrowserTabs(tabs, sortByActivity)
-                    .filter((tab) => !tab.pinned && browserTabCategory(tab, clock) === category)
-                    .map(renderTab)}
-                </BrowserTabGroup>
-              ))}
+                  return (
+                    <BrowserTabGroup key={category} category={category} count={groupTabs.length}>
+                      {category === 'active' && (
+                        <>
+                          {!!pinnedTabs.length && (
+                            <section
+                              aria-label="Pinned browser tabs"
+                              className="studio-browser-pins"
+                            >
+                              <div className="studio-browser-group-heading">
+                                <Pin size={11} aria-hidden="true" />
+                                <span>Pinned</span>
+                                <span className="studio-browser-group-count">
+                                  {pinnedTabs.length}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-[repeat(auto-fill,minmax(3rem,1fr))] gap-1.5">
+                                {pinnedTabs.map(renderTab)}
+                              </div>
+                            </section>
+                          )}
+                          {!!groupTabs.length && (
+                            <div className="studio-browser-group-heading">
+                              <span>Tabs</span>
+                              <span className="studio-browser-group-count">{groupTabs.length}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {groupTabs.map(renderTab)}
+                    </BrowserTabGroup>
+                  )
+                })}
+              </div>
             </div>
           </ResizableSidebar>
         ) : null
       }
     >
+      {shared && libraryView && (
+        <BrowserLibrary
+          view={libraryView}
+          onClose={() => setLibraryView(null)}
+          bookmarks={bookmarks}
+          closed={closed}
+          visits={visits}
+          onOpen={openSavedPage}
+          onReopen={reopenTab}
+          onRemoveBookmark={(tab) =>
+            setBookmarks((previous) =>
+              previous.filter((item) => browserPageKey(item) !== browserPageKey(tab)),
+            )
+          }
+          onClearHistory={() => setVisits([])}
+        />
+      )}
       {homeEditor && (
         <Dialog
           open
@@ -2574,7 +3250,7 @@ function BrowserContent({
         </Dialog>
       )}
 
-      {!shared && initialMode !== 'devices' && regularTabs.length > 1 && (
+      {!shared && !workspaceControl && initialMode !== 'devices' && regularTabs.length > 1 && (
         <div
           role="tablist"
           aria-label="Browser tabs"
@@ -2642,18 +3318,44 @@ function BrowserContent({
         </div>
       )}
       {initialMode === 'devices' && (
-        <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs">
-          <span className="inline-flex flex-1 items-center gap-1.5">
-            <Smartphone size={14} /> Devices
+        <div className="studio-thread-tools-header flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs">
+          <span className="inline-flex flex-1 items-center gap-2 font-medium">
+            <Smartphone size={16} className="text-muted-foreground" aria-hidden /> Devices
           </span>
           {onClose && (
             <IconButton label="Hide preview sidebar" className="size-7 shrink-0" onClick={onClose}>
-              <PanelRightClose size={15} />
+              <X size={14} />
             </IconButton>
           )}
         </div>
       )}
-      {(mode === 'web' || mode === 'remote') && navigation}
+      {(mode === 'web' || mode === 'remote') &&
+        (shared
+          ? paneVisible && (
+              <HeaderContent>
+                <header
+                  className="studio-browser-header @container/browser"
+                  data-window-edge
+                  data-window-right-edge
+                >
+                  {navigation}
+                </header>
+              </HeaderContent>
+            )
+          : navigation)}
+      {mode === 'web' && browser && url && (
+        <BrowserFindBar
+          key={browserKey}
+          browser={browser}
+          browserKey={browserKey}
+          url={url}
+          open={findOpen}
+          onOpenChange={setFindOpen}
+          globalShortcut={shared && paneVisible}
+          focusRequest={findRequest}
+          pageRevision={pageRevision}
+        />
+      )}
       {mode === 'remote' && remoteProfiles.error && (
         <p role="alert" className="p-3 text-xs text-destructive">
           {remoteProfiles.error}
@@ -2700,7 +3402,8 @@ function BrowserContent({
                 profileId={tab.profileId}
                 initialUrl={tab.url}
                 tabId={tab.id}
-                active={mode === 'remote' && activeTab === tab.id}
+                // A background pane pauses the remote stream and input; tab state still updates.
+                active={paneVisible && mode === 'remote' && activeTab === tab.id}
                 reloadToken={activeTab === tab.id ? turnReload : undefined}
                 onClosed={() => closeTab(tab)}
                 onState={(state) => {
@@ -2856,7 +3559,7 @@ function BrowserContent({
                 {!browser && (
                   <iframe
                     key={reload}
-                    title="Task browser"
+                    title="Thread browser"
                     src={url}
                     className="h-full w-full border-0"
                     sandbox="allow-scripts allow-forms allow-same-origin"
@@ -2868,19 +3571,21 @@ function BrowserContent({
           )}
         </div>
       ) : mode === 'devices' ? (
-        <div className="min-h-0 flex-1 overflow-auto p-2">
-          <div className="mb-1 flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Choose a device</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={busy || !connected}
-              onClick={() => void act(loadDevices)}
-            >
-              Refresh
-            </Button>
-          </div>
+        <div className="min-h-0 flex-1 overflow-auto p-4 text-[13px]">
+          {hubEnabled !== false && (
+            <div className="mb-1 flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">Choose a device</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy || !connected}
+                onClick={() => void act(loadDevices)}
+              >
+                Refresh
+              </Button>
+            </div>
+          )}
           {diagnostics.map((d) => (
             <p className="mb-3 text-xs text-muted-foreground" key={d}>
               {d}
@@ -2907,12 +3612,19 @@ function BrowserContent({
             </label>
           )}
           {hubEnabled === false && (
-            <p className="mb-3 text-sm text-muted-foreground">
-              Device Hub is off. Enable it in Settings → Computers → Device previews.
-            </p>
+            <div className="studio-panel-empty">
+              <Smartphone className="studio-panel-empty-icon" aria-hidden="true" />
+              <h3 className="text-sm font-medium">Device Hub is off</h3>
+              <p className="text-xs text-muted-foreground">
+                Enable device previews to connect a phone or simulator.
+              </p>
+              <Button size="sm" onClick={() => navigateStudio({ viewId: 'device-previews' })}>
+                Open device settings
+              </Button>
+            </div>
           )}
           {hubEnabled && !filteredDevices.length && !busy && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               No devices found. Connect a phone to the host or create a simulator.
             </p>
           )}
@@ -2983,14 +3695,25 @@ function BrowserTabGroup({
 }) {
   if (category === 'active')
     return (
-      <div aria-label="Active browser tabs" className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div
+        aria-label="Active browser tabs"
+        className="studio-browser-active-tabs min-h-0 flex-1 overflow-y-auto p-2"
+      >
         {children}
       </div>
     )
   return (
-    <details className="shrink-0 border-t">
-      <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
-        {category === 'snoozed' ? 'Snoozed tabs' : 'Settled tabs'} ({count})
+    <details
+      className="studio-browser-tab-group studio-list-section mb-1 shrink-0"
+      data-section={category}
+    >
+      <summary className="studio-list-section-header">
+        <ChevronDown size={11} className="studio-list-section-chevron" aria-hidden="true" />
+        <span className="studio-thread-section-dot" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">
+          {category === 'snoozed' ? 'Snoozed tabs' : 'Settled tabs'}
+        </span>
+        <span>{count}</span>
       </summary>
       <div className="max-h-[35vh] overflow-y-auto p-2">{children}</div>
     </details>
@@ -3028,7 +3751,7 @@ function BrowserLayout({
     >
       {!sidebarState?.collapsed && sidebar}
       <div
-        className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        className="@container/browser relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
         data-browser-viewport
       >
         {preview && (

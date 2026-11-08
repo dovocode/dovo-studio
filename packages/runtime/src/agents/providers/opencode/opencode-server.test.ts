@@ -156,3 +156,177 @@ it('stops a server while initialization is still pending', async () => {
       launch.mock.results[0].value.signalCode !== null,
   ).toBe(true)
 })
+
+const running = (child: ChildProcess) => child.exitCode === null && child.signalCode === null
+const thread = (taskId: string, extra: Record<string, string> = {}) => ({
+  ...agent,
+  // Mirrors the per-thread process markers that attribute agent-launched services.
+  env: { DOVO_THREAD_SERVER_TASK: taskId, ...extra },
+})
+const fixtureLaunch = () =>
+  vi.fn<(command: string, args: string[], options: SpawnOptions) => ChildProcess>(
+    (_command, _args, options) => spawn(process.execPath, ['-e', fixture], options),
+  )
+
+it('retires idle thread servers so a seventeenth thread does not exhaust the pool', async () => {
+  const launch = fixtureLaunch()
+  const servers = new OpenCodeServers(launch)
+  try {
+    for (let index = 0; index < 17; index++) {
+      const lease = await servers.acquire(thread(`task-${index}`), `task-${index}`, '/tmp')
+      expect(launch.mock.calls[index][2].env).toMatchObject({
+        DOVO_THREAD_SERVER_TASK: `task-${index}`,
+      })
+      lease.release()
+    }
+    expect(launch).toHaveBeenCalledTimes(17)
+    // The shared idle budget keeps at most four warm providers across harnesses.
+    await vi.waitFor(() =>
+      expect(launch.mock.results.filter(({ value }) => running(value)).length).toBeLessThanOrEqual(
+        4,
+      ),
+    )
+  } finally {
+    await servers.dispose()
+  }
+  expect(launch.mock.results.every(({ value }) => !running(value))).toBe(true)
+})
+
+it('retires a replaced configuration and released tasks, but never an active turn', async () => {
+  const launch = fixtureLaunch()
+  const servers = new OpenCodeServers(launch)
+  try {
+    const first = await servers.acquire(thread('task', { TOKEN: 'old' }), 'task', '/tmp')
+    first.release()
+    const second = await servers.acquire(thread('task', { TOKEN: 'new' }), 'task', '/tmp')
+    const [old, current] = launch.mock.results.map(({ value }) => value)
+    await vi.waitFor(() => expect(running(old)).toBe(false))
+    await servers.releaseTask('task')
+    expect(running(current)).toBe(true)
+    second.release()
+    await vi.waitFor(() => expect(running(current)).toBe(false))
+    // The thread can resume on a fresh server for the same configuration.
+    const resumed = await servers.acquire(thread('task', { TOKEN: 'new' }), 'task', '/tmp')
+    expect(resumed.agent.endpoint).not.toBe(second.agent.endpoint)
+    resumed.release()
+  } finally {
+    await servers.dispose()
+  }
+})
+
+it('reclaims unused servers before refusing, and refuses only when every server is busy', async () => {
+  const launch = fixtureLaunch()
+  const servers = new OpenCodeServers(launch)
+  try {
+    const leases = await Promise.all(
+      Array.from({ length: 16 }, (_, index) =>
+        servers.acquire(thread(`task-${index}`), `task-${index}`, '/tmp'),
+      ),
+    )
+    await expect(servers.acquire(thread('task-16'), 'task-16', '/tmp')).rejects.toThrow(
+      'configurations are busy',
+    )
+    leases[3].release()
+    const next = await servers.acquire(thread('task-16'), 'task-16', '/tmp')
+    expect(running(launch.mock.results[3].value)).toBe(false)
+    expect(launch.mock.results.filter(({ value }) => running(value))).toHaveLength(16)
+    for (const lease of [...leases, next]) lease.release()
+  } finally {
+    await servers.dispose()
+  }
+})
+
+it('keeps a failed turn server until it confirms that no sessions are running', async () => {
+  const launch = fixtureLaunch()
+  let sessionsIdle = false
+  const confirm = vi.fn<() => Promise<boolean>>(async () => sessionsIdle)
+  const servers = new OpenCodeServers(launch, confirm)
+  try {
+    const lease = await servers.acquire(thread('task'), 'task', '/workspace')
+    lease.release(false)
+    const child = launch.mock.results[0].value
+    await servers.releaseTask('task')
+    expect(running(child)).toBe(true)
+    expect(confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ endpoint: lease.agent.endpoint }),
+      new Set(['/workspace']),
+    )
+    // Pool pressure also asks the server rather than assuming native work stopped.
+    sessionsIdle = true
+    const leases = await Promise.all(
+      Array.from({ length: 16 }, (_, index) =>
+        servers.acquire(thread(`other-${index}`), `other-${index}`, '/tmp'),
+      ),
+    )
+    expect(running(child)).toBe(false)
+    for (const other of leases) other.release()
+  } finally {
+    await servers.dispose()
+  }
+})
+
+it('releases task servers through the adapter', async () => {
+  const launch = fixtureLaunch()
+  const servers = new OpenCodeServers(launch)
+  const adapter = createOpenCodeAdapter(servers)
+  try {
+    ;(await servers.acquire(thread('task'), 'task', '/tmp')).release()
+    await adapter.releaseTask!('task')
+    expect(running(launch.mock.results[0].value)).toBe(false)
+  } finally {
+    await adapter.dispose?.()
+  }
+})
+
+it('rechecks a pinned server with backoff until its native sessions finish, then retires it', async () => {
+  const launch = fixtureLaunch()
+  let sessionsIdle = false
+  const confirm = vi.fn<() => Promise<boolean>>(async () => sessionsIdle)
+  const servers = new OpenCodeServers(launch, confirm)
+  try {
+    const lease = await servers.acquire(thread('task'), 'task', '/tmp')
+    const child = launch.mock.results[0].value
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    await servers.releaseTask('task')
+    lease.release(false)
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+    // No turn, release or pool pressure follows: only the bounded backoff asks again.
+    await vi.advanceTimersByTimeAsync(29_000)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(confirm).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(running(child)).toBe(true)
+    sessionsIdle = true
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(confirm).toHaveBeenCalledTimes(3)
+    vi.useRealTimers()
+    await vi.waitFor(() => expect(running(child)).toBe(false))
+  } finally {
+    vi.useRealTimers()
+    await servers.dispose()
+  }
+})
+
+it('retires a task local server when the task switches to an explicit URL', async () => {
+  const launch = fixtureLaunch()
+  const servers = new OpenCodeServers(launch)
+  try {
+    const local = await servers.acquire(thread('task'), 'task', '/tmp')
+    const child = launch.mock.results[0].value
+    const explicit = { ...thread('task'), endpoint: 'http://192.0.2.1:4096' }
+    // An active turn on the local server keeps it alive across the switch.
+    const external = await servers.acquire(explicit, 'task', '/tmp')
+    expect(external.agent.endpoint).toBe(explicit.endpoint)
+    expect(running(child)).toBe(true)
+    local.release()
+    await vi.waitFor(() => expect(running(child)).toBe(false))
+    // The external URL is never launched or stopped.
+    external.release()
+    await servers.releaseTask('task')
+    expect(launch).toHaveBeenCalledTimes(1)
+  } finally {
+    await servers.dispose()
+  }
+})

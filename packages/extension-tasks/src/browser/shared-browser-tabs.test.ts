@@ -5,13 +5,13 @@ import {
   SHARED_BROWSER_LIBRARY_KEY,
   browserQuote,
   browserAddress,
+  browserAddressIntent,
   browserPageKey,
   rememberBrowserVisit,
   readSharedBrowserTabs,
   recentBrowserTabs,
   reorderBrowserTabs,
   saveSharedBrowserTabs,
-  visitBrowserTab,
   type BrowserTab,
 } from './shared-browser-tabs'
 afterEach(() => vi.unstubAllGlobals())
@@ -34,10 +34,10 @@ const remote: BrowserTab = {
 }
 it('orders by visits without changing session IDs, computer/profile ownership or the source list', () => {
   const tabs = [local, remote]
-  const visited = visitBrowserTab(tabs, 'local', 20)
-  expect(recentBrowserTabs(visited).map((tab) => tab.id)).toEqual(['local', 'remote'])
-  expect(visited[0]).toEqual({ ...local, visitedAt: 21 })
-  expect(visited[1]).toBe(remote)
+  const sorted = recentBrowserTabs(tabs)
+  expect(sorted.map((tab) => tab.id)).toEqual(['remote', 'local'])
+  expect(sorted[0]).toBe(remote)
+  expect(sorted[1]).toBe(local)
   expect(tabs).toEqual([local, remote])
 })
 it('keeps temporary previews out of the tab list and visits until promotion', () => {
@@ -68,7 +68,7 @@ it('restores Keep awake without changing the tab computer or profile', () => {
 it('keeps pinned tabs ahead of recent visits and restores them in their original profile', () => {
   storage()
   const tabs = [{ ...local, pinned: true, homeUrl: 'http://localhost:3000/home' }, remote]
-  expect(recentBrowserTabs(visitBrowserTab(tabs, 'remote', 100))[0].id).toBe('local')
+  expect(recentBrowserTabs(tabs)[0].id).toBe('local')
   saveSharedBrowserTabs({ tabs, active: 'remote' })
   expect(readSharedBrowserTabs().state?.tabs).toEqual(tabs)
 })
@@ -294,14 +294,13 @@ it('keeps pinned order independent of activity and restores manual order after a
     { ...remote, id: 'pin-b', pinned: true },
   ]
   const tabs = [...pinned, local, remote]
-  const visited = visitBrowserTab(tabs, 'pin-b', 100)
-  expect(recentBrowserTabs(visited).map((tab) => tab.id)).toEqual([
+  expect(recentBrowserTabs(tabs).map((tab) => tab.id)).toEqual([
     'pin-a',
     'pin-b',
     'remote',
     'local',
   ])
-  expect(recentBrowserTabs(visited, false).map((tab) => tab.id)).toEqual([
+  expect(recentBrowserTabs(tabs, false).map((tab) => tab.id)).toEqual([
     'pin-a',
     'pin-b',
     'local',
@@ -354,4 +353,39 @@ it('uses the selected search engine while preserving explicit web and LAN addres
     'http://dev.netbird.local:3000/path',
   )
   expect(browserAddress('example.com/docs', search)).toBe('https://example.com/docs')
+})
+
+it.each([
+  ['example.com/my notes?q=hello world', 'https://example.com/my%20notes?q=hello%20world'],
+  ['//example.com/docs', 'https://example.com/docs'],
+  ['LOCALHOST:3000/path', 'http://localhost:3000/path'],
+  ['localhost:443/path', 'http://localhost:443/path'],
+  ['api.dev.local:8080/test', 'http://api.dev.local:8080/test'],
+  ['api.dev.lan/path', 'http://api.dev.lan/path'],
+  ['service.internal', 'http://service.internal/'],
+  ['app.localhost', 'http://app.localhost/'],
+  ['[2001:db8::1]:8080/docs', 'http://[2001:db8::1]:8080/docs'],
+  ['https://example.com/a b', 'https://example.com/a%20b'],
+  ['http://vpn-host/path', 'http://vpn-host/path'],
+  ['例え.jp', 'https://xn--r8jz45g.jp/'],
+])('recognizes the website intent for %s', (input, url) => {
+  expect(browserAddressIntent(input)).toEqual({ kind: 'navigate', url })
+})
+
+it.each([
+  'what is node.js',
+  'example.com vs example.org',
+  'site:example.com hooks',
+  'filetype:pdf',
+  'error: connection refused',
+  'node:fs',
+  'react hooks',
+  'my local server',
+  '3.14',
+  'v1.2.3',
+])('keeps %s as a search', (input) => {
+  expect(browserAddressIntent(input, { engine: 'duckduckgo' })).toEqual({
+    kind: 'search',
+    url: `https://duckduckgo.com/?q=${encodeURIComponent(input)}`,
+  })
 })

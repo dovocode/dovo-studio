@@ -11,15 +11,19 @@ import { dirname, join, resolve } from 'node:path'
 import { readServerConfig, serverDirectory, setupServer } from './server-config.js'
 import { serverStatus, startServer, stopServer } from './server-manager.js'
 import { acquireProcessLock } from './process-lock.js'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { selectedEntrypoint, sourceEntrypoint, updateServer } from './server-update.js'
+import { recoverServerUpdate, packagedServiceWarning } from './server-update-recovery.js'
 import { serverDoctor } from './server-doctor.js'
+import { protectionReportText } from './server-service-protection.js'
+import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { runRemoteServerUpdate } from './server-remote-update.js'
 import {
   installService,
   removeService,
   restartService,
   runService,
+  serviceProtection,
   serviceStatus,
   updateService,
 } from './server-service.js'
@@ -43,6 +47,7 @@ async function main() {
       output: { type: 'string' },
       'public-address': { type: 'string' },
       launcher: { type: 'string' },
+      'memory-low': { type: 'string' },
       version: { type: 'string' },
       network: { type: 'string' },
       manual: { type: 'boolean' },
@@ -54,18 +59,34 @@ async function main() {
   const packaged = process.env.DOVO_SERVER_DISTRIBUTION === 'archive'
   const cliName = packaged ? 'dovo-server' : 'pnpm server'
   const [command = 'status', ...args] = positionals
+  if (
+    !values.help &&
+    (command === 'update' ||
+      command === 'remote-update' ||
+      (command === 'service' && args[0] === 'update'))
+  ) {
+    const policy = ManagedPolicy.load()
+    policy.require('updates')
+    if (values.version?.includes('-') || process.env.DOVO_RELEASE_CHANNEL === 'nightly')
+      policy.require('nightlyUpdates')
+    if (policy.document?.limits?.updates?.feedUrl)
+      throw new Error(
+        'This server cannot use the managed desktop update feed. Ask your administrator to update its distribution.',
+      )
+  }
   if (command === 'update' && packaged && !values.help)
     throw new Error(
       'This server is managed by Homebrew, mise or an archive install. Finish active work, stop the server, upgrade with your package manager, then run dovo-server start. Your data directory is preserved.',
     )
   if (values.help) {
-    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | connect | studio-tools | doctor | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove> [options]
+    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | connect | studio-tools | doctor | policy show|check <file> | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove | service protect preview|status|enable|disable> [options]
   --data-dir <directory>    Workspace data directory (default: ~/.dovo)
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
   --database <path>         Setup: database in the selected data directory
   --public-address <url>    Setup/pair: reachable LAN/VPN or HTTPS proxy origin
   --launcher <path>         Service update: new mise/archive bin/dovo-server path
+  --memory-low <size>       Service protect enable/preview: optional systemd MemoryLow, e.g. 512M
   --backup <path>          Restore: verified SQLite backup (runtime must be stopped)
   --output <directory>     Recovery export: new private output directory
   --json                   Print status/configuration as JSON, never owner tokens
@@ -75,6 +96,8 @@ Setup preserves the existing database and saved listening address. Start runs in
 background, independently of the terminal or desktop app. Logs: <data-dir>/server.log.
 Plain start does not install an OS service or restart after reboot. See docs/server-setup.md.
 Service install creates a user-level launchd (macOS) or systemd (Linux) service and starts it.
+Service protect (Linux, opt-in) writes one reversible systemd user drop-in so an agent's OOM kill
+leaves the runtime running. Preview and status change nothing; disable removes only Dovo's drop-in.
 Connect on|off|status manages account-authorized internet access (browser sign-in, no device pairing).
 Pair accepts code/devices/relay-key/approve/deny and --network/--manual, like pnpm pair.
 ${
@@ -97,6 +120,7 @@ Build first: pnpm --filter @dovo/api... -r build`
       'connect',
       'studio-tools',
       'doctor',
+      'policy',
       'backup',
       'backups',
       'restore',
@@ -105,14 +129,29 @@ Build first: pnpm --filter @dovo/api... -r build`
       'service',
       'remote-update',
     ].includes(command) ||
-    (command !== 'pair' && command !== 'connect' && command !== 'service' && args.length) ||
+    (!['pair', 'connect', 'service', 'policy'].includes(command) && args.length) ||
+    (command === 'policy' &&
+      !((args[0] === 'show' && args.length === 1) || (args[0] === 'check' && args.length === 2))) ||
     (command === 'service' &&
-      (args.length !== 1 ||
-        !['install', 'status', 'restart', 'update', 'remove', 'run'].includes(args[0])))
+      (args[0] === 'protect'
+        ? args.length !== 2 || !['preview', 'status', 'enable', 'disable'].includes(args[1])
+        : args.length !== 1 ||
+          !['install', 'status', 'restart', 'update', 'remove', 'run'].includes(args[0])))
   )
     throw new Error(`Invalid command. Run ${cliName} --help.`)
   if (command === 'studio-tools') {
     await startStudioMcp()
+    return
+  }
+  if (command === 'policy') {
+    const policy = ManagedPolicy.load(args[0] === 'check' ? resolve(args[1]) : undefined)
+    const report = { managed: !!policy.summary, policy: policy.summary ?? null }
+    if (values.json) console.log(JSON.stringify(report))
+    else if (policy.summary)
+      console.log(
+        `${args[0] === 'check' ? 'Valid policy' : 'Installed policy'}: ${policy.summary.organization}\nFingerprint: ${policy.summary.fingerprint}\n${JSON.stringify(policy.summary, null, 2)}\nRestart the runtime after changing its policy file.`,
+      )
+    else console.log('This runtime is unmanaged. No administrator policy file is installed.')
     return
   }
   if (
@@ -135,6 +174,31 @@ Build first: pnpm --filter @dovo/api... -r build`
     throw new Error('--network and --manual are pair options.')
   if (!(command === 'service' && args[0] === 'update') && values.launcher)
     throw new Error('--launcher is a service update option.')
+  if (
+    !(command === 'service' && args[0] === 'protect' && ['enable', 'preview'].includes(args[1])) &&
+    values['memory-low']
+  )
+    throw new Error('--memory-low is a service protect enable or preview option.')
+  if (command === 'service' && args[0] === 'protect') {
+    const action = args[1] as 'preview' | 'status' | 'enable' | 'disable'
+    const directory = serverDirectory(values['data-dir'])
+    // Only a registered service has a directory to lock; otherwise report that it is missing.
+    const release =
+      (action === 'enable' || action === 'disable') && existsSync(directory)
+        ? acquireProcessLock(join(directory, 'server-operation.lock'))
+        : () => {}
+    let report: Awaited<ReturnType<typeof serviceProtection>>
+    try {
+      report = await serviceProtection(directory, action, {
+        memoryLow: values['memory-low'],
+      })
+    } finally {
+      release()
+    }
+    if (values.json) console.log(JSON.stringify(report))
+    else console.log(protectionReportText(report))
+    return
+  }
   if (command !== 'remote-update' && values.version)
     throw new Error('--version is a remote update option.')
   if ((values.backup && command !== 'restore') || (values.output && command !== 'recovery-export'))
@@ -231,7 +295,16 @@ Build first: pnpm --filter @dovo/api... -r build`
       else result = await removeService(directory)
     } else {
       if (command === 'restart') await stopServer(directory)
-      result = await startServer(directory, selectedEntrypoint(directory))
+      // An interrupted update decides which release and database may start.
+      const recovered = await recoverServerUpdate(directory)
+      result = {
+        ...(await startServer(directory, selectedEntrypoint(directory))),
+        ...(recovered ? { recovered } : {}),
+      }
+      if (recovered && !values.json)
+        console.log(
+          `Interrupted update ${recovered.id} was ${recovered.outcome === 'completed' ? 'completed' : recovered.outcome === 'abandoned' ? 'abandoned before activation' : 'rolled back'}.${'error' in recovered && typeof recovered.error === 'string' && recovered.error ? ` The resumed release failed: ${recovered.error}` : ''}${'preserved' in recovered && typeof recovered.preserved === 'string' && recovered.preserved ? ` The replaced database is kept at ${recovered.preserved}.` : ''}${recovered.warnings.map((warning) => `\n${warning}`).join('')}`,
+        )
     }
   } finally {
     release()
@@ -247,10 +320,22 @@ Build first: pnpm --filter @dovo/api... -r build`
   else if (command === 'service' && args[0] === 'remove')
     console.log('Server service removed. Workspace and device pairings are preserved.')
   else {
+    // Problems after a successful activation are reported without calling it a failed update.
+    if (
+      result &&
+      typeof result === 'object' &&
+      'warnings' in result &&
+      Array.isArray(result.warnings)
+    )
+      for (const warning of result.warnings) console.warn(`Warning: ${String(warning)}`)
     const status = await serverStatus(directory)
     console.log(
       `${status.running ? 'Running' : 'Offline'}${status.running ? (status.managed ? ' in the background' : ' (started by another launcher)') : ''}\nData: ${directory}\nListen: ${status.host}:${status.port}\n${status.address ? `Connect: ${status.address}\n` : ''}${status.addresses.map((entry) => `${entry.name}: ${entry.address}\n`).join('')}Logs: ${status.logPath}${status.error ? `\n${status.error}` : ''}`,
     )
+    if (command === 'service') {
+      const warning = packagedServiceWarning(directory)
+      if (warning) console.error(`Warning: ${warning}`)
+    }
     if (
       status.running &&
       status.address &&

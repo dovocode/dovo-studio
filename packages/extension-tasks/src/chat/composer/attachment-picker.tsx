@@ -1,12 +1,14 @@
 import { useRef } from 'react'
-import { Paperclip } from 'lucide-react'
+import { Paperclip, Plus } from 'lucide-react'
 import { Button } from '@dovo/studio-ui'
 export function AttachmentPicker({
   disabled,
   upload,
+  prominent = false,
 }: {
   disabled: boolean
   upload: (files: File[]) => Promise<void>
+  prominent?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
   return (
@@ -15,12 +17,12 @@ export function AttachmentPicker({
         type="button"
         variant="ghost"
         size="icon"
-        className="size-7"
+        className={prominent ? 'composer-attach' : 'size-7'}
         aria-label="Attach files"
         disabled={disabled}
         onClick={() => input.current?.click()}
       >
-        <Paperclip className="size-3.5" />
+        {prominent ? <Plus className="size-5" /> : <Paperclip className="size-3.5" />}
       </Button>
       <input
         ref={input}

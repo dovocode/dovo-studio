@@ -1,4 +1,5 @@
-@import '@xterm/xterm/css/xterm.css';
+@import '@dovo/terminal/styles.css';
+@import 'prosemirror-view/style/prosemirror.css';
 
 /* Keep the browser's address and controls in place as focus changes. */
 .studio-browser-address {
@@ -19,6 +20,11 @@
   box-shadow:
     inset 0 1px 0 #ffffff20,
     0 0 0 2px color-mix(in srgb, var(--ring) 16%, transparent);
+}
+/* The whole address field carries keyboard focus, including its profile switcher. */
+.studio-browser-address input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 [data-high-contrast='true'] .studio-browser-address {
   background: var(--card);
@@ -46,4 +52,86 @@
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
+}
+
+/* Rich text composer: Markdown formatting shown in place, sized for chat. */
+.dovo-rich-composer {
+  position: relative;
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.25rem;
+}
+.dovo-rich-composer[data-empty]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  color: var(--muted-foreground);
+}
+.dovo-rich-composer[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.dovo-rich-composer > * + *,
+.dovo-rich-composer li > * + * {
+  margin-top: 0.5em;
+}
+.dovo-rich-composer h1,
+.dovo-rich-composer h2,
+.dovo-rich-composer h3,
+.dovo-rich-composer h4,
+.dovo-rich-composer h5,
+.dovo-rich-composer h6 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+.dovo-rich-composer h1 {
+  font-size: 1.25em;
+}
+.dovo-rich-composer h2 {
+  font-size: 1.125em;
+}
+.dovo-rich-composer ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.dovo-rich-composer ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.dovo-rich-composer blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75em;
+  color: var(--muted-foreground);
+}
+.dovo-rich-composer code,
+.dovo-rich-composer pre {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+.dovo-rich-composer code {
+  padding: 0.1em 0.3em;
+}
+.dovo-rich-composer pre {
+  padding: 0.5em 0.75em;
+  white-space: pre-wrap;
+}
+.dovo-rich-composer pre code {
+  padding: 0;
+  background: none;
+}
+.dovo-rich-composer a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.dovo-rich-composer hr {
+  border: 0;
+  border-top: 1px solid var(--border);
 }

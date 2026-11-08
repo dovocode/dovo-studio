@@ -52,6 +52,9 @@ appId: com.dovo.studio
     id: Message
 - inputText: Installed app smoke request
 - tapOn: Dismiss keyboard
+# The keyboard moves Send; wait before Maestro resolves its tap coordinates.
+- waitForAnimationToEnd:
+    timeout: 10000
 - tapOn:
     id: Send
 - runFlow: fixture-response.yaml
@@ -75,16 +78,30 @@ appId: com.dovo.studio
     id: Message
 - inputText: Installed app first send
 - tapOn: Dismiss keyboard
+- waitForAnimationToEnd:
+    timeout: 10000
 - tapOn:
     id: Send
 - runFlow: fixture-response.yaml
 - runFlow: back-to-threads.yaml
 - tapOn: More actions
 - tapOn: Settings
-- scrollUntilVisible:
-    element: App & updates
-    direction: DOWN
-- tapOn: App & updates
+# Wait for the destination and find the row through search, independently of
+# the initial scroll position and native navigation transition.
+- extendedWaitUntil:
+    visible:
+      id: Search settings
+    timeout: 10000
+- tapOn:
+    id: Search settings
+- inputText: App & updates
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: App & updates
+    timeout: 10000
+- tapOn:
+    id: App & updates
 - assertVisible: Open TestFlight
 - assertVisible: Release notes channel
 - takeScreenshot: dovo-installed-native-release-smoke

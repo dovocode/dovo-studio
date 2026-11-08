@@ -6,11 +6,13 @@ import {
   contentShape,
   disabled as disabledModifier,
   frame,
+  offset,
   shapes,
 } from '@expo/ui/swift-ui/modifiers'
 import { isSnoozed, latestCompletedTaskTurn } from '@dovo/protocol'
 import { useTheme } from '../../ui/theme'
-import { snoozeOptions } from '../detail/use-task-lifecycle'
+import { taskSnoozeChoices } from '@dovo/protocol'
+import { useMobilePreferences } from '../../runtime/preferences/app-preferences'
 import type { TaskRowMenuProps } from './task-row-menu'
 
 export function TaskRowMenu({
@@ -20,9 +22,11 @@ export function TaskRowMenu({
   disabled,
   onOpen,
   onDetails,
+  contentOffsetY = 0,
 }: TaskRowMenuProps) {
   const { colors, mode: appearanceMode } = useTheme()
 
+  const { taskSnoozeMinutes } = useMobilePreferences()
   const unavailable = !actions.enabled || actions.busy
   return (
     <Host
@@ -37,7 +41,7 @@ export function TaskRowMenu({
             name="more"
             size={18}
             color={colors.muted}
-            modifiers={[frame({ width: 20, height: 20 })]}
+            modifiers={[frame({ width: 20, height: 20 }), offset({ y: contentOffsetY })]}
           />
         }
         modifiers={[
@@ -103,7 +107,7 @@ export function TaskRowMenu({
                   label={<NativeIconLabel title="Snooze" icon="snooze" />}
                   modifiers={[disabledModifier(unavailable)]}
                 >
-                  {snoozeOptions.map((option) => (
+                  {taskSnoozeChoices(taskSnoozeMinutes).map((option) => (
                     <Button
                       key={option.hours}
                       testID={`Task menu ${option.label}`}

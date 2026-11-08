@@ -27,6 +27,16 @@ const legacyReadOnly = {
   description: 'Explore files without granting write access.',
 } as const
 export function selectableAccessModes(current?: Agent['permission'], provider?: Agent['provider']) {
+  if (provider === 'pi')
+    return [
+      { id: 'read-only', name: 'Text only', description: 'Pi tools and extensions are disabled.' },
+      {
+        id: 'full-access',
+        name: 'Full access',
+        description:
+          'Pi built-in tools can run commands and edit files without approval or a sandbox.',
+      },
+    ] as const
   if (provider === 'cursor')
     return [
       legacyReadOnly,
@@ -45,11 +55,12 @@ export function resolveProviderAccess(
 ) {
   return supportsAccess(provider, permission)
     ? permission
-    : provider === 'cursor'
+    : provider === 'cursor' || provider === 'pi'
       ? 'read-only'
       : 'ask'
 }
 export function supportsAccess(provider: Agent['provider'], permission: Agent['permission']) {
+  if (provider === 'pi') return permission === 'read-only' || permission === 'full-access'
   if (provider === 'cursor') return ['read-only', 'auto', 'full-access'].includes(permission)
   // These native hosts do not expose a restricted read-only session.
   return !['hermes', 'grok', 'muse'].includes(provider) || permission !== 'read-only'
@@ -62,5 +73,5 @@ export function accessLabel(permission: Agent['permission']) {
 
 /** These providers have no tool-disable boundary for utility prompts. */
 export function supportsUtilities(provider: Agent['provider']) {
-  return !['hermes', 'grok', 'muse', 'vibe'].includes(provider)
+  return !['hermes', 'grok', 'muse', 'vibe', 'pi'].includes(provider)
 }

@@ -1,0 +1,670 @@
+diff --git a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt
+index 1516400296a26128222f73aa35b79104d5a12fb0..8232523a1bb0af6a0a7d3e62948ee73fcd2ff4bd 100644
+--- a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt
++++ b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt
+@@ -12,7 +12,7 @@ class ExpoLibghosttyModule : Module() {
+     Name("ExpoLibghostty")
+ 
+     View(ExpoLibghosttyView::class) {
+-      Events("onInput", "onResize")
++      Events("onInput", "onResize", "onFontFallback")
+ 
+       // Base font size in dp (default 14); applied live, the grid reflows.
+       Prop("fontSize") { view: ExpoLibghosttyView, size: Float ->
+@@ -24,6 +24,15 @@ class ExpoLibghosttyModule : Module() {
+         view.setTheme(theme)
+       }
+ 
++      // Asset font family (fonts/<family>-Regular.ttf); null/empty keeps the
++      // system monospace. Applied live, the grid reflows.
++      Prop("fontFamily") { view: ExpoLibghosttyView, family: String? ->
++        view.setFontFamily(family)
++      }
++
++      AsyncFunction("focus") { view: ExpoLibghosttyView -> view.focusKeyboard() }
++      AsyncFunction("blur") { view: ExpoLibghosttyView -> view.blurKeyboard() }
++
+       // PTY output bytes (base64) → terminal grid.
+       AsyncFunction("write") { view: ExpoLibghosttyView, base64: String ->
+         val data = try {
+diff --git a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt
+index 2d3ed62314e39fd1ade0fa5d3d007d414c948600..d0703dfb9799541fdf62f976d95ad36ed4645616 100644
+--- a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt
++++ b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt
+@@ -19,6 +19,7 @@ class ExpoLibghosttyView(context: Context, appContext: AppContext) :
+ 
+   private val onInput by EventDispatcher<Map<String, Any>>()
+   private val onResize by EventDispatcher<Map<String, Any>>()
++  private val onFontFallback by EventDispatcher<Map<String, Any>>()
+ 
+   private val terminal = GhosttyTerminalView(context).also { view ->
+     view.onInputBytes = { bytes ->
+@@ -79,9 +80,31 @@ class ExpoLibghosttyView(context: Context, appContext: AppContext) :
+     syncAccessoryBar(WindowInsetsCompat.toWindowInsetsCompat(rootInsets, this))
+   }
+ 
++  fun focusKeyboard() {
++    terminal.post {
++      terminal.requestFocus()
++      (context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)
++        ?.showSoftInput(terminal, 0)
++    }
++  }
++
++  fun blurKeyboard() {
++    terminal.post {
++      (context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)
++        ?.hideSoftInputFromWindow(terminal.windowToken, 0)
++      terminal.clearFocus()
++    }
++  }
++
+   /** Base font size in dp; applied live (the grid reflows in place). */
+   fun setFontSize(dp: Float) = terminal.setFontSize(dp)
+ 
++  /** Font family from app assets; a missing family is reported, not ignored. */
++  fun setFontFamily(family: String?) {
++    val error = terminal.setFontFamily(family) ?: return
++    onFontFallback(mapOf("fontFamily" to (family?.trim() ?: ""), "message" to error))
++  }
++
+   /** Apply theme colors; a null record clears back to the defaults. */
+   internal fun setTheme(theme: TerminalThemeRecord?) = terminal.setTheme(
+     foreground = theme?.foreground,
+diff --git a/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt b/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt
+index 9d6ad1671c843b7cd75e08639906a9065b984210..c3d464aba0cc4c2cf507ae8e2382579d9cb23157 100644
+--- a/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt
++++ b/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt
+@@ -57,6 +57,7 @@ internal class GhosttyTerminalView(context: Context) : View(context) {
+ 
+   // ── Cell metrics ──
+   private var fontSizeDp = FONT_SIZE_DP
++  private var fontFamily = ""
+   private val textPaint = newTextPaint(Typeface.MONOSPACE)
+   private val boldPaint = newTextPaint(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD))
+   private val italicPaint = newTextPaint(Typeface.create(Typeface.MONOSPACE, Typeface.ITALIC))
+@@ -300,6 +301,57 @@ internal class GhosttyTerminalView(context: Context) : View(context) {
+     for (paint in arrayOf(textPaint, boldPaint, italicPaint, boldItalicPaint, symbolsPaint)) {
+       paint?.textSize = px
+     }
++    applyFontMetrics()
++  }
++
++  /**
++   * Font family loaded from app assets: `fonts/<family>-Regular.ttf|otf`
++   * (or `fonts/<family>.ttf|otf`) plus an optional `-Bold` face; italics are
++   * synthesized. Null/empty restores the system monospace. Returns an error
++   * message when the family cannot be loaded (the system monospace is used).
++   * Content reflows in place like a font size change.
++   */
++  fun setFontFamily(family: String?): String? {
++    val name = family?.trim().orEmpty()
++    if (name == fontFamily) return null
++    fontFamily = name
++    var error: String? = null
++    var regular: Typeface? = null
++    var bold: Typeface? = null
++    if (name.isNotEmpty()) {
++      if (!FONT_FAMILY_PATTERN.matches(name) || name.contains("..")) {
++        error = "Font family $name is not a valid asset name."
++      } else {
++        regular = loadAssetFace(name, "Regular", true)
++        if (regular == null) error = "Font family $name is not bundled in fonts/."
++        else bold = loadAssetFace(name, "Bold", false) ?: Typeface.create(regular, Typeface.BOLD)
++      }
++    }
++    val base = regular ?: Typeface.MONOSPACE
++    val strong = bold ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
++    textPaint.typeface = base
++    boldPaint.typeface = strong
++    italicPaint.typeface = Typeface.create(base, Typeface.ITALIC)
++    boldItalicPaint.typeface = Typeface.create(strong, Typeface.BOLD_ITALIC)
++    applyFontMetrics()
++    return error
++  }
++
++  private fun loadAssetFace(family: String, style: String, allowPlain: Boolean): Typeface? {
++    val stems = if (allowPlain) listOf("$family-$style", family) else listOf("$family-$style")
++    for (stem in stems) {
++      for (extension in arrayOf("ttf", "otf")) {
++        try {
++          return Typeface.createFromAsset(context.assets, "fonts/$stem.$extension")
++        } catch (e: RuntimeException) {
++          // Not bundled under this name; try the next candidate.
++        }
++      }
++    }
++    return null
++  }
++
++  private fun applyFontMetrics() {
+     cellWidth = textPaint.measureText("M")
+     cellHeight = ceil(textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent).toInt()
+     baseline = -textPaint.fontMetrics.ascent
+@@ -1105,6 +1157,7 @@ internal class GhosttyTerminalView(context: Context) : View(context) {
+     const val MAX_SCROLLBACK = 10_000L
+     const val BLINK_INTERVAL_MS = 600L
+     const val SYMBOLS_FONT_ASSET = "SymbolsNerdFontMono-Regular.ttf"
++    private val FONT_FAMILY_PATTERN = Regex("[A-Za-z0-9 ._-]{1,100}")
+ 
+     // Nerd Font glyph ranges: BMP private-use area plus the supplementary
+     // private-use planes (material icons live at U+F0000+ since v3).
+diff --git a/build/ExpoLibghostty.types.d.ts b/build/ExpoLibghostty.types.d.ts
+index 0969f137ea5482158fb577ef3eee6c9192b1da2e..9a577ce79816a5237faf297f085da3dc7b633dd7 100644
+--- a/build/ExpoLibghostty.types.d.ts
++++ b/build/ExpoLibghostty.types.d.ts
+@@ -11,7 +11,17 @@ export type TerminalResizeEvent = {
+     cols: number;
+     rows: number;
+ };
++export type TerminalFontFallbackEvent = {
++    /** The requested family that could not be loaded. */
++    fontFamily: string;
++    /** Why the platform default monospace font is used instead. */
++    message: string;
++};
+ export type TerminalViewRef = {
++  /** Focus the terminal and show its system keyboard. */
++  focus(): Promise<void>;
++  /** Dismiss the terminal's system keyboard. */
++  blur(): Promise<void>;
+     /** Feed base64-encoded PTY output into the terminal grid. */
+     write(base64: string): Promise<void>;
+     /** Feed PTY output as UTF-8 text, for string-based wires. */
+@@ -52,6 +62,21 @@ export type TerminalViewProps = {
+      * pass undefined fields to keep ghostty's defaults.
+      */
+     theme?: TerminalTheme;
++    /**
++     * Font family. Empty or omitted keeps the platform default (ghostty's
++     * embedded JetBrains Mono on iOS, the system monospace on Android).
++     * iOS: a CoreText family name registered with the app (for example via
++     * UIAppFonts); applied app-wide like the theme. Android: the file name
++     * stem of `fonts/<family>-Regular.ttf` (and optional `-Bold.ttf`) in the
++     * app assets. Missing families fire `onFontFallback`.
++     */
++    fontFamily?: string;
++    /** The requested `fontFamily` is unavailable; the default font is used. */
++    onFontFallback?: (event: {
++        nativeEvent: TerminalFontFallbackEvent;
++    }) => void;
++    /** iOS: visibility of the software keyboard, excluding an accessory-only row. */
++    onKeyboardVisibilityChange?: (event: { nativeEvent: { visible: boolean } }) => void;
+     /** User keyboard/IME input to forward to the PTY. */
+     onInput?: (event: {
+         nativeEvent: TerminalInputEvent;
+diff --git a/build/ExpoLibghosttyView.js b/build/ExpoLibghosttyView.js
+index e3bf3b8973c565cccfea1982e498d5d23bac1d8c..3d767508a063732a07f227353fab9d78a3b02963 100644
+--- a/build/ExpoLibghosttyView.js
++++ b/build/ExpoLibghosttyView.js
+@@ -19,6 +19,8 @@ export default function TerminalView({ ref, onResize, ...props }) {
+             });
+         };
+         return {
++            focus: whenReady(() => native.current.focus()),
++            blur: whenReady(() => native.current.blur()),
+             write: whenReady((base64) => native.current.write(base64)),
+             writeText: whenReady((text) => native.current.writeText(text)),
+             finish: whenReady((exitCode) => native.current.finish(exitCode)),
+diff --git a/ios/ExpoLibghosttyModule.swift b/ios/ExpoLibghosttyModule.swift
+index 2f32970ab6b560820b12b8e17842ed05471ba8ec..072c0c86cd083594e53dae2522ca8432ab4725c1 100644
+--- a/ios/ExpoLibghosttyModule.swift
++++ b/ios/ExpoLibghosttyModule.swift
+@@ -5,7 +5,7 @@ public class ExpoLibghosttyModule: Module {
+     Name("ExpoLibghostty")
+ 
+     View(ExpoLibghosttyView.self) {
+-      Events("onInput", "onResize")
++      Events("onInput", "onResize", "onFontFallback", "onKeyboardVisibilityChange")
+ 
+       // Base font size in points (default 14). Changing it after mount
+       // rebuilds the surface and resets the grid.
+@@ -19,6 +19,20 @@ public class ExpoLibghosttyModule: Module {
+         view.applyTheme(theme)
+       }
+ 
++      // CoreText family name; nil/empty keeps ghostty's embedded default.
++      // App-wide on iOS, like the theme.
++      Prop("fontFamily") { (view: ExpoLibghosttyView, family: String?) in
++        view.applyFontFamily(family)
++      }
++
++      AsyncFunction("focus") { (view: ExpoLibghosttyView) in
++        view.focusKeyboard()
++      }.runOnQueue(.main)
++
++      AsyncFunction("blur") { (view: ExpoLibghosttyView) in
++        view.blurKeyboard()
++      }.runOnQueue(.main)
++
+       // PTY output bytes (base64) → terminal grid.
+       AsyncFunction("write") { (view: ExpoLibghosttyView, base64: String) in
+         guard let data = Data(base64Encoded: base64) else {
+diff --git a/ios/ExpoLibghosttyView.swift b/ios/ExpoLibghosttyView.swift
+index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..5a786b50eb8d50e94a8dc8faf50eedafcbf962bb 100644
+--- a/ios/ExpoLibghosttyView.swift
++++ b/ios/ExpoLibghosttyView.swift
+@@ -1,3 +1,4 @@
++import CoreText
+ import ExpoModulesCore
+ import GhosttyTerminal
+ 
+@@ -42,6 +43,37 @@ class ExpoLibghosttyView: ExpoView {
+     _ = TerminalController.shared.setTheme(TerminalTheme(light: config, dark: config))
+   }
+ 
++  /// Font family, applied through the shared controller's terminal
++  /// configuration (app-wide, merged with the theme). Ghostty falls back to
++  /// its embedded fonts for missing glyphs. A family CoreText cannot resolve
++  /// is reported instead of being passed through and silently ignored.
++  func applyFontFamily(_ family: String?) {
++    let name = family?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
++    var config = TerminalConfiguration()
++    if !name.isEmpty {
++      if Self.fontFamilyAvailable(name) {
++        config = config.fontFamily(name)
++      } else {
++        onFontFallback([
++          "fontFamily": name,
++          "message": "Font family \(name) is not registered with this app.",
++        ])
++      }
++    }
++    _ = TerminalController.shared.setTerminalConfiguration(config)
++  }
++
++  /// Same family-attribute match ghostty's CoreText discovery performs.
++  private static func fontFamilyAvailable(_ name: String) -> Bool {
++    let descriptor = CTFontDescriptorCreateWithAttributes(
++      [kCTFontFamilyNameAttribute as String: name] as CFDictionary
++    )
++    let matches = CTFontDescriptorCreateMatchingFontDescriptors(descriptor, nil)
++    return (matches.map { CFArrayGetCount($0) } ?? 0) > 0
++  }
++
++  let onFontFallback = EventDispatcher()
++  let onKeyboardVisibilityChange = EventDispatcher()
+   let onInput = EventDispatcher()
+   let onResize = EventDispatcher()
+ 
+@@ -65,8 +97,33 @@ class ExpoLibghosttyView: ExpoView {
+     // ("surface rebuild skipped: missing controller").
+     terminalView.controller = TerminalController.shared
+     terminalView.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
+-    terminalView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
++    terminalView.translatesAutoresizingMaskIntoConstraints = false
++    terminalView.inputAccessoryItems = [
++      .esc, .tab, .shift, .ctrl, .alt,
++      .arrowLeft, .arrowUp, .arrowDown, .arrowRight,
++    ]
++    terminalView.onSoftwareKeyboardVisibilityChange = { [weak self] visible in
++      self?.onKeyboardVisibilityChange(["visible": visible])
++    }
+     addSubview(terminalView)
++    // Resize the actual terminal grid with the keyboard, including third-party
++    // keyboards and the terminal accessory row. JS frame measurements arrive
++    // after native layout and can leave the cursor underneath the keyboard.
++    NSLayoutConstraint.activate([
++      terminalView.leadingAnchor.constraint(equalTo: leadingAnchor),
++      terminalView.trailingAnchor.constraint(equalTo: trailingAnchor),
++      terminalView.topAnchor.constraint(equalTo: topAnchor),
++      terminalView.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor),
++    ])
++  }
++
++  func focusKeyboard() {
++    terminalView.showSoftwareKeyboard()
++  }
++
++  func blurKeyboard() {
++    terminalView.resetStickyModifiers()
++    terminalView.resignFirstResponder()
+   }
+ 
+   /// Feed PTY output (terminal.output on the wire) into the grid.
+diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
+index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..6ddeaba8dd19f6b8920f26b816a01ce88bdf3e87 100644
+--- a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
++++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
+@@ -58,7 +58,7 @@
+         }
+ 
+         func refreshContent() {
+-            let hasMarkedText = terminalView?.inputHandler.hasMarkedText ?? false
++            let shiftActivation = terminalView?.stickyModifiers.shift ?? .inactive
+             let ctrlActivation = terminalView?.stickyModifiers.ctrl ?? .inactive
+             let altActivation = terminalView?.stickyModifiers.alt ?? .inactive
+             let commandActivation = terminalView?.stickyModifiers.command ?? .inactive
+@@ -67,11 +67,12 @@
+ 
+             for (modifier, button) in modifierButtons {
+                 let activation = switch modifier {
++                case .shift: shiftActivation
+                 case .ctrl: ctrlActivation
+                 case .alt: altActivation
+                 case .command: commandActivation
+                 }
+-                button.applyModifierStyle(activation, isDisabled: hasMarkedText, style: style)
++                button.applyModifierStyle(activation, isDisabled: false, style: style)
+             }
+         }
+ 
+@@ -129,7 +130,7 @@
+             stackView.translatesAutoresizingMaskIntoConstraints = false
+             stackView.axis = .horizontal
+             stackView.alignment = .center
+-            stackView.spacing = 8
++            stackView.spacing = 4
+             scrollView.addSubview(stackView)
+ 
+             NSLayoutConstraint.activate([
+@@ -162,19 +163,22 @@
+         private func makeView(for item: TerminalInputAccessoryItem) -> UIView {
+             switch item {
+             case .esc:
+-                makeTrackedKeyButton(title: "Escape", systemImage: "escape", key: .esc)
++                makeTrackedKeyButton(title: "Esc", key: .esc)
++
++            case .shift:
++                makeTrackedModifierButton(title: "Shift", modifier: .shift)
+ 
+             case .ctrl:
+-                makeTrackedModifierButton(title: "Control", systemImage: "control", modifier: .ctrl)
++                makeTrackedModifierButton(title: "Ctrl", modifier: .ctrl)
+ 
+             case .alt:
+-                makeTrackedModifierButton(title: "Option", systemImage: "option", modifier: .alt)
++                makeTrackedModifierButton(title: "Alt", modifier: .alt)
+ 
+             case .command:
+                 makeTrackedModifierButton(title: "Command", systemImage: "command", modifier: .command)
+ 
+             case .tab:
+-                makeTrackedKeyButton(title: "Tab", systemImage: "arrow.right.to.line", key: .tab)
++                makeTrackedKeyButton(title: "Tab", key: .tab)
+ 
+             case .arrowLeft:
+                 makeTrackedKeyButton(title: "Left", systemImage: "arrowtriangle.left.fill", key: .arrowLeft)
+@@ -201,7 +205,7 @@
+ 
+         private func makeTrackedModifierButton(
+             title: String,
+-            systemImage: String,
++            systemImage: String? = nil,
+             modifier: TerminalStickyModifierState.Modifier
+         ) -> AccessoryButton {
+             let button = makeModifierButton(
+@@ -225,14 +229,22 @@
+ 
+         private func makeModifierButton(
+             title: String,
+-            systemImage: String,
++            systemImage: String? = nil,
+             modifier: TerminalStickyModifierState.Modifier
+         ) -> AccessoryButton {
+             let button = AccessoryButton(size: buttonSize) { [weak terminalView] in
++                // Finish IME composition before arming the next terminal key.
++                // Disabling modifiers during composition silently loses Ctrl/Shift taps.
++                terminalView?.inputHandler.unmarkText(applyingStickyModifiers: false)
+                 terminalView?.stickyModifiers.toggle(modifier)
+             }
+             button.accessibilityLabel = title
+-            button.setImage(UIImage(systemName: systemImage), for: .normal)
++            if let systemImage {
++                button.setImage(UIImage(systemName: systemImage), for: .normal)
++            } else {
++                button.setTitle(title, for: .normal)
++                button.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
++            }
+             return button
+         }
+ 
+@@ -375,6 +387,7 @@
+             isEnabled = true
+             alpha = 1
+             tintColor = style.regularForeground
++            setTitleColor(style.regularForeground, for: .normal)
+             backgroundColor = style.regularBackground
+             lockIndicator.isHidden = true
+             lockIndicator.backgroundColor = tintColor
+@@ -391,6 +404,7 @@
+ 
+             let isActive = activation != .inactive
+             tintColor = isActive ? style.activeForeground : style.regularForeground
++            setTitleColor(tintColor, for: .normal)
+             backgroundColor = isActive ? style.activeBackground : style.regularBackground
+             lockIndicator.isHidden = activation != .locked
+             lockIndicator.backgroundColor = tintColor
+diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputBarKey.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputBarKey.swift
+index 4a2b7931e143eccb27efbfc3dc5ce0d96cdd443a..962e779a0fd77a4b18cb50aa1225a1ddb013042d 100644
+--- a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputBarKey.swift
++++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputBarKey.swift
+@@ -6,6 +6,7 @@
+ #if canImport(UIKit) && !targetEnvironment(macCatalyst)
+     public enum TerminalInputAccessoryItem: Equatable, Sendable {
+         case esc
++        case shift
+         case ctrl
+         case alt
+         case command
+diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalStickyModifierState.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalStickyModifierState.swift
+index 91a3c7bf4b5122849a6941b8f7d42cdf62ce753d..1ad1df073c133d3e09dc5531fc6d9ddb478d842a 100644
+--- a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalStickyModifierState.swift
++++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalStickyModifierState.swift
+@@ -9,14 +9,16 @@
+     @MainActor
+     final class TerminalStickyModifierState {
+         enum Activation { case inactive, armed, locked }
+-        enum Modifier { case ctrl, alt, command }
++        enum Modifier { case shift, ctrl, alt, command }
+ 
++        private(set) var shift: Activation = .inactive
+         private(set) var ctrl: Activation = .inactive
+         private(set) var alt: Activation = .inactive
+         private(set) var command: Activation = .inactive
+ 
+         var onChange: (() -> Void)?
+ 
++        private var lastShiftTap: Date = .distantPast
+         private var lastCtrlTap: Date = .distantPast
+         private var lastAltTap: Date = .distantPast
+         private var lastCommandTap: Date = .distantPast
+@@ -24,6 +26,9 @@
+ 
+         func toggle(_ modifier: Modifier) {
+             switch modifier {
++            case .shift:
++                shift = nextActivation(shift, lastTap: lastShiftTap)
++                lastShiftTap = Date()
+             case .ctrl:
+                 ctrl = nextActivation(ctrl, lastTap: lastCtrlTap)
+                 lastCtrlTap = Date()
+@@ -39,9 +44,11 @@
+ 
+         func consumeForNextKey() -> TerminalInputModifiers {
+             var mods = TerminalInputModifiers()
++            if shift != .inactive { mods.insert(.shift) }
+             if ctrl != .inactive { mods.insert(.ctrl) }
+             if alt != .inactive { mods.insert(.alt) }
+             if command != .inactive { mods.insert(.super_) }
++            if shift == .armed { shift = .inactive }
+             if ctrl == .armed { ctrl = .inactive }
+             if alt == .armed { alt = .inactive }
+             if command == .armed { command = .inactive }
+@@ -50,11 +57,12 @@
+         }
+ 
+         var hasActiveModifiers: Bool {
+-            ctrl != .inactive || alt != .inactive || command != .inactive
++            shift != .inactive || ctrl != .inactive || alt != .inactive || command != .inactive
+         }
+ 
+         func reset() {
+             guard hasActiveModifiers else { return }
++            shift = .inactive
+             ctrl = .inactive
+             alt = .inactive
+             command = .inactive
+diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+InputAccessory.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+InputAccessory.swift
+index 809e7dd6f1887dc5c2b0267e4c786587c49aec57..ce321a2378b0561238f84fcbe0e40c997639c9b9 100644
+--- a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+InputAccessory.swift
++++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+InputAccessory.swift
+@@ -152,6 +152,12 @@
+             }
+ 
+             let mods = stickyModifiers.consumeForNextKey()
++            // The software keyboard delivers Return as text. Preserve sticky
++            // modifiers through Ghostty's key encoder instead of pasting a newline.
++            if text == "\n" || text == "\r" || text == "\r\n" {
++                sendSyntheticKey(usage: 0x28, additionalMods: mods)
++                return true
++            }
+             if mods == .ctrl, let controlByte = controlByte(for: text) {
+                 sendControlByte(controlByte, modifiers: mods)
+                 return true
+@@ -205,6 +211,7 @@
+                 inputHandler.unmarkText()
+             }
+ 
++            let text = modifiers.contains(.shift) ? text.uppercased() : text
+             guard let mapping = keyMapping(for: text) else { return false }
+ 
+             var event = ghostty_input_key_s()
+diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift
+index 3f3eeb202351f474526690dc27937df833bdd7e3..cba72012e19707f5a0d98e037ee1d873427935da 100644
+--- a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift
++++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift
+@@ -23,11 +23,9 @@
+             #else
+                 pendingKeyboardDismissOnTouchEnd = false
+                 touchDidScrollDuringCurrentTouch = false
+-                if softwareKeyboardVisible {
+-                    pendingKeyboardDismissOnTouchEnd = true
+-                } else {
+-                    becomeFirstResponder()
+-                }
++                // A terminal tap focuses input. Dismissal is an explicit host action;
++                // toggling here can dismiss a keyboard that is still being presented.
++                showSoftwareKeyboard()
+             #endif
+         }
+ 
+diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift
+index 7bb1e9861c9640c197321a9eff2cd7f9e087c0a1..3dfa613322d488a4b8fa6df7d192b0ea6a8ed192 100644
+--- a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift
++++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift
+@@ -40,7 +40,14 @@
+         #if !targetEnvironment(macCatalyst)
+             lazy var terminalInputAccessory = TerminalInputAccessoryView(terminalView: self)
+             let stickyModifiers = TerminalStickyModifierState()
+-            var softwareKeyboardVisible = false
++            public var onSoftwareKeyboardVisibilityChange: ((Bool) -> Void)?
++            var softwareKeyboardVisible = false {
++                didSet {
++                    if softwareKeyboardVisible != oldValue {
++                        onSoftwareKeyboardVisibilityChange?(softwareKeyboardVisible)
++                    }
++                }
++            }
+             var pendingKeyboardDismissOnTouchEnd = false
+             var touchDidScrollDuringCurrentTouch = false
+         #endif
+@@ -245,11 +252,22 @@
+         }
+ 
+         #if !targetEnvironment(macCatalyst)
++            /// Reacquire the input session when iOS has hidden the software keyboard
++            /// while keeping this view focused (for example after a hardware keyboard).
++            public func showSoftwareKeyboard() {
++                guard window != nil else { return }
++                if isFirstResponder, !softwareKeyboardVisible {
++                    resignFirstResponder()
++                }
++                becomeFirstResponder()
++                reloadInputViews()
++            }
++
+             func setupKeyboardObservers() {
+                 NotificationCenter.default.addObserver(
+                     self,
+-                    selector: #selector(keyboardDidShow),
+-                    name: UIResponder.keyboardDidShowNotification,
++                    selector: #selector(keyboardFrameWillChange),
++                    name: UIResponder.keyboardWillChangeFrameNotification,
+                     object: nil
+                 )
+                 NotificationCenter.default.addObserver(
+@@ -260,9 +278,14 @@
+                 )
+             }
+ 
+-            @objc func keyboardDidShow(_: Notification) {
+-                guard isFirstResponder else { return }
+-                softwareKeyboardVisible = true
++            @objc func keyboardFrameWillChange(_ notification: Notification) {
++                guard isFirstResponder, let window,
++                      let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
++                else { return }
++                let keyboardFrame = window.convert(frame, from: window.screen.coordinateSpace)
++                let overlap = window.bounds.intersection(keyboardFrame).height
++                // iOS can show only our accessory row with a hardware keyboard attached.
++                softwareKeyboardVisible = overlap > terminalInputAccessory.intrinsicContentSize.height
+             }
+ 
+             @objc func keyboardDidHide(_: Notification) {
+diff --git a/src/ExpoLibghostty.types.ts b/src/ExpoLibghostty.types.ts
+index cbd0ab4128aa22b18c65f633dd81cbd0d737f51b..04d139fc8995870d8220b23cfb84502987962fca 100644
+--- a/src/ExpoLibghostty.types.ts
++++ b/src/ExpoLibghostty.types.ts
+@@ -14,7 +14,18 @@ export type TerminalResizeEvent = {
+   rows: number;
+ };
+ 
++export type TerminalFontFallbackEvent = {
++  /** The requested family that could not be loaded. */
++  fontFamily: string;
++  /** Why the platform default monospace font is used instead. */
++  message: string;
++};
++
+ export type TerminalViewRef = {
++  /** Focus the terminal and show its system keyboard. */
++  focus(): Promise<void>;
++  /** Dismiss the terminal's system keyboard. */
++  blur(): Promise<void>;
+   /** Feed base64-encoded PTY output into the terminal grid. */
+   write(base64: string): Promise<void>;
+   /** Feed PTY output as UTF-8 text, for string-based wires. */
+@@ -57,6 +68,19 @@ export type TerminalViewProps = {
+    * pass undefined fields to keep ghostty's defaults.
+    */
+   theme?: TerminalTheme;
++  /**
++   * Font family. Empty or omitted keeps the platform default (ghostty's
++   * embedded JetBrains Mono on iOS, the system monospace on Android).
++   * iOS: a CoreText family name registered with the app (for example via
++   * UIAppFonts); applied app-wide like the theme. Android: the file name
++   * stem of `fonts/<family>-Regular.ttf` (and optional `-Bold.ttf`) in the
++   * app assets. Missing families fire `onFontFallback`.
++   */
++  fontFamily?: string;
++  /** The requested `fontFamily` is unavailable; the default font is used. */
++  onFontFallback?: (event: { nativeEvent: TerminalFontFallbackEvent }) => void;
++  /** iOS: visibility of the software keyboard, excluding an accessory-only row. */
++  onKeyboardVisibilityChange?: (event: { nativeEvent: { visible: boolean } }) => void;
+   /** User keyboard/IME input to forward to the PTY. */
+   onInput?: (event: { nativeEvent: TerminalInputEvent }) => void;
+   /** Grid resized (layout, rotation, font change); forward to the PTY. */
+diff --git a/src/ExpoLibghosttyView.tsx b/src/ExpoLibghosttyView.tsx
+index 80ad4b1600444c2fe9cc1e1bfd8058fba98e9546..681efc08bccd5bb760fa5a196547281503c72b0f 100644
+--- a/src/ExpoLibghosttyView.tsx
++++ b/src/ExpoLibghosttyView.tsx
+@@ -25,6 +25,8 @@ export default function TerminalView({ ref, onResize, ...props }: TerminalViewPr
+         });
+       };
+     return {
++      focus: whenReady(() => native.current!.focus()),
++      blur: whenReady(() => native.current!.blur()),
+       write: whenReady((base64: string) => native.current!.write(base64)),
+       writeText: whenReady((text: string) => native.current!.writeText(text)),
+       finish: whenReady((exitCode: number) => native.current!.finish(exitCode)),

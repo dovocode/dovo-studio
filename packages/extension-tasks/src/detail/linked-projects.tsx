@@ -37,20 +37,36 @@ export function LinkedProjects({ task }: { task: Task }) {
           Linked projects added by the agent take effect on the next turn.
         </p>
       )}
-      <LinkedCheckoutEditor value={links} onChange={setLinks} disabled={disabled} />
-      <p className="text-xs text-muted-foreground">
-        Removing a link keeps its worktree and saved history. Read-only links are reference context;
-        the harness’s access mode still applies.
-      </p>
-      <Button
-        size="sm"
-        disabled={disabled || JSON.stringify(links) === JSON.stringify(before)}
-        onClick={() => {
-          void save()
-        }}
-      >
-        Save linked projects
-      </Button>
+      <LinkedCheckoutEditor
+        value={links}
+        onChange={setLinks}
+        disabled={disabled}
+        showTitle={false}
+        emptyDescription={
+          disabled
+            ? !connected
+              ? 'Connect to add a checkout.'
+              : 'Link checkouts when this thread is idle.'
+            : undefined
+        }
+      />
+      {!!links.length && (
+        <p className="text-xs text-muted-foreground">
+          Removing a link keeps its worktree and saved history. Read-only links are reference
+          context; the harness’s access mode still applies.
+        </p>
+      )}
+      {JSON.stringify(links) !== JSON.stringify(before) && (
+        <Button
+          size="sm"
+          disabled={disabled || JSON.stringify(links) === JSON.stringify(before)}
+          onClick={() => {
+            void save()
+          }}
+        >
+          Save linked projects
+        </Button>
+      )}
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

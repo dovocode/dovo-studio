@@ -1,3 +1,9 @@
+import {
+  defaultTaskSnoozeMinutes,
+  taskSnoozeMinutesSchema,
+  defaultTaskSnoozeSchedule,
+  taskSnoozeScheduleSchema,
+} from '@dovo/protocol'
 import { accessibleThemeColors, statusColors } from './accessibility'
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { serviceUrlsSchema } from '@dovo/protocol'
@@ -34,11 +40,21 @@ const schema = mutableStruct({
   workingSection: Schema.Boolean,
   collapsedThreadSections: mutableArray(Schema.String),
   threadSectionOrder: threadSectionOrderSchema,
+  taskSnoozeMinutes: taskSnoozeMinutesSchema,
+  taskSnoozeSchedule: taskSnoozeScheduleSchema,
+  threadInfoOrder: mutableArray(Schema.String),
+  threadInfoSections: Schema.Record(Schema.String, Schema.Boolean),
   projectOrder: Schema.Literals(['name', 'activity', 'user-message']),
   inAppNotifications: Schema.Boolean,
   responseStreaming: Schema.Literals(['live', 'paragraphs']),
   showSkillsInSlashMenu: Schema.Boolean,
   markdownComposerPreview: Schema.Boolean,
+  richTextComposer: Schema.Boolean,
+  showMarkdownSourceToggle: Schema.Boolean,
+  showContextUsage: Schema.Boolean,
+  minimalComposer: Schema.Boolean,
+  showPlanButton: Schema.Boolean,
+  showSendOptions: Schema.Boolean,
   collapseComposerOnScroll: Schema.Boolean,
   hideWhitespaceChanges: Schema.Boolean,
   proactivePanels: Schema.Boolean,
@@ -52,6 +68,11 @@ const schema = mutableStruct({
   quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
   theme: Schema.Literals(['dark', 'light', 'system']),
   themePalette: Schema.Literals([...studioThemeIds]),
+  themeGlow: Schema.Number.pipe(
+    Schema.check(Schema.isFinite()),
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  ),
+  themeGradients: Schema.Boolean,
   colorVision: Schema.Literals(['default', 'blue-orange']),
   highContrast: Schema.Boolean,
   codeTheme: codeThemeSchema,
@@ -78,6 +99,9 @@ const schema = mutableStruct({
   showIssues: Schema.Boolean,
   showJira: Schema.Boolean,
   browserWorkspaceEnabled: Schema.Boolean,
+  unifiedWorkspaceEnabled: Schema.Boolean,
+  /** Only applies while unified is enabled; normal modes stay discoverable otherwise. */
+  unifiedWorkspaceHideNormalModes: Schema.Boolean,
   ...browserTabCleanupSettingsFields,
   diffLayout: Schema.Literals(['unified', 'split']),
   diffOverflow: Schema.Literals(['wrap', 'scroll']),
@@ -141,11 +165,24 @@ export const defaultAppPreferences: AppPreferences = {
   workingSection: false,
   collapsedThreadSections: ['working', 'waiting', 'snoozed', 'settled'],
   threadSectionOrder: [...defaultThreadSectionOrder],
+  taskSnoozeMinutes: [...defaultTaskSnoozeMinutes],
+  taskSnoozeSchedule: {
+    ...defaultTaskSnoozeSchedule,
+    presets: [...defaultTaskSnoozeSchedule.presets],
+  },
+  threadInfoOrder: [],
+  threadInfoSections: {},
   projectOrder: 'name',
   inAppNotifications: true,
   responseStreaming: 'live',
   showSkillsInSlashMenu: true,
   markdownComposerPreview: false,
+  richTextComposer: true,
+  showMarkdownSourceToggle: false,
+  showContextUsage: true,
+  minimalComposer: true,
+  showPlanButton: false,
+  showSendOptions: false,
   collapseComposerOnScroll: false,
   hideWhitespaceChanges: false,
   proactivePanels: false,
@@ -159,6 +196,8 @@ export const defaultAppPreferences: AppPreferences = {
   quitShortcut: 'immediate',
   theme: 'dark',
   themePalette: 'dovo',
+  themeGlow: 0,
+  themeGradients: false,
   colorVision: 'default',
   highContrast: false,
   codeTheme: 'app',
@@ -181,6 +220,8 @@ export const defaultAppPreferences: AppPreferences = {
   showIssues: true,
   showJira: true,
   browserWorkspaceEnabled: false,
+  unifiedWorkspaceEnabled: false,
+  unifiedWorkspaceHideNormalModes: false,
   browserAutoSettleMinutes: 0,
   browserCloseSettledMinutes: 0,
   diffLayout: 'unified',
@@ -196,7 +237,7 @@ export const defaultAppPreferences: AppPreferences = {
   hideFinishedSubagents: true,
   showToolDetails: false,
   toolActivity: 'collapsed',
-  browserSidebarWidth: 224,
+  browserSidebarWidth: 280,
   threadSidebarWidth: 280,
   toolsSidebarWidth: 380,
   viewerSidebarWidth: 560,
@@ -232,6 +273,7 @@ const desktopSettingsBridge = mutableStruct({
 })
 const listeners = new Set<() => void>()
 let cached: AppPreferences | undefined
+let stopExternalSubscription: (() => void) | undefined
 
 export function readAppPreferences(): AppPreferences {
   if (cached) return cached
@@ -260,6 +302,10 @@ export function readAppPreferences(): AppPreferences {
   // every preference, and fields added in later versions start at their defaults.
   const saved = stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {}
   const merged: Record<string, unknown> = { ...defaultAppPreferences }
+  if (saved.themeEffects === false) {
+    merged.themeGlow = 0
+    merged.themeGradients = false
+  }
   for (const field of Object.keys(defaultAppPreferences)) {
     if (!(field in saved)) continue
     const candidate = { ...defaultAppPreferences, [field]: saved[field] }
@@ -281,7 +327,14 @@ export function updateAppPreferences(changes: Partial<AppPreferences>) {
   const bridge = decodeResult(desktopSettingsBridge, globalThis)
   // Desktop settings are shared across windows; merge against the latest stored value.
   if (bridge.success) cached = undefined
-  cached = { ...readAppPreferences(), ...changes }
+  const current = readAppPreferences()
+  if (
+    Object.entries(changes).every(([field, value]) =>
+      Object.is(current[field as keyof AppPreferences], value),
+    )
+  )
+    return
+  cached = { ...current, ...changes }
   try {
     if (bridge.success) bridge.data.dovo.writeAppSettings(JSON.stringify(cached))
     else globalThis.localStorage?.setItem(key, JSON.stringify(cached))
@@ -292,24 +345,30 @@ export function updateAppPreferences(changes: Partial<AppPreferences>) {
 }
 function subscribe(listener: () => void) {
   listeners.add(listener)
-  // Another window of the app changed a preference.
-  const storage = (event: StorageEvent) => {
-    if (event.key !== key) return
-    cached = undefined
-    listener()
+  // One external subscription per renderer: invalidating once lets every consumer share
+  // the same snapshot instead of repeating synchronous IPC and decoding for each hook.
+  if (listeners.size === 1) {
+    const changed = () => {
+      cached = undefined
+      for (const notify of listeners) notify()
+    }
+    const storage = (event: StorageEvent) => {
+      if (event.key === key || event.key === null) changed()
+    }
+    globalThis.addEventListener?.('storage', storage)
+    const bridge = decodeResult(desktopSettingsBridge, globalThis)
+    const stopNative = bridge.success ? bridge.data.dovo.subscribeAppSettings?.(changed) : undefined
+    stopExternalSubscription = () => {
+      stopNative?.()
+      globalThis.removeEventListener?.('storage', storage)
+    }
   }
-  globalThis.addEventListener?.('storage', storage)
-  const bridge = decodeResult(desktopSettingsBridge, globalThis)
-  const stopNative = bridge.success
-    ? bridge.data.dovo.subscribeAppSettings?.(() => {
-        cached = undefined
-        listener()
-      })
-    : undefined
   return () => {
-    stopNative?.()
     listeners.delete(listener)
-    globalThis.removeEventListener?.('storage', storage)
+    if (listeners.size === 0) {
+      stopExternalSubscription?.()
+      stopExternalSubscription = undefined
+    }
   }
 }
 export function useAppPreferences() {

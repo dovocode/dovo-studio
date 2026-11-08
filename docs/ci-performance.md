@@ -14,6 +14,11 @@ when introducing a generated output or a build input outside the existing source
 environment variables are fingerprinted too. The wrapper removes invocation IDs and browser-check
 settings before starting Vite, so these do not leak back into nested build fingerprints.
 
+The desktop package runs browser-viewer generation and `vp build` directly. Its former additional
+`vp run bundle` cache wrapper caused nested esbuild spawns to fail with `EINVAL` on the review Linux
+host under both Node 24 and 26. Complete workspace caching remains at the explicit CI boundary
+above; standalone desktop builds execute their steps without another task-cache wrapper.
+
 Browser shards prepare the build once and then run every registered suite's checks without repeating
 its package-build prefixes. Generators and checks remain in each suite. Task cache archives have
 separate writer keys for matrix shards and can reuse compatible entries from other Linux jobs.

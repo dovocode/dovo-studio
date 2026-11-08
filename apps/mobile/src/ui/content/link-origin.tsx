@@ -1,5 +1,5 @@
-import { createContext, useContext, type ReactNode } from 'react'
-import { useRuntime } from '../../runtime/connection/provider'
+import { createContext, useContext, useCallback, type ReactNode } from 'react'
+import { useRuntimeSelector, sameRuntimeFields } from '../../runtime/connection/provider'
 
 import type { LinkOrigin } from '@dovo/studio-core/links'
 export type { LinkOrigin } from '@dovo/studio-core/links'
@@ -22,11 +22,20 @@ export function useLinkOrigin(
   jiraSourceId?: string,
 ): LinkOrigin {
   const origin = useContext(Origin)
-  const { activeId, snapshot } = useRuntime()
-  const task = snapshot?.workspace.tasks.find((task) => task.id === taskId)
+  const { activeId, taskRepositoryId } = useRuntimeSelector(
+    useCallback(
+      (value) => ({
+        activeId: value.activeId,
+        taskRepositoryId: value.snapshot?.workspace.tasks.find((task) => task.id === taskId)
+          ?.repositoryId,
+      }),
+      [taskId],
+    ),
+    sameRuntimeFields,
+  )
   return {
     runtimeId: origin.runtimeId ?? activeId ?? undefined,
-    repositoryId: repositoryId ?? task?.repositoryId ?? origin.repositoryId,
+    repositoryId: repositoryId ?? taskRepositoryId ?? origin.repositoryId,
     jiraSourceId: jiraSourceId ?? origin.jiraSourceId,
   }
 }

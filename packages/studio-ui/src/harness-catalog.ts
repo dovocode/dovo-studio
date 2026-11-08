@@ -1,5 +1,5 @@
 import { browserModelCatalogCache } from '@dovo/studio-core'
-import { modelCatalogCacheScope } from '@dovo/protocol'
+import { modelDisplayName, modelCatalogCacheScope } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useCatalogVisible } from './catalog-demand'
 import { createModelLabels, type ModelLabelHarness } from './model-labels'
@@ -77,7 +77,10 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   }, [active, visible, connected, request, key, refreshVersion])
   return {
     catalog,
-    modelName: catalog?.models.find((item) => item.id === model)?.name ?? savedModelName,
+    modelName: modelDisplayName(
+      model,
+      catalog?.models.find((item) => item.id === model)?.name ?? savedModelName,
+    ),
     error: state.key === key ? state.error : '',
     loading: active && visible && connected && (state.key !== key || state.loading),
     refresh: () => setRefreshVersion((version) => version + 1),

@@ -7,13 +7,18 @@ export function useScreenshotAttachment(taskId: string) {
     editor: attachments.editor,
     error: attachments.error,
     busy: attachments.busy,
-    attach: async (image: string) =>
-      attachments.upload([
-        new File(
-          [Uint8Array.from(atob(screenshotData(image)), (char) => char.charCodeAt(0))],
-          `screenshot-${Date.now()}.png`,
-          { type: 'image/png' },
-        ),
-      ]),
+    attach: async (image: string, signal?: AbortSignal) =>
+      attachments.upload(
+        [
+          new File(
+            [Uint8Array.from(atob(screenshotData(image)), (char) => char.charCodeAt(0))],
+            `screenshot-${Date.now()}.png`,
+            { type: 'image/png' },
+          ),
+        ],
+        undefined,
+        false,
+        signal,
+      ),
   }
 }

@@ -4,6 +4,7 @@ import { chromium } from 'playwright'
 const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
 import {Effect} from 'effect';
+import {useState} from 'react';
 const css=style=>Object.assign({},...(Array.isArray(style)?style:[style]).flat().filter(Boolean));
 export const View=({children,style})=><div style={css(style)}>{children}</div>;
 export const ScrollView=({children,contentContainerStyle,maximumZoomScale})=><div data-zoom={maximumZoomScale} style={css(contentContainerStyle)}>{children}</div>;
@@ -19,7 +20,7 @@ export const useTheme=()=>({styles:{screen:{position:'relative',width:'100%',hei
 export const taskImageReadSchema={};
 export const EditChatImage=()=>null;
 const readEffect=(path,input)=>Effect.tryPromise({try:signal=>window.call(path,input,signal),catch:reason=>reason});
-export const useRuntime=()=>({connected:true,connection:{address:'http://paired-runtime',token:'paired-token'},readEffect,callEffect:()=>{throw Error('Image reads must not refresh the workspace')}});
+export const useRuntime=()=>{const [connected,setConnected]=useState(true);window.setConnected=setConnected;return {connected,connection:{address:'http://paired-runtime',token:'paired-token'},readEffect,callEffect:()=>{throw Error('Image reads must not refresh the workspace')}}};
 `
 const built = await build({
   stdin: {
@@ -112,6 +113,28 @@ try {
   })
   assert.deepEqual(await close.boundingBox(), bounds)
   await close.click()
+  const loadedRequests = await page.evaluate(() => window.requests.length)
+  // Loaded previews must remain usable offline, and repeated connectivity changes
+  // must not download the same thumbnail or sharper preview again.
+  for (let index = 0; index < 3; index++) {
+    await page.evaluate(() => window.setConnected(false))
+    await page.waitForFunction(() => document.querySelector('img')?.naturalWidth === 1)
+    await page.getByRole('button', { name: 'Open Screenshot' }).click()
+    await page.getByRole('dialog').waitFor()
+    await page.evaluate(() => window.setConnected(true))
+    await page.waitForFunction(() => document.querySelector('img')?.naturalWidth === 1)
+    await page.getByRole('button', { name: 'Close image' }).click()
+  }
+  assert.equal(await page.evaluate(() => window.requests.length), loadedRequests)
+  // An identity change while offline must hide the previous source; reconnecting
+  // then retries the unloaded source normally.
+  await page.evaluate(() => window.setConnected(false))
+  await page.evaluate(() => window.setPath('offline.png'))
+  await page.getByText('Reconnect to the image’s computer to load it.').waitFor()
+  assert.equal(await page.locator('img').count(), 0)
+  await page.evaluate(() => window.setConnected(true))
+  await page.waitForFunction(() => document.querySelector('img')?.naturalWidth === 1)
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.path), 'offline.png')
   await page.evaluate(() => window.setPath('slow.png'))
   await page.getByText('Loading Screenshot').waitFor()
   await page.evaluate(() => window.setPath('new.png'))
@@ -121,7 +144,7 @@ try {
   assert.equal(await page.locator('img').getAttribute('src'), await page.evaluate(() => window.png))
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile server image checks passed: bounded runtime reads, visible errors, retry, decoded image, preview, cancellation, and stale-response isolation.',
+    'Mobile server image checks passed: bounded reads, errors/retry, offline previews without repeat downloads, identity isolation, preview, cancellation, and stale-response isolation.',
   )
 } finally {
   await browser.close()

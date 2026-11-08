@@ -88,6 +88,8 @@ export const browserProfileSchema = mutableStruct({
   ),
   emoji: Schema.optional(browserProfileEmojiSchema),
   language: Schema.optional(browserLanguageSchema),
+  keepSessionCookies: Schema.optional(Schema.Boolean),
+  doNotTrack: Schema.optional(Schema.Boolean),
   search: Schema.optional(browserSearchEngineSchema),
   linkDomains: Schema.optional(
     mutableArray(browserLinkDomainSchema).pipe(

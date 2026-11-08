@@ -43,8 +43,10 @@ export { AgentAvatar, agentIconChoices } from './agent-avatar'
 export { ProjectIcon } from './project-icon'
 
 export { TaskDefaultSettings } from './task-default-settings'
+export { ProjectOrganizationSettings } from './project-organization'
 export {
   SettingsPage,
+  SettingsStorageInfo,
   SettingsGroup,
   SettingRow,
   SettingsSaveBar,
@@ -97,3 +99,10 @@ export { PullRequestIcon, pullRequestIconTone } from './pull-request-icon'
 export { Card } from '@dovo/web-ui/card'
 
 export { ChangeTypeFilters, ChangeTypeIndicator } from './review/change-types'
+export { ChangeSummary } from './review/change-summary'
+
+export { ImageViewer } from './image-viewer'
+
+export { Disclosure } from './disclosure'
+
+export { StudioConfirmationProvider } from './confirmation-provider'

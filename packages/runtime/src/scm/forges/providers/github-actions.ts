@@ -10,6 +10,7 @@ import {
 } from '@dovo/protocol'
 import { HttpError } from '../../../errors.js'
 import { githubApi, githubGraphql, type GithubJSON, type GithubLocation } from './github-api.js'
+import { changeGithubLifecycle } from './github-lifecycle.js'
 const pull = mutableStruct({
   number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
     .pipe(
@@ -76,6 +77,10 @@ export async function actOnGithubPull(json: GithubJSON, repo: GithubLocation, va
   const result = {
     number: input.number,
     url: current.html_url,
+  }
+  if (input.action === 'draft' || input.action === 'auto-merge') {
+    await changeGithubLifecycle(json, repo, input)
+    return decode(pullActionResultSchema, { ...result, status: 'updated' })
   }
   switch (input.action) {
     case 'comment': {

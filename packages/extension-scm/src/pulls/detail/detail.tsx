@@ -1,6 +1,12 @@
 import { PullLinkedThreads } from './linked-threads'
 import { AuthorAvatar } from '../author-avatar'
-import { pullChangesSnapshot } from '@dovo/protocol'
+import {
+  buildPullReviewObjective,
+  pullChangesSnapshot,
+  pullLinkedTasks,
+  type PullReviewSelection,
+  type Task,
+} from '@dovo/protocol'
 import { PullSectionStatus } from './section-status'
 import { PullStack } from './stack'
 import { CreatePull } from '../list/create'
@@ -10,17 +16,27 @@ import { usePullDetail } from './use-pull-detail'
 import {
   useWorkspace,
   pullState,
+  pullChecks,
   pullDetailChecks,
   pullDetailReviews,
   pullMergeability,
   latestPullReviews,
   forgeLabels,
   formatDateTime,
+  type PullSignal,
 } from '@dovo/studio-core'
-import { HeaderContent, Button, Badge, MessageResponse, ProjectIcon } from '@dovo/studio-ui'
+import {
+  HeaderContent,
+  Button,
+  Badge,
+  MessageResponse,
+  ProjectIcon,
+  DropdownMenu,
+} from '@dovo/studio-ui'
 import {
   ArrowLeft,
   ArrowUpRight,
+  CircleAlert,
   FileDiff,
   GitBranch,
   ListChecks,
@@ -33,7 +49,9 @@ import { PullStatus, Signal } from './status'
 import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions, PullCommentComposer } from '../list/actions'
-import { PullPipelineRuns } from './pipeline-runs'
+import { PullAskAgent } from './ask-agent'
+import { PullPipelineRunsContent, usePullPipelineRuns } from './pipeline-runs'
+import { pipelineSignal } from '@dovo/protocol'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 type PullTab = 'overview' | 'changes' | 'checks'
 const tabCache = createPullStateCache<PullTab>(50)
@@ -49,6 +67,14 @@ type PullDetailProps = {
   onTabChange?: (tab: PullTab) => void
   initialTab?: PullTab
   initialFragment?: string
+  /**
+   * The thread showing this PR. Agent feedback goes to it only when it explicitly links this PR;
+   * otherwise feedback starts a new task as usual.
+   */
+  linkedThread?: {
+    task: Pick<Task, 'title' | 'pullRequest' | 'linkedPullRequests' | 'example'>
+    onAsk: (objective: string) => void
+  }
 }
 export function PullDetail(props: PullDetailProps) {
   const { activeRuntimeId } = useWorkspace()
@@ -82,6 +108,7 @@ function PullDetailContent({
   embedded = false,
   initialTab,
   initialFragment = '',
+  linkedThread,
 }: PullDetailProps) {
   const { connected, workspace } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
@@ -101,6 +128,85 @@ function PullDetailContent({
     connectionId,
     { tab, discussionInOverview: true },
   )
+  const pipelineRuns = usePullPipelineRuns({
+    repositoryId,
+    sha: detail?.pull.headSha ?? '',
+    active: !!detail,
+  })
+  const failedRuns = pipelineRuns.runs.filter(
+    (run) => pipelineSignal(run.status).tone === 'danger',
+  ).length
+  const activeRuns = pipelineRuns.runs.filter(
+    (run) => pipelineSignal(run.status).phase === 'active',
+  ).length
+  const pipelineSummary = failedRuns
+    ? { label: `Pipeline runs: ${failedRuns} failed`, tone: 'danger' as const }
+    : activeRuns
+      ? { label: `Pipeline runs: ${activeRuns} running`, tone: 'warning' as const }
+      : pipelineRuns.runs.length &&
+          pipelineRuns.runs.every((run) => pipelineSignal(run.status).tone === 'success')
+        ? { label: `Pipeline runs: ${pipelineRuns.runs.length} passed`, tone: 'positive' as const }
+        : { label: `Pipeline runs: ${pipelineRuns.runs.length} loaded`, tone: 'neutral' as const }
+  const checksReady = sections.checks.ready
+  const checkSummary: PullSignal = sections.checks.error
+    ? { label: 'Check reports unavailable', tone: 'warning' }
+    : detail && checksReady
+      ? {
+          ...pullDetailChecks(detail),
+          label: `Check reports: ${pullDetailChecks(detail).label}${
+            !sections.checks.readConnected
+              ? ' · offline'
+              : sections.checks.detail?.stale
+                ? ' · saved'
+                : ''
+          }`,
+          ...(!sections.checks.readConnected || sections.checks.detail?.stale
+            ? { tone: 'warning' as const }
+            : {}),
+        }
+      : {
+          label: sections.checks.readConnected ? 'Loading checks…' : 'Check reports offline',
+          tone: 'neutral',
+        }
+  const reviewSummary: PullSignal =
+    detail && (sections.status.ready || sections.discussion.ready)
+      ? pullDetailReviews(detail)
+      : { label: 'Review status not loaded', tone: 'neutral' }
+  const reportsFailed =
+    checksReady && !sections.checks.error && !!detail && pullDetailChecks(detail).tone === 'danger'
+  const checkFailure =
+    failedRuns > 0 && reportsFailed
+      ? 'CI failed'
+      : failedRuns > 0
+        ? 'Pipeline failed'
+        : reportsFailed
+          ? 'Checks failed'
+          : undefined
+  const ciSummary = detail ? pullChecks(detail.pull) : undefined
+  const providerReadiness = detail ? pullMergeability(detail.pull) : undefined
+  const pipelineStatus: PullSignal = pipelineRuns.runs.length
+    ? pipelineSummary
+    : {
+        label: pipelineRuns.busy ? 'Loading pipeline runs…' : 'No pipeline runs loaded',
+        tone: 'neutral',
+      }
+  const repositorySource = ciSummary
+    ? {
+        name: 'Repository CI',
+        signal: { ...ciSummary, label: ciSummary.label.replace(/^CI status: /, '') },
+      }
+    : undefined
+  const statusSources = [
+    ...(repositorySource ? [repositorySource] : []),
+    {
+      name: 'Check reports',
+      signal: { ...checkSummary, label: checkSummary.label.replace(/^Check reports: /, '') },
+    },
+    {
+      name: 'Linked pipeline runs',
+      signal: { ...pipelineStatus, label: pipelineStatus.label.replace(/^Pipeline runs: /, '') },
+    },
+  ]
   const previousChanges = useRef<typeof detail>(null)
   const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
   useEffect(() => {
@@ -123,6 +229,12 @@ function PullDetailContent({
   const [discussionFilter, setDiscussionFilter] = useApplicationState<'all' | 'review' | 'comment'>(
     'all',
   )
+  const thread =
+    linkedThread && detail && pullLinkedTasks([linkedThread.task], detail.pull.url).length
+      ? { title: linkedThread.task.title, onAsk: linkedThread.onAsk }
+      : undefined
+  // Without a hosting thread that links this PR, agent questions go through an explicit chooser.
+  const [asking, setAsking] = useApplicationState<{ selection?: PullReviewSelection } | null>(null)
   const discussion = detail?.comments.filter((comment) => comment.kind !== 'inline') ?? []
   const reviews = latestPullReviews(discussion)
   const selectTab = (value: typeof tab) => {
@@ -203,16 +315,14 @@ function PullDetailContent({
           </Button>
           <ProjectIcon
             repository={workspace.repositories.find((repo) => repo.id === repositoryId)}
-            className="size-4"
+            className="size-4 max-sm:hidden @max-sm/pr-detail:hidden"
           />
           <h1 className="studio-titlebar-heading min-w-0 flex-1" title={detail?.pull.title}>
             <span className="studio-titlebar-project">
               {repository?.name ?? detail?.pull.repositoryUrl.split('/').slice(-2).join('/')}
             </span>
             <span className="studio-titlebar-divider">/</span>
-            <span className="studio-titlebar-task">
-              {detail ? `#${number} · ${detail.pull.title}` : `PR #${number}`}
-            </span>
+            <span className="studio-titlebar-task">{`PR #${number}`}</span>
           </h1>
           <Button
             size="icon"
@@ -251,7 +361,60 @@ function PullDetailContent({
             <PullActions
               repositoryId={repositoryId}
               detail={detail}
+              mergeStatus={{
+                headSha: detail.pull.headSha,
+                checks: {
+                  busy: sections.checks.busy,
+                  ready: sections.checks.ready,
+                  error: sections.checks.error,
+                  readConnected: sections.checks.readConnected,
+                  refresh: sections.checks.refresh,
+                },
+                providerReadiness: pullMergeability(detail.pull),
+                sources: [...statusSources, { name: 'Review status', signal: reviewSummary }],
+                signals: [
+                  checkSummary,
+                  pipelineRuns.runs.length
+                    ? pipelineSummary
+                    : {
+                        label: pipelineRuns.busy
+                          ? 'Loading pipeline runs…'
+                          : 'No pipeline runs loaded',
+                        tone: 'neutral',
+                      },
+                  reviewSummary,
+                  pullMergeability(detail.pull),
+                ],
+                warnings: [
+                  ...new Set(
+                    [
+                      sections.status.error,
+                      sections.checks.error,
+                      sections.discussion.error,
+                      detail.pull.statusError,
+                      pipelineRuns.error,
+                      pipelineRuns.notice,
+                      ...detail.warnings,
+                    ].filter((message): message is string => !!message),
+                  ),
+                ],
+              }}
               onDone={changed}
+              extraMenuItems={
+                <>
+                  {(thread || repository) && (
+                    <DropdownMenu.Item
+                      className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                      disabled={!thread && !connected}
+                      onSelect={() =>
+                        thread ? thread.onAsk(buildPullReviewObjective(detail)) : setAsking({})
+                      }
+                    >
+                      {thread ? `Ask in linked thread ${thread.title}` : 'Ask agent about this PR'}
+                    </DropdownMenu.Item>
+                  )}
+                </>
+              }
               onStartTask={
                 repository
                   ? () => {
@@ -279,7 +442,13 @@ function PullDetailContent({
         )}
         {detail && (
           <>
-            <header className="shrink-0 space-y-3 border-b px-4 py-4">
+            <header className="shrink-0 space-y-2 border-b border-border/60 px-4 py-3">
+              <h2
+                className="text-lg font-semibold leading-snug [overflow-wrap:anywhere]"
+                data-testid="PR title"
+              >
+                {detail.pull.title}
+              </h2>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Badge variant="outline">
                   <Signal signal={pullState(detail.pull)} />
@@ -289,10 +458,15 @@ function PullDetailContent({
                   title={detail.pull.author}
                 >
                   <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
-                  <span className="truncate">
-                    #{number} · {detail.pull.author}
-                  </span>
+                  <span className="truncate">{detail.pull.author}</span>
                 </span>
+                <span>#{number}</span>
+                <time
+                  dateTime={detail.pull.updatedAt}
+                  title={formatDateTime(detail.pull.updatedAt)}
+                >
+                  Updated {formatDateTime(detail.pull.updatedAt, { dateStyle: 'medium' })}
+                </time>
                 <a
                   data-dovo-external="true"
                   href={detail.pull.url}
@@ -322,7 +496,17 @@ function PullDetailContent({
                 <span className="font-mono" title={detail.pull.headSha}>
                   {detail.pull.headSha.slice(0, 8)}
                 </span>
-                <span className="ml-auto inline-flex shrink-0 gap-2 font-mono tabular-nums">
+                <span className="ml-auto inline-flex flex-wrap items-center gap-3 tabular-nums">
+                  <button
+                    type="button"
+                    onClick={() => selectTab('changes')}
+                    className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+                    aria-label="View pull request files"
+                  >
+                    <FileDiff className="size-3.5" aria-hidden />
+                    {detail.pull.changedFiles?.toLocaleString() ?? '—'}{' '}
+                    {detail.pull.changedFiles === 1 ? 'file' : 'files'}
+                  </button>
                   <span className="text-status-success">
                     +{detail.pull.additions?.toLocaleString() ?? '—'}
                   </span>
@@ -332,107 +516,123 @@ function PullDetailContent({
                 </span>
               </div>
             </header>
-            <div
-              role="tablist"
-              aria-label="PR detail sections"
-              className="flex shrink-0 gap-1 overflow-x-auto border-b px-3"
-            >
-              {(
-                [
-                  {
-                    id: 'overview',
-                    label: 'Overview',
-                    count: sections.discussion.ready ? discussion.length : undefined,
-                    icon: MessageSquare,
-                  },
-                  {
-                    id: 'changes',
-                    label: 'Changes',
-                    count: sections.changes.ready
-                      ? detail.files.length
-                      : (detail.pull.changedFiles ?? undefined),
-                    icon: FileDiff,
-                  },
-                  {
-                    id: 'checks',
-                    label: 'Checks',
-                    count: sections.checks.ready ? detail.checks.length : undefined,
-                    icon: ListChecks,
-                  },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  id={`pr-tab-${item.id}`}
-                  aria-label={
-                    item.id === 'overview' || item.count === undefined
-                      ? item.label
-                      : `${item.label} (${item.count})`
-                  }
-                  aria-controls={`pr-panel-${item.id}`}
-                  aria-selected={tab === item.id}
-                  tabIndex={tab === item.id ? 0 : -1}
-                  onKeyDown={(event) => {
-                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-                    event.preventDefault()
-                    const tabs = [
-                      ...(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                        '[role="tab"]',
-                      ) ?? []),
-                    ]
-                    const index = tabs.indexOf(event.currentTarget)
-                    const next =
-                      event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? tabs.length - 1
-                          : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
-                            tabs.length
-                    tabs[next]?.click()
-                    tabs[next]?.focus()
-                  }}
-                  onClick={() => selectTab(item.id)}
-                  className={`inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-xs font-medium ${tab === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                >
-                  <item.icon aria-hidden className="size-3.5" />
-                  {item.label}
-                  <span
-                    aria-hidden
-                    className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
-                  >
-                    {item.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div
-              className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-muted/10 px-4 py-2.5"
-              aria-label="Pull request status"
-            >
-              <button
-                type="button"
-                aria-label="View pull request checks"
-                onClick={() => selectTab('checks')}
-                className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+            <div className="flex flex-wrap items-center border-b border-border/60">
+              <div
+                role="tablist"
+                aria-label="PR detail sections"
+                className="flex min-w-0 shrink-0 gap-1 overflow-x-auto px-4 py-1"
               >
-                <Signal
-                  signal={
-                    sections.status.ready || sections.checks.ready
-                      ? pullDetailChecks(detail)
-                      : { label: 'Loading checks…', tone: 'neutral' }
-                  }
-                />
-              </button>
-              <Signal
-                signal={
-                  sections.status.ready || sections.discussion.ready
-                    ? pullDetailReviews(detail)
-                    : { label: 'Loading review status…', tone: 'neutral' }
-                }
-              />
-              <Signal signal={pullMergeability(detail.pull)} />
+                {(
+                  [
+                    {
+                      id: 'overview',
+                      label: 'Overview',
+                      count: sections.discussion.ready ? discussion.length : undefined,
+                      icon: MessageSquare,
+                    },
+                    {
+                      id: 'changes',
+                      label: 'Changes',
+                      count: sections.changes.ready
+                        ? detail.files.length
+                        : (detail.pull.changedFiles ?? undefined),
+                      icon: FileDiff,
+                    },
+                    {
+                      id: 'checks',
+                      label: 'Checks',
+                      count: sections.checks.ready ? detail.checks.length : undefined,
+                      icon: ListChecks,
+                    },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    id={`pr-tab-${item.id}`}
+                    aria-label={
+                      item.id === 'overview' || item.count === undefined
+                        ? item.label
+                        : `${item.label} (${item.count})`
+                    }
+                    aria-controls={`pr-panel-${item.id}`}
+                    title={item.id === 'checks' ? checkFailure : undefined}
+                    aria-description={
+                      item.id === 'checks'
+                        ? [
+                            ciSummary?.label,
+                            checkSummary.label,
+                            pipelineRuns.runs.length ? pipelineSummary.label : '',
+                          ]
+                            .filter(Boolean)
+                            .join('. ') || undefined
+                        : undefined
+                    }
+                    aria-selected={tab === item.id}
+                    tabIndex={tab === item.id ? 0 : -1}
+                    onKeyDown={(event) => {
+                      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                      event.preventDefault()
+                      const tabs = [
+                        ...(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                          '[role="tab"]',
+                        ) ?? []),
+                      ]
+                      const index = tabs.indexOf(event.currentTarget)
+                      const next =
+                        event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? tabs.length - 1
+                            : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
+                              tabs.length
+                      tabs[next]?.click()
+                      tabs[next]?.focus()
+                    }}
+                    onClick={() => selectTab(item.id)}
+                    className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                  >
+                    <item.icon aria-hidden className="size-3.5" />
+                    {item.label}
+                    {item.count !== undefined && (
+                      <span
+                        aria-hidden
+                        className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
+                      >
+                        {item.count}
+                      </span>
+                    )}
+                    {item.id === 'checks' && checkFailure && (
+                      <CircleAlert aria-hidden className="size-3.5 text-status-error" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div
+                className="ml-auto flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2"
+                aria-label="Pull request status"
+              >
+                <button
+                  type="button"
+                  aria-label="View pull request checks"
+                  onClick={() => selectTab('checks')}
+                  className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  {providerReadiness && (
+                    <Signal
+                      signal={{
+                        ...providerReadiness,
+                        label: `Repository merge status: ${providerReadiness.label}`,
+                      }}
+                    />
+                  )}
+                </button>
+                <Signal signal={reviewSummary} subtle />
+                {detail.pull.autoMergeEnabled && (
+                  <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -448,7 +648,7 @@ function PullDetailContent({
             className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
             aria-label="Pull request content"
           >
-            <PullLinkedThreads pull={detail.pull} />
+            {tab === 'overview' && <PullLinkedThreads pull={detail.pull} />}
             {error && (
               <p
                 role="alert"
@@ -457,21 +657,16 @@ function PullDetailContent({
                 {error}
               </p>
             )}
-            {(detail.stale || detail.refreshError || !connected) && (
+            {(!connected || (detail.refreshError && !error)) && (
               <p
                 role="status"
-                className="mb-4 text-xs text-status-warning [overflow-wrap:anywhere]"
+                className="mb-2 text-xs text-muted-foreground [overflow-wrap:anywhere]"
               >
                 {!connected
                   ? readConnected
-                    ? 'Original computer offline · reading through an available source. Changes remain unavailable.'
-                    : 'Offline · showing last loaded details.'
-                  : detail.refreshError
-                    ? `Refresh failed: ${detail.refreshError}`
-                    : 'Showing cached details · refreshing in background.'}
-                {detail.cachedAt
-                  ? ` Last fetched ${formatDateTime(detail.cachedAt, { timeStyle: 'medium' })}.`
-                  : ''}
+                    ? 'Original computer offline · viewing latest available details.'
+                    : 'Offline · reconnect to refresh.'
+                  : `Unable to refresh: ${detail.refreshError}`}
               </p>
             )}
             {detail.warnings.map((warning) => (
@@ -497,7 +692,7 @@ function PullDetailContent({
                     aria-label="PR description"
                     className="min-w-0 overflow-hidden rounded-lg border"
                   >
-                    <h3 className="flex items-center gap-2 border-b bg-muted/20 px-4 py-3 text-xs font-medium">
+                    <h3 className="flex items-center gap-2 border-b bg-sidebar/60 px-4 py-2 text-xs font-medium">
                       {detail.pull.author}
                       <span className="font-normal text-muted-foreground">Description</span>
                     </h3>
@@ -536,7 +731,12 @@ function PullDetailContent({
                         <Button
                           key={filter.id}
                           size="sm"
-                          variant={discussionFilter === filter.id ? 'secondary' : 'ghost'}
+                          variant="ghost"
+                          className={
+                            discussionFilter === filter.id
+                              ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
+                              : 'text-muted-foreground'
+                          }
                           aria-pressed={discussionFilter === filter.id}
                           onClick={() => setDiscussionFilter(filter.id)}
                         >
@@ -625,14 +825,6 @@ function PullDetailContent({
                         )}
                       </dd>
                     </div>
-                    <div>
-                      <dt className="font-medium">Updated</dt>
-                      <dd className="mt-2 text-muted-foreground">
-                        <time dateTime={detail.pull.updatedAt}>
-                          {formatDateTime(detail.pull.updatedAt)}
-                        </time>
-                      </dd>
-                    </div>
                   </dl>
                   <PullSectionStatus label="Stack" section={sections.stack} />
                   {!detail.stack && sections.stack.ready && stackControls}
@@ -641,7 +833,7 @@ function PullDetailContent({
                     Review{' '}
                     {detail.pull.changedFiles === null
                       ? 'code changes'
-                      : `${detail.pull.changedFiles} files`}
+                      : `${detail.pull.changedFiles} ${detail.pull.changedFiles === 1 ? 'file' : 'files'}`}
                   </Button>
                 </aside>
               </div>
@@ -652,19 +844,40 @@ function PullDetailContent({
               aria-labelledby="pr-tab-checks"
               hidden={tab !== 'checks'}
             >
-              {checksOpened && repository && (
-                <PullPipelineRuns
-                  key={detail.pull.headSha}
-                  repositoryId={repositoryId}
-                  sha={detail.pull.headSha}
-                  active={tab === 'checks'}
-                />
-              )}
-              <PullSectionStatus label="Checks" section={sections.checks} />
-              <PullSectionStatus label="Reviews" section={sections.discussion} />
-              {sections.checks.ready && (
-                <PullStatus reviewsReady={sections.discussion.ready} detail={detail} />
-              )}
+              <PullStatus
+                reviewsReady={sections.discussion.ready}
+                checksReady={sections.checks.ready}
+                detail={detail}
+              >
+                {repositorySource && (
+                  <section aria-label="Repository CI" className="mb-4 rounded-xl border px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-medium">{repositorySource.name}</h3>
+                      <Signal
+                        signal={{
+                          ...repositorySource.signal,
+                          label: repositorySource.signal.label.replace(/^./, (letter) =>
+                            letter.toUpperCase(),
+                          ),
+                        }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      CI status reported by the repository provider. Check reports and linked
+                      pipelines are listed separately.
+                    </p>
+                  </section>
+                )}
+                {checksOpened && repository && (
+                  <PullPipelineRunsContent
+                    state={pipelineRuns}
+                    sha={detail.pull.headSha}
+                    active={tab === 'checks'}
+                  />
+                )}
+                <PullSectionStatus label="Check reports" section={sections.checks} />
+                <PullSectionStatus label="Reviews" section={sections.discussion} />
+              </PullStatus>
             </section>
             <section
               role="tabpanel"
@@ -688,9 +901,11 @@ function PullDetailContent({
                   initialFragment={initialFragment}
                   repositoryId={repositoryId}
                   onPosted={changed}
+                  thread={thread}
+                  onAskAgent={repository ? (selection) => setAsking({ selection }) : undefined}
                   onSteer={(value, baseline) => {
                     if (!repository)
-                      throw new Error('Connect this project before starting an agent task.')
+                      throw new Error('Connect this project before starting an agent thread.')
                     setObjective(value)
                     setObjectiveBaseline(baseline)
                     setStarting(true)
@@ -699,6 +914,14 @@ function PullDetailContent({
               )}
             </section>
           </div>
+          {asking && repository && (
+            <PullAskAgent
+              repositoryId={repositoryId}
+              detail={detail}
+              selection={asking.selection}
+              onClose={() => setAsking(null)}
+            />
+          )}
           {creatingStack && repository && (
             <CreatePull
               initialRepositoryId={repositoryId}

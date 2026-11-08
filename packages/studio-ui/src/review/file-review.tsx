@@ -113,6 +113,7 @@ export function ReviewFiles({
   onSelect,
   disabled = false,
   showTypeFilters = true,
+  showChangeBars = false,
   weightBy = 'files',
 }: {
   files: ReviewListFile[]
@@ -123,6 +124,7 @@ export function ReviewFiles({
   onSelect: (path: string) => void
   disabled?: boolean
   showTypeFilters?: boolean
+  showChangeBars?: boolean
   weightBy?: 'files' | 'lines'
 }) {
   const [query, setQuery] = useState(''),
@@ -240,6 +242,7 @@ export function ReviewFiles({
               <FileBrowserTree
                 files={section.files}
                 flat
+                showChangeBars={showChangeBars}
                 selected={selected}
                 onSelect={onSelect}
                 disabled={disabled}
@@ -249,6 +252,7 @@ export function ReviewFiles({
         ))}
         <FileBrowserTree
           files={grouped.remaining}
+          showChangeBars={showChangeBars}
           selected={selected}
           onSelect={onSelect}
           disabled={disabled}

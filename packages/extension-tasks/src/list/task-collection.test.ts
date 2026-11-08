@@ -1,6 +1,12 @@
 import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
-import { createTask, runtimeProfile, snapshotSchema, type RuntimeOverview } from '@dovo/studio-core'
+import {
+  createTask,
+  runtimeProfile,
+  snapshotSchema,
+  type RuntimeOverview,
+  type Task,
+} from '@dovo/studio-core'
 import {
   collectTasks,
   mainTaskEntries,
@@ -247,4 +253,44 @@ it('keeps a row owner while only task content streams, and replaces it when owne
   ).toEqual([])
   expect(owner).not.toHaveProperty('workspace')
   expect(owner).not.toHaveProperty('snapshot')
+})
+it('leaves never-started side chat drafts to their parent unless someone needs to act', () => {
+  const link = {
+    parentTaskId: task.id,
+    objective: '',
+    contextMessageCount: 0,
+    parentHistoryRevision: 0,
+    contextHash: '',
+    source: 'snapshot' as const,
+    permissionCeiling: { provider: 'codex' as const, permission: 'workspace-write' as const },
+  }
+  const draft = { ...task, id: 'draft-side', status: 'draft' as const, sideThread: link }
+  const started = {
+    ...draft,
+    id: 'started-side',
+    status: 'review' as const,
+  }
+  const tasks: Task[] = [task, draft, started]
+  const entries = (questions: { taskId: string }[] = [], rows = tasks) =>
+    collectTasks(
+      taskSources({
+        workspace: { ...snapshot.workspace, tasks: rows },
+        snapshot: { ...snapshot, questions: questions as typeof snapshot.questions },
+        activeRuntimeId: mac.profile.id,
+        connected: true,
+        runtimes: [mac],
+      }),
+    )
+  expect(mainTaskEntries(entries()).map((entry) => entry.task.id)).toEqual([
+    task.id,
+    'started-side',
+  ])
+  // A pending request is never hidden behind its parent.
+  expect(
+    mainTaskEntries(entries([{ taskId: 'draft-side' }])).map((entry) => entry.task.id),
+  ).toEqual([task.id, 'draft-side', 'started-side'])
+  // Deleting the parent must leave an unsent child reachable in the main list.
+  expect(mainTaskEntries(entries([], [draft])).map((entry) => entry.task.id)).toEqual([
+    'draft-side',
+  ])
 })

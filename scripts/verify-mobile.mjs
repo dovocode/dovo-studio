@@ -293,12 +293,18 @@ try {
   const runFlow = async (path) => {
     const entrypoint = join(fixtureFlows, path.split('/').at(-1))
     await writeFile(entrypoint, prepareFlow(await readFile(path, 'utf8')))
+    // Keep Maestro's failure-time hierarchy and screenshots in the uploaded workspace.
+    // Its default ~/.maestro directory is hidden and excluded by artifact uploads.
+    const diagnostics = resolve('work/mobile-native-smoke')
+    await mkdir(diagnostics, { recursive: true })
     const child = spawn(
       'maestro',
       [
         '--device',
         device,
         'test',
+        '--debug-output',
+        join(diagnostics, 'maestro'),
         '-e',
         `RUNTIME_ADDRESS=http://${fixtureHost}:${settingsProxy?.port ?? runtime.port}`,
         '-e',
@@ -312,8 +318,6 @@ try {
       child.once('exit', resolve)
     })
     if (codeResult !== 0) {
-      const diagnostics = resolve('work/mobile-native-smoke')
-      await mkdir(diagnostics, { recursive: true })
       // Preserve runtime state at failure, before starting another UI driver.
       await writeFile(
         join(diagnostics, 'runtime.json'),

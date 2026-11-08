@@ -5,7 +5,8 @@ import { BrowserPane } from './browser-pane'
 export default function BrowserView({ entityId, navigationKey }: StudioViewProps) {
   const { navigate, browserWindowId } = useStudioHost()
   const consumed = useCallback(() => navigate({ viewId: 'browser' }, { replace: true }), [navigate])
-  const enabled = useAppPreferences().browserWorkspaceEnabled
+  const preferences = useAppPreferences()
+  const enabled = preferences.browserWorkspaceEnabled || preferences.unifiedWorkspaceEnabled
   if (!enabled)
     return (
       <div className="p-6 text-sm">

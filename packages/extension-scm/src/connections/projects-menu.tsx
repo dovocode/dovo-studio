@@ -1,11 +1,11 @@
 import { runtimeComputerName } from '@dovo/protocol'
-import { projectMachineGroups } from '@dovo/protocol'
-import { TaskDefaultSettings } from '@dovo/studio-ui'
+import { pinnedFirst, projectMachineGroups, projectOrganization } from '@dovo/protocol'
+import { ProjectOrganizationSettings, TaskDefaultSettings } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import {
   FolderGit2,
-  MessageCircle,
+  MessageCircleDashed,
   ChevronDown,
   Plus,
   Settings2,
@@ -13,6 +13,8 @@ import {
   Server,
   Search,
   Check,
+  Archive,
+  Pin,
 } from 'lucide-react'
 import { useAppPreferences, projectActivity, useWorkspace } from '@dovo/studio-core'
 import {
@@ -25,12 +27,15 @@ import {
   DropdownMenu,
   Popover,
   Input,
+  ProjectIcon,
 } from '@dovo/studio-ui'
 import { RepositoryDialog } from './repository-dialog'
 import { RepositoryCheckouts } from './repository-checkouts'
 import { ProjectForgeBinding } from './forge-repository'
 import { ProjectIconSettings } from './project-icon-settings'
 import { ProjectTransferSettings } from './project-transfer'
+import { ImportCodexSession } from './import-codex-session'
+import { ImportPiSession } from './import-pi-session'
 import { ProjectDeletion } from './project-deletion'
 export function ProjectsMenu({
   value,
@@ -46,7 +51,8 @@ export function ProjectsMenu({
   disabled?: boolean
 }) {
   const preferences = useAppPreferences()
-  const { workspace, activeRuntimeId, runtimes, connected, switchRuntime } = useWorkspace()
+  const { workspace, activeRuntimeId, runtimes, connected, switchRuntime, snapshot } =
+    useWorkspace()
   const [adding, setAdding] = useApplicationState<{
     runtimeId: string | null
   } | null>(null)
@@ -56,6 +62,7 @@ export function ProjectsMenu({
   } | null>(null)
   const [menuOpen, setMenuOpen] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')
+  const [showArchived, setShowArchived] = useApplicationState(false)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   useEffect(() => {
@@ -69,6 +76,7 @@ export function ProjectsMenu({
       name: activeComputer ? runtimeComputerName(activeComputer) : 'This computer',
       repositories: workspace.repositories,
       tasks: workspace.tasks,
+      defaults: snapshot?.defaults,
       online: connected || !activeRuntimeId,
     },
     ...(allDevices
@@ -79,6 +87,7 @@ export function ProjectsMenu({
             name: runtimeComputerName(entry),
             repositories: entry.snapshot?.workspace.repositories ?? [],
             tasks: entry.snapshot?.workspace.tasks ?? [],
+            defaults: entry.snapshot?.defaults,
             online: entry.connected,
           }))
       : []),
@@ -100,15 +109,29 @@ export function ProjectsMenu({
   )
   const projectGroups = allDevices
     ? projectMachineGroups(
-        projects.map((repository) => ({ repository, runtimeId: repository.source.runtimeId })),
+        projects.map((repository) => ({
+          repository,
+          runtimeId: repository.source.runtimeId,
+          defaults: repository.source.defaults,
+        })),
         preferences.projectGrouping,
       )
-    : projects.map((repository) => ({
-        key: repository.key,
-        name: repository.kind === 'scratch' ? 'General' : repository.name,
-        entries: [{ repository, runtimeId: repository.source.runtimeId }],
-      }))
-  const projectName = project?.kind === 'scratch' ? 'General' : project?.name
+    : projects.map((repository) => {
+        const entries = [
+          {
+            repository,
+            runtimeId: repository.source.runtimeId,
+            defaults: repository.source.defaults,
+          },
+        ]
+        return {
+          key: repository.key,
+          name: repository.kind === 'scratch' ? 'No Project' : repository.name,
+          entries,
+          ...projectOrganization(entries),
+        }
+      })
+  const projectName = project?.kind === 'scratch' ? 'No Project' : project?.name
   projectGroups.sort((a, b) => {
     const activity = (group: typeof a) =>
       Math.max(
@@ -122,10 +145,19 @@ export function ProjectsMenu({
         ),
       )
     return (
+      pinnedFirst(a, b) ||
       (preferences.projectOrder === 'name' ? 0 : activity(b) - activity(a)) ||
       a.name.localeCompare(b.name)
     )
   })
+  const matchesQuery = (group: (typeof projectGroups)[number]) =>
+    group.entries.some(({ repository: repo }) =>
+      `${group.name} ${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+    )
+  const visibleGroups = projectGroups.filter(matchesQuery)
+  const archivedGroups = visibleGroups.filter((group) => group.archived)
   const managed =
     managing?.runtimeId === activeRuntimeId
       ? workspace.repositories.find((r) => r.id === managing.id)
@@ -153,6 +185,116 @@ export function ProjectsMenu({
   }
   const itemClass =
     'flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-accent data-[state=checked]:bg-accent data-[state=checked]:font-medium'
+  const projectRow = (group: (typeof projectGroups)[number]) => {
+    const repo = group.entries[0].repository
+    const key =
+      allDevices && preferences.projectGrouping && repo.kind === 'scratch'
+        ? 'scratch'
+        : allDevices && preferences.projectGrouping && repo.gitIdentity
+          ? `git:${repo.gitIdentity}`
+          : repo.key
+    const selected =
+      key === value || group.entries.some(({ repository }) => repository.key === value)
+    const machines = new Set(group.entries.map(({ runtimeId }) => runtimeId)).size
+    return (
+      <div
+        key={group.key}
+        className={`flex items-center rounded-lg transition-colors hover:bg-accent/40 ${selected ? 'bg-accent/60' : ''}`}
+      >
+        <button
+          type="button"
+          aria-pressed={selected}
+          className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={repo.gitIdentity ?? repo.path}
+          onClick={() => {
+            onChange(key)
+            setMenuOpen(false)
+          }}
+        >
+          {repo.kind === 'scratch' ? (
+            <MessageCircleDashed className="size-4" />
+          ) : (
+            <ProjectIcon repository={repo} className="size-6 rounded-md" />
+          )}
+          <span className="truncate">{group.name}</span>
+          {group.pinned && (
+            <Pin className="size-3 shrink-0 text-muted-foreground" aria-label="Pinned" />
+          )}
+        </button>
+        <span
+          title={group.entries
+            .map(
+              ({ repository }) =>
+                `${repository.source.name}${repository.source.online ? '' : ' · Offline'}`,
+            )
+            .join(', ')}
+          aria-label={`${machines} ${machines === 1 ? 'computer' : 'computers'}`}
+          className="px-1 text-muted-foreground"
+        >
+          {machines > 1 ? <Server className="size-3.5" /> : <Monitor className="size-3.5" />}
+        </span>
+        {group.entries.length === 1 ? (
+          <Button
+            variant="ghost"
+            className="size-8 shrink-0 px-0 text-muted-foreground"
+            aria-label={`Settings for ${group.name}`}
+            title={`Settings for ${group.name}`}
+            disabled={busy || !repo.source.online || repo.kind === 'scratch'}
+            onClick={() => {
+              setMenuOpen(false)
+              void open(repo.source.runtimeId, repo.id)
+            }}
+          >
+            <Settings2 className="size-3.5" />
+          </Button>
+        ) : (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button
+                variant="ghost"
+                className="size-8 shrink-0 px-0 text-muted-foreground"
+                aria-label={`Settings for ${group.name}`}
+                title={`Settings for ${group.name}`}
+                disabled={busy || repo.kind === 'scratch'}
+              >
+                <Settings2 className="size-3.5" />
+              </Button>
+            </DropdownMenu.Trigger>
+            {group.entries.length > 1 && (
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="z-50 max-w-80 rounded-lg border bg-popover p-1 shadow-xl">
+                  <DropdownMenu.Label className="px-2 py-1 text-xs text-muted-foreground">
+                    Project settings on…
+                  </DropdownMenu.Label>
+                  {group.entries.map(({ repository: item }) => (
+                    <DropdownMenu.Item
+                      key={item.key}
+                      className={`${itemClass} data-[disabled]:opacity-50`}
+                      disabled={!item.source.online}
+                      onSelect={() => {
+                        setMenuOpen(false)
+                        void open(item.source.runtimeId, item.id)
+                      }}
+                    >
+                      <span className="min-w-0">
+                        <span className="block">
+                          {item.source.name}
+                          {item.source.online ? '' : ' · Offline'}
+                        </span>
+                        <span className="block truncate text-[0.625rem] text-muted-foreground">
+                          {item.path}
+                        </span>
+                      </span>
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            )}
+          </DropdownMenu.Root>
+        )}
+      </div>
+    )
+  }
   return (
     <>
       <Popover.Root
@@ -175,7 +317,9 @@ export function ProjectsMenu({
             disabled={busy || disabled}
           >
             {project?.kind === 'scratch' ? (
-              <MessageCircle className="size-3.5 shrink-0" />
+              <MessageCircleDashed className="size-3.5 shrink-0" />
+            ) : project ? (
+              <ProjectIcon repository={project} className="size-4" />
             ) : (
               <FolderGit2 className="size-3.5 shrink-0" />
             )}
@@ -218,141 +362,25 @@ export function ProjectsMenu({
                 All projects
                 {!value && <Check className="ml-auto size-3.5 text-muted-foreground" />}
               </Button>
-              {projectGroups
-                .filter((group) =>
-                  group.entries.some(({ repository: repo }) =>
-                    `${group.name} ${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
-                      .toLowerCase()
-                      .includes(query.trim().toLowerCase()),
-                  ),
-                )
-                .map((group) => {
-                  const repo = group.entries[0].repository
-                  const key =
-                    allDevices && preferences.projectGrouping && repo.kind === 'scratch'
-                      ? 'scratch'
-                      : allDevices && preferences.projectGrouping && repo.gitIdentity
-                        ? `git:${repo.gitIdentity}`
-                        : repo.key
-                  const selected =
-                    key === value ||
-                    group.entries.some(({ repository }) => repository.key === value)
-                  const machines = new Set(group.entries.map(({ runtimeId }) => runtimeId)).size
-                  return (
-                    <div
-                      key={group.key}
-                      className={`flex items-center rounded-lg transition-colors hover:bg-accent/40 ${selected ? 'bg-accent/60' : ''}`}
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={selected}
-                        className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        title={repo.gitIdentity ?? repo.path}
-                        onClick={() => {
-                          onChange(key)
-                          setMenuOpen(false)
-                        }}
-                      >
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[0.625rem] font-semibold text-muted-foreground">
-                          {repo.kind === 'scratch' ? (
-                            <MessageCircle className="size-4" />
-                          ) : (
-                            group.name
-                              .split(/[^a-zA-Z0-9]+/)
-                              .filter(Boolean)
-                              .slice(-2)
-                              .map((part) => part[0])
-                              .join('')
-                              .toUpperCase()
-                          )}
-                        </span>
-                        <span className="truncate">{group.name}</span>
-                      </button>
-                      <span
-                        title={group.entries
-                          .map(
-                            ({ repository }) =>
-                              `${repository.source.name}${repository.source.online ? '' : ' · Offline'}`,
-                          )
-                          .join(', ')}
-                        aria-label={`${machines} ${machines === 1 ? 'machine' : 'machines'}`}
-                        className="px-1 text-muted-foreground"
-                      >
-                        {machines > 1 ? (
-                          <Server className="size-3.5" />
-                        ) : (
-                          <Monitor className="size-3.5" />
-                        )}
-                      </span>
-                      {group.entries.length === 1 ? (
-                        <Button
-                          variant="ghost"
-                          className="size-8 shrink-0 px-0 text-muted-foreground"
-                          aria-label={`Settings for ${group.name}`}
-                          title={`Settings for ${group.name}`}
-                          disabled={busy || !repo.source.online || repo.kind === 'scratch'}
-                          onClick={() => {
-                            setMenuOpen(false)
-                            void open(repo.source.runtimeId, repo.id)
-                          }}
-                        >
-                          <Settings2 className="size-3.5" />
-                        </Button>
-                      ) : (
-                        <DropdownMenu.Root>
-                          <DropdownMenu.Trigger asChild>
-                            <Button
-                              variant="ghost"
-                              className="size-8 shrink-0 px-0 text-muted-foreground"
-                              aria-label={`Settings for ${group.name}`}
-                              title={`Settings for ${group.name}`}
-                              disabled={busy || repo.kind === 'scratch'}
-                            >
-                              <Settings2 className="size-3.5" />
-                            </Button>
-                          </DropdownMenu.Trigger>
-                          {group.entries.length > 1 && (
-                            <DropdownMenu.Portal>
-                              <DropdownMenu.Content className="z-50 max-w-80 rounded-lg border bg-popover p-1 shadow-xl">
-                                <DropdownMenu.Label className="px-2 py-1 text-xs text-muted-foreground">
-                                  Project settings on…
-                                </DropdownMenu.Label>
-                                {group.entries.map(({ repository: item }) => (
-                                  <DropdownMenu.Item
-                                    key={item.key}
-                                    className={`${itemClass} data-[disabled]:opacity-50`}
-                                    disabled={!item.source.online}
-                                    onSelect={() => {
-                                      setMenuOpen(false)
-                                      void open(item.source.runtimeId, item.id)
-                                    }}
-                                  >
-                                    <span className="min-w-0">
-                                      <span className="block">
-                                        {item.source.name}
-                                        {item.source.online ? '' : ' · Offline'}
-                                      </span>
-                                      <span className="block truncate text-[0.625rem] text-muted-foreground">
-                                        {item.path}
-                                      </span>
-                                    </span>
-                                  </DropdownMenu.Item>
-                                ))}
-                              </DropdownMenu.Content>
-                            </DropdownMenu.Portal>
-                          )}
-                        </DropdownMenu.Root>
-                      )}
-                    </div>
-                  )
-                })}
-              {!projectGroups.some((group) =>
-                group.entries.some(({ repository: repo }) =>
-                  `${group.name} ${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
-                    .toLowerCase()
-                    .includes(query.trim().toLowerCase()),
-                ),
-              ) && <p className="px-2 py-4 text-xs text-muted-foreground">No matching projects.</p>}
+              {visibleGroups.filter((group) => !group.archived).map(projectRow)}
+              {archivedGroups.length > 0 && (
+                <Button
+                  variant="ghost"
+                  aria-expanded={showArchived || !!query.trim()}
+                  className="h-8 w-full justify-start gap-2 px-2 text-xs font-normal text-muted-foreground"
+                  onClick={() => setShowArchived(!showArchived)}
+                >
+                  <Archive className="size-3.5" />
+                  Archived ({archivedGroups.length})
+                  <ChevronDown
+                    className={`ml-auto size-3 transition-transform ${showArchived || query.trim() ? 'rotate-180' : ''}`}
+                  />
+                </Button>
+              )}
+              {(showArchived || !!query.trim()) && archivedGroups.map(projectRow)}
+              {!visibleGroups.length && (
+                <p className="px-2 py-4 text-xs text-muted-foreground">No matching projects.</p>
+              )}
             </div>
             <div className="border-t pt-1">
               {sources.length === 1 ? (
@@ -424,6 +452,7 @@ export function ProjectsMenu({
           {managed && (
             <ProjectSettings
               repository={managed}
+              onNavigate={() => setManaging(null)}
               onDeleted={(refreshError) => {
                 if (refreshError)
                   setError(
@@ -448,15 +477,18 @@ export function ProjectSettings({
   repository,
   onDeleted,
   allowDelete = true,
+  onNavigate,
 }: {
   repository: import('@dovo/protocol').Repository
   onDeleted?: (refreshError?: string) => void
   allowDelete?: boolean
+  onNavigate?: () => void
 }) {
   const { activeRuntimeId, connection } = useWorkspace()
   return (
     <>
       <ProjectIconSettings repository={repository} />
+      {repository.kind !== 'scratch' && <ProjectOrganizationSettings repository={repository} />}
       <ProjectTransferSettings
         key={`transfer-${activeRuntimeId}:${repository.id}`}
         repository={repository}
@@ -472,6 +504,20 @@ export function ProjectSettings({
         <ProjectForgeBinding
           key={`forge-${connection?.address}-${repository.id}`}
           repo={repository}
+        />
+      )}
+      {repository.kind !== 'scratch' && (
+        <ImportCodexSession
+          key={`import-${activeRuntimeId}:${repository.id}`}
+          repositoryId={repository.id}
+          onNavigate={onNavigate}
+        />
+      )}
+      {repository.kind !== 'scratch' && (
+        <ImportPiSession
+          key={`pi-import-${activeRuntimeId}:${repository.id}`}
+          repositoryId={repository.id}
+          onNavigate={onNavigate}
         />
       )}
       {allowDelete && <ProjectDeletion repository={repository} onDeleted={onDeleted} />}

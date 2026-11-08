@@ -4,11 +4,9 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 export function TaskEmptyState({
-  starters,
   startModes,
   projectName,
 }: {
-  starters?: ReactNode
   startModes?: ReactNode
   projectName?: string
 }) {
@@ -30,8 +28,8 @@ export function TaskEmptyState({
         accessibilityRole="header"
         style={{
           color: colors.text,
-          fontSize: 24,
-          lineHeight: 29,
+          fontSize: 20,
+          lineHeight: 26,
           fontWeight: '500',
           letterSpacing: -0.4,
           textAlign: 'center',
@@ -46,9 +44,6 @@ export function TaskEmptyState({
         </Text>
       )}
       {startModes}
-      {starters && (
-        <View style={{ width: '100%', alignItems: 'center', marginTop: 4 }}>{starters}</View>
-      )}
     </View>
   )
 }

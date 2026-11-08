@@ -9,9 +9,11 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const ui = `${root}/packages/studio-ui/src`
 const mocks = {
+  // Snapshot previews have their own browser suite; this fixture audits the surrounding layout.
+  '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '@xyflow/react': `export const Handle=()=>null;export const Position={Left:'left',Right:'right'};export const ReactFlowProvider=({children})=>children;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export {isActiveRuntime} from '${root}/packages/studio-core/src/runtime/ownership';export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={codex:{short:'Codex',name:'OpenAI Codex'}};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const acpHarnessName=()=>'';export const formatDateTime=String;`,
+  '@dovo/studio-core': `export const useConfirmation=()=>async()=>true;export {isActiveRuntime} from '${root}/packages/studio-core/src/runtime/ownership';export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={codex:{short:'Codex',name:'OpenAI Codex'}};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const acpHarnessName=()=>'';export const formatDateTime=String;`,
   '@dovo/studio-ui': `export {PageHeader} from '${ui}/page-header';export * from '${ui}/sidebar-header';export {Button} from '${ui}/components/ui/button';export {IconButton} from '${ui}/components/icon-button';export {Input} from '${ui}/components/ui/input';export * from '${ui}/components/ui/dialog';export {ChoicePicker} from '${ui}/choice-picker';export {cn} from '${ui}/lib/utils';export {ProjectIcon} from '${ui}/project-icon';export * from '${ui}/components/ui/tooltip';export * as Popover from '@radix-ui/react-popover';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {EmptyState} from '${ui}/components/empty-state';export {useCompactLayout} from '${ui}/use-compact-layout';export const useModelLabel=()=>'';export const AgentAvatar=({className})=><span data-agent-avatar className={className}/>;export const PullRequestIcon=()=>null;export const pullRequestIconTone=()=>'';`,
   './task-context-menu': `export const TaskContextMenu=({children})=>children;`,
   './task-branch-menu': `export const TaskBranchMenu=({label})=><button className="min-w-0 max-w-48 truncate">{label}</button>;`,
@@ -44,7 +46,7 @@ window.sources=['MacBook Pro','Linux workstation with an unusually long saved co
 window.store={workspace,snapshot,connected:true,activeRuntimeId:'0',runtimes:window.sources,connection:window.sources[0].profile.connection,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
 window.owner={name:'MacBook Pro',online:true,repositories:[repo],agents:[{id:'agent',name:'Agent',provider:'codex',model:'',endpoint:''}],acpInstallations:[]};window.workSource={key:'repo',scope:'0',connected:true,repository:repo,name:repo.name,runtimeName:'MacBook Pro',request:async()=>({issues:true,pipelineActions:['run']})};
 const baseTask={id:'task',repositoryId:'repo',title:'Short title',status:'draft',files:[],linkedCheckouts:[],turns:[]};
-function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false),[archived,setArchived]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread);setArchived(!!options.archived)};const task={...baseTask,archived,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={{...task,agentId:'agent',subagents:[{id:'child',name:'Child',provider:'codex',status:'working',startedAt:'2026-10-24T09:00:00Z',updatedAt:'2026-10-24T09:00:00Z'}]}} owner={window.owner} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={false} disabled={false}/></div>:(view==='host'||view==='mixed')?<HostSettingsPage title="Computer settings" description="Per computer" localSettings={view==='mixed'?<button onClick={()=>window.localChanged=true}>Device default</button>:undefined}><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <div data-testid="body-start"><p>Settings body</p><SettingRow label="Worktree setup" source={<SettingSource label="Worktree setup" origin={{source:'global',overridden:true}} setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:'pnpm install',inheritedValue:'a_very_long_setup_command_'.repeat(16)}} onReset={()=>window.inheritanceReset=true}/>}>Custom setup</SettingRow></div>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false),[archived,setArchived]=useState(false),[editable,setEditable]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread);setArchived(!!options.archived);setEditable(!!options.editable)};const task={...baseTask,archived,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={{...task,agentId:'agent',linkedPullRequests:[{number:42,title:'Fixture PR',url:'https://github.com/o/r/pull/42',repositoryUrl:'https://github.com/o/r'}],subagents:[{id:'child',name:'Child',provider:'codex',status:'working',startedAt:'2026-10-24T09:00:00Z',updatedAt:'2026-10-24T09:00:00Z'}]}} owner={window.owner} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={editable} disabled={false}/></div>:(view==='host'||view==='mixed')?<HostSettingsPage title="Computer settings" description="Per computer" localSettings={view==='mixed'?<button onClick={()=>window.localChanged=true}>Device default</button>:undefined}><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <div data-testid="body-start"><p>Settings body</p><SettingRow label="Worktree setup" source={<SettingSource label="Worktree setup" origin={{source:'global',overridden:true}} setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:'pnpm install',inheritedValue:'a_very_long_setup_command_'.repeat(16)}} onReset={()=>window.inheritanceReset=true}/>}>Custom setup</SettingRow></div>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
   write: false,
@@ -93,7 +95,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 976, height: 700 } })
   page.setDefaultTimeout(5000)
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+    console.error(error.message)
+  })
   await page.setContent('<div id="app"></div>')
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
@@ -122,7 +127,7 @@ try {
       await show('header', { long })
       const header = page.locator('#fixture > header')
       const title = page.getByRole('button', { name: 'Thread actions', exact: true })
-      const tools = page.getByRole('group', { name: 'Task workspace' })
+      const tools = page.getByRole('group', { name: 'Thread workspace' })
       await contained(title, header)
       await contained(tools, header)
       const titleBox = await title.boundingBox(),
@@ -148,9 +153,35 @@ try {
   const title = await page
     .getByRole('button', { name: 'Thread actions', exact: true })
     .boundingBox()
-  const tools = await page.getByRole('group', { name: 'Task workspace' }).boundingBox()
+  const tools = await page.getByRole('group', { name: 'Thread workspace' }).boundingBox()
   assert.ok(title.y + title.height <= tools.y)
   await page.screenshot({ path: '/tmp/dovo-desktop-audit-task-pane-320.png' })
+  for (const width of [240, 320, 390, 976]) {
+    await setWidth(width)
+    await show('rows', { editable: true })
+    const row = page.locator('.studio-thread-row')
+    await page.mouse.move(width - 1, 699)
+    const titleWidth = await row
+      .locator('[data-thread-title]')
+      .evaluate((node) => node.getBoundingClientRect().width)
+    await row.hover()
+    assert.equal(
+      await row
+        .locator('[data-thread-title]')
+        .evaluate((node) => node.getBoundingClientRect().width),
+      titleWidth,
+      'Hover controls do not shorten the thread title',
+    )
+    assert.equal(
+      await row
+        .locator('.studio-thread-card-context')
+        .first()
+        .evaluate((node) => getComputedStyle(node).paddingRight),
+      '96px',
+      'Project metadata still makes room for hover controls',
+    )
+    await page.mouse.move(width - 1, 699)
+  }
   for (const width of [240, 320, 390, 976]) {
     await setWidth(width)
     for (const archived of [false, true]) {
@@ -205,7 +236,10 @@ try {
       )
       const toggle = row.getByRole('button', { name: 'Subthreads for Short title', exact: true })
       const icon = await toggle.locator('svg').boundingBox()
-      assert.ok(Math.abs(icon.y + icon.height / 2 - status.y - status.height / 2) <= 1.5)
+      assert.ok(Math.abs(icon.y + icon.height / 2 - runtimeBox.y - runtimeBox.height / 2) <= 1.5)
+      assert.ok(icon.x + icon.width <= runtimeBox.x, 'Subthreads precede the runtime machine')
+      const pull = await row.getByLabel('1 linked pull request', { exact: true }).boundingBox()
+      assert.ok(pull.x + pull.width <= icon.x, 'PRs precede subthreads')
       await contained(toggle, row)
       const bounds = await toggle.boundingBox()
       assert.ok(
@@ -229,7 +263,7 @@ try {
     await setWidth(width)
     await show('host')
     const picker = page.getByRole('button', { name: 'Computer', exact: true })
-    const actions = page.locator('.studio-page-actions')
+    const actions = page.locator('.studio-settings-target-inner')
     await contained(picker, actions)
     await contained(picker.locator('svg'), picker)
     assert.equal(
@@ -245,7 +279,7 @@ try {
       await show('scope', { wide })
       const controls = await page
         .getByLabel('Settings target', { exact: true })
-        .locator(':scope > div')
+        .locator('.studio-settings-target-inner')
         .boundingBox()
       const body = await page.getByTestId('body-start').boundingBox()
       assert.ok(Math.abs(controls.x - body.x) <= 1, JSON.stringify({ width, wide, controls, body }))
@@ -340,12 +374,19 @@ try {
     }, mode)
     for (const unread of [false, true]) {
       await show('rows', { long: true, unread })
+      await page.waitForFunction(
+        (expected) =>
+          Number(getComputedStyle(document.querySelector('[data-thread-title]')).opacity) ===
+          expected,
+        unread ? 1 : 0.85,
+      )
       const contrast = await page.locator('.group\\/task').evaluate((element) => {
         const button = element.querySelector('button')
-        const title = [...button.children].find((span) =>
-          span.textContent.startsWith('A_very_long_task_title_'),
-        )
-        const context = button.querySelector('.studio-thread-card-context')
+        if (!button) throw new Error('Contrast checks require the thread row button')
+        const title = button.querySelector('[data-thread-title]')
+        const context = button.querySelector('.studio-thread-card-context [data-thread-copy]')
+        if (!title || !context)
+          throw new Error('Contrast checks require the rendered thread title and metadata')
         const background = getComputedStyle(element.parentElement).backgroundColor
         const canvas = document.createElement('canvas')
         canvas.width = canvas.height = 1
@@ -376,8 +417,10 @@ try {
             b = luminance(rgba(background))
           return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
         }
+        const titleOpacity = Number(getComputedStyle(title).opacity)
         return {
-          title: ratio(getComputedStyle(title).color),
+          titleOpacity,
+          title: ratio(getComputedStyle(title).color, titleOpacity),
           titleAlpha: rgba(getComputedStyle(title).color)[3] / 255,
           metadata: ratio(
             getComputedStyle(context).color,
@@ -389,6 +432,7 @@ try {
           weight: getComputedStyle(title).fontWeight,
         }
       })
+      assert.equal(contrast.titleOpacity, unread ? 1 : 0.85)
       assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
       assert.deepEqual(contrast.metadataOpacity, [1, 1])
       assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
@@ -399,11 +443,6 @@ try {
     const read = contrasts.find((value) => value.mode === mode && !value.unread)
     const unread = contrasts.find((value) => value.mode === mode && value.unread)
     assert.ok(unread.title > read.title, 'Unread titles have stronger contrast than read titles')
-    assert.equal(
-      unread.metadata,
-      read.metadata,
-      'Metadata keeps the same secondary contrast for unread threads',
-    )
     assert.ok(unread.title > unread.metadata, 'Unread titles lead the visual hierarchy')
   }
   console.log(

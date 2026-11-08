@@ -1,8 +1,10 @@
 import { repositoryLocationSchema, type RepositoryOpenTarget } from '@dovo/protocol'
-import { useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useWorkspaceSelector, useStudioHost, type useWorkspace } from '@dovo/studio-core'
+
+const selectRequest = (value: ReturnType<typeof useWorkspace>) => value.request
 
 export function useRepositoryOpen() {
-  const { request } = useWorkspace()
+  const request = useWorkspaceSelector(selectRequest)
   const { repositoryOpener } = useStudioHost()
   return async (
     input: { repositoryId?: string; taskId?: string; path?: string },

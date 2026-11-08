@@ -7,6 +7,8 @@ import {
   publicPullSummaries,
   pullRepositoryKey,
   pullRepositoryIdentity,
+  pullListCacheKey,
+  retainNewerPullSnapshot,
   selectPullSources,
   uniquePulls,
 } from './pull-sources'
@@ -17,6 +19,36 @@ const repository: Repository = {
   branch: 'main',
   gitIdentity: 'github.com/team/app',
 }
+it('keeps offline PR lists separate across remote changes and verified accounts', () => {
+  const initial = pullListCacheKey(repository, 'open', 'account-one')
+  expect(pullListCacheKey({ ...repository, name: 'Renamed' }, 'open', 'account-one')).toBe(initial)
+  expect(
+    pullListCacheKey(
+      { ...repository, gitIdentity: 'github.com/team/other' },
+      'open',
+      'account-one',
+    ),
+  ).not.toBe(initial)
+  expect(pullListCacheKey(repository, 'open', 'account-two')).not.toBe(initial)
+  expect(pullListCacheKey(repository, 'open')).not.toBe(initial)
+  expect(
+    pullListCacheKey({ ...repository, gitIdentityError: 'Unavailable' }, 'open', 'account-one'),
+  ).not.toBe(initial)
+  expect(pullListCacheKey(repository, 'closed', 'account-one')).not.toBe(initial)
+})
+it('allows a successful explicit refresh after the owner clock moves backwards', () => {
+  const saved: { cachedAt: string; title: string; stale?: boolean; refreshError?: string } = {
+    cachedAt: '2026-10-30T10:05:00Z',
+    title: 'Old',
+  }
+  const live = { cachedAt: '2026-10-30T10:00:00Z', title: 'New', stale: false }
+  expect(retainNewerPullSnapshot(saved, live, true)).toBe(live)
+  expect(retainNewerPullSnapshot(saved, { ...live, stale: true }, true).title).toBe('Old')
+  expect(retainNewerPullSnapshot(saved, { ...live, refreshError: 'Offline' }, true).title).toBe(
+    'Old',
+  )
+  expect(retainNewerPullSnapshot(saved, live).title).toBe('Old')
+})
 it('never carries account relationships when displaying another reader’s saved public rows', () => {
   const pull: PullSummary = {
     number: 1,

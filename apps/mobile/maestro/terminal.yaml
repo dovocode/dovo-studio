@@ -57,14 +57,34 @@ appId: com.dovo.studio
 - extendedWaitUntil:
     notVisible: 'Loading terminal…|Connecting terminal…'
     timeout: 15000
-- tapOn: Keyboard
+# Tapping the native Ghostty surface focuses it and raises the keyboard.
+- tapOn:
+    id: Terminal surface
+- assertVisible: Hide terminal keyboard
+- assertVisible: '(space|spatie)'
+- assertVisible: Esc
+- assertVisible: Tab
+- assertVisible: Shift
+- assertVisible: Ctrl
+- assertVisible: Alt
+- tapOn: Hide terminal keyboard
+- assertVisible: Show terminal keyboard
+- tapOn: Show terminal keyboard
+- assertVisible: Hide terminal keyboard
+- assertVisible: '(space|spatie)'
+# Cancel a composed word before running the proof command. If Ctrl is ignored,
+# the invalid command prefix prevents the proof file from being created.
+- inputText: terminal-input-should-cancel
+- tapOn: Ctrl
+- inputText: c
 - inputText: printf mobile-terminal-ok > terminal-proof.txt
 - pressKey: Enter
 - takeScreenshot: dovo-mobile-terminal-keyboard
 - tapOn: Task tools
 - tapOn: Chat
 - tapOn: Terminal
-- assertVisible: Close shell
-- tapOn: Close shell
+- assertVisible: Close terminal tab 1
+- tapOn: Close terminal tab 1
+- tapOn: Close terminal
 - tapOn: Back
 - runFlow: reset-computers.yaml

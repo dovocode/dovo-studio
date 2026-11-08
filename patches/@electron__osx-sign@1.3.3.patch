@@ -1,0 +1,208 @@
+diff --git a/dist/cjs/sign.js b/dist/cjs/sign.js
+index 080036e410e2e4b0445f841416b3d5966915c66a..5242b7ba131dba6d208ab21880e289b0f0d8632e 100644
+--- a/dist/cjs/sign.js
++++ b/dist/cjs/sign.js
+@@ -58,6 +58,9 @@ function validateOptsIgnore(ignore) {
+  * This function returns a promise validating all options passed in opts.
+  */
+ async function validateSignOpts(opts) {
++    if (opts.signingConcurrency !== undefined && (!Number.isSafeInteger(opts.signingConcurrency) || opts.signingConcurrency < 1)) {
++        throw new Error('signingConcurrency must be a positive safe integer.');
++    }
+     await validateOptsBinaries(opts);
+     await (0, util_1.validateOptsApp)(opts);
+     if (opts.provisioningProfile && typeof opts.provisioningProfile !== 'string') {
+@@ -186,10 +189,10 @@ async function signApplication(opts, identity) {
+         const bDepth = b.split(path.sep).length;
+         return bDepth - aDepth;
+     });
+-    for (const filePath of [...children, opts.app]) {
++    async function signFile(filePath) {
+         if (shouldIgnoreFilePath(filePath)) {
+             (0, util_1.debugLog)('Skipped... ' + filePath);
+-            continue;
++            return;
+         }
+         const perFileOptions = await mergeOptionsForFile(opts.optionsForFile ? opts.optionsForFile(filePath) : null, defaultOptionsForFile(filePath, opts.platform));
+         // preAutoEntitlements should only be applied to the top level app bundle.
+@@ -265,6 +268,59 @@ async function signApplication(opts, identity) {
+         }
+         await (0, util_1.execFileAsync)('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
+     }
++    const concurrency = opts.signingConcurrency || 1;
++    if (concurrency === 1) {
++        for (const filePath of [...children, opts.app]) await signFile(filePath);
++    }
++    else {
++        // Framework Versions/Current and explicit binaries can alias discovered code.
++        // Canonical paths prevent concurrent writes and determine the real nesting order.
++        const appPath = await fs.realpath(opts.app);
++        const unique = new Map();
++        for (const filePath of children) {
++            if (shouldIgnoreFilePath(filePath)) continue;
++            const canonical = await fs.realpath(filePath);
++            if (canonical !== appPath && !unique.has(canonical)) {
++                unique.set(canonical, {
++                    filePath,
++                    depth: canonical.split(path.sep).length,
++                    bundleExecutable: path.dirname(canonical).endsWith(path.sep + path.join('Contents', 'MacOS'))
++                });
++            }
++        }
++        const pending = [...unique.values()].sort((a, b) => b.depth - a.depth);
++        while (pending.length) {
++            const depth = pending[0].depth;
++            const end = pending.findIndex((entry) => entry.depth !== depth);
++            const entries = pending.splice(0, end < 0 ? pending.length : end);
++            const group = entries.filter((entry) => !entry.bundleExecutable);
++            let next = 0;
++            let failed = false;
++            let failure;
++            const worker = async () => {
++                while (!failed && next < group.length) {
++                    const { filePath } = group[next++];
++                    try {
++                        await signFile(filePath);
++                    }
++                    catch (error) {
++                        if (!failed) failure = error;
++                        failed = true;
++                    }
++                }
++            };
++            // Drain every in-flight codesign before propagating failure to builder retries.
++            await Promise.all(Array.from({ length: Math.min(concurrency, group.length) }, worker));
++            if (failed) throw failure;
++            // codesign treats a Contents/MacOS executable as part of its bundle and
++            // inspects sibling files. Concurrent signatures leave transient .cstemp
++            // files there, so sign these executables only after all peers finish.
++            for (const entry of entries) {
++                if (entry.bundleExecutable) await signFile(entry.filePath);
++            }
++        }
++        await signFile(opts.app);
++    }
+     // Verify code sign
+     (0, util_1.debugLog)('Verifying...');
+     await verifySignApplication(opts);
+diff --git a/dist/cjs/types.d.ts b/dist/cjs/types.d.ts
+index 398a93403811ad41681af7113ffc4c146d18cece..e55cc9a48ac8d38691cc028c0b4077c31de62ae8 100644
+--- a/dist/cjs/types.d.ts
++++ b/dist/cjs/types.d.ts
+@@ -112,6 +112,12 @@ export type PerFileSignOptions = {
+  * @internal
+  */
+ export type OnlySignOptions = {
++    /**
++     * Maximum simultaneous independent signatures. Children finish before enclosing bundles.
++     * Values greater than one deduplicate canonical paths and drain in-flight work on failure.
++     * @defaultValue `1`
++     */
++    signingConcurrency?: number;
+     /**
+      * Array of paths to additional binaries that will be signed along with built-ins of Electron.
+      *
+diff --git a/dist/esm/sign.js b/dist/esm/sign.js
+index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..3cf28695ce0c0fc2380db9b80d73682758f6f678 100644
+--- a/dist/esm/sign.js
++++ b/dist/esm/sign.js
+@@ -29,6 +29,9 @@ function validateOptsIgnore(ignore) {
+  * This function returns a promise validating all options passed in opts.
+  */
+ async function validateSignOpts(opts) {
++    if (opts.signingConcurrency !== undefined && (!Number.isSafeInteger(opts.signingConcurrency) || opts.signingConcurrency < 1)) {
++        throw new Error('signingConcurrency must be a positive safe integer.');
++    }
+     await validateOptsBinaries(opts);
+     await validateOptsApp(opts);
+     if (opts.provisioningProfile && typeof opts.provisioningProfile !== 'string') {
+@@ -157,10 +160,10 @@ async function signApplication(opts, identity) {
+         const bDepth = b.split(path.sep).length;
+         return bDepth - aDepth;
+     });
+-    for (const filePath of [...children, opts.app]) {
++    async function signFile(filePath) {
+         if (shouldIgnoreFilePath(filePath)) {
+             debugLog('Skipped... ' + filePath);
+-            continue;
++            return;
+         }
+         const perFileOptions = await mergeOptionsForFile(opts.optionsForFile ? opts.optionsForFile(filePath) : null, defaultOptionsForFile(filePath, opts.platform));
+         // preAutoEntitlements should only be applied to the top level app bundle.
+@@ -236,6 +239,59 @@ async function signApplication(opts, identity) {
+         }
+         await execFileAsync('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
+     }
++    const concurrency = opts.signingConcurrency || 1;
++    if (concurrency === 1) {
++        for (const filePath of [...children, opts.app]) await signFile(filePath);
++    }
++    else {
++        // Framework Versions/Current and explicit binaries can alias discovered code.
++        // Canonical paths prevent concurrent writes and determine the real nesting order.
++        const appPath = await fs.realpath(opts.app);
++        const unique = new Map();
++        for (const filePath of children) {
++            if (shouldIgnoreFilePath(filePath)) continue;
++            const canonical = await fs.realpath(filePath);
++            if (canonical !== appPath && !unique.has(canonical)) {
++                unique.set(canonical, {
++                    filePath,
++                    depth: canonical.split(path.sep).length,
++                    bundleExecutable: path.dirname(canonical).endsWith(path.sep + path.join('Contents', 'MacOS'))
++                });
++            }
++        }
++        const pending = [...unique.values()].sort((a, b) => b.depth - a.depth);
++        while (pending.length) {
++            const depth = pending[0].depth;
++            const end = pending.findIndex((entry) => entry.depth !== depth);
++            const entries = pending.splice(0, end < 0 ? pending.length : end);
++            const group = entries.filter((entry) => !entry.bundleExecutable);
++            let next = 0;
++            let failed = false;
++            let failure;
++            const worker = async () => {
++                while (!failed && next < group.length) {
++                    const { filePath } = group[next++];
++                    try {
++                        await signFile(filePath);
++                    }
++                    catch (error) {
++                        if (!failed) failure = error;
++                        failed = true;
++                    }
++                }
++            };
++            // Drain every in-flight codesign before propagating failure to builder retries.
++            await Promise.all(Array.from({ length: Math.min(concurrency, group.length) }, worker));
++            if (failed) throw failure;
++            // codesign treats a Contents/MacOS executable as part of its bundle and
++            // inspects sibling files. Concurrent signatures leave transient .cstemp
++            // files there, so sign these executables only after all peers finish.
++            for (const entry of entries) {
++                if (entry.bundleExecutable) await signFile(entry.filePath);
++            }
++        }
++        await signFile(opts.app);
++    }
+     // Verify code sign
+     debugLog('Verifying...');
+     await verifySignApplication(opts);
+diff --git a/dist/esm/types.d.ts b/dist/esm/types.d.ts
+index 398a93403811ad41681af7113ffc4c146d18cece..e55cc9a48ac8d38691cc028c0b4077c31de62ae8 100644
+--- a/dist/esm/types.d.ts
++++ b/dist/esm/types.d.ts
+@@ -112,6 +112,12 @@ export type PerFileSignOptions = {
+  * @internal
+  */
+ export type OnlySignOptions = {
++    /**
++     * Maximum simultaneous independent signatures. Children finish before enclosing bundles.
++     * Values greater than one deduplicate canonical paths and drain in-flight work on failure.
++     * @defaultValue `1`
++     */
++    signingConcurrency?: number;
+     /**
+      * Array of paths to additional binaries that will be signed along with built-ins of Electron.
+      *

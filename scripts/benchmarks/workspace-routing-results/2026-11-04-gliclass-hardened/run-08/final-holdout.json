@@ -1,0 +1,201 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "acceptance": {
+      "fp32": {
+        "correct": 56,
+        "total": 57,
+        "accuracy": 0.9824561403508771,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 3,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 16,
+            "total": 16
+          },
+          "runtime": {
+            "correct": 16,
+            "total": 16
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 11,
+            "total": 12
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 15,
+          "total": 16
+        },
+        "mistakes": [
+          {
+            "input": "Ask Quartz to repair Nova Analytics on Vega Laptop",
+            "expected": "nova",
+            "actual": "keep",
+            "ms": 16.677874999004416,
+            "logits": [
+              0.35144585371017456, -17.873369216918945, -20.889209747314453, -8.363882064819336
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "tide",
+                "label": "project: Tide Client"
+              },
+              {
+                "id": "nova",
+                "label": "project: Nova Analytics"
+              }
+            ],
+            "caseId": 2,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 23964, 9173, 128001, 663, 294,
+              10453, 10454, 128002, 4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260,
+              8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521,
+              289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363,
+              499, 663, 269, 3973, 260, 21863, 294, 5606, 23369, 264, 2211, 10453, 10454, 277,
+              28423, 18926, 2
+            ]
+          }
+        ],
+        "medianMs": 16.677874999004416,
+        "p95Ms": 21.049249997304287
+      },
+      "q8": {
+        "correct": 56,
+        "total": 57,
+        "accuracy": 0.9824561403508771,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 3,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 16,
+            "total": 16
+          },
+          "runtime": {
+            "correct": 16,
+            "total": 16
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 11,
+            "total": 12
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 15,
+          "total": 16
+        },
+        "mistakes": [
+          {
+            "input": "Ask Quartz to repair Nova Analytics on Vega Laptop",
+            "expected": "nova",
+            "actual": "keep",
+            "ms": 37.57841599872336,
+            "logits": [
+              0.3092360496520996, -17.703598022460938, -20.834135055541992, -8.320199966430664
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "tide",
+                "label": "project: Tide Client"
+              },
+              {
+                "id": "nova",
+                "label": "project: Nova Analytics"
+              }
+            ],
+            "caseId": 2,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 23964, 9173, 128001, 663, 294,
+              10453, 10454, 128002, 4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260,
+              8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521,
+              289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363,
+              499, 663, 269, 3973, 260, 21863, 294, 5606, 23369, 264, 2211, 10453, 10454, 277,
+              28423, 18926, 2
+            ]
+          }
+        ],
+        "medianMs": 36.87983399868244,
+        "p95Ms": 42.279000001144595
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 3.4332275390625e-5,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "acceptanceSha256": "8a8c0a2e4bd34fdd23025ebc7ce99f3579cb0c8ee1a01edd289d2fc4d194799e",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-08/"
+}

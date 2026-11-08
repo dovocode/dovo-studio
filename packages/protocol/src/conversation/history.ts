@@ -128,6 +128,13 @@ export interface ConversationWindow {
   turns: readonly NonNullable<Task['turns']>[number][]
   historyRevision?: number
 }
+const turnIndexes = new WeakMap<
+  ConversationWindow['turns'],
+  {
+    byId: Map<string, ConversationWindow['turns'][number]>
+    byMessage: Map<string, ConversationWindow['turns'][number]>
+  }
+>()
 /** Whole messages, bounded by requests, item count and approximate encoded bytes. */
 export function conversationPage(
   task: Pick<Task, 'messages' | 'turns' | 'historyRevision'>,
@@ -147,8 +154,14 @@ export function conversationPage(
 /** Pages a window exactly as `conversationPage` pages the complete history it was read from. */
 export function conversationWindowPage(window: ConversationWindow): ConversationPage {
   const end = window.messages.length
-  const turnsById = new Map(window.turns.map((turn) => [turn.id, turn]))
-  const turnsByMessage = new Map(window.turns.map((turn) => [turn.assistantId, turn]))
+  let index = turnIndexes.get(window.turns)
+  if (!index) {
+    index = {
+      byId: new Map(window.turns.map((turn) => [turn.id, turn])),
+      byMessage: new Map(window.turns.map((turn) => [turn.assistantId, turn])),
+    }
+    turnIndexes.set(window.turns, index)
+  }
   const includedTurns = new Set<string>()
   let start = end,
     requests = 0,
@@ -156,7 +169,8 @@ export function conversationWindowPage(window: ConversationWindow): Conversation
   while (start > 0 && end - start < conversationPageMessages && requests < 10) {
     const message = window.messages[start - 1]!
     const turn =
-      (message.turnId ? turnsById.get(message.turnId) : undefined) ?? turnsByMessage.get(message.id)
+      (message.turnId ? index.byId.get(message.turnId) : undefined) ??
+      index.byMessage.get(message.id)
     const size =
       encodedSize(message) + (turn && !includedTurns.has(turn.id) ? encodedSize(turn) : 0)
     // A large individual message remains intact and accessible.

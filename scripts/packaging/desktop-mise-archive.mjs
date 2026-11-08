@@ -1,8 +1,10 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { releaseVariant } from './release-variant.mjs'
+const execFileAsync = promisify(execFile)
 export async function desktopMiseArchive(root) {
   const { version, productName, artifactPrefix, nightly } = await releaseVariant(root)
   const temporary = await mkdtemp(join(tmpdir(), 'dovo-desktop-mise-'))
@@ -24,20 +26,16 @@ exec /usr/bin/open -a "$base/${productName}.app" --args "$@"
       { mode: 0o755 },
     )
     const artifact = join(root, 'release', `${artifactPrefix}-mise-${version}-macos-arm64.tar.gz`)
-    execFileSync(
-      'tar',
-      [
-        '-czf',
-        artifact,
-        '-C',
-        temporary,
-        'bin',
-        '-C',
-        join(root, 'release/mac-arm64'),
-        `${productName}.app`,
-      ],
-      { stdio: 'inherit' },
-    )
+    await execFileAsync('tar', [
+      '-czf',
+      artifact,
+      '-C',
+      temporary,
+      'bin',
+      '-C',
+      join(root, 'release/mac-arm64'),
+      `${productName}.app`,
+    ])
     return artifact
   } finally {
     await rm(temporary, { recursive: true, force: true })

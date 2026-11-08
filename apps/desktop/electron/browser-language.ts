@@ -1,8 +1,10 @@
+import { configureBrowserDoNotTrack } from './browser-user-agent.js'
 import { app, type Session } from 'electron'
 import {
   browserLanguages,
   browserLinkProfile,
   browserProfilesSchema,
+  browserSearchUrl,
   browserWebsiteCustomizationScript,
   decodeResult,
 } from '@dovo/protocol'
@@ -15,14 +17,35 @@ const configured = new WeakMap<Session, string>()
 const preferences = Schema.Struct({
   browserProfiles: browserProfilesSchema,
   browserWorkspaceEnabled: Schema.optional(Schema.Boolean),
+  unifiedWorkspaceEnabled: Schema.optional(Schema.Boolean),
 })
+export function keepBrowserSessionCookies(profileId: string) {
+  const result = decodeResult(preferences, readLocalSettingsSection('app'))
+  return (
+    result.success &&
+    result.data.browserProfiles.find((profile) => profile.id === profileId)?.keepSessionCookies ===
+      true
+  )
+}
+export function websiteSearchUrl(profileId: string, text: string) {
+  const result = decodeResult(preferences, readLocalSettingsSection('app'))
+  return browserSearchUrl(
+    text,
+    result.success
+      ? result.data.browserProfiles.find((profile) => profile.id === profileId)?.search
+      : undefined,
+  )
+}
 export function websiteLinkProfile(
   sourceProfileId: string,
   url: string,
   context: 'website' | 'external' = 'website',
 ) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
-  return result.success && (context === 'external' || result.data.browserWorkspaceEnabled === true)
+  return result.success &&
+    (context === 'external' ||
+      result.data.browserWorkspaceEnabled === true ||
+      result.data.unifiedWorkspaceEnabled === true)
     ? browserLinkProfile(url, result.data.browserProfiles, sourceProfileId)
     : undefined
 }
@@ -39,10 +62,11 @@ export function websiteCustomization(profileId: string, url: string) {
 }
 export function configureBrowserLanguage(session: Session, profileId: string, userAgent: string) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
-  const language = result.success
-    ? result.data.browserProfiles.find((profile) => profile.id === profileId)?.language
+  const profile = result.success
+    ? result.data.browserProfiles.find((profile) => profile.id === profileId)
     : undefined
-  const languages = browserLanguages(language)
+  configureBrowserDoNotTrack(session, profile?.doNotTrack === true)
+  const languages = browserLanguages(profile?.language)
   session.setUserAgent(userAgent, languages.join(','))
   const signature = JSON.stringify(languages)
   if (configured.get(session) === signature) return

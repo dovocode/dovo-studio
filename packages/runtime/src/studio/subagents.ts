@@ -7,7 +7,6 @@ import {
   noStudioTools,
   permissionPolicyReadOnly,
   permissionPolicyWithinCeiling,
-  resolveTaskAgent,
   subagentListSchema,
   subagentReadSchema,
   subagentSendSchema,
@@ -38,7 +37,8 @@ function ownedTarget(s: Services, parentId: string, id: string) {
     .find((watch) => watch.delegated && targetedChildId(watch) === id)
 }
 function parentPolicy(s: Services, taskId: string, supplied?: StudioPolicy): StudioPolicy {
-  const parent = resolveTaskAgent(s.store.taskSummary(taskId), s.store.get().agents)
+  // Targeted children follow the same plan-turn ceiling as local children.
+  const parent = s.tasks.delegationCeiling(s.store.taskSummary(taskId))
   if (!parent || (supplied && !permissionPolicyWithinCeiling(supplied.permissions, parent)))
     throw new HttpError(403, 'The parent agent permissions changed; start a fresh turn')
   return {

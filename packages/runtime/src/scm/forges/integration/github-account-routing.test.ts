@@ -25,7 +25,7 @@ const args = process.argv.slice(2);
 const userIndex = args.indexOf('--user');
 const login = process.env.GH_ACCOUNT || (userIndex >= 0 ? args[userIndex + 1] : process.env.GH_TOKEN?.replace('fixture-token-', ''));
 if (args[0] === 'auth' && args[1] === 'token') {
-  if (!login || process.env.GH_TOKEN && userIndex >= 0) process.exit(7);
+  if (!login || process.env.GH_TOKEN && (userIndex >= 0 || process.env.GH_ACCOUNT)) process.exit(7);
   process.stdout.write('fixture-token-' + login);
 } else process.exit(8);
 `,

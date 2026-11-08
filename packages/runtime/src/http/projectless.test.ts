@@ -69,6 +69,37 @@ async function registerFolder(f: Awaited<ReturnType<typeof setup>>, path: string
   expect(repository.kind).toBe('folder')
   return repository
 }
+it('keeps shared project metadata when removing the last local clone', async () => {
+  const f = await setup()
+  f.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      {
+        id: 'clone',
+        name: 'Clone',
+        path: '/tmp/metadata-only-clone',
+        branch: 'main',
+        gitIdentity: 'github.com/team/app',
+      },
+    ],
+  }))
+  const shared = [
+    {
+      key: 'project:github.com/team/app',
+      updatedAt: 1,
+      changeId: 'name',
+      value: { projectName: 'Shared App' },
+    },
+  ]
+  f.runtime.services.defaults.save(
+    { ...f.runtime.services.defaults.get(), scopedSettings: { environment: {}, shared } },
+    false,
+  )
+  expect((await f.request('/api/scm/repositories/delete', { repositoryId: 'clone' })).status).toBe(
+    200,
+  )
+  expect(f.runtime.services.defaults.get().scopedSettings?.shared).toEqual(shared)
+})
 it('creates named Dovo projects with separate managed folders and shares files between their chats across restarts', async () => {
   const f = await setup()
   vi.stubEnv('DOVO_DATA_ROOT', f.root)
@@ -428,4 +459,57 @@ it('recovers a scratch turn interrupted after the provider completed without req
   expect(reopened.services.store.task('task').status).toBe('review')
   expect(reopened.services.store.task('task').runPhase).toBeUndefined()
   expect(git).not.toHaveBeenCalled()
+})
+
+it('keeps a linked project available while a thread has pending undo recovery', async () => {
+  const f = await setup()
+  const repositoryPath = join(f.root, 'recovery-project')
+  await mkdir(repositoryPath)
+  const s = f.runtime.services
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'recoverable', name: 'Recovery project', path: repositoryPath, branch: 'main' },
+    ],
+  }))
+  await f.create(f.draft('recovery-thread'))
+  s.store.updateTaskHistory('recovery-thread', (task) => ({
+    ...task,
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'reply',
+        agentId: '',
+        provider: 'codex',
+        model: '',
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+        checkpoint: {
+          before: 'before',
+          files: [],
+          omitted: [],
+          restorePending: true,
+          undone: { at: 'now', backup: 'backup' },
+          linked: [
+            {
+              checkoutId: 'old-link',
+              repositoryId: 'recoverable',
+              directory: repositoryPath,
+              before: 'before',
+              files: [],
+              omitted: [],
+              undone: { at: 'now', backup: 'backup' },
+            },
+          ],
+        },
+      },
+    ],
+  }))
+  const result = await f.request('/api/scm/repositories/delete', { repositoryId: 'recoverable' })
+  expect(result.status).toBe(409)
+  expect(await result.text()).toContain('Finish the pending undo or redo')
+  expect(s.store.get().repositories.some((repository) => repository.id === 'recoverable')).toBe(
+    true,
+  )
 })

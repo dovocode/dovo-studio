@@ -6,7 +6,7 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const ui = `
-export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
+export const Text=({children,accessibilityRole})=><span role={accessibilityRole==='header'?'heading':accessibilityRole}>{children}</span>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Choice=()=>null;export const Icon=()=>null;export const PullRequestIcon=()=>null;
 export const ScreenHeader=({title,leading,actions})=><header>{title}{leading}{actions}</header>;
@@ -15,6 +15,7 @@ export const Markdown=({text})=><span>{text}</span>;export const formatTime=()=>
 export const openAppLink=()=>{};export const readMobilePreferences=()=>({locale:'en',dateStyle:'relative'});
 `
 const boundaries = new Map([
+  [mobile + 'scm/pulls/detail/agent-chat', 'export const PullAgentChat=()=>null;'],
   ...[
     'ui/content/text',
     'ui/controls/action',
@@ -30,7 +31,7 @@ const boundaries = new Map([
   ].map((path) => [mobile + path, ui]),
   [
     mobile + 'runtime/connection/provider',
-    `import {createContext,useContext} from 'react';export const RuntimeContext=createContext(null);export const useRuntime=()=>useContext(RuntimeContext);`,
+    `import {createContext,useContext} from 'react';export const RuntimeContext=createContext(null);export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>useContext(RuntimeContext);`,
   ],
   [mobile + 'scm/pulls/list/create-pull', 'export const CreatePull=()=>null;'],
   [mobile + 'scm/pulls/detail/linked-threads', 'export const PullLinkedThreads=()=>null;'],
@@ -141,7 +142,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
   [
     {
       path: 'react-native',
-      contents: `export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children})=><div>{children}</div>;export const ScrollView=({children,refreshControl})=><div>{refreshControl}{children}</div>;export const Pressable=({children,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
+      contents: `export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children})=><div>{children}</div>;export const ScrollView=({children,refreshControl})=><div>{refreshControl}{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:(name,callback)=>{(window.appStateListeners??=new Set()).add(callback);return{remove(){window.appStateListeners.delete(callback)}}}};`,
     },
     { path: 'expo-router', contents: 'export const router={push(){}};' },
   ],
@@ -167,6 +168,25 @@ try {
       'PR requests must stay on the selected machine, even with a same-account peer available',
     )
   await noPeerReads(page)
+  await page.getByRole('button', { name: 'View pull request files', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Files', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
+  assert.equal(
+    await page.getByRole('heading', { name: 'PR from origin 0', exact: true }).isVisible(),
+    true,
+  )
+  await page.getByRole('button', { name: 'View pull request checks', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Checks', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
+  assert.equal(
+    await page.getByRole('heading', { name: 'PR from origin 0', exact: true }).isVisible(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
   await page.getByRole('button', { name: 'More PRs', exact: true }).click()
   await page.waitForFunction(() => window.list.pages[0]?.pulls.some((pull) => pull.number === 8))
   const pagination = await page.evaluate(() =>
@@ -174,6 +194,30 @@ try {
   )
   assert.equal(pagination.input.expectedReaderIdentity, 'github-host-account')
   assert.equal(pagination.input.expectedDestination, 'destination-origin')
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.find(
+          (call) => call.path.endsWith('/detail') && call.input.section === 'overview',
+        ).input.refresh,
+    ),
+    true,
+  )
+  assert.doesNotMatch(await page.locator('body').innerText(), /showing cached|Last fetched/i)
+  const beforeResume = await page.evaluate(
+    () => window.calls.filter((call) => call.path.endsWith('/detail')).length,
+  )
+  await page.evaluate(() => window.appStateListeners.forEach((callback) => callback('active')))
+  await page.waitForFunction(
+    (before) => window.calls.filter((call) => call.path.endsWith('/detail')).length > before,
+    beforeResume,
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path.endsWith('/detail')).at(-1).input.refresh,
+    ),
+    true,
+  )
   await page.evaluate(() => window.setOffline(true))
   await page.waitForFunction(() => !window.reader.readConnected && !window.list.connected)
   assert.equal(await page.evaluate(() => window.reader.detail.stale), true)

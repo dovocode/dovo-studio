@@ -1,42 +1,42 @@
 /** Canonical Dovo palette. Other Studio themes remain user choices. */
 export const dovoColors = {
   dark: {
-    background: '#080808',
-    foreground: '#ededed',
-    sidebar: '#0c0c0c',
-    card: '#101010',
-    popover: '#101010',
-    secondary: '#102432',
-    'muted-foreground': '#a1a1a1',
-    border: '#202020',
-    primary: '#7cc9ff',
-    'primary-foreground': '#080808',
-    selection: '#102432',
-    action: '#ededed',
-    'action-foreground': '#080808',
-    signal: '#bcefff',
-    pink: '#7cc9ff',
-    'syntax-function': '#7cc9ff',
-    'syntax-keyword': '#7cc9ff',
+    background: '#0c0c0e',
+    foreground: '#d4d7dd',
+    sidebar: '#101012',
+    card: '#171719',
+    popover: '#171719',
+    secondary: '#202024',
+    'muted-foreground': '#a1a7b2',
+    border: '#2b2b30',
+    primary: '#89bde3',
+    'primary-foreground': '#0c0c0e',
+    selection: '#1e252e',
+    action: '#89bde3',
+    'action-foreground': '#0c0c0e',
+    signal: '#b4dcef',
+    pink: '#89bde3',
+    'syntax-function': '#89bde3',
+    'syntax-keyword': '#89bde3',
   },
   light: {
-    background: '#ffffff',
-    foreground: '#151515',
-    sidebar: '#f7f7f7',
-    card: '#ffffff',
-    popover: '#ffffff',
-    secondary: '#e7f3ff',
-    'muted-foreground': '#666666',
-    border: '#e8e8e8',
-    primary: '#0965b5',
+    background: '#f5f6f8',
+    foreground: '#363d48',
+    sidebar: '#edf0f4',
+    card: '#fbfcfd',
+    popover: '#fbfcfd',
+    secondary: '#e7edf5',
+    'muted-foreground': '#596371',
+    border: '#dde2e8',
+    primary: '#3565a1',
     'primary-foreground': '#ffffff',
-    selection: '#e7f3ff',
-    action: '#151515',
+    selection: '#e7edf5',
+    action: '#3565a1',
     'action-foreground': '#ffffff',
-    signal: '#005f76',
-    pink: '#0965b5',
-    'syntax-function': '#0965b5',
-    'syntax-keyword': '#0965b5',
+    signal: '#275e80',
+    pink: '#3565a1',
+    'syntax-function': '#3565a1',
+    'syntax-keyword': '#3565a1',
   },
 } as const
 
@@ -117,7 +117,14 @@ export const designTokens = {
     sans: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   },
-  radius: { control: 6, card: 12, composer: 12 },
+  typography: {
+    page: { size: 20, line: 28, weight: 600 },
+    section: { size: 14, line: 20, weight: 600 },
+    row: { size: 13, line: 18, weight: 500 },
+    meta: { size: 12, line: 16, weight: 400 },
+    machine: { size: 12, line: 16, weight: 400 },
+  },
+  radius: { control: 8, card: 12, composer: 16 },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, section: 32 },
   touchTarget: 44,
   focusWidth: 2,
@@ -136,6 +143,12 @@ export function cssVariables(mode: keyof typeof dovoColors) {
     ';--dovo-font-mono:' +
     designTokens.font.mono +
     ';' +
+    Object.entries(designTokens.typography)
+      .map(
+        ([name, value]) =>
+          `--dovo-type-${name}-size:${value.size / 16}rem;--dovo-type-${name}-line:${value.line / 16}rem;--dovo-type-${name}-weight:${value.weight};`,
+      )
+      .join('') +
     Object.entries(designTokens.radius)
       .map(([name, value]) => '--dovo-radius-' + name + ':' + value + 'px;')
       .join('')

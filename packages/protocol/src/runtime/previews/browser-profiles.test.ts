@@ -120,3 +120,14 @@ it('routes by longest case-sensitive path at segment boundaries, then domain spe
     ]).success,
   ).toBe(false)
 })
+
+it('preserves an optional per-profile Do Not Track flag and rejects invalid values', () => {
+  for (const doNotTrack of [true, false])
+    expect(
+      decodeResult(browserProfilesSchema, [{ id: 'default', name: 'Default', doNotTrack }]),
+    ).toMatchObject({ success: true, data: [{ doNotTrack }] })
+  expect(
+    decodeResult(browserProfilesSchema, [{ id: 'default', name: 'Default', doNotTrack: '1' }])
+      .success,
+  ).toBe(false)
+})

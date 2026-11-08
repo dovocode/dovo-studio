@@ -61,10 +61,18 @@ export class JsonLineReader extends AbstractMessageReader {
         this.fireError(error)
       }
     })
-    lines.on('close', () => this.fireClose())
-    this.input.on('error', (error) => this.fireError(error))
+    const close = () => this.fireClose()
+    const error = (error: Error) => this.fireError(error)
+    lines.on('close', close)
+    lines.on('error', error)
+    this.input.on('close', close)
+    this.input.on('error', error)
     return {
-      dispose: () => lines.close(),
+      dispose: () => {
+        this.input.off('close', close)
+        this.input.off('error', error)
+        lines.close()
+      },
     }
   }
 }
@@ -73,10 +81,11 @@ export class JsonLineWriter extends AbstractMessageWriter {
     super()
     // A child that exits closes this pipe; an unobserved stream 'error' crashes the runtime.
     output.on('error', (error) => this.fireError(error))
+    output.on('close', () => this.fireClose())
   }
   /** Never rejects: vscode-jsonrpc rethrows write failures from an async Promise executor,
    * which surfaces as an unhandled rejection. Failures go to the connection's error event, and
-   * the owner settles pending requests when the child exits and the connection is disposed. */
+   * the owner settles pending requests when the transport fails or the child exits. */
   write(message: Message): Promise<void> {
     return new Promise((resolve) => {
       if (this.output.destroyed || this.output.writableEnded) {

@@ -114,7 +114,7 @@ export function NativeAgentThread({
         </header>
       </HeaderContent>
       <Conversation className="min-h-0" aria-label="Native conversation">
-        <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-16 md:pr-5">
+        <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:px-5">
           {!connected && (
             <p className="p-4 text-xs text-muted-foreground">
               Reconnect to load this native thread.

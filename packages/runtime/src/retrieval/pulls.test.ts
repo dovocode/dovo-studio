@@ -3,7 +3,12 @@ import { Schema } from 'effect'
 import { decode, RuntimeRequestError } from '@dovo/protocol'
 import { openDatabase } from '../storage/database.js'
 import { SharedRetrieval, type RetrievalTransport } from './coordinator.js'
-import { pullPeerRequestSchema, type PullPeerScope, type PullOperation } from './pulls.js'
+import {
+  pullPeerRequestSchema,
+  pullPeerScopeSchema,
+  type PullPeerScope,
+  type PullOperation,
+} from './pulls.js'
 import { retrievalFresh } from './context.js'
 
 const databases: ReturnType<typeof openDatabase>[] = []
@@ -30,6 +35,11 @@ function fleet() {
     const node = nodes.get(peer.id)
     if (!node) throw new RuntimeRequestError({ kind: 'request', message: 'offline' })
     if (path.endsWith('/host')) return decode(schema, node.status())
+    if (path === '/api/scm/pulls/invalidate') {
+      const invalidation = decode(Schema.Struct({ scope: pullPeerScopeSchema }), input)
+      node.forgetPull(invalidation.scope)
+      return decode(schema, { ok: true })
+    }
     const request = decode(pullPeerRequestSchema, input)
     const value = await node.servePull(
       request.scope,
@@ -90,6 +100,43 @@ function fleet() {
     },
   }
 }
+it('rechecks upstream when a fresh peer read arrives during an older in-flight read', async () => {
+  const f = fleet()
+  const { node } = f.add('server', 'server')
+  let finish: (value: string) => void = () => {
+    throw new Error('Not started')
+  }
+  f.upstream
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    .mockResolvedValue('new')
+  const background = node.servePull(scope, list, Schema.String, f.upstream)
+  await vi.waitFor(() => expect(f.upstream).toHaveBeenCalledTimes(1))
+  const forced = node.servePull(scope, list, Schema.String, f.upstream, true)
+  finish('old')
+  expect(await background).toBe('old')
+  expect(await forced).toBe('new')
+  expect(f.upstream).toHaveBeenCalledTimes(2)
+})
+it('invalidates another gateway cache after an owner write without repeating the write', async () => {
+  const f = fleet()
+  const owner = f.add('server', 'server').node
+  const gateway = f.add('other', 'desktop').node
+  const changed = vi.fn<() => void>()
+  gateway.onInvalidate = changed
+  f.upstream.mockResolvedValueOnce('before').mockResolvedValue('after')
+  expect(await gateway.servePull(scope, list, Schema.String, f.upstream)).toBe('before')
+  const write = vi.fn<() => Promise<string>>(async () => 'written')
+  await owner.servePull(scope, action, Schema.String, write)
+  expect(changed).toHaveBeenCalledOnce()
+  expect(write).toHaveBeenCalledOnce()
+  expect(await gateway.servePull(scope, list, Schema.String, f.upstream)).toBe('after')
+  expect(f.upstream).toHaveBeenCalledTimes(2)
+})
 it('keeps all repositories, details and writes on the preferred peer and shares its cache', async () => {
   const f = fleet()
   f.add('server', 'server')

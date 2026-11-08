@@ -21,6 +21,11 @@ export const Choice=({label,value,items,onChange})=><select aria-label={label} v
 `
 const stubs = [
   {
+    path: './browser-download',
+    importer: mobile + '/src/tasks/preview/remote-browser.tsx',
+    contents: `export const shareBrowserDownload=async()=>{throw new Error('Unexpected native download in mobile preview fixture')};`,
+  },
+  {
     path: './screenshot-attachment',
     importer: mobile,
     contents:
@@ -254,18 +259,33 @@ try {
     }),
   )
   assert.equal(await remoteAddress.inputValue(), 'http://remote.lan/draft')
+  const reconnectRequests = await page.evaluate(() => window.requests.length)
   await page.evaluate(() => window.bridge('connection', { online: false }))
   await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
   await page.waitForFunction(() =>
     window.commands.some(({ code }) => code.includes('"type":"reconnect"')),
   )
+  await tickets(reconnectRequests + 1)
+  const suspensionRequests = await page.evaluate(() => window.requests.length)
+  const suspensionCommands = await page.evaluate(() => window.commands.length)
   const original = await page.locator('[data-webview]').getAttribute('data-webview')
   await page.evaluate(() => window.setScene({ focused: false }))
-  assert.equal(await page.evaluate(() => window.commands.at(-1).code.includes('pagehide')), true)
+  const hiddenCommands = await page.evaluate(
+    (start) => window.commands.slice(start).map(({ code }) => code),
+    suspensionCommands,
+  )
+  assert.equal(
+    hiddenCommands.some((code) => code.includes('pagehide')),
+    true,
+  )
+  assert.equal(
+    hiddenCommands.some((code) => code.includes('"type":"visibility","visible":false')),
+    true,
+  )
   await page.evaluate(() => window.bridge('reconnect'))
-  assert.equal(await page.evaluate(() => window.requests.length), 1)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests)
   await page.evaluate(() => window.setScene({ focused: true }))
-  await tickets(2)
+  await tickets(suspensionRequests + 1)
   assert.equal(
     await page.evaluate(() => window.requests.at(-1).input.url),
     'http://remote.lan/current',
@@ -274,16 +294,16 @@ try {
 
   // Native permission prompts retain the live canvas; true backgrounding pauses it.
   await page.evaluate(() => window.setAppState('inactive'))
-  assert.equal(await page.evaluate(() => window.requests.length), 2)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 1)
   await page.evaluate(() => window.setAppState('background'))
   await page.evaluate(() => {
     window.setScene({ focused: false })
     window.setAppState('active')
     window.bridge('reconnect')
   })
-  assert.equal(await page.evaluate(() => window.requests.length), 2)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 1)
   await page.evaluate(() => window.setScene({ focused: true }))
-  await tickets(3)
+  await tickets(suspensionRequests + 2)
 
   // A late ticket from a hidden screen must not reconnect or clear a newer request.
   await page.evaluate(() => {
@@ -298,32 +318,38 @@ try {
   await page.waitForFunction(() => window.pending.length === 2)
   await page.evaluate(() => window.pending[0]())
   await page.evaluate(() => window.bridge('reconnect'))
-  assert.equal(await page.evaluate(() => window.requests.length), 5)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 4)
   assert.equal(
-    (await connects()).some(({ code }) => code.includes('ticket-4')),
+    (await connects()).some(({ code }) => code.includes(`ticket-${suspensionRequests + 3}`)),
     false,
   )
   await page.evaluate(() => {
     window.hold = false
     window.pending[1]()
   })
-  await page.waitForFunction(() => window.commands.some(({ code }) => code.includes('ticket-5')))
+  await page.waitForFunction(
+    (ticket) => window.commands.some(({ code }) => code.includes(ticket)),
+    `ticket-${suspensionRequests + 4}`,
+  )
   assert.equal(
-    (await connects()).some(({ code }) => code.includes('ticket-4')),
+    (await connects()).some(({ code }) => code.includes(`ticket-${suspensionRequests + 3}`)),
     false,
   )
   assert.equal((await connects()).at(-1).code.includes('ws://runtime.lan:4310/ws/browser'), true)
 
   await page.evaluate(() => window.setScene({ surface: 'device' }))
-  await tickets(6)
-  await page.waitForFunction(() => window.commands.some(({ code }) => code.includes('ticket-6')))
+  await tickets(suspensionRequests + 5)
+  await page.waitForFunction(
+    (ticket) => window.commands.some(({ code }) => code.includes(ticket)),
+    `ticket-${suspensionRequests + 5}`,
+  )
   assert.equal((await connects()).at(-1).code.includes('/ws/simulator'), true)
   await page.evaluate(() => window.setScene({ focused: false }))
   await page.evaluate(() => [...window.webViews.values()][0].onRenderProcessGone())
   await page.waitForFunction(() => window.mounts.length === 3)
-  assert.equal(await page.evaluate(() => window.requests.length), 6)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 5)
   await page.evaluate(() => window.setScene({ focused: true }))
-  await tickets(7)
+  await tickets(suspensionRequests + 6)
 
   // A repeatedly terminated viewer must stop remounting and acquiring tickets.
   await page.evaluate(() => {
@@ -342,14 +368,14 @@ try {
     window.setScene({ focused: false })
   })
   assert.equal(await retryBrowser.isDisabled(), true)
-  assert.equal(await page.evaluate(() => window.requests.length), 7)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 6)
   assert.equal(await page.evaluate(() => window.mounts.length), failedMounts)
   await page.evaluate(() => window.setScene({ focused: true }))
-  assert.equal(await page.evaluate(() => window.requests.length), 7)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 6)
   await retryBrowser.click()
-  await tickets(8)
+  await tickets(suspensionRequests + 7)
   await page.evaluate(() => [...window.webViews.values()][0].onRenderProcessGone())
-  await tickets(9)
+  await tickets(suspensionRequests + 8)
 
   // Computer changes reset recovery and stale viewer callbacks cannot retarget the new owner.
   await page.evaluate(() => {
@@ -360,7 +386,7 @@ try {
     }
     window.setScene({})
   })
-  await tickets(10)
+  await tickets(suspensionRequests + 9)
   await page.waitForFunction(() =>
     window.commands.some(({ code }) => code.includes('ws://second-runtime.lan:4310/ws/simulator')),
   )
@@ -370,9 +396,9 @@ try {
       nativeEvent: { data: JSON.stringify({ channel: 'dovo-browser', type: 'reconnect' }) },
     })
   })
-  assert.equal(await page.evaluate(() => window.requests.length), 10)
+  assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 9)
   await page.evaluate(() => [...window.webViews.values()][0].onContentProcessDidTerminate())
-  await tickets(11)
+  await tickets(suspensionRequests + 10)
 
   await page.evaluate(() => window.setScene({ surface: 'browser' }))
   // Verify the native inset boundary without pretending Chromium implements UIKit safe areas.

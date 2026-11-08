@@ -11,8 +11,9 @@ const mocks = {
   // Native syntax rendering is covered by check-mobile-review-browser.
   './code-block': 'export const CodeBlock=({content})=><pre>{content}</pre>;',
   '@dovo/studio-ui': `export {MessageResponse} from '${ui}/components/ai-elements/message.tsx';export {FileTypeIcon} from '${ui}/file-tree.tsx';export {Button} from '${ui}/components/ui/button.tsx';export {IconButton} from '${ui}/components/icon-button.tsx';export {TooltipProvider} from '${ui}/components/ui/tooltip.tsx';export {RepositoryOpenItems} from '${ui}/repository-open-items.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${ui}/lib/utils.ts';export {Dialog,DialogContent,DialogTitle} from '${ui}/components/ui/dialog.tsx';`,
-  '@dovo/studio-core': `export {responses} from '@dovo/protocol';export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useWorkspace=()=>window.runtime;const openExternalLink=async url=>window.opened.push(url);export const useStudioHost=()=>({openExternalLink,repositoryOpener:window.client});`,
-  '../../runtime/connection/provider': 'export const useRuntime=()=>window.runtime;',
+  '@dovo/studio-core': `export {responses} from '@dovo/protocol';export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>window.runtime;const openExternalLink=async url=>window.opened.push(url);export const useStudioHost=()=>({openExternalLink,repositoryOpener:window.client});`,
+  '../../runtime/connection/provider':
+    'export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>window.runtime;',
   '../theme': `export const useTheme=()=>({mode:'dark',colors:{surface:'#181818',text:'#eee',muted:'#999',border:'#333',background:'#111',accent:'#88bbee'},styles:{muted:{color:'#999'}}});`,
   '../../runtime/preferences/app-preferences':
     'export const carZoom=1;export const useCarMode=()=>false;',
@@ -32,7 +33,8 @@ const mocks = {
   // ArtifactWebView's native download bridge is exercised by check-artifacts-browser.
   'expo-file-system': `export class File {constructor(){throw new Error('Unexpected native file access in chat-file preview')}};export const Paths={cache:''};`,
   'expo-sharing': `export const isAvailableAsync=async()=>{throw new Error('Unexpected native sharing in chat-file preview')};export const shareAsync=isAvailableAsync;`,
-  'expo-crypto': "let id=0;export const randomUUID=()=> 'chat-file-'+(++id);",
+  'expo-crypto':
+    "let id=0;export const randomUUID=()=> '00000000-0000-4000-8000-'+String(++id).padStart(12,'0');",
   'react-native-webview': `import {useState,useEffect} from 'react';export default props=>{const {source}=props;const [id]=useState(()=>window.fileViewId=(window.fileViewId??0)+1);window.fileViews??=new Map();window.fileViews.set(id,props);useEffect(()=>()=>window.fileViews.delete(id),[]);return source.html?<iframe title="Native visualization" sandbox="allow-scripts" srcDoc={source.html}/>:<div data-file-webview={id} data-video-preview={source.uri}><video src={window.fakeVideo} controls style={{width:"100%",borderRadius:10}}/></div>};`,
 
   './mermaid-diagram': 'export const MermaidDiagram=()=>null;',
@@ -161,10 +163,12 @@ try {
   )
   await page.getByRole('dialog').locator('iframe').waitFor()
   assert.equal(await page.evaluate(() => window.opened.length), 0)
+  const previewURL = new URL(await page.getByRole('dialog').locator('iframe').getAttribute('src'))
   assert.equal(
-    await page.getByRole('dialog').locator('iframe').getAttribute('src'),
+    previewURL.origin + previewURL.pathname,
     'http://remote-runtime.test:7777/api/tasks/files/shared/scoped-ticket',
   )
+  assert.match(previewURL.hash, /^#dovo-pdf=[0-9a-f-]{36}$/i)
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.evaluate(() => window.append())
   await desktop.getByText('More response text', { exact: false }).waitFor()

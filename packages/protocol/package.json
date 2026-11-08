@@ -19,6 +19,12 @@
       "import": "./dist/shared/request-timeout.js",
       "default": "./dist/shared/request-timeout.js"
     },
+    "./agent-tools": {
+      "types": "./src/agent-tools.ts",
+      "development": "./src/agent-tools.ts",
+      "import": "./dist/agent-tools.js",
+      "default": "./dist/agent-tools.js"
+    },
     "./browser-viewer": {
       "types": "./src/generated/browser-viewer.ts",
       "development": "./src/generated/browser-viewer.ts",
@@ -36,6 +42,12 @@
       "development": "./src/node/local-settings.ts",
       "import": "./dist/node/local-settings.js",
       "default": "./dist/node/local-settings.js"
+    },
+    "./terminal-stream": {
+      "types": "./src/terminal-stream.ts",
+      "development": "./src/terminal-stream.ts",
+      "import": "./dist/terminal-stream.js",
+      "default": "./dist/terminal-stream.js"
     }
   },
   "scripts": {
@@ -46,9 +58,9 @@
     "@dovo/durable-connections": "workspace:*",
     "@noble/hashes": "2.4.0",
     "acorn": "8.19.0",
-    "cron-parser": "^5.10.2",
-    "effect": "4.0.6",
-    "mdast-util-directive": "^3.1.1",
+    "cron-parser": "^5.10.3",
+    "effect": "4.1.1",
+    "mdast-util-directive": "^3.2.0",
     "mdast-util-from-markdown": "^2.1.0",
     "mdast-util-gfm": "^3.1.0",
     "micromark-extension-directive": "^4.0.0",

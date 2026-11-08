@@ -374,14 +374,14 @@ it('shows favorite configurations before built-in providers without changing thr
   ).toBe(true)
 })
 
-it('uses persistent host names and distinguishes the detected OpenCode generation', () => {
+it('keeps host model labels compact and distinguishes the detected OpenCode generation', () => {
   const agent = { ...agents[0], provider: 'opencode' as const, model: 'openai/gpt-5.1-sol' }
   expect(
     taskHarnessLabel({ ...draft, harness: agent }, agent, [], 'GPT-5.1 Sol', 'OpenCode v1'),
-  ).toBe('OpenCode v1 · GPT-5.1 Sol')
+  ).toBe('OpenCode v1 · 5.1 Sol')
   expect(
     taskHarnessLabel({ ...draft, harness: agent }, agent, [], 'GPT-5.1 Sol', 'OpenCode v2'),
-  ).toBe('OpenCode v2 · GPT-5.1 Sol')
+  ).toBe('OpenCode v2 · 5.1 Sol')
 })
 
 it('selects Cursor with read-only access when the previous harness required approvals', () => {

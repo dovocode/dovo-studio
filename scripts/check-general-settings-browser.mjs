@@ -5,6 +5,7 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const core = `import {createContext,useContext} from 'react';
+export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';
 export {useAppPreferences,updateAppPreferences,readAppPreferences,useStudioTheme,useResolvedTheme,useDiffOptions} from '${root}/packages/studio-core/src/preferences.ts';
 export {importCodeTheme,maxCodeThemeBytes} from '${root}/packages/studio-core/src/code-themes.ts';
 export {browserModelCatalogCache} from '${root}/packages/studio-core/src/workspace/model-catalog-cache.ts';
@@ -34,6 +35,7 @@ export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.ts
 export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';
 export {AgentAvatar,agentIconChoices} from '${root}/packages/studio-ui/src/agent-avatar.tsx';
 export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';
+export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';
 export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';
 export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';
 export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';
@@ -57,9 +59,10 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';
+    contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {builtInAgentPresets,defaultTaskHarness} from '@dovo/protocol';
-import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions} from '@dovo/studio-core';
+import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions,updateAppPreferences} from '@dovo/studio-core';
+window.updateAppPreferences=updateAppPreferences;
 import {SettingsNav} from '${root}/packages/studio-shell/src/settings-nav.tsx';
 import {SidebarHeaderLayout,HeaderFallback} from '${root}/packages/studio-ui/src/sidebar-header.tsx';
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
@@ -93,7 +96,7 @@ window.request=async(path,input)=>{
  if(path==='/api/previews/browser/profiles/save'){window.browserWrites=input.profiles;return {profiles:input.profiles}};
  if(path==='/api/usage/history/read')return {sourceId:'computer',records:[],notices:[]};
  if(path==='/api/usage/limits/read')return {accounts:[]};
- if(path==='/api/runtime/preferences/read')return {autoContinueAfterRestart:false,settleOnPullClose:false};
+ if(path==='/api/runtime/preferences/read'){if(window.policyRead==='hold')return new Promise(resolve=>window.resolvePolicyRead=resolve);if(window.policyRead==='fail')throw Error('Could not read computer policies');return {autoContinueAfterRestart:false,settleOnPullClose:false}};
  if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1',reasoning:['low','medium','high'].map(id=>({id,name:id}))},{id:'claude-sonnet-4-6',name:'Claude Sonnet 4.6',reasoning:['low','medium','high'].map(id=>({id,name:id}))}],reasoning:['low','medium','high'].map(id=>({id,name:id}))};
  const key=input.scope;
  const inherited={...(key==='global'?{}:window.documents.global),agents:builtInAgentPresets()};
@@ -106,8 +109,8 @@ window.updateState={status:'idle',channel:'stable'};window.updateCalls=[];window
 window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateListeners.add(fn);return()=>window.updateListeners.delete(fn)},check:async()=>window.updateCalls.push('check'),install:async()=>window.updateCalls.push('install'),setChannel:async channel=>{window.updateCalls.push(channel);window.publishUpdate({...window.updateState,channel})}};
 const localPages={appearance:Appearance,notifications:Notifications,shortcuts:Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,diffs:Diffs,usage:Usage,'task-list-settings':TaskList};
 const views=[appSettingsExtension,agentsExtension,runtimeExtension,scmExtension,tasksExtension].flatMap(extension=>extension.views).filter(view=>view.navigationGroup==='settings');
-function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/><main data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">{view==='task-behavior'?<TaskBehavior/>:Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</main></div>}
-createRoot(document.getElementById('app')).render(<SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider>);`,
+function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=async id=>{if(id===view)return true;if(!(await confirm()))return false;setView(id);return true};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/><main data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">{view==='task-behavior'?<TaskBehavior/>:Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</main></div>}
+createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider></StudioConfirmationProvider>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -207,6 +210,87 @@ try {
       await screenshot(`${name}-${mode}`)
     }
   }
+  const assertIntroCue = async (cue) => {
+    const bounds = await cue.evaluate((element) => {
+      const column = element.closest('.studio-settings-content')
+      const description = column?.querySelector('.studio-settings-intro > p')
+      if (!column || !description) return null
+      const content = column.getBoundingClientRect()
+      const copy = description.getBoundingClientRect()
+      const target = (
+        element.closest('.studio-settings-storage-line') ?? element
+      ).getBoundingClientRect()
+      return {
+        left: target.left - content.left,
+        gap: target.top - copy.bottom,
+        right: target.right - content.right,
+      }
+    })
+    assert.ok(bounds, 'Scope and storage cues belong to the page content column')
+    assert.ok(Math.abs(bounds.left) <= 1, 'Cue aligns with the page title and description')
+    assert.ok(bounds.gap >= 0 && bounds.gap <= 24, 'Cue sits directly below the page description')
+    assert.ok(bounds.right <= 1, 'Cue fits the page content column')
+  }
+  const assertTargetToolbar = async () => {
+    const target = page.getByLabel('Settings target', { exact: true })
+    const bounds = await target.evaluate((element) => {
+      const toolbar = element.closest('.studio-settings-toolbar')
+      const column = element.closest('.studio-settings-content')
+      if (!toolbar || !column) return null
+      const content = column.getBoundingClientRect()
+      const target = element.getBoundingClientRect()
+      return {
+        left: target.left - content.left,
+        right: target.right - content.right,
+        outsideIntro: !element.closest('.studio-settings-intro'),
+        sticky: getComputedStyle(toolbar).position,
+        scrollport: !!toolbar.closest('.studio-settings-scroll'),
+      }
+    })
+    assert.ok(bounds, 'Target belongs to a dedicated Settings toolbar')
+    assert.ok(Math.abs(bounds.left) <= 1 && bounds.right <= 1, 'Target fits the content gutter')
+    assert.ok(bounds.outsideIntro && bounds.scrollport, 'Toolbar is inside the Settings scrollport')
+    assert.equal(bounds.sticky, 'sticky')
+  }
+  await assertIntroCue(page.getByText('This device · saved automatically', { exact: true }))
+  const headingScale = await page
+    .getByRole('heading', { name: 'General', level: 1 })
+    .evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { size: style.fontSize, lineHeight: style.lineHeight, weight: style.fontWeight }
+    })
+  assert.deepEqual(headingScale, { size: '20px', lineHeight: '28px', weight: '600' })
+  const contentColumn = page.locator('.studio-settings-content')
+  for (const width of [720, 719]) {
+    await contentColumn.evaluate((node, width) => {
+      node.style.maxWidth = `${width}px`
+    }, width)
+    const row = await page
+      .locator('.studio-setting-row')
+      .first()
+      .evaluate((node) => {
+        const copy = node.querySelector('.studio-setting-copy').getBoundingClientRect()
+        const control = node.querySelector('.studio-setting-control').getBoundingClientRect()
+        const row = node.getBoundingClientRect()
+        return {
+          rowWidth: row.width,
+          controlWidth: control.width,
+          copyRight: copy.right,
+          copyBottom: copy.bottom,
+          controlLeft: control.left,
+          controlTop: control.top,
+        }
+      })
+    assert.ok(Math.abs(row.rowWidth - width) <= 1, 'Probe measures the actual content width')
+    if (width === 720) {
+      assert.equal(row.controlWidth, 240, 'Wide Settings rows use a fixed 240px control column')
+      assert.ok(row.controlLeft >= row.copyRight, 'Wide controls sit beside their labels')
+    } else {
+      assert.equal(row.controlWidth, row.rowWidth, 'Controls fill the stacked row below 720px')
+      assert.ok(row.controlTop >= row.copyBottom, 'Narrow content stacks despite a wide viewport')
+    }
+  }
+  await contentColumn.evaluate((node) => node.style.removeProperty('max-width'))
   if (process.env.DOVO_HEADER_SCREENSHOTS) {
     const brand = await page.locator('.studio-titlebar').boundingBox()
     const heading = await page.locator('.studio-page-header').first().boundingBox()
@@ -223,7 +307,9 @@ try {
   const navigation = page.getByRole('region', { name: 'Settings navigation', exact: true })
   const settingsSidebar = page.getByRole('navigation', { name: 'Settings sections', exact: true })
   const brandBefore = await page.locator('.studio-titlebar').boundingBox()
-  const storageBefore = await settingsSidebar.getByLabel('Settings storage').boundingBox()
+  const storageBefore = await page
+    .getByText('This device · saved automatically', { exact: true })
+    .boundingBox()
   assert.ok(
     storageBefore.y + storageBefore.height <= 420,
     'Storage explanation fits a short window',
@@ -234,9 +320,22 @@ try {
   const titleBefore = await settingsSidebar
     .getByRole('heading', { name: 'Settings', exact: true })
     .boundingBox()
+  const moreSections = settingsSidebar.getByRole('button', {
+    name: 'More sections',
+    exact: true,
+  })
+  await moreSections.waitFor()
+  await moreSections.click()
+  assert.ok(await navigation.evaluate((element) => element.scrollTop > 0))
+  assert.equal(
+    await navigation.evaluate((element) => element === document.activeElement),
+    true,
+    'The continuation action leaves keyboard focus in the navigation',
+  )
   await navigation.evaluate((element) => {
     element.scrollTop = element.scrollHeight
   })
+  await moreSections.waitFor({ state: 'detached' })
   assert.ok(
     await navigation.evaluate((element) => element.scrollTop > 0),
     'Settings links actually scroll',
@@ -257,12 +356,13 @@ try {
     'Settings title stays fixed',
   )
   assert.deepEqual(
-    await settingsSidebar.getByLabel('Settings storage').boundingBox(),
+    await page.getByText('This device · saved automatically', { exact: true }).boundingBox(),
     storageBefore,
     'Storage explanation stays visible while settings links scroll',
   )
   await page.getByRole('textbox', { name: 'Search settings', exact: true }).fill('General')
   await settingsSidebar.getByRole('button', { name: 'General', exact: true }).waitFor()
+  await moreSections.waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
   await navigation.evaluate((element) => {
     element.scrollTop = 0
@@ -270,7 +370,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 })
   // Scope indicators stay available on unselected navigation entries and never navigate.
   const defaultScope = settingsSidebar.getByRole('button', {
-    name: 'Settings scope for Task defaults',
+    name: 'Settings scope for Thread defaults',
     exact: true,
   })
   await defaultScope.scrollIntoViewIfNeeded()
@@ -278,7 +378,7 @@ try {
   await defaultScope.click()
   await page
     .getByRole('dialog')
-    .getByText('Task defaults · Computer & project', { exact: true })
+    .getByText('Thread defaults · Computer & project', { exact: true })
     .waitFor()
   await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
   await page
@@ -307,11 +407,13 @@ try {
   })
   const choose = async (label, option) => {
     const select = page.getByRole('combobox', { name: label, exact: true })
+    const picker = page.getByRole('button', { name: label, exact: true })
+    await select.or(picker).waitFor({ state: 'visible' })
     if (await select.count()) {
       await select.click()
       await page.getByRole('option', { name: option, exact: true }).click()
     } else {
-      await page.getByRole('button', { name: label, exact: true }).click()
+      await picker.click()
       await page.getByRole('dialog').getByRole('option', { name: option, exact: true }).click()
     }
   }
@@ -335,13 +437,12 @@ try {
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).waitFor()
   await page.evaluate(() => window.changeView('general'))
   for (const [category, titles] of [
-    ['App preferences', ['General', 'Conversation', 'Browser', 'Task list & projects']],
-    ['New task defaults', ['Task defaults']],
-    ['Running task behavior', ['Running tasks', 'Task lifecycle']],
+    ['App preferences', ['General', 'Conversation', 'Browser', 'Thread list & projects']],
+    ['Thread defaults & behavior', ['Thread defaults', 'Running threads', 'Thread lifecycle']],
     ['Agents & tools', ['Agents', 'CLI commands & shell', 'Studio Tools', 'Memory']],
-    ['Tasks & projects', ['Worktrees', 'Artifacts']],
+    ['Repositories & workspaces', ['Source control', 'Worktrees', 'Artifacts']],
     ['Computers', ['Devices & runtime', 'Device previews']],
-    ['History', ['Activity & message history', 'Archived tasks']],
+    ['History', ['Activity & message history', 'Archived threads']],
   ]) {
     const group = settingsSidebar
       .getByRole('heading', { name: category, exact: true })
@@ -360,6 +461,40 @@ try {
   await settingsSidebar.getByRole('status').filter({ hasText: 'No settings match' }).waitFor()
   await search.press('Escape')
   assert.equal(await search.inputValue(), '')
+  // The catalogs must use the rendered thread labels: stale task labels used to navigate to
+  // a page but never find or focus its corresponding control.
+  for (const label of [
+    'Global new thread shortcut',
+    'Group running threads',
+    'Default thread sort',
+    'Confirm before archiving a thread',
+    'Confirm before stopping a running thread',
+    'Confirm before deleting a thread',
+    'Confirm before unpinning a thread',
+    'Follow-ups while a thread runs',
+    'When a thread needs your input',
+    'When a thread finishes',
+    'Default agent for new threads',
+    'Auto-resume limited threads',
+    'Snooze limited threads',
+    'Auto-settle merged threads',
+    'Auto-settle closed threads',
+    'Auto-settle inactive threads',
+    'Auto-archive settled threads',
+    'Continue threads after restarts',
+  ]) {
+    await search.fill(label)
+    await search.press('Enter')
+    await page.waitForFunction(
+      (label) => document.activeElement?.dataset.settingLabel === label,
+      label,
+    )
+    assert.equal(
+      await page.locator('[data-search-highlight]').getAttribute('data-setting-label'),
+      label,
+    )
+  }
+  await search.press('Escape')
   // Search opens the exact control, including inside collapsed advanced groups.
   await search.fill('long lines')
   await search.press('ArrowDown')
@@ -376,9 +511,7 @@ try {
   await settingsSidebar.getByRole('status').filter({ hasText: 'Choose a project first.' }).waitFor()
   await search.fill('submodules')
   await search.press('Enter')
-  const advancedSetup = page.locator(
-    'details:has(> summary[data-setting-label="Advanced workspace setup"])',
-  )
+  const advancedSetup = page.locator('details[data-setting-label="Advanced workspace setup"]')
   await page.locator('[data-search-highlight][data-setting-label="Submodules"]').waitFor()
   assert.equal(await advancedSetup.getAttribute('open'), '')
   const writesBeforeDiscard = await page.evaluate(() => window.writes.length)
@@ -391,20 +524,20 @@ try {
     'Save and Discard stay inside the visible settings area',
   )
   // Rejecting search navigation preserves the draft and never highlights another page.
-  page.once('dialog', (dialog) => dialog.dismiss())
   await search.fill('time format')
   await search.press('Enter')
-  await page.getByRole('heading', { name: 'Task defaults', level: 1, exact: true }).waitFor()
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
+  await page.getByRole('heading', { name: 'Thread defaults', level: 1, exact: true }).waitFor()
   assert.equal(
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
     'New worktree',
   )
   await page.getByRole('button', { name: 'Discard', exact: true }).click()
   assert.equal(await page.evaluate(() => window.writes.length), writesBeforeDiscard)
-  assert.equal(
-    await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
-    true,
-  )
+  assert.equal(await page.getByRole('button', { name: 'Save changes', exact: true }).count(), 0)
   await search.press('Enter')
   await page.locator('[data-search-highlight][data-setting-label="Time format"]').waitFor()
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
@@ -418,7 +551,9 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 })
   await search.fill('confirmation')
   await search.press('Enter')
-  await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
+  await page
+    .getByRole('heading', { name: 'Thread list & projects', exact: true, level: 1 })
+    .waitFor()
   await search.press('Escape')
   await search.fill('composer')
   assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 0)
@@ -427,11 +562,126 @@ try {
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
   await page.getByRole('button', { name: 'General', exact: true }).click()
   assert.equal(await page.getByLabel('Inherited settings target').count(), 0)
-  await settingsSidebar.getByRole('button', { name: 'Task list & projects', exact: true }).click()
-  await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
+  await settingsSidebar.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  await page
+    .getByRole('heading', { name: 'Thread list & projects', exact: true, level: 1 })
+    .waitFor()
+  const customOrder = ['pinned', 'waiting', 'active', 'working', 'settled', 'snoozed']
+  await page.evaluate(
+    (order) =>
+      window.updateAppPreferences({
+        threadSectionOrder: order,
+        collapsedThreadSections: ['waiting'],
+        workingSection: false,
+      }),
+    customOrder,
+  )
+  for (const [label, value] of [
+    ['No grouping', 'none'],
+    ['Project', 'project'],
+    ['Status', 'status'],
+  ]) {
+    await choose('Thread grouping', label)
+    const saved = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('dovo.app-preferences.v1')),
+    )
+    assert.equal(saved.taskGrouping, value)
+    assert.deepEqual(saved.threadSectionOrder, customOrder)
+    assert.deepEqual(saved.collapsedThreadSections, ['waiting'])
+    assert.equal(saved.workingSection, false)
+  }
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await settingsSidebar.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Thread grouping', exact: true }).innerText(),
+    'Status',
+  )
+  await assertIntroCue(
+    page
+      .locator('.studio-settings-intro')
+      .getByText('This device · saved automatically, except Snoozing (Save to apply)', {
+        exact: true,
+      }),
+  )
+  await page
+    .getByText(/Use Save calendar shortcuts and Save snooze durations to apply edits/)
+    .waitFor()
+  await page
+    .locator('section[data-setting-label="Snoozing"]')
+    .getByText('Save to apply', { exact: true })
+    .waitFor()
+  const discardSettings = page.getByRole('dialog', {
+    name: 'Discard unsaved settings changes?',
+    exact: true,
+  })
+  await page.getByRole('textbox', { name: 'Snooze durations', exact: true }).fill('25m, 2h')
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await discardSettings.waitFor()
+  await discardSettings.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Snooze durations', exact: true }).inputValue(),
+    '25m, 2h',
+  )
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await discardSettings.getByRole('button', { name: 'Discard changes', exact: true }).click()
+  await page.getByRole('heading', { name: 'General', level: 1, exact: true }).waitFor()
+  await settingsSidebar.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  assert.notEqual(
+    await page.getByRole('textbox', { name: 'Snooze durations', exact: true }).inputValue(),
+    '25m, 2h',
+  )
+  await page.locator('input[aria-label="Morning time"]').fill('08:45')
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await discardSettings.waitFor()
+  await discardSettings.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await page.locator('input[aria-label="Morning time"]').inputValue(), '08:45')
+  await page.locator('input[aria-label="Morning time"]').fill('08:30')
+  await page.locator('input[aria-label="Evening time"]').fill('20:15')
+  await choose('Next week starts on', 'Sunday')
+  await page.getByRole('switch', { name: 'Later today', exact: true }).click()
+  await page.getByRole('button', { name: 'Move Next week up', exact: true }).click()
+  await page.getByRole('button', { name: 'Save calendar shortcuts', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeSchedule,
+    ),
+    {
+      morningTime: '08:30',
+      eveningTime: '20:15',
+      weekStartsOn: 0,
+      presets: ['tomorrow-morning', 'next-week', 'tomorrow-evening'],
+    },
+  )
+  await page.getByRole('button', { name: 'Reset calendar shortcuts', exact: true }).click()
+  assert.equal(await page.locator('input[aria-label="Morning time"]').inputValue(), '09:00')
+  const snooze = page.getByRole('textbox', { name: 'Snooze durations', exact: true })
+  await snooze.fill('15m, 90m, 2d')
+  await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeMinutes,
+    ),
+    [15, 90, 2880],
+  )
+  await snooze.fill('1h, 60m')
+  await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'different durations' }).waitFor()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeMinutes,
+    ),
+    [15, 90, 2880],
+  )
+  await page.getByRole('button', { name: 'Reset snooze durations', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeMinutes,
+    ),
+    [60, 240, 1440, 2880, 4320, 10080],
+  )
   await choose('Project order', 'Last user message')
   await page.getByRole('textbox', { name: 'Add project starts in', exact: true }).fill('~/Code')
-  await page.getByRole('switch', { name: 'Confirm before deleting a task', exact: true }).click()
+  await page.getByRole('switch', { name: 'Confirm before deleting a thread', exact: true }).click()
   assert.equal(
     await page.evaluate(
       () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).projectOrder,
@@ -453,18 +703,32 @@ try {
   await page.getByRole('button', { name: 'General', exact: true }).click()
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).click()
   await page.getByRole('heading', { name: 'Agents', exact: true, level: 1 }).waitFor()
-  await settingsSidebar.getByLabel('Inherited settings target').waitFor()
+  await page.getByLabel('Settings target', { exact: true }).waitFor()
+  await assertTargetToolbar()
+  await page.getByRole('button', { name: 'Settings inheritance details', exact: true }).waitFor()
   assert.equal(
-    await settingsSidebar
-      .getByLabel('Inherited settings target')
-      .locator('button, a, input, select, [tabindex]')
-      .count(),
+    await settingsSidebar.getByLabel('Inherited settings target').count(),
     0,
-    'Scope summary contains no controls',
+    'Scope controls appear once in the content toolbar',
   )
   const profiles = page.getByRole('navigation', { name: 'Provider configurations' })
+  await page.getByRole('button', { name: 'Agent profile', exact: true }).waitFor()
+  assert.equal(
+    await profiles.isVisible(),
+    false,
+    'Agent profiles use the compact picker below 960px content',
+  )
+  await page.setViewportSize({ width: 1600, height: 900 })
   await profiles.getByRole('button', { name: /Claude Code/ }).waitFor()
   assert.equal(await profiles.getByRole('button').count(), 9, 'Providers are present before setup')
+  assert.equal(await profiles.getByText('Default model', { exact: true }).count(), 0)
+  assert.equal(
+    await profiles
+      .getByRole('button', { name: /Claude Code/ })
+      .locator(':scope > span > span')
+      .count(),
+    2,
+  )
   await profiles.getByRole('button', { name: /Mistral Vibe/ }).waitFor()
   await screenshot('agents-dark')
   await profiles.getByRole('button', { name: /Claude Code/ }).click()
@@ -473,14 +737,16 @@ try {
   await page.getByRole('status').filter({ hasText: 'Claude Code saved' }).waitFor()
   assert.equal((await page.evaluate(() => window.writes.at(-1))).after.agents[0].id, 'dovo:claude')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
+  await page.locator('summary').filter({ hasText: 'Profile inheritance' }).click()
   await page.getByText(/Saving creates an override/).waitFor()
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
-  await page.getByRole('button', { name: 'Open task defaults', exact: true }).click()
-  await settingsSidebar.getByRole('button', { name: 'Task lifecycle', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Auto-resume limited tasks', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Open thread defaults', exact: true }).click()
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Auto-resume limited threads', exact: true }).waitFor()
   await screenshot('task-defaults-dark')
-  await choose('Auto-resume limited tasks', 'Off')
-  await choose('Auto-archive settled tasks', 'On')
+  await choose('Auto-resume limited threads', 'Off')
+  await choose('Auto-archive settled threads', 'On')
   await page
     .getByRole('textbox', { name: 'Days in Settled before archiving', exact: true })
     .fill('12')
@@ -493,57 +759,168 @@ try {
   assert.equal(writes.at(-1).after.taskBehavior.archiveAfterSettledDays, 12)
   assert.deepEqual(writes.at(-1).after.resources, { skills: [], mcpServers: [] })
   await choose('Settings project', 'Dovo')
-  assert.equal(await page.getByRole('button', { name: 'Settings machine', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
-  await settingsSidebar
-    .getByLabel('Inherited settings target')
-    .getByText('Dovo · MacBook Pro', { exact: true })
+  await page.getByRole('button', { name: 'Settings computer', exact: true }).waitFor()
+  await choose('Settings computer', 'MacBook Pro')
+  await page
+    .getByLabel('Settings target', { exact: true })
+    .getByText('MacBook Pro', { exact: true })
     .waitFor()
-  await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
+  await page
+    .getByLabel('Settings target', { exact: true })
+    .getByText('MacBook Pro', { exact: true })
+    .waitFor()
   if (process.env.DOVO_SETTINGS_SCREENSHOTS)
     await page
-      .getByRole('heading', { name: 'Task lifecycle', exact: true, level: 2 })
+      .getByRole('heading', { name: 'Thread lifecycle', exact: true, level: 2 })
       .evaluate((element) => {
         element.scrollIntoView({ block: 'start' })
       })
   await screenshotThemes('task-defaults-project-computer-desktop')
-  await choose('Auto-resume limited tasks', 'On')
+  await choose('Auto-resume limited threads', 'On')
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Changes saved.' }).waitFor()
   writes = await page.evaluate(() => window.writes)
   assert.equal(writes.at(-1).scope, 'environment-project')
   assert.equal(writes.at(-1).repositoryId, 'project')
   await page
-    .getByRole('button', { name: 'Use inherited auto-resume limited tasks: Off', exact: true })
+    .getByRole('button', { name: 'Use inherited auto-resume limited threads: Off', exact: true })
     .click()
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.waitForFunction(
     () => window.writes.at(-1).after.taskBehavior.quotaResume === undefined,
   )
-  await settingsSidebar.getByRole('button', { name: 'Task defaults', exact: true }).click()
-  await choose('Working directory', 'New worktree')
-  page.once('dialog', (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
+  // Scoped values can arrive before the computer policies they fall back to. Unknown is not Off.
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await page.evaluate(() => {
+    window.policyRead = 'hold'
+  })
+  await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
+  for (const label of [
+    'Continue threads after restarts',
+    'Auto-settle merged threads',
+    'Auto-settle closed threads',
+  ]) {
+    const control = page.getByRole('combobox', { name: label, exact: true })
+    await control.waitFor()
+    assert.equal(await control.innerText(), 'Inherit')
+    assert.equal(
+      await control.evaluate(
+        (element) => document.getElementById(element.getAttribute('aria-describedby'))?.textContent,
+      ),
+      'Checking MacBook Pro…',
+    )
+  }
+  await page.evaluate(() => {
+    window.policyRead = undefined
+    window.resolvePolicyRead({ autoContinueAfterRestart: true, settleOnPullClose: false })
+  })
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Continue threads after restarts"]')?.textContent ===
+      'Inherit (On)',
+  )
   assert.equal(
-    await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).count(),
-    1,
+    await page
+      .getByRole('combobox', { name: 'Auto-settle merged threads', exact: true })
+      .innerText(),
+    'Inherit (Off)',
+  )
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await page.evaluate(() => {
+    window.policyRead = 'fail'
+  })
+  await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Could not read computer policies' }).waitFor()
+  for (const label of [
+    'Continue threads after restarts',
+    'Auto-settle merged threads',
+    'Auto-settle closed threads',
+  ]) {
+    const control = page.getByRole('combobox', { name: label, exact: true })
+    assert.equal(await control.innerText(), 'Inherit')
+    assert.equal(
+      await control.evaluate(
+        (element) => document.getElementById(element.getAttribute('aria-describedby'))?.textContent,
+      ),
+      'Computer policy unavailable · MacBook Pro',
+    )
+  }
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Auto-archive settled threads', exact: true })
+      .innerText(),
+    'Inherit (On)',
+    'A known scoped value stays available when the unrelated computer policy read fails',
+  )
+  await page.evaluate(() => {
+    window.policyRead = undefined
+  })
+  await settingsSidebar.getByRole('button', { name: 'Thread defaults', exact: true }).click()
+  await choose('Working directory', 'New worktree')
+  await choose('Settings computer', 'All computers')
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Settings computer', exact: true }).innerText(),
+    'MacBook Pro',
   )
   assert.equal(
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
     'New worktree',
   )
-  page.once('dialog', (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: 'Task list & projects', exact: true }).click()
-  await page.getByRole('heading', { name: 'Task defaults', exact: true, level: 1 }).waitFor()
+  await page.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
+  await page.getByRole('heading', { name: 'Thread defaults', exact: true, level: 1 }).waitFor()
   assert.equal(
     await settingsSidebar
-      .getByRole('button', { name: 'Task defaults', exact: true })
+      .getByRole('button', { name: 'Thread defaults', exact: true })
       .getAttribute('aria-current'),
     'page',
   )
-  await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
-  page.once('dialog', (dialog) => dialog.accept())
+  await page
+    .getByLabel('Settings target', { exact: true })
+    .getByText('MacBook Pro', { exact: true })
+    .waitFor()
   await page.getByRole('button', { name: 'Conversation', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Discard changes', exact: true })
+    .click()
+  const minimalComposer = page.getByRole('switch', { name: 'Minimal composer', exact: true })
+  assert.equal(await minimalComposer.getAttribute('aria-checked'), 'true')
+  await minimalComposer.click()
+  assert.equal(await minimalComposer.getAttribute('aria-checked'), 'false')
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).minimalComposer,
+    ),
+    false,
+  )
+  await minimalComposer.click()
+  const sourceToggle = page.getByRole('switch', {
+    name: 'Show Markdown source toggle',
+    exact: true,
+  })
+  assert.equal(await sourceToggle.getAttribute('aria-checked'), 'false')
+  await sourceToggle.click()
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).showMarkdownSourceToggle,
+    ),
+    true,
+  )
+  await sourceToggle.click()
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).showMarkdownSourceToggle,
+    ),
+    false,
+  )
   await page.getByRole('switch', { name: 'Formatted composer preview', exact: true }).click()
   assert.equal(
     await page
@@ -559,7 +936,7 @@ try {
   const preference = (key) =>
     page.evaluate((key) => JSON.parse(localStorage.getItem('dovo.app-preferences.v1'))[key], key)
   await openLocal('General')
-  await choose('Global new task shortcut', 'Disabled')
+  await choose('Global new thread shortcut', 'Disabled')
   assert.equal(await preference('taskLauncherShortcut'), '')
   await choose('Time format', '24-hour')
   assert.equal(await preference('timeFormat'), '24h')
@@ -638,7 +1015,7 @@ try {
     Object.defineProperty(window, 'Notification', { configurable: true, value: MockNotification })
   })
   const inputNotice = page.getByRole('switch', {
-    name: 'Notify when a task needs your input',
+    name: 'Notify when a thread needs your input',
     exact: true,
   })
   await inputNotice.click()
@@ -662,9 +1039,14 @@ try {
     1,
   )
   await openLocal('Browser')
+  await assertIntroCue(
+    page.getByText('This device · preferences save automatically; profiles use Save', {
+      exact: true,
+    }),
+  )
   await page
     .getByText(
-      'Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer.',
+      'Configure previews and browsing profiles. Remote profiles and logins stay on the selected computer.',
       { exact: true },
     )
     .waitFor()
@@ -672,16 +1054,18 @@ try {
     await page.getByText('This device · saved automatically', { exact: true }).count(),
     0,
   )
-  await settingsSidebar
-    .getByLabel('Settings storage')
-    .getByText('This device + computer', { exact: true })
-    .waitFor()
+  assert.equal(
+    await settingsSidebar.getByLabel('Settings storage').count(),
+    0,
+    'Mixed scope is explained once in page content',
+  )
   assert.equal(await settingsSidebar.getByLabel('Inherited settings target').count(), 0)
   await choose('Default viewport', 'Phone')
   assert.equal(await preference('browserViewport'), 'phone')
   const localProfiles = page
     .getByRole('heading', { name: 'Local browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
+  await localProfiles.getByText('Save to apply', { exact: true }).waitFor()
   await localProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Local work')
   await localProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await localProfiles.getByRole('textbox', { name: 'Name for Local work' }).waitFor()
@@ -689,6 +1073,7 @@ try {
   const remoteProfiles = page
     .getByRole('heading', { name: 'Remote browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
+  await remoteProfiles.getByText('Save to apply', { exact: true }).waitFor()
   await remoteProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Remote work')
   await remoteProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remoteProfiles.getByRole('textbox', { name: 'Name for Remote work' }).waitFor()
@@ -701,23 +1086,69 @@ try {
       { exact: true },
     )
     .waitFor()
-  await page.getByText('Computer settings on MacBook Pro', { exact: true }).waitFor()
+  await page.getByText('Computer: MacBook Pro', { exact: true }).waitFor()
+  const hostTarget = page.locator('.studio-settings-toolbar .studio-settings-target')
+  const hostGeometry = await hostTarget.evaluate((node) => {
+    const content = node.closest('.studio-settings-content').getBoundingClientRect()
+    const target = node.getBoundingClientRect()
+    const name = node
+      .querySelector('[title^="Computer:"]')
+      .closest('.studio-settings-storage-line')
+      .getBoundingClientRect()
+    return {
+      left: target.left - content.left,
+      nameLeft: name.left - content.left,
+      border: getComputedStyle(node).borderBottomWidth,
+    }
+  })
+  assert.ok(
+    Math.abs(hostGeometry.left) <= 1 && Math.abs(hostGeometry.nameLeft) <= 1,
+    'Computer target shares the page content gutter',
+  )
+  assert.equal(
+    hostGeometry.border,
+    '0px',
+    'Computer target does not nest a second divider inside the toolbar',
+  )
+  const localPullDefaults = page
+    .getByRole('heading', { name: 'Creating and merging · This device', exact: true })
+    .locator('xpath=ancestor::section[1]')
+  const localDefaultsBox = await localPullDefaults.boundingBox()
+  const hostToolbarBox = await page.locator('.studio-settings-toolbar').boundingBox()
+  assert.ok(
+    localDefaultsBox.y + localDefaultsBox.height <= hostToolbarBox.y,
+    'Device-local PR defaults precede the computer selector and its settings',
+  )
+  assert.equal(
+    await localPullDefaults.evaluate((node) =>
+      Boolean(
+        node.compareDocumentPosition(document.querySelector('.studio-settings-toolbar')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ),
+    true,
+    'Reading order preserves the same device/computer ownership boundary',
+  )
+
   assert.equal(
     await page.getByText('This device · saved automatically', { exact: true }).count(),
     0,
   )
+  const writesBeforeLocalPullDefaults = await page.evaluate(() => window.writes.length)
   await choose('Merge method', 'Squash and merge')
   assert.equal(await preference('mergeMethod'), 'squash')
+  assert.equal(await page.evaluate(() => window.writes.length), writesBeforeLocalPullDefaults)
   await openLocal('Review & diffs')
   await choose('Default diff layout', 'Split (side by side)')
   await choose('Changes within a line', 'Characters')
   assert.equal(await preference('diffLayout'), 'split')
   assert.equal(await preference('diffHighlight'), 'char')
   await openLocal('Usage & limits')
-  await settingsSidebar
-    .getByLabel('Settings storage')
-    .getByText('Across computers', { exact: true })
-    .waitFor()
+  assert.equal(
+    await settingsSidebar.getByLabel('Settings storage').count(),
+    0,
+    'Usage does not repeat scope in the sidebar',
+  )
   await choose('Period', 'Last 30 days')
   await page.getByRole('radio', { name: 'Limits', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'No account limits reported' }).waitFor()
@@ -745,7 +1176,7 @@ try {
   if (process.env.DOVO_SETTINGS_SCREENSHOTS) {
     for (const title of [
       'General',
-      'Task list & projects',
+      'Thread list & projects',
       'Appearance',
       'Conversation',
       'Notifications',
@@ -758,7 +1189,7 @@ try {
     ]) {
       await openLocal(title)
       await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-desktop')
-      if (title === 'Task list & projects') await screenshotThemes('task-list-projects-desktop')
+      if (title === 'Thread list & projects') await screenshotThemes('task-list-projects-desktop')
     }
   }
   // Keep the medium-width sidebar compact while allowing longer page and storage labels to wrap.
@@ -769,10 +1200,10 @@ try {
   })
   assert.equal((await settingsSidebar.boundingBox()).width, 208)
   for (const title of [
-    'Task list & projects',
+    'Thread list & projects',
     'Pull requests & pipelines',
     'Agents',
-    'Task defaults',
+    'Thread defaults',
   ]) {
     await openLocal(title)
     assert.deepEqual(
@@ -791,9 +1222,9 @@ try {
         90,
       `${title}: selected label stays compact`,
     )
-    if (['Pull requests & pipelines', 'Task defaults'].includes(title))
+    if (['Pull requests & pipelines', 'Thread defaults'].includes(title))
       await screenshotThemes(
-        title === 'Task defaults' ? 'scope-sidebar-208px' : 'mixed-storage-sidebar-208px',
+        title === 'Thread defaults' ? 'scope-sidebar-208px' : 'mixed-storage-sidebar-208px',
       )
   }
   await page.setViewportSize({ width: 390, height: 844 })
@@ -807,9 +1238,9 @@ try {
   for (const [category, title] of [
     ['App preferences', 'General'],
     ['Agents & tools', 'Agents'],
-    ['New task defaults', 'Task defaults'],
+    ['Thread defaults & behavior', 'Thread defaults'],
     ['Computers', 'Devices & runtime'],
-    ['History', 'Archived tasks'],
+    ['History', 'Archived threads'],
   ]) {
     assert.equal(
       await sectionChoices
@@ -831,7 +1262,7 @@ try {
   await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
   for (const title of [
     'General',
-    'Task list & projects',
+    'Thread list & projects',
     'Appearance',
     'Conversation',
     'Notifications',
@@ -849,12 +1280,29 @@ try {
       true,
       `${title} fits a narrow viewport`,
     )
+    if (title === 'General')
+      await assertIntroCue(page.getByText('This device · saved automatically', { exact: true }))
+    if (title === 'Thread list & projects')
+      await assertIntroCue(
+        page
+          .locator('.studio-settings-intro')
+          .getByText('This device · saved automatically, except Snoozing (Save to apply)', {
+            exact: true,
+          }),
+      )
+    if (title === 'Browser')
+      await assertIntroCue(
+        page.getByText('This device · preferences save automatically; profiles use Save', {
+          exact: true,
+        }),
+      )
     await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
-    if (['General', 'Task list & projects'].includes(title))
+    if (['General', 'Thread list & projects'].includes(title))
       await screenshotThemes(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
   }
   await choose('Settings section', 'Agents')
   await page.getByRole('button', { name: 'Agent profile', exact: true }).waitFor()
+  await assertTargetToolbar()
   await page.getByLabel('Name', { exact: true }).waitFor()
   await screenshot('agents-narrow')
   assert.equal(
@@ -864,7 +1312,7 @@ try {
   )
   await choose('Agent profile', 'Claude Code · Inherited')
   await page.getByLabel('Name', { exact: true }).waitFor()
-  await choose('Settings section', 'Task defaults')
+  await choose('Settings section', 'Thread defaults')
   await page.waitForFunction(
     () => !document.querySelector('[role="combobox"][aria-label="Working directory"]').disabled,
   )
@@ -872,7 +1320,7 @@ try {
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     true,
-    'Task defaults fit a narrow viewport',
+    'Thread defaults fit a narrow viewport',
   )
   await choose('Settings section', 'General')
   if (process.env.DOVO_GENERAL_SCREENSHOT)

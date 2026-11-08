@@ -132,12 +132,14 @@ for (const foreground of [false, true])
           port = saved.port
           expect(terminals.get(session.id).buffer).toContain('listener-ready')
         })
-        const rootPid = terminals.get(session.id).process.pid
+        const root = terminals.get(session.id).process
+        if (!root) throw new Error('Expected a running terminal')
+        const rootPid = root.pid
         const detach = terminals.attach(session.id, () => {})
         detach()
         const reattach = terminals.attach(session.id, () => {})
         expect((await terminals.ensure('task', async () => f.directory)).id).toBe(session.id)
-        expect(terminals.get(session.id).process.pid).toBe(rootPid)
+        expect(terminals.get(session.id).process?.pid).toBe(rootPid)
         reattach()
         await terminals.close(session.id)
         await terminals.dispose()
@@ -214,11 +216,13 @@ it.skipIf(process.platform === 'win32')('stops commands that ignore terminal han
       'Ignores hangup',
     )
     const child = terminals.get(session.id)
+    const terminal = child.process
+    if (!terminal) throw new Error('Expected a running terminal')
     await waitForRuntime(() => expect(child.buffer).toContain('hangup-ready'))
     await terminals.close(session.id)
     await terminals.dispose()
     expect(child.info.exited).toBe(true)
-    expect(() => process.kill(child.process.pid, 0)).toThrow(/ESRCH/)
+    expect(() => process.kill(terminal.pid, 0)).toThrow(/ESRCH/)
   } finally {
     await terminals.dispose()
     await f.cleanup()
@@ -239,7 +243,9 @@ it('waits for previously closed terminals to exit before completing disposal', a
       'Owned process',
     )
     let exited = false
-    terminals.get(session.id).process.onExit(() => {
+    const terminal = terminals.get(session.id).process
+    if (!terminal) throw new Error('Expected a running terminal')
+    terminal.onExit(() => {
       exited = true
     })
     const closed = terminals.close(session.id)
@@ -279,7 +285,14 @@ it('reclaims exited unattended sessions while preserving observed output and the
     const first = terminals.createCommand(
       'task',
       f.directory,
-      { command: process.execPath, args: ['-e', 'console.log("retained-output")'], env: {} },
+      {
+        command: process.execPath,
+        args: [
+          '-e',
+          'console.log("retained-output"); process.stdin.once("data", () => process.exit(0))',
+        ],
+        env: {},
+      },
       'Observed',
     )
     const detach = terminals.attach(first.id, () => {})
@@ -290,6 +303,8 @@ it('reclaims exited unattended sessions while preserving observed output and the
         { command: process.execPath, args: ['-e', ''], env: {} },
         'Finished',
       )
+    await waitForRuntime(() => expect(terminals.get(first.id).buffer).toContain('retained-output'))
+    terminals.input(first.id, '\r')
     await vi.waitFor(() => expect(terminals.list().every((session) => session.exited)).toBe(true), {
       timeout: 10000,
     })
@@ -301,6 +316,63 @@ it('reclaims exited unattended sessions while preserving observed output and the
     await terminals.dispose()
     for (let index = 0; index < 20; index++) terminals.create('task', f.directory)
     expect(() => terminals.create('task', f.directory)).toThrow('limit 20')
+  } finally {
+    await terminals.dispose()
+    await f.cleanup()
+  }
+})
+
+it('retains pinned exited sessions at capacity until unpinned or explicitly closed', async () => {
+  const f = await fixture()
+  const terminals = new Terminals()
+  try {
+    const pinned = await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        const terminal = terminals.createCommand(
+          'task',
+          f.directory,
+          {
+            command: process.execPath,
+            args: [
+              '-e',
+              'console.log("pinned-output"); process.stdin.once("data", () => process.exit(0))',
+            ],
+            env: {},
+          },
+          'Pinned',
+        )
+        await terminals.update({ id: terminal.id, pinned: true })
+        return terminal.id
+      }),
+    )
+    // Establish captured output before exit: a burst of short-lived macOS PTYs can close
+    // before their output is read. This test checks retention and eviction of captured data.
+    await waitForRuntime(() => {
+      for (const id of pinned) expect(terminals.get(id).buffer).toContain('pinned-output')
+    })
+    for (const id of pinned) terminals.input(id, '\r')
+    await vi.waitFor(() => expect(terminals.list().every((session) => session.exited)).toBe(true), {
+      timeout: 10000,
+    })
+    for (const session of terminals.list()) expect(session.exitCode).toBe(0)
+    expect(() => terminals.create('task', f.directory)).toThrow(
+      'Close a terminal before opening another (limit 20)',
+    )
+    expect(terminals.list().map((session) => session.id)).toEqual(pinned)
+    expect(terminals.get(pinned[0]!).buffer).toContain('pinned-output')
+
+    const candidate = pinned.at(-1)!
+    await terminals.update({ id: candidate, pinned: false })
+    const replacement = terminals.create('task', f.directory)
+    expect(terminals.list()).toHaveLength(20)
+    expect(() => terminals.get(candidate)).toThrow('Terminal not found')
+    for (const id of pinned.slice(0, -1)) expect(terminals.get(id).info.pinned).toBe(true)
+    expect(terminals.get(replacement.id).info.exited).toBe(false)
+
+    await terminals.close(pinned[0]!)
+    expect(() => terminals.get(pinned[0]!)).toThrow('Terminal not found')
+    terminals.create('task', f.directory)
+    expect(terminals.list()).toHaveLength(20)
   } finally {
     await terminals.dispose()
     await f.cleanup()

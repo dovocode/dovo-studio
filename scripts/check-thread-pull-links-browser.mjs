@@ -9,9 +9,9 @@ const literalMessage =
 const environment = `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
-export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);
+export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>useContext(Context);
 export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useResolvedTheme=()=> 'dark';
-export const useRuntime=useWorkspace;export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
+export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=useWorkspace;export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
 export const useStudioHost=()=>({...useWorkspace().host,openExternalLink:async url=>{window.external.push(url)},openBrowserLink:async url=>{window.browsers.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
 `
 const fixture = `
@@ -40,9 +40,9 @@ async function bundle(mobile) {
     './turn-label': `export const TurnLabel=()=>null;`,
     './deferred-turn': `export const DeferredTurn=({children})=>children();`,
     './chat-message': `import {MessageResponse} from '${root}/packages/studio-ui/src/components/ai-elements/message.tsx';export const ChatMessage=({message})=><div id={'message-thread-'+message.id}><p>Message context text</p><MessageResponse>{'[Thread PR]('+message.text+')'}</MessageResponse><div data-empty>Conversation space</div></div>;`,
-    '../../runtime/connection/provider': `export {useRuntime} from '@dovo/studio-core';`,
-    '../../../runtime/connection/provider': `export {useRuntime} from '@dovo/studio-core';`,
-    '../state/provider': `export {useConversationSelector} from '@dovo/studio-core';`,
+    '../../runtime/connection/provider': `export {useRuntime,useRuntimeSelector,sameRuntimeFields} from '@dovo/studio-core';`,
+    '../../../runtime/connection/provider': `export {useRuntime,useRuntimeSelector,sameRuntimeFields} from '@dovo/studio-core';`,
+    '../state/provider': `export {useConversationSelector,useAppendConversationTemplate} from '@dovo/studio-core';`,
     '../layout/sheet': `import {useImperativeHandle} from 'react';export const useSheetNavigation=()=>navigate=>navigate();export const Sheet=({title,children,onClose,busy,ref})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section role="dialog"><h2>{title}</h2>{children}<button disabled={busy} onClick={onClose}>Close</button></section>};`,
     '../layout/safe-modal': `export const SafeModal=({visible,children})=>visible?children:null;`,
     '../controls/action': `export const Action=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
@@ -342,10 +342,26 @@ try {
         navigator.clipboard.writeText = async () => {
           throw new Error('Clipboard denied')
         }
+        document.execCommand = (command) => {
+          if (command !== 'copy') throw new Error('Unexpected editing command')
+          window.copied.push(document.activeElement.value)
+          return true
+        }
       })
       await ordinary.click({ button: 'right' })
       await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
-      await page.getByRole('alert').filter({ hasText: 'Clipboard denied' }).waitFor()
+      await page.waitForFunction(() => window.copied.length === 2)
+      assert.deepEqual(await page.evaluate(() => window.copied), [
+        'http://runtime.local/docs?tab=one#section',
+        'http://runtime.local/docs?tab=one#section',
+      ])
+      assert.equal(await page.getByRole('alert').count(), 0)
+      await page.evaluate(() => {
+        document.execCommand = () => false
+      })
+      await ordinary.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'Could not copy.' }).waitFor()
     }
     if (!mobile) {
       await page.evaluate(() => {

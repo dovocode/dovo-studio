@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import {
   modelCatalogChoices,
+  modelServiceTiers,
+  selectedCatalogModel,
+  serviceTierValue,
   isNamedModelId,
   modelDisplayName,
   modelPreferenceKey,
@@ -18,6 +21,7 @@ import { SearchField } from '../ui/controls/field'
 import { Choice as ChoiceControl } from '../ui/controls/choice'
 import { Action } from '../ui/controls/action'
 import { Icon } from '../ui/controls/icon'
+import { Switch } from '../ui/controls/switch'
 import { HarnessIcon } from './harness-icon'
 import { useModelCatalog } from './use-model-catalog'
 import { selectedTaskHarness } from '../tasks/creation/harness-choices'
@@ -31,6 +35,7 @@ type PickerProps = {
   agent: Agent
   disabled: boolean
   modelsOnly?: boolean
+  options?: ReactNode
   onChange: (selection: string, agent: Agent) => void
 }
 type CatalogActions = { matches: (() => void)[]; refresh: () => void }
@@ -55,6 +60,7 @@ function ComputerModelPicker({
   agent,
   disabled,
   modelsOnly = false,
+  options,
   onChange,
 }: PickerProps) {
   const { colors, styles } = useTheme()
@@ -62,6 +68,9 @@ function ComputerModelPicker({
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const [custom, setCustom] = useState(false)
+  const [catalogExpanded, setCatalogExpanded] = useState(false)
+  const [manageHidden, setManageHidden] = useState(false)
+  const [showLegacy, setShowLegacy] = useState(false)
   const [customId, setCustomId] = useState('')
   const catalogs = useRef(new Map<string, CatalogActions>())
   const { catalog, modelName } = useModelCatalog(agent)
@@ -77,9 +86,7 @@ function ComputerModelPicker({
   const savedAgents = choices.filter((choice) => choice.id.startsWith('agent:'))
   const search = query.trim().toLowerCase()
   const computer = profile?.name || 'this computer'
-  const selectedModel =
-    catalog?.models.find((model) => model.id === agent.model) ??
-    (!agent.model ? catalog?.models.find((model) => model.isDefault) : undefined)
+  const selectedModel = selectedCatalogModel(catalog, agent.model)
   const efforts = selectedModel?.reasoning ?? catalog?.reasoning ?? []
   const customChoice =
     providers.find((choice) => choice.id === filter) ??
@@ -107,7 +114,11 @@ function ComputerModelPicker({
   const favorite = (candidate: Agent, model: string) =>
     !!preferences[modelPreferenceKey(candidate.provider, model, candidate.acpInstallationId)]
       ?.favorite
-  const toggleFavorite = (candidate: Agent, model: string) => {
+  const savePreference = (
+    candidate: Agent,
+    model: string,
+    change: { favorite?: boolean; disabled?: boolean },
+  ) => {
     if (!connected || savingFavorite) return
     setSavingFavorite(true)
     void runClientEffect(
@@ -115,7 +126,7 @@ function ComputerModelPicker({
         '/api/agents/models/preference',
         {
           key: modelPreferenceKey(candidate.provider, model, candidate.acpInstallationId),
-          favorite: !favorite(candidate, model),
+          ...change,
         },
         runtimeDefaultsSchema,
       ),
@@ -129,12 +140,14 @@ function ComputerModelPicker({
       )
       .finally(() => setSavingFavorite(false))
   }
+  const toggleFavorite = (candidate: Agent, model: string) =>
+    savePreference(candidate, model, { favorite: !favorite(candidate, model) })
   return (
     <View
       accessibilityLabel={`Selected on ${computer}: ${choices.find((choice) => choice.id === selection)?.name ?? agent.name}, ${agent.model ? modelName : 'Provider default'}`}
       style={{ gap: 12 }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <View style={{ gap: 8 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <SearchField
             label="Search harnesses and models"
@@ -160,7 +173,7 @@ function ComputerModelPicker({
             }}
           />
         </View>
-        <View style={{ maxWidth: 144, flexShrink: 1 }}>
+        <View style={{ alignSelf: 'flex-start', maxWidth: '100%' }}>
           <ChoiceControl
             label="Filter models"
             hideLabel
@@ -255,19 +268,33 @@ function ComputerModelPicker({
                     onChoose={(next) => choose(choice.id, next)}
                     actions={catalogs.current}
                     allowCustom={customChoice?.id === choice.id}
+                    manageHidden={manageHidden}
+                    showLegacy={showLegacy}
+                    toggleHidden={(model) =>
+                      savePreference(candidate, model, {
+                        disabled:
+                          !preferences[
+                            modelPreferenceKey(
+                              candidate.provider,
+                              model,
+                              candidate.acpInstallationId,
+                            )
+                          ]?.disabled,
+                      })
+                    }
                   />
                 )
               )
             })
         )}
       </View>
-      {filter !== 'agents' && (efforts.length > 0 || !!agent.reasoning) && (
-        <View style={{ gap: 6 }}>
-          <Text style={[styles.muted, { fontSize: 13, paddingHorizontal: 4 }]}>Options</Text>
+      <View style={{ gap: 6 }}>
+        <Text style={[styles.muted, { fontSize: 13, paddingHorizontal: 12 }]}>Options</Text>
+        <View style={{ backgroundColor: colors.surface, borderRadius: 16, overflow: 'hidden' }}>
           <ChoiceControl
             row
             label="Reasoning level"
-            value={agent.reasoning ?? ''}
+            value={agent.reasoning || selectedModel?.defaultReasoning || ''}
             disabled={disabled}
             items={[
               { id: '', name: 'Provider default' },
@@ -278,15 +305,62 @@ function ComputerModelPicker({
             ]}
             onChange={(reasoning) => choose(selection, { ...agent, reasoning })}
           />
+          {!modelsOnly && agent.provider === 'codex' && (
+            <ChoiceControl
+              row
+              label="Speed"
+              value={serviceTierValue(agent.serviceTier)}
+              disabled={disabled}
+              items={modelServiceTiers(catalog, agent.model, agent.serviceTier).map((tier) => ({
+                ...tier,
+                disabled:
+                  tier.id !== 'default' &&
+                  (!selectedModel?.serviceTiers?.some((item) => item.id === tier.id) ||
+                    catalog?.codex?.fastModeBlocked === true),
+              }))}
+              onChange={(serviceTier) => choose(selection, { ...agent, serviceTier })}
+            />
+          )}
+          {options}
         </View>
-      )}
+      </View>
       {!!preferenceError && (
         <Text accessibilityRole="alert" style={styles.error}>
           {preferenceError}
         </Text>
       )}
-      {filter !== 'agents' && (
+      <Action
+        secondary
+        label={catalogExpanded ? 'Hide catalog settings' : 'Catalog settings'}
+        onPress={() => setCatalogExpanded(!catalogExpanded)}
+      />
+      {catalogExpanded && filter !== 'agents' && (
         <>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 16, overflow: 'hidden' }}>
+            {[
+              { label: 'Manage hidden models', value: manageHidden, change: setManageHidden },
+              { label: 'Legacy models', value: showLegacy, change: setShowLegacy },
+            ].map((control) => (
+              <View
+                key={control.label}
+                style={{
+                  minHeight: 48,
+                  paddingHorizontal: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Text style={{ flex: 1, color: colors.text, fontSize: 16 }}>{control.label}</Text>
+                <Switch
+                  accessibilityLabel={control.label}
+                  value={control.value}
+                  onValueChange={control.change}
+                  trackColor={{ true: colors.accent }}
+                />
+              </View>
+            ))}
+          </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Action
@@ -347,6 +421,9 @@ function ProviderModels({
   onChoose,
   actions,
   allowCustom,
+  manageHidden,
+  showLegacy,
+  toggleHidden,
 }: {
   choice: HarnessChoice
   candidate: Agent
@@ -362,6 +439,9 @@ function ProviderModels({
   onChoose: (agent: Agent) => void
   actions: Map<string, CatalogActions>
   allowCustom: boolean
+  manageHidden: boolean
+  showLegacy: boolean
+  toggleHidden: (model: string) => void
 }) {
   const { colors, styles } = useTheme()
   const { connected } = useRuntime()
@@ -379,10 +459,11 @@ function ProviderModels({
     .filter(
       (model) =>
         isNamedModelId(model.id) &&
-        ((!model.hidden &&
-          !preferences?.[
-            modelPreferenceKey(candidate.provider, model.id, candidate.acpInstallationId)
-          ]?.disabled) ||
+        (manageHidden ||
+          ((showLegacy || !model.hidden || favorite(candidate, model.id)) &&
+            !preferences?.[
+              modelPreferenceKey(candidate.provider, model.id, candidate.acpInstallationId)
+            ]?.disabled) ||
           (selected && model.id === candidate.model)) &&
         (!favoritesOnly || favorite(candidate, model.id)) &&
         matches(model.name, model.id, choice.name),
@@ -402,7 +483,11 @@ function ProviderModels({
     !models.length &&
     !(savedCustom && candidate.model === typed)
   const choose = (model: string) => {
-    if (!disabled)
+    if (
+      !disabled &&
+      !preferences?.[modelPreferenceKey(candidate.provider, model, candidate.acpInstallationId)]
+        ?.disabled
+    )
       onChoose({
         ...candidate,
         model,
@@ -489,9 +574,22 @@ function ProviderModels({
                   }
                   accessibilityState={{
                     selected: selected && model.id === candidate.model,
-                    disabled,
+                    disabled:
+                      disabled ||
+                      !!preferences?.[
+                        modelPreferenceKey(
+                          candidate.provider,
+                          model.id,
+                          candidate.acpInstallationId,
+                        )
+                      ]?.disabled,
                   }}
-                  disabled={disabled}
+                  disabled={
+                    disabled ||
+                    !!preferences?.[
+                      modelPreferenceKey(candidate.provider, model.id, candidate.acpInstallationId)
+                    ]?.disabled
+                  }
                   onPress={() => choose(model.id)}
                   style={({ pressed }) => ({
                     flex: 1,
@@ -501,7 +599,19 @@ function ProviderModels({
                     alignItems: 'center',
                     gap: 8,
                     paddingVertical: 8,
-                    opacity: disabled ? 0.45 : pressed ? 0.6 : 1,
+                    opacity:
+                      disabled ||
+                      preferences?.[
+                        modelPreferenceKey(
+                          candidate.provider,
+                          model.id,
+                          candidate.acpInstallationId,
+                        )
+                      ]?.disabled
+                        ? 0.45
+                        : pressed
+                          ? 0.6
+                          : 1,
                   })}
                 >
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
@@ -511,16 +621,47 @@ function ProviderModels({
                     >
                       {model.name}
                     </Text>
-                    {plain(model.id) !== plain(model.name) && !('typed' in model) && (
-                      <Text numberOfLines={1} style={[styles.muted, { fontSize: 12 }]}>
-                        {model.id}
-                      </Text>
-                    )}
+                    {plain(modelDisplayName(model.id)) !== plain(model.name) &&
+                      !('typed' in model) && (
+                        <Text numberOfLines={1} style={[styles.muted, { fontSize: 12 }]}>
+                          {model.id}
+                        </Text>
+                      )}
                   </View>
                   {selected && model.id === candidate.model && (
                     <Icon name="check" size={16} color={colors.accent} />
                   )}
                 </Pressable>
+                {manageHidden && !('typed' in model) && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${preferences?.[modelPreferenceKey(candidate.provider, model.id, candidate.acpInstallationId)]?.disabled ? 'Show' : 'Hide'} ${model.name}`}
+                    disabled={favoriteDisabled}
+                    onPress={() => toggleHidden(model.id)}
+                    style={{
+                      width: 44,
+                      minHeight: 44,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon
+                      name="preview"
+                      size={17}
+                      color={
+                        preferences?.[
+                          modelPreferenceKey(
+                            candidate.provider,
+                            model.id,
+                            candidate.acpInstallationId,
+                          )
+                        ]?.disabled
+                          ? colors.muted
+                          : colors.accent
+                      }
+                    />
+                  </Pressable>
+                )}
                 {!('typed' in model) && (
                   <Pressable
                     accessibilityRole="button"

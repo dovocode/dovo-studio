@@ -55,7 +55,7 @@ export function SidebarHeaderLayout({
       collapsed,
       collapsible,
       setCollapsed: onCollapsedChange,
-      inline: !compact && sidebars > 0,
+      inline: !compact && !collapsed && sidebars > 0,
       compact,
       target,
       setTarget,

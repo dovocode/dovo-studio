@@ -5,6 +5,7 @@ export const adapterDiagnosticSchema = mutableStruct({
   name: Schema.String,
   provider: Schema.Literals([
     'codex',
+    'pi',
     'claude',
     'vibe',
     'opencode',
@@ -27,3 +28,10 @@ export const adapterDiagnosticSchema = mutableStruct({
 })
 export const adapterDiagnosticsSchema = mutableArray(adapterDiagnosticSchema)
 export type AdapterDiagnostic = typeof adapterDiagnosticSchema.Type
+
+export const codexNetworkDiagnosticSchema = mutableStruct({
+  ok: Schema.Boolean,
+  durationMs: Schema.Number,
+  output: Schema.String,
+})
+export type CodexNetworkDiagnostic = typeof codexNetworkDiagnosticSchema.Type

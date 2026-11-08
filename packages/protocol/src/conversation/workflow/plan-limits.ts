@@ -179,23 +179,41 @@ export function mergePlanLimits(
   incoming: readonly PlanLimit[],
 ): PlanLimit[] {
   const merged = new Map(previous.map((limit) => [planLimitKey(limit), limit]))
-  for (const limit of incoming) {
+  for (const incomingLimit of incoming) {
+    let limit = incomingLimit
     if (limit.account)
-      for (const [key, old] of merged) {
+      for (const [key, anonymous] of merged) {
         const sameSource = limit.sourceTaskId
-          ? old.sourceTaskId === limit.sourceTaskId
-          : !!limit.agentId && old.agentId === limit.agentId
+          ? anonymous.sourceTaskId === limit.sourceTaskId
+          : !!limit.agentId && anonymous.agentId === limit.agentId
         if (
-          !old.account &&
-          old.provider === limit.provider &&
+          !anonymous.account &&
+          anonymous.provider === limit.provider &&
           sameSource &&
-          legacyWindow(old) === legacyWindow(limit) &&
-          (old.bucketId ?? old.provider) === (limit.bucketId ?? limit.provider)
-        )
+          legacyWindow(anonymous) === legacyWindow(limit) &&
+          (anonymous.bucketId ?? anonymous.provider) === (limit.bucketId ?? limit.provider)
+        ) {
+          // Learning an account identity must not roll a newer anonymous reading
+          // back to an older probe. Attribute its observation to the known account.
+          if (
+            Number.isFinite(Date.parse(anonymous.updatedAt)) &&
+            (!Number.isFinite(Date.parse(limit.updatedAt)) ||
+              Date.parse(anonymous.updatedAt) > Date.parse(limit.updatedAt))
+          )
+            limit = { ...limit, ...anonymous, account: limit.account }
           merged.delete(key)
+        }
       }
     const key = planLimitKey(limit)
     const old = merged.get(key)
+    // A slow probe or delayed notification must not replace a newer observation.
+    if (
+      old &&
+      Number.isFinite(Date.parse(old.updatedAt)) &&
+      (!Number.isFinite(Date.parse(limit.updatedAt)) ||
+        Date.parse(old.updatedAt) > Date.parse(limit.updatedAt))
+    )
+      continue
     const durationMins = limit.durationMins ?? old?.durationMins
     merged.set(key, {
       ...old,

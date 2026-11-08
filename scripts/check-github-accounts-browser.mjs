@@ -78,7 +78,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode,runtimePreferencesSchema,forgeConnectionSchema,forgeConnectionInputSchema,RuntimeRequestError} from '@dovo/protocol';import ${mobile ? 'Connections' : '{ForgeConnections as Connections}'} from '${root}/${mobile ? 'apps/mobile/src/scm/connections/connections' : 'packages/extension-scm/src/connections/forge-connections'}.tsx';${mobile ? `import {RuntimePreferences} from '${root}/apps/mobile/src/runtime/connection/runtime-preferences.tsx';` : ''}import {GithubConnectionStatus} from '${root}/${mobile ? 'apps/mobile/src/scm/connections' : 'packages/extension-scm/src/connections'}/github-connection-status.tsx';let id=0;crypto.randomUUID=()=> '00000000-0000-4000-8000-'+String(++id).padStart(12,'0');window.preferences=decode(runtimePreferencesSchema,{});window.saved=[];window.connectionChecks=[];window.checkFailure=false;const request=async(path,input)=>{if(path==='/api/runtime/preferences/read')return window.preferences;if(path==='/api/runtime/preferences/save'){Object.assign(window.preferences,input);return {...window.preferences}};if(path==='/api/memory/projects/read')return {projects:[]};if(path.endsWith('connections/github/read')){if(window.diagnosticsUnavailable)throw new RuntimeRequestError({kind:'response',status:404,message:'Not found'});window.connectionChecks.push(input);if(window.holdConnectionCheck)await new Promise(resolve=>window.finishConnectionCheck=resolve);return {status:window.checkFailure?'failed':'verified',stage:input.repositoryId?'repository':'account',host:'github.com',login:input.repositoryId?'project-user':input.connectionId==='other-account'?'other-user':'runtime-user',repository:input.repositoryId?'team/app':undefined,checkedAt:'2026-10-16T18:00:00Z',message:window.checkFailure?'GitHub rejected this token. Check its expiry.':input.repositoryId?'Account verified · Repository readable.':'Account verified.'}};if(path.endsWith('cli-profiles/read'))return {profiles:[{id:'personal',name:'personal',active:true},{id:'work',name:'work'}]};if(path.endsWith('connections/read'))return {connections:window.saved};if(path.endsWith('connections/save')){window.connectionSaves??=[];window.connectionSaves.push(input);if(window.holdConnectionSave)await new Promise((resolve,reject)=>window.finishConnectionSave={resolve,reject});const value=decode(forgeConnectionInputSchema,input);const result=decode(forgeConnectionSchema,{...value,id:crypto.randomUUID(),revision:crypto.randomUUID()});window.saved.push(result);return result};throw Error(path)};const source={profile:{id:'host',name:'Host',connection:{address:'http://host.local',token:'fixture'}},name:'Host',connected:true};window.runtime={connection:source.profile.connection,workspace:{repositories:[{id:'automatic',name:'Automatic project',path:'/checkout',branch:'main'},{id:'folder',name:'Plain folder',path:'/folder',kind:'folder',branch:'main'}]},snapshot:{workspace:{repositories:[{id:'automatic',name:'Automatic project',path:'/checkout',branch:'main'},{id:'folder',name:'Plain folder',path:'/folder',kind:'folder',branch:'main'}]}},overviews:[source],connected:true,request,read:request,callEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:error=>error}),readEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:error=>error})};const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<Connections/>);window.render();window.renderStatus=connectionId=>root.render(<section aria-label="Focused account diagnostics"><GithubConnectionStatus connectionId={connectionId}/></section>);${mobile ? 'window.renderPreferences=()=>root.render(<RuntimePreferences/>);' : ''}`,
+        contents: `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode,runtimePreferencesSchema,forgeConnectionSchema,forgeConnectionInputSchema,RuntimeRequestError} from '@dovo/protocol';import ${mobile ? 'Connections' : '{ForgeConnections as Connections}'} from '${root}/${mobile ? 'apps/mobile/src/scm/connections/connections' : 'packages/extension-scm/src/connections/forge-connections'}.tsx';${mobile ? `import {RuntimePreferences} from '${root}/apps/mobile/src/runtime/connection/runtime-preferences.tsx';` : ''}import {GithubConnectionStatus} from '${root}/${mobile ? 'apps/mobile/src/scm/connections' : 'packages/extension-scm/src/connections'}/github-connection-status.tsx';let id=0;crypto.randomUUID=()=> '00000000-0000-4000-8000-'+String(++id).padStart(12,'0');window.preferences=decode(runtimePreferencesSchema,{});window.saved=[];window.connectionChecks=[];window.checkFailure=false;const request=async(path,input)=>{if(path==='/api/runtime/preferences/read')return window.preferences;if(path==='/api/runtime/preferences/save'){Object.assign(window.preferences,input);return {...window.preferences}};if(path==='/api/memory/projects/read')return {projects:[]};if(path.endsWith('connections/github/read')){if(window.diagnosticsUnavailable)throw new RuntimeRequestError({kind:'response',status:404,message:'Not found'});window.connectionChecks.push(input);if(window.holdConnectionCheck)await new Promise(resolve=>window.finishConnectionCheck=resolve);return {status:window.checkFailure?'failed':'verified',stage:input.repositoryId?'repository':'account',host:'github.com',login:input.repositoryId?'project-user':input.connectionId==='other-account'?'other-user':'runtime-user',repository:input.repositoryId?'team/app':undefined,checkedAt:'2026-10-16T18:00:00Z',message:window.checkFailure?'GitHub rejected this token. Check its expiry.':input.repositoryId?'Account verified · Repository readable.':'Account verified.'}};if(path.endsWith('cli-profiles/read'))return {profiles:[{id:'personal',name:'personal',active:true},{id:'work',name:'work'}]};if(path.endsWith('connections/read'))return {connections:window.saved};if(path.endsWith('connections/save')){window.connectionSaves??=[];window.connectionSaves.push(input);if(window.holdConnectionSave)await new Promise((resolve,reject)=>window.finishConnectionSave={resolve,reject});const value=decode(forgeConnectionInputSchema,input);const previous=window.saved.find(item=>item.id===value.id);const result=decode(forgeConnectionSchema,{...value,secretProvider:value.secret?.provider??(value.credential==='reference'?previous?.secretProvider:undefined),id:value.id??crypto.randomUUID(),revision:crypto.randomUUID()});window.saved=[...window.saved.filter(item=>item.id!==result.id),result];return result};throw Error(path)};const source={profile:{id:'host',name:'Host',connection:{address:'http://host.local',token:'fixture'}},name:'Host',connected:true};window.runtime={connection:source.profile.connection,workspace:{repositories:[{id:'automatic',name:'Automatic project',path:'/checkout',branch:'main'},{id:'folder',name:'Plain folder',path:'/folder',kind:'folder',branch:'main'}]},snapshot:{workspace:{repositories:[{id:'automatic',name:'Automatic project',path:'/checkout',branch:'main'},{id:'folder',name:'Plain folder',path:'/folder',kind:'folder',branch:'main'}]}},overviews:[source],connected:true,request,read:request,callEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:error=>error}),readEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:error=>error})};const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<Connections/>);window.render();window.renderStatus=connectionId=>root.render(<section aria-label="Focused account diagnostics"><GithubConnectionStatus connectionId={connectionId}/></section>);${mobile ? 'window.renderPreferences=()=>root.render(<RuntimePreferences/>);' : ''}`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -339,6 +339,59 @@ try {
     await save()
     await page.waitForFunction(() => window.saved.length === 3)
     assert.equal(await page.evaluate(() => window.saved[2].tokenEnv), 'WORK_GH_TOKEN')
+    await add()
+    const choose = async (label, value, option) => {
+      if (mobile) await page.getByRole('combobox', { name: label, exact: true }).selectOption(value)
+      else {
+        await page.getByRole('combobox', { name: label, exact: true }).click()
+        await page.getByRole('option', { name: option, exact: true }).click()
+      }
+    }
+    await choose(mobile ? 'Provider' : 'Source control provider', 'bitbucket', 'Bitbucket')
+    await choose(
+      mobile ? 'Credential' : 'Authentication method',
+      'reference',
+      'Secret manager reference',
+    )
+    await page
+      .getByRole('textbox', { name: 'Atlassian account email', exact: true })
+      .fill('me@example.com')
+    await choose('Secret manager', 'infisical', 'Infisical')
+    await page.getByRole('textbox', { name: 'Secret name', exact: true }).fill('BITBUCKET_TOKEN')
+    await page.getByRole('textbox', { name: 'Infisical project ID', exact: true }).fill('project-1')
+    await save()
+    await page.waitForFunction(() => window.saved.length === 4)
+    assert.deepEqual(await page.evaluate(() => window.connectionSaves.at(-1).secret), {
+      provider: 'infisical',
+      reference: 'BITBUCKET_TOKEN',
+      projectId: 'project-1',
+      environment: 'dev',
+      path: '/',
+    })
+    const savedReference = await page.evaluate(() => window.saved[3])
+    assert.equal(savedReference.credential, 'reference')
+    assert.equal(savedReference.secretProvider, 'infisical')
+    assert.equal(JSON.stringify(savedReference).includes('BITBUCKET_TOKEN'), false)
+    if (!mobile) await page.getByText(/· Infisical reference$/).waitFor()
+    await page
+      .getByRole('button', { name: mobile ? 'Bitbucket' : 'Edit Bitbucket', exact: true })
+      .click()
+    await page.getByText(/Infisical reference saved on this runtime/).waitFor()
+    assert.equal(await page.getByRole('textbox', { name: 'Secret name' }).count(), 0)
+    await page.getByRole('button', { name: 'Replace reference', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Secret reference', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Keep saved Infisical reference', exact: true }).click()
+    await save()
+    await page.waitForFunction(
+      () => window.connectionSaves.at(-1).name === 'Bitbucket' && window.connectionSaves.at(-1).id,
+    )
+    const kept = await page.evaluate(() => window.connectionSaves.at(-1))
+    assert.equal(kept.credential, 'reference')
+    assert.equal(kept.secret, undefined)
+    assert.equal(await page.evaluate(() => window.saved.at(-1).secretProvider), 'infisical')
+    console.log(
+      `${mobile ? 'Mobile' : 'Desktop'} Bitbucket secret manager references save, stay private and keep the saved reference on edit`,
+    )
     if (!mobile) {
       await page.evaluate(() => {
         window.runtime.workspace.repositories.push({

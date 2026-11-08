@@ -23,7 +23,13 @@ import { useTheme } from '../theme'
 import html from '../../../../../packages/studio-ui/mcp-apps/host.json'
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)) : {}
-export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
+export const McpAppView = memo(function McpAppView({
+  reference,
+  visible,
+}: {
+  reference: McpAppReference
+  visible: boolean
+}) {
   const { colors, styles } = useTheme()
 
   const openLink = useOpenAppLink(reference.taskId)
@@ -46,7 +52,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     nonce.current = Crypto.randomUUID()
   }, [activeId, reference.taskId, reference.id])
   useEffect(() => {
-    if (!connected) return
+    if (!connected || !visible) return
     let disposed = false
     setError('')
     void read(
@@ -64,7 +70,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     return () => {
       disposed = true
     }
-  }, [read, activeId, reference.id, reference.taskId, connected])
+  }, [read, activeId, reference.id, reference.taskId, connected, visible])
   useEffect(() => {
     if (!connected || !connection || !app?.connected || app.format !== 'apps') return
     const key = nonce.current
@@ -88,6 +94,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
       call: (value) => sendTool({ ...value, type: 'app-tool-call', nonce: key }),
       cancel: (requestId) => sendTool({ type: 'app-tool-cancel', requestId, nonce: key }),
       onError: (cause) => setNotice(cause.message),
+      visible,
     })
     tools.current = current
     current.setTools(advertisedTools.current)
@@ -104,6 +111,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     reference.taskId,
     reference.id,
   ])
+  useEffect(() => tools.current?.setVisible(visible), [visible])
   const load = () => {
     if (ready.current && app)
       view.current?.injectJavaScript(

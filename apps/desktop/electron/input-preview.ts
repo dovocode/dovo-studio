@@ -28,6 +28,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     quitting = true
   })
   let enabled = false
+  let showWhileFocused = false
   let selected: string | undefined
   const dismissed = new Set<string>()
   const submitting = new Set<string>()
@@ -45,7 +46,10 @@ export function registerInputPreview(rendererPath: string, preload: string) {
       const next = items.find((item) => !dismissed.has(inputPreviewKey(item)))
       selected = next ? inputPreviewKey(next) : undefined
     }
-    if (!enabled || owner?.isFocused() || !current()) {
+    const show = owner?.isFocused()
+      ? showWhileFocused
+      : enabled || (showWhileFocused && popup?.isFocused())
+    if (!show || !current()) {
       popup?.webContents.send('input-preview:state', payload())
       popup?.hide()
       return
@@ -85,6 +89,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
         if (selected) dismissed.add(selected)
         popup?.hide()
       })
+      popup.on('blur', () => setImmediate(reconcile))
       popup.webContents.once('did-finish-load', () => reconcile())
       if (process.env.VITE_DEV_SERVER_URL) {
         const url = new URL(process.env.VITE_DEV_SERVER_URL)
@@ -110,8 +115,9 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     if (!window) throw new Error('Missing app window')
     if (!owner) {
       owner = window
-      owner.on('focus', () => popup?.hide())
-      owner.on('blur', reconcile)
+      owner.on('focus', reconcile)
+      // A native focus transfer to the preview settles after the owner's blur event.
+      owner.on('blur', () => setImmediate(reconcile))
       owner.on('closed', () => {
         popup?.destroy()
         popup = undefined
@@ -123,6 +129,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     const next = decode(inputPreviewSyncSchema, value)
     items = next.items
     enabled = next.enabled
+    showWhileFocused = next.showWhileFocused === true
     owner.webContents.setBackgroundThrottling(!enabled)
     reconcile()
   })
@@ -143,6 +150,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     requirePopup(event)
     const item = current()
     if (!item || !owner) return
+    dismissed.add(inputPreviewKey(item))
     popup?.hide()
     if (owner.isMinimized()) owner.restore()
     owner.webContents.send('input-preview:open-thread', {

@@ -62,7 +62,7 @@ it('sums recent turns per model and per task', () => {
   })
   expect(summary.models.map((row) => [row.label, row.turns])).toEqual([
     ['gpt-5', 2],
-    ['GPT-5-Mini', 1],
+    ['5 Mini', 1],
   ])
   expect(summary.tasks.map((row) => [row.label, row.detail])).toEqual([
     ['auth', 'Mac'],
@@ -177,7 +177,7 @@ it('deduplicates aliases of the same runtime and includes durable deleted thread
   )
   expect(summary.total.turns).toBe(2)
   expect(summary.tasks.some((row) => row.label === 'Deleted thread')).toBe(true)
-  expect(summary.models[0]?.label).toBe('GPT-6.1-Sol')
+  expect(summary.models[0]?.label).toBe('6.1 Sol')
 })
 it('excludes future observations and preserves cache breakdowns', () => {
   const recent = {

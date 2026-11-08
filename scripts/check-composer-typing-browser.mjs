@@ -5,7 +5,7 @@ const built = await build({
   stdin: {
     contents: `
 import { createRoot } from 'react-dom/client';
-import { useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ComposerEditor } from './src/chat/composer/composer-editor.tsx';
 import { createComposerDraft } from './src/chat/composer/composer-draft.ts';
 const frame = window.requestAnimationFrame.bind(window);
@@ -19,8 +19,11 @@ function Composer() {
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   window.parentRenders++;
   const input = useRef(null);
-  return <form onSubmit={event=>{event.preventDefault();window.defaults++}}><ComposerEditor onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
-    <button type="submit" disabled={!hasText}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
+  const [submitBusy,setSubmitBusy]=useState(false);window.setSubmitBusy=setSubmitBusy;
+  const [composingNextDraft,setComposingNextDraft]=useState(false);window.setComposingNextDraft=setComposingNextDraft;
+  const [paged,setPaged]=useState(false);window.setPagedHistory=setPaged;useEffect(()=>{window.pagedHistoryCommitted=paged},[paged]);
+  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" historyScope={paged?"paged":"recent"} historyBefore={paged?"recent":undefined} loadHistory={async(before,signal)=>window.loadHistory(before,signal)} messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
+    <button type="submit" disabled={!hasText||submitBusy}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
 }
 createRoot(document.getElementById('app')).render(<Composer/>);
 window.controller = controller;
@@ -38,8 +41,8 @@ window.controller = controller;
         }))
         builder.onLoad({ filter: /.*/, namespace: 'editor-environment' }, ({ path }) => ({
           contents: path.endsWith('studio-core')
-            ? `const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace; export const useAppPreferences=()=>({sendWith:'enter'}); export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes';`
-            : `export {cn} from '../studio-ui/src/lib/utils'; export {ComposerTextarea} from '../studio-ui/src/composer-surface';`,
+            ? `const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace; const preferences={sendWith:'enter'}; export const useAppPreferences=()=>preferences; export const readAppPreferences=()=>preferences; export const updateAppPreferences=value=>Object.assign(preferences,value); export const useWorkspaceSelector=select=>select(workspace); export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key])); export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes';`
+            : `export {cn} from '../studio-ui/src/lib/utils'; export {Button} from '../studio-ui/src/components/ui/button'; export {ComposerTextarea} from '../studio-ui/src/composer-surface'; export const IconButton=()=>null;`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
           loader: 'js',
         }))
@@ -60,7 +63,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const input = page.getByRole('textbox', { name: 'Message task' })
+  const input = page.getByRole('textbox', { name: 'Message thread' })
   await input.click()
   const text =
     'Smooth typing keeps the surrounding controls stable while the draft is edited. '.repeat(3)
@@ -114,6 +117,61 @@ try {
   await input.press('ArrowUp')
   if ((await input.inputValue()) !== 'Edited recalled message')
     throw new Error('History replaced an edited message')
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    await input.fill('')
+    await input.evaluate(
+      (element, shape) =>
+        element.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'ArrowUp',
+            bubbles: true,
+            cancelable: true,
+            ...shape,
+          }),
+        ),
+      shape,
+    )
+    if ((await input.inputValue()) !== '')
+      throw new Error('IME candidate navigation recalled history')
+    await input.fill('Candidate')
+    for (const altKey of [false, true])
+      await input.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 'Enter',
+              bubbles: true,
+              cancelable: true,
+              ...options,
+            }),
+          ),
+        { ...shape, altKey },
+      )
+    if ((await page.evaluate(() => window.defaults + window.alternatives)) !== 0)
+      throw new Error('IME candidate confirmation submitted')
+    await input.fill('/')
+    const menu = page.getByRole('listbox', { name: 'Commands and skills' })
+    await menu.waitFor()
+    const selected = await input.getAttribute('aria-activedescendant')
+    for (const key of ['ArrowDown', 'Enter', 'Tab', 'Escape'])
+      await input.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...options }),
+          ),
+        { ...shape, key },
+      )
+    if (
+      (await input.inputValue()) !== '/' ||
+      (await input.getAttribute('aria-activedescendant')) !== selected ||
+      !(await menu.isVisible())
+    )
+      throw new Error('IME candidate keys changed mentions')
+  }
+  await input.press('Enter')
+  await page.waitForFunction(() => window.commands === 1)
+  if ((await page.evaluate(() => window.defaults)) !== 0)
+    throw new Error('Mention selection submitted the form')
   await input.fill('Keyboard guidance')
   await input.press('Enter')
   await input.press('Alt+Enter')
@@ -125,6 +183,118 @@ try {
   await input.press('Shift+Enter')
   if (!(await input.inputValue()).includes('\n'))
     throw new Error('Shift+Enter did not insert a line')
+  await page.evaluate(() => {
+    window.controller.update('')
+    window.setSubmitBusy(true)
+    window.setComposingNextDraft(true)
+  })
+  await page.waitForFunction(() => {
+    const input = document.querySelector('textarea')
+    return input && !input.readOnly && input.value === ''
+  })
+  await input.fill('Second queued prompt')
+  if ((await page.evaluate(() => window.controller.text)) !== 'Second queued prompt')
+    throw new Error('The real editor did not allow the next draft during a queued send')
+  await input.press('Enter')
+  if ((await page.evaluate(() => window.defaults)) !== 1)
+    throw new Error('Typing the next draft bypassed the pending-send lock')
+  await page.evaluate(() => window.setComposingNextDraft(false))
+  await page.waitForFunction(() => document.querySelector('textarea').readOnly)
+  await page.evaluate(() => window.setSubmitBusy(false))
+  if ((await input.inputValue()) !== 'Second queued prompt')
+    throw new Error('Completing the send replaced the newer draft')
+  await page.evaluate(() => {
+    window.historyCalls = []
+    window.loadHistory = async (before) => {
+      window.historyCalls.push(before)
+      if (window.holdHistory) await new Promise((resolve) => (window.releaseHistory = resolve))
+      return {
+        turns: [],
+        historyRevision: 0,
+        ...(before === 'recent'
+          ? { messages: [{ role: 'assistant', text: 'A long assistant page' }], before: 'earlier' }
+          : before === 'earlier'
+            ? {
+                messages: [
+                  { role: 'user', text: 'Earlier 1' },
+                  { role: 'user', text: 'Earlier 2' },
+                ],
+                before: 'oldest',
+              }
+            : { messages: [{ role: 'user', text: 'Oldest' }] }),
+      }
+    }
+    window.setPagedHistory(true)
+  })
+  await input.fill('')
+  for (const expected of ['Second message', 'First message', 'Earlier 2', 'Earlier 1', 'Oldest']) {
+    await input.press('ArrowUp')
+    await page.waitForFunction((expected) => window.controller.text === expected, expected)
+  }
+  if (
+    JSON.stringify(await page.evaluate(() => window.historyCalls)) !==
+    JSON.stringify(['recent', 'earlier', 'oldest'])
+  )
+    throw new Error('History did not load pages on demand')
+  for (const expected of ['Earlier 1', 'Earlier 2', 'First message', 'Second message', '']) {
+    await input.press('ArrowDown')
+    await page.waitForFunction((expected) => window.controller.text === expected, expected)
+  }
+  for (const expected of ['Second message', 'First message', 'Earlier 2', 'Earlier 1', 'Oldest']) {
+    await input.press('ArrowUp')
+    await page.waitForFunction((expected) => window.controller.text === expected, expected)
+  }
+  if ((await page.evaluate(() => window.historyCalls.length)) !== 3)
+    throw new Error('Repeated recall downloaded cached history')
+  await page.evaluate(() => window.setPagedHistory(false))
+  await page.waitForFunction(() => window.pagedHistoryCommitted === false)
+  await input.fill('')
+  await page.evaluate(() => {
+    window.setPagedHistory(true)
+    window.holdHistory = true
+  })
+  await page.waitForFunction(() => window.pagedHistoryCommitted === true)
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await page.getByRole('status').filter({ hasText: 'Loading earlier messages' }).waitFor()
+  await input.fill('Keep edits made while history loads')
+  await page.evaluate(() => {
+    window.holdHistory = false
+    window.releaseHistory()
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  if ((await input.inputValue()) !== 'Keep edits made while history loads')
+    throw new Error('A delayed page overwrote edited text')
+  await page.evaluate(() => window.setPagedHistory(false))
+  await page.waitForFunction(() => window.pagedHistoryCommitted === false)
+  await input.fill('')
+  await page.evaluate(() => {
+    window.setPagedHistory(true)
+    window.holdHistory = true
+  })
+  await page.waitForFunction(() => window.pagedHistoryCommitted === true)
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await page.getByRole('status').filter({ hasText: 'Loading earlier messages' }).waitFor()
+  await input.press('ArrowDown')
+  await page.waitForFunction(() => window.controller.text === 'Second message')
+  await page.evaluate(() => {
+    window.holdHistory = false
+    window.releaseHistory()
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  if ((await input.inputValue()) !== 'Second message')
+    throw new Error('A delayed page overwrote newer history navigation')
+  if (errors.length) throw new Error(JSON.stringify(errors))
+  console.log(
+    'Paged recall crosses the live window, skips assistant-only pages, reuses cached history and preserves edits during delayed loads.',
+  )
   console.log(
     'Enter submits the default and Alt+Enter submits the alternative without a duplicate submission.',
   )

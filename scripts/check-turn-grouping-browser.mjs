@@ -18,7 +18,7 @@ const initial={id:'thread',title:'Thread',status:'done',messages:[
 {id:'steer',turnId:'attempt',role:'user',text:'Clarification',createdAt:'2026-10-03T10:00:10Z'},
 {id:'after',turnId:'attempt',role:'assistant',text:'Linking works on right-click or long-press.Final answer.',textBreaks:[43,56],createdAt:'2026-10-03T10:00:11Z'}],turns:[turn],files:[],draft:''};
 const events=[{id:'last',time:'2026-10-03T10:00:50Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'last',status:'completed',textOffset:56,event:{item:{type:'commandExecution',command:'git diff'}}})},{id:'command',time:'2026-10-03T10:00:20Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'command',status:'completed',textOffset:35,event:{item:{type:'commandExecution',command:'git status'}}})},{id:'prior',time:'2026-10-03T10:00:05Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'before',toolId:'prior',status:'completed',textOffset:13,event:{item:{type:'commandExecution',command:'pnpm test'}}})}];
-window.events=events;export function App(){const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[historyBusy,setHistoryBusy]=useState(false);window.setHistoryBusy=setHistoryBusy;const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,messageSources:new Map(task.messages.filter(message=>message.source).map(message=>[message.id,message.source])),childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected,request:async()=>({ok:true}),history:{hasMore:false,busy:historyBusy,error:'',setBookmark:()=>{}},legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
+window.events=events;export function App(){const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[hasMore,setHasMore]=useState(false);window.setHasMore=setHasMore;const[historyBusy,setHistoryBusy]=useState(false);window.setHistoryBusy=setHistoryBusy;const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.fixtureVisible=active;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,messageSources:new Map(task.messages.filter(message=>message.source).map(message=>[message.id,message.source])),childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected,request:async()=>({ok:true}),history:{load:()=>{window.historyLoads=(window.historyLoads??0)+1},hasMore,busy:historyBusy,error:'',bookmarks:[],setBookmark:()=>{},trim:()=>{}},visible:active,legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
 `
 const ui = `export {cn} from './src/lib/utils';export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';
 export {FileTypeIcon} from './src/file-tree';export {RepositoryOpenItems} from './src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -31,11 +31,12 @@ export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 `
 async function bundle(mobile) {
   const mocks = {
+    'lucide-react-native': `export * from 'lucide-react';`,
     '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
     './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
 
     'fixture-projection': `export * from '@dovo/protocol';export {conversationMessages} from '${root}/apps/mobile/src/tasks/conversation/state/messages.ts';`,
-    '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
+    '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useWorkspaceSelector=select=>select(useFixture());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
     '@dovo/studio-ui': ui,
     './use-conversation-history': `export const useConversationHistory=task=>({task,hasMore:false,busy:false,error:'',setBookmark:()=>{}});`,
@@ -44,19 +45,19 @@ async function bundle(mobile) {
     './task-activity': `import {useFixture} from 'fixture';import {TaskActivity as ActualTaskActivity} from '${root}/packages/extension-tasks/src/chat/thread/task-activity.tsx';export const useTaskActivity=()=>({tools:useFixture().tools,error:''});export const TaskActivity=props=>window.artifactCase?<ActualTaskActivity {...props}/>:props.tools.length?<div data-tools>Tools</div>:null;`,
     './pull-link-actions': `export const PullLinkActions=()=>null;`,
     './turn-label': `export const TurnLabel=({turn})=><span>{turn.status==='running'?'Working…':'Worked for 1m'}</span>;`,
-    './state/provider': `import {useFixture} from 'fixture';export const useConversationSelector=select=>select(useFixture());export const useConversationPresentation=id=>useFixture().presentation.get(id);export const usePendingConversationMessage=()=>null;`,
+    './state/provider': `import {useFixture} from 'fixture';export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>select(useFixture());export const useConversationPresentation=id=>useFixture().presentation.get(id);export const usePendingConversationMessage=()=>null;`,
     '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../../runtime/state/app-active': `export const useForegroundInterval=()=>{};`,
     '../../runtime/preferences/app-preferences': `import {useFixture} from 'fixture';export const useCarMode=()=>false;export const useMobilePreferences=()=>useFixture().preferences;export const formatTime=()=>'';`,
-    '../../runtime/connection/provider': `import {useFixture} from 'fixture';export const useRuntime=()=>({connected:useFixture().connected});`,
+    '../../runtime/connection/provider': `import {useFixture} from 'fixture';export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>({connected:useFixture().connected});`,
     '../controls/icon': `export const Icon=({name})=><span data-file-icon={name}/>;`,
     '../theme': `export const useTheme=()=>({mode:'dark',colors:{},styles:{}});`,
     './text': `export {Text} from 'react-native';`,
-    '../../ui/theme': `export const styles={},colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
+    '../../ui/theme': `export const styles={},colors={selection:'#29203e',border:'#403040'};export const useTheme=()=>({styles,colors,mode:'dark'});`,
     '../../../ui/content/server-image': `export const ServerImage=({label})=><div data-image>{label}</div>;`,
     '../../ui/content/text': `export {Text} from 'react-native';`,
     '../../ui/controls/icon': `export const Icon=()=>null;`,
-    '../../ui/controls/icon-button': `export const IconButton=()=>null;`,
+    '../../ui/controls/icon-button': `export const IconButton=({label,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress}>{label}</button>;`,
     '../../ui/controls/pill': `export const Pill=()=>null;`,
     '../../ui/controls/action': `export const Action=()=>null;`,
     '../../runtime/connection/connection-status': `export const ConnectionPill=()=>null;`,
@@ -66,26 +67,28 @@ async function bundle(mobile) {
     './components/tool-activity-row': `import {ToolActivityRow as ActualToolActivityRow} from '${root}/apps/mobile/src/tasks/conversation/components/tool-activity-row.tsx';export const ToolActivityRow=props=>window.artifactCase?<ActualToolActivityRow {...props}/>:<div data-tools>Tools</div>;export const ReasoningActivity=()=>null;`,
     './components/work-group': `import {ConversationWorkGroup as ActualWorkGroup} from '${root}/apps/mobile/src/tasks/conversation/components/work-group.tsx';export const ConversationWorkGroup=props=>window.artifactCase?<ActualWorkGroup {...props}/>:<div>{props.children}</div>;`,
     './components/activity': `export const TaskActivity=()=>null;`,
+    '../../preview/use-preview-active': `import {useFixture} from 'fixture';export const usePreviewActive=()=>useFixture().visible;`,
     './components/message-source': `export const MessageSource=()=>null;`,
     '@assistant-ui/react-native': `
 import {useContext,useEffect} from 'react';import {MessageContext,useFixture} from 'fixture';
 export const useAuiState=select=>{const fixture=useFixture(),message=useContext(MessageContext);return select({thread:{messages:fixture.messages},message})};
 export const unstable_useThreadMessageIds=()=>useFixture().messages.map(message=>message.id);
-const PartByIndex=({index,components})=>{const part=useContext(MessageContext).content[index];const C=part.type==='text'?components.Text:part.type==='tool-call'?components.tools.Fallback:components.data.by_name[part.name];return C?<C {...part}/>:null};
+const PartByIndex=({index,components})=>{const message=useContext(MessageContext),part=message.content[index];const C=part.type==='text'?components.Text:part.type==='tool-call'?components.tools.Fallback:components.data.by_name[part.name];return C?<C {...part} {...(part.type==='text'?{status:message.status??{type:'complete'}}:{})}/>:null};
 export const MessagePrimitive={Root:({children,onLayout})=>{useEffect(()=>onLayout?.(),[onLayout]);return <div>{children}</div>},PartByIndex,Parts:({components})=>useContext(MessageContext).content.map((_,index)=><PartByIndex key={index} index={index} components={components}/>)};
 export const ThreadPrimitive={Root:({children})=><div>{children}</div>,Unstable_MessageById:({messageId,components})=>{
 const message=useFixture().messages.find(message=>message.id===messageId);if(!message)return null;
 const Component=components.Message;return <MessageContext.Provider value={message}><Component/></MessageContext.Provider>;
 }};`,
     'react-native': `
-import {useEffect} from 'react';
-export const View=({children,style,accessibilityRole,accessibilityLabel})=><div style={style} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
-export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>:<div onClick={onPress}>{children}</div>;
+import {useEffect,useImperativeHandle} from 'react';
+const flat=style=>Array.isArray(style)?Object.assign({},...style.flat(Infinity)):style;
+export const View=({children,style,pointerEvents,accessibilityRole,accessibilityLabel})=><div style={{position:'relative',...flat(style),pointerEvents}} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={flat(style)}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
+export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style,testID})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} style={{position:'relative',...flat(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>:<div data-testid={testID} style={Array.isArray(style)?Object.assign({},...style):typeof style==='function'?style({pressed:false}):style} onClick={onPress}>{children}</div>;
 export const Alert={alert:message=>{throw Error(message)}};export const ActivityIndicator=()=> <span data-loading-history style={{display:"block",width:20,height:20}}/>;
-export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag})=>{window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
+export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag,onEndReached,maintainVisibleContentPosition,inverted,onContentSizeChange,ref})=>{useImperativeHandle(ref,()=>({scrollToOffset:()=>{window.nativeScrollResets=(window.nativeScrollResets??0)+1},scrollToIndex:()=>{}}),[]);window.listAnchor=maintainVisibleContentPosition;window.listInverted=inverted;window.measureOlder=height=>onContentSizeChange(390,height);window.reachEarlier=onEndReached;window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
   mocks['../state/provider'] =
-    `import {useFixture} from 'fixture';export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
+    `import {useFixture} from 'fixture';export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>select(useFixture());export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
   for (const path of [
     '../../../runtime/preferences/app-preferences',
     '../../../runtime/state/application-state',
@@ -193,10 +196,83 @@ try {
     )
     await page.addScriptTag({ content: await bundle(mobile) })
     const header = page.getByRole('button', { name: /Worked for/ })
-    await header.waitFor()
+    try {
+      await header.waitFor()
+    } catch (cause) {
+      throw new Error(
+        `${mobile ? 'Mobile' : 'Desktop'} conversation did not render: ${errors.join('; ')}\n${await page.locator('body').innerText()}`,
+        { cause },
+      )
+    }
     assert.equal(await page.getByText('Response', { exact: true }).count(), 0)
-    if (mobile) assert.equal(await page.evaluate(() => window.recentLayouts), 1)
     if (mobile) {
+      assert.equal(await page.evaluate(() => window.recentLayouts), 1)
+      const bubble = page.getByTestId('User message bubble').first()
+      assert.equal(
+        await bubble.evaluate((el) => getComputedStyle(el).backgroundColor),
+        'rgb(41, 32, 62)',
+      )
+    }
+    if (mobile) {
+      assert.equal(await page.evaluate(() => window.listInverted), true)
+      assert.deepEqual(await page.evaluate(() => window.listAnchor), {
+        minIndexForVisible: 0,
+        autoscrollToTopThreshold: 0,
+      })
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      await page.evaluate(() => {
+        window.nativeScrollResets = 0
+        for (const height of [800, 1600, 3200, 12000]) window.measureOlder(height)
+        window.setHistoryBusy(true)
+      })
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      assert.equal(
+        await page.evaluate(() => window.nativeScrollResets),
+        0,
+        'Older row measurements do not issue competing JS scroll resets',
+      )
+      assert.equal(
+        await page.locator('[data-loading-history]').count(),
+        0,
+        'Background fill is quiet at the latest reply',
+      )
+      await page.evaluate(() => window.setHistoryBusy(false))
+      await page.evaluate(() => window.setHasMore(true))
+      await page.evaluate(() => {
+        window.historyLoads = 0
+        window.reachEarlier()
+        window.reachEarlier()
+      })
+      assert.equal(
+        await page.evaluate(() => window.historyLoads),
+        0,
+        'Opening measurements cannot load old rows',
+      )
+      await page.evaluate(() => {
+        window.readEarlier()
+        window.reachEarlier()
+      })
+      assert.equal(
+        await page.evaluate(() => window.historyLoads),
+        1,
+        'Scrolling back can load earlier rows',
+      )
+      assert.deepEqual(await page.evaluate(() => window.listAnchor), { minIndexForVisible: 0 })
+      await page.evaluate(() => window.setActive(false))
+      await page.waitForFunction(() => window.fixtureVisible === false)
+      await page.evaluate(() => window.setActive(true))
+      await page.waitForFunction(() => window.fixtureVisible === true)
+      await page.evaluate(() => window.reachEarlier())
+      assert.equal(
+        await page.evaluate(() => window.historyLoads),
+        1,
+        'Reopening resets automatic end loading',
+      )
+      await page.evaluate(() => window.setHasMore(false))
       const list = page.locator('[data-conversation-list]')
       const before = await list.boundingBox()
       await page.evaluate(() => window.setConnected(false))
@@ -226,9 +302,12 @@ try {
       await page.evaluate(() => window.setHistoryBusy(false))
       await page.locator('[data-loading-history]').waitFor({ state: 'detached' })
     }
-    const fallback = page.getByText('Scope found no matching project; continued in General.', {
-      exact: true,
-    })
+    const fallback = page.getByText(
+      'Scope found no matching project; continued without a project.',
+      {
+        exact: true,
+      },
+    )
     assert.equal(await fallback.count(), 0)
     await page.evaluate(() => window.setTask((task) => ({ ...task, autoProjectFallback: true })))
     await fallback.waitFor()
@@ -297,6 +376,55 @@ try {
     const running = page.getByRole('button', { name: /Working/ })
     await running.waitFor()
     assert.equal(await running.count(), 1)
+    await page.evaluate(() =>
+      window.setTask((task) => ({
+        ...task,
+        turns: task.turns.map((turn) => ({
+          ...turn,
+          providerRetry: {
+            attempt: 1,
+            maxRetries: 5,
+            delayMs: 1000,
+            httpStatus: 429,
+            state: 'waiting',
+          },
+        })),
+      })),
+    )
+    const firstRetry = page.getByText('HTTP 429 · automatic retry 1 of 5 · retry delay 1s', {
+      exact: true,
+    })
+    await firstRetry.waitFor()
+    assert.equal(await firstRetry.count(), 1, 'Steering segments share one retry notice')
+    await page.evaluate(() =>
+      window.setTask((task) => ({
+        ...task,
+        turns: task.turns.map((turn) => ({
+          ...turn,
+          providerRetry: { ...turn.providerRetry, attempt: 2 },
+        })),
+      })),
+    )
+    const secondRetry = page.getByText('HTTP 429 · automatic retry 2 of 5 · retry delay 1s', {
+      exact: true,
+    })
+    await secondRetry.waitFor()
+    assert.equal(await firstRetry.count(), 0)
+    assert.equal(await secondRetry.count(), 1)
+    await page.evaluate(() =>
+      window.setTask((task) => ({
+        ...task,
+        turns: task.turns.map((turn) => ({
+          ...turn,
+          providerRetry: { ...turn.providerRetry, state: 'recovered' },
+        })),
+      })),
+    )
+    const recoveredRetry = page.getByText('Connection recovered after automatic retry', {
+      exact: true,
+    })
+    await recoveredRetry.waitFor()
+    assert.equal(await recoveredRetry.count(), 1)
     await running.click()
     assert.equal(await page.getByText('First update.', { exact: true }).count(), 1)
     await page.evaluate(() =>
@@ -306,12 +434,17 @@ try {
       })),
     )
     await page.getByRole('button', { name: 'Turn failed' }).waitFor()
+    await page.getByText('Turn failed after automatic retry', { exact: true }).waitFor()
     assert.equal(await page.getByText('Final answer.', { exact: true }).count(), 1)
     await page.evaluate(() =>
       window.setTask((task) => ({
         ...task,
         status: 'done',
-        turns: task.turns.map((turn) => ({ ...turn, status: 'completed' })),
+        turns: task.turns.map((turn) => ({
+          ...turn,
+          status: 'completed',
+          providerRetry: undefined,
+        })),
         messages: task.messages.map((message) =>
           message.id === 'after' ? { ...message, text: '' } : message,
         ),
@@ -434,7 +567,7 @@ try {
         toolActivity,
       )
       assert.equal(await tiles.count(), 2)
-      assert.equal(await page.locator('[aria-label="Task tool activity"]').count(), 0)
+      assert.equal(await page.locator('[aria-label="Thread tool activity"]').count(), 0)
       assert.equal(
         await page.getByRole('button', { name: /tools? used|commands used/ }).count(),
         0,
@@ -513,15 +646,28 @@ try {
           })),
         }))
       })
+      const changes = page.getByRole('button', {
+        name: 'Turn changes · 7 files',
+        exact: true,
+      })
+      await changes.waitFor()
+      assert.equal(await changes.getAttribute('aria-expanded'), 'false')
+      assert.equal(await page.getByRole('button', { name: 'All 7', exact: true }).count(), 0)
+      for (const label of [
+        'Code, 2 files',
+        'Tests, 1 files',
+        'Mocks, 1 files',
+        'Docs, 2 files',
+        'Generated, 1 files',
+      ])
+        await page.getByLabel(label, { exact: true }).waitFor()
+      await changes.click()
       for (const name of ['All 7', 'Code 2', 'Tests 1', 'Mocks 1', 'Docs 2', 'Generated 1'])
         await page.getByRole('button', { name, exact: true }).waitFor()
-      assert.equal(
-        await page
-          .getByRole('button', { name: 'Turn changes · 7 files', exact: true })
-          .getAttribute('aria-expanded'),
-        'false',
-      )
-      await page.getByRole('button', { name: 'Tests 1', exact: true }).click()
+      assert.equal(await changes.getAttribute('aria-expanded'), 'true')
+      const tests = page.getByRole('button', { name: 'Filter Tests: 1 files', exact: true })
+      await tests.click()
+      assert.equal(await tests.getAttribute('aria-pressed'), 'true')
       assert.equal(
         await page
           .getByRole('button', { name: 'Tests 1', exact: true })
@@ -567,7 +713,7 @@ try {
           })),
         })),
       )
-      await page.getByText('Docs 1', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Docs 1', exact: true }).waitFor()
       // An empty recent window must still allow older history to load after list layout.
       await page.evaluate(() => {
         window.recentLayouts = 0

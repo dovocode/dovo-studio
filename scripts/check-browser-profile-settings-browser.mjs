@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import Settings from '../studio-shell/src/app-settings/browser.tsx';import {ExternalBrowserLinkChooser} from '../studio-shell/src/external-browser-link-chooser.tsx';import {TooltipProvider} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<TooltipProvider><Settings/><ExternalBrowserLinkChooser subscribe={listener=>{window.sendExternal=listener;return()=>{window.sendExternal=undefined}}} onOpen={()=>window.openedBrowser=(window.openedBrowser??0)+1}/></TooltipProvider>);`,
+    contents: `import {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import Settings from '../studio-shell/src/app-settings/browser.tsx';import {ExternalBrowserLinkChooser} from '../studio-shell/src/external-browser-link-chooser.tsx';import {TooltipProvider} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><TooltipProvider><Settings/><ExternalBrowserLinkChooser subscribe={listener=>{window.sendExternal=listener;return()=>{window.sendExternal=undefined}}} onOpen={()=>window.openedBrowser=(window.openedBrowser??0)+1}/></TooltipProvider></StudioConfirmationProvider>);`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -47,6 +47,7 @@ export * from '${root}packages/studio-ui/src/choice-picker.tsx';
           resolveDir: root + 'packages/extension-tasks',
           contents: `
 import {useSyncExternalStore} from 'react';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export * from '@dovo/protocol';export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
 export const providers=[];export const useResolvedTheme=()=> 'dark';
 let preferences={browserAutoSettleMinutes:0,browserCloseSettledMinutes:0,browserViewport:'fill',browserProfiles:[{id:'default',name:'Local Default'}]};const listeners=new Set();
@@ -74,8 +75,7 @@ try {
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  let cancelRemoval = false
-  page.on('dialog', (dialog) => (cancelRemoval ? dialog.dismiss() : dialog.accept()))
+
   await page.route('http://localhost/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
@@ -132,6 +132,56 @@ try {
   await local.getByRole('textbox', { name: 'New profile name' }).fill('Local Work')
   await local.getByRole('button', { name: 'Add profile', exact: true }).click()
   await local.getByRole('textbox', { name: 'Name for Local Work' }).waitFor()
+  const localPersistence = local.getByRole('checkbox', {
+    name: 'Keep signed in across restarts for Local Work',
+    exact: true,
+  })
+  assert.equal(await localPersistence.isChecked(), false)
+  const localDnt = local.getByRole('checkbox', {
+    name: 'Send Do Not Track for Local Work',
+    exact: true,
+  })
+  assert.equal(await localDnt.isChecked(), false)
+  await localDnt.check()
+  await localPersistence.check()
+  await local
+    .getByRole('form', { name: 'Browser profile Local Work' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work')
+          .keepSessionCookies,
+    ),
+    true,
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.preferences.browserProfiles.find((p) => p.name === 'Local Work').doNotTrack,
+    ),
+    true,
+  )
+  await localDnt.uncheck()
+  await localPersistence.uncheck()
+  await local
+    .getByRole('form', { name: 'Browser profile Local Work' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work')
+          .keepSessionCookies,
+    ),
+    false,
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.preferences.browserProfiles.find((p) => p.name === 'Local Work').doNotTrack,
+    ),
+    false,
+  )
   const language = local.getByRole('textbox', { name: 'Language for Local Work' })
   assert.equal(await language.inputValue(), 'en-US')
   await language.fill('not_a_locale')
@@ -251,11 +301,42 @@ try {
   await remote.getByRole('textbox', { name: 'New profile name' }).fill('Remote Work')
   await remote.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).waitFor()
+  await remote
+    .getByRole('checkbox', { name: 'Keep signed in across restarts for Remote Work', exact: true })
+    .check()
+  await remote
+    .getByRole('checkbox', { name: 'Send Do Not Track for Remote Work', exact: true })
+    .check()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).fill('Remote Personal')
   await remote.getByRole('button', { name: 'Emoji for Remote Work', exact: true }).click()
   await page.getByRole('option', { name: '🏠 Home', exact: true }).click()
   await remote.getByRole('button', { name: 'Save', exact: true }).last().click()
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).waitFor()
+  assert.equal(
+    await remote
+      .getByRole('checkbox', { name: 'Send Do Not Track for Remote Personal', exact: true })
+      .isChecked(),
+    true,
+  )
+  assert.equal(
+    await remote
+      .getByRole('checkbox', {
+        name: 'Keep signed in across restarts for Remote Personal',
+        exact: true,
+      })
+      .isChecked(),
+    true,
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls
+          .filter((call) => call.path.endsWith('/save'))
+          .at(-1)
+          .input.profiles.find((profile) => profile.name === 'Remote Personal').keepSessionCookies,
+    ),
+    true,
+  )
   assert.equal(
     await page.evaluate(
       () =>
@@ -290,8 +371,8 @@ try {
     () => window.calls.filter((call) => call.path.endsWith('/save')).length,
   )
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).fill('Unsaved rename')
-  cancelRemoval = true
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
   assert.equal(
     await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).inputValue(),
     'Unsaved rename',
@@ -300,8 +381,11 @@ try {
     await page.evaluate(() => window.calls.filter((c) => c.path.endsWith('/save')).length),
     savesBeforeRemoval,
   )
-  cancelRemoval = false
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Remove profile', exact: true })
+    .click()
   await page.waitForFunction(
     (count) => window.calls.filter((c) => c.path.endsWith('/save')).length === count + 1,
     savesBeforeRemoval,

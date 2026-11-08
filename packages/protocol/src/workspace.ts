@@ -1,4 +1,5 @@
 import { taskIsWorking } from './tasks/task-working.js'
+import { providerRetrySchema } from './conversation/workflow/provider-retry.js'
 import { messageSourceSchema } from './tasks/message-source.js'
 import { usageAccountSchema, planLimitSchema } from './conversation/workflow/plan-limits.js'
 export { usageAccountSchema } from './conversation/workflow/plan-limits.js'
@@ -13,6 +14,7 @@ import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
 import { mutableArray, mutableStruct, strictStruct } from './shared/schema.js'
 import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
 import { subagentSchema } from './conversation/workflow/subagents.js'
+import { agentSecretReferencesSchema } from './tasks/secret-references.js'
 import { agentTodosSchema } from './conversation/workflow/agent-interactions.js'
 import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './scm/forges/jira.js'
 import { taskWorkItemSchema } from './scm/work/work-task.js'
@@ -45,6 +47,7 @@ export const providerSchema = Schema.Literals([
   'grok',
   'muse',
   'cursor',
+  'pi',
   'acp',
 ])
 export const agentIconSchema = Schema.Literals([
@@ -70,6 +73,8 @@ export const agentPresetSchema = mutableStruct({
   reasoning: Schema.optional(maxValue(Schema.String, 100)),
   serviceTier: Schema.optional(maxValue(Schema.String, 100)),
   cyberAccessProgram: Schema.optional(Schema.Literals(['standard', 'daybreakBlue', 'daybreakRed'])),
+  /** Account-linked apps for Claude and Codex; omitted inherits the provider's settings. */
+  cloudIntegrations: Schema.optional(Schema.Boolean),
   instructions: Schema.String,
   permission: Schema.Literals(['ask', 'read-only', 'workspace-write', 'auto', 'full-access']),
   approvalPolicy: Schema.optional(approvalPolicySchema),
@@ -78,6 +83,7 @@ export const agentPresetSchema = mutableStruct({
   executablePath: Schema.optional(Schema.String),
   configDirectory: Schema.optional(Schema.String),
   args: Schema.optional(mutableArray(Schema.String)),
+  envSecrets: Schema.optional(agentSecretReferencesSchema),
   env: Schema.optional(
     Schema.Record(Schema.String, Schema.String).pipe(
       Schema.check(
@@ -191,8 +197,14 @@ export const projectIconSchema = maxValue(
 
 /** Settings that can inherit across computers and projects. */
 export const scopedSettingsValueSchema = mutableStruct({
+  /** Null returns to the checkout's local name. */
+  projectName: Schema.optional(Schema.NullOr(maxValue(minValue(Schema.String, 1), 200))),
   /** Null resets custom icons across computers without resurrecting local overrides. */
   projectIcon: Schema.optional(Schema.NullOr(projectIconSchema)),
+  /** Favorites sort first. False is a revisioned unpin, never an absent value. */
+  projectPinned: Schema.optional(Schema.Boolean),
+  /** Hidden from new-thread project choices; threads, settings and files are untouched. */
+  projectArchived: Schema.optional(Schema.Boolean),
   agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
   taskBehavior: Schema.optional(taskBehaviorSchema),
@@ -200,14 +212,31 @@ export const scopedSettingsValueSchema = mutableStruct({
   prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
 })
 export type ScopedSettingsValue = Schema.Schema.Type<typeof scopedSettingsValueSchema>
-export const sharedSettingsEntrySchema = mutableStruct({
-  key: maxValue(minValue(Schema.String, 1), 600),
+const settingsRevisionSchema = mutableStruct({
   updatedAt: Schema.Number.pipe(
     Schema.check(Schema.isFinite()),
     Schema.check(Schema.isInt()),
     Schema.check(Schema.isGreaterThanOrEqualTo(0)),
   ),
   changeId: maxValue(minValue(Schema.String, 1), 100),
+})
+export const sharedSettingsEntrySchema = mutableStruct({
+  key: maxValue(minValue(Schema.String, 1), 600),
+  ...settingsRevisionSchema.fields,
+  /** A missing map uses the legacy whole-entry revision. A missing category was never edited. */
+  revisions: Schema.optional(
+    mutableStruct({
+      projectName: Schema.optional(settingsRevisionSchema),
+      projectIcon: Schema.optional(settingsRevisionSchema),
+      projectPinned: Schema.optional(settingsRevisionSchema),
+      projectArchived: Schema.optional(settingsRevisionSchema),
+      agents: Schema.optional(settingsRevisionSchema),
+      taskDefaults: Schema.optional(settingsRevisionSchema),
+      taskBehavior: Schema.optional(settingsRevisionSchema),
+      resources: Schema.optional(settingsRevisionSchema),
+      prompts: Schema.optional(settingsRevisionSchema),
+    }),
+  ),
   value: scopedSettingsValueSchema,
 })
 export const sharedSettingsSchema = maxValue(mutableArray(sharedSettingsEntrySchema), 300)
@@ -225,10 +254,19 @@ export const scopedSettingsSchema = mutableStruct({
 })
 export const SCRATCH_PROJECT_ID = 'dovo:scratch'
 export const repositorySchema = mutableStruct({
+  /** Shared display label, projected independently of the local checkout name. */
+  sharedName: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  /** Last confirmed identity for presentation while a checkout is unavailable. */
+  presentationIdentity: Schema.optional(Schema.String),
+  /** Local checkout label, retained when the snapshot projects a shared name. */
+  localName: Schema.optional(Schema.String),
   /** Missing means a Git project, preserving existing workspaces. */
   kind: Schema.optional(Schema.Literals(['folder', 'scratch'])),
   /** User-selected project icon, stored as a small PNG for every client. */
   iconOverride: Schema.optional(projectIconSchema),
+  /** Stored for this computer; snapshots project the shared Git-identity value when present. */
+  pinned: Schema.optional(Schema.Boolean),
+  archived: Schema.optional(Schema.Boolean),
   /** Derived from files in the project checkout by the runtime. */
   discoveredIcon: Schema.optional(
     maxValue(
@@ -270,6 +308,18 @@ const reviewVersionSchema = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
   Schema.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
 )
+const gitFileChangeSchema = Schema.Literals([
+  'unchanged',
+  'added',
+  'modified',
+  'deleted',
+  'type-changed',
+  'renamed',
+  'copied',
+  'unmerged',
+  'untracked',
+  'unknown',
+])
 export const fileSchema = mutableStruct({
   path: Schema.String,
   before: Schema.String,
@@ -277,6 +327,10 @@ export const fileSchema = mutableStruct({
   viewed: Schema.Boolean,
   diskContents: Schema.optional(Schema.String),
   preview: Schema.optional(filePreviewMetadataSchema),
+  // Working scans only. Older runtimes and historical reviews may omit this metadata.
+  gitStatus: Schema.optional(
+    mutableStruct({ index: gitFileChangeSchema, workingTree: gitFileChangeSchema }),
+  ),
 })
 export const diffCommentSchema = mutableStruct({
   side: Schema.Literals(['additions', 'deletions']),
@@ -508,6 +562,8 @@ export const linkedCheckpointSchema = mutableStruct({
 })
 export type LinkedCheckpoint = Schema.Schema.Type<typeof linkedCheckpointSchema>
 export const turnCheckpointSchema = mutableStruct({
+  // Durable undo intent. Repeat undo to finish or redo to recover after an interrupted restore.
+  restorePending: Schema.optional(Schema.Literal(true)),
   linked: Schema.optional(mutableArray(linkedCheckpointSchema)),
   before: Schema.String,
   after: Schema.optional(Schema.String),
@@ -519,6 +575,8 @@ export const turnCheckpointSchema = mutableStruct({
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
 })
 export const turnSchema = mutableStruct({
+  /** Latest provider-owned retry, replaced in place within this execution. */
+  providerRetry: Schema.optional(providerRetrySchema),
   /** One user-visible run can contain replacement provider attempts. */
   runId: Schema.optional(Schema.String),
   usageAccount: Schema.optional(usageAccountSchema),
@@ -672,6 +730,7 @@ export const taskSchema = mutableStruct({
       milliseconds: Schema.Number,
       hasChanges: Schema.Boolean,
       undoableTurnId: Schema.optional(Schema.String),
+      pendingUndoTurnId: Schema.optional(Schema.String),
     }),
   ),
   // Admission is durable before checkout preparation; a session alone proves no delivery.
@@ -718,6 +777,26 @@ export const taskSchema = mutableStruct({
       head: Schema.optional(Schema.String),
       title: maxValue(Schema.String, 400),
       snapshot: Schema.optional(Schema.String),
+    }),
+  ),
+  sideThread: Schema.optional(
+    mutableStruct({
+      parentTaskId: Schema.String,
+      objective: maxValue(Schema.String, 120000),
+      contextMessageCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      parentHistoryRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      contextLastMessageId: Schema.optional(Schema.String),
+      contextHash: Schema.String,
+      source: Schema.Literals(['snapshot', 'checkpoint', 'head', 'scratch']),
+      reviewBaseline: Schema.optional(Schema.String),
+      broughtBackThrough: Schema.optional(Schema.String),
+      broughtBackText: Schema.optional(Schema.String),
+      permissionCeiling: mutableStruct({
+        provider: providerSchema,
+        permission: agentSchema.fields.permission,
+        approvalPolicy: Schema.optional(approvalPolicySchema),
+        sandboxMode: Schema.optional(sandboxModeSchema),
+      }),
     }),
   ),
   // Runtime-owned: the shared agent checklist, from native events or the regular task tool.
@@ -783,6 +862,18 @@ export const taskSchema = mutableStruct({
   /** Reuse a registered Git worktree instead of creating one for this task. */
   existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
   worktreeBaseBranch: Schema.optional(Schema.String),
+  /** Runtime-owned base resolved before the task worktree was created. Branch diffs and reviews
+   * of `branch` compare against `ref`, or against the starting `commit` once that ref is gone.
+   * Neither is recorded when none is known; those compare against the default branch. */
+  worktreeBase: Schema.optional(
+    mutableStruct({
+      branch: maxValue(minValue(Schema.String, 1), 300),
+      ref: Schema.optional(maxValue(minValue(Schema.String, 1), 600)),
+      commit: Schema.optional(
+        Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40,64}$/))),
+      ),
+    }),
+  ),
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
   /** Copy non-ignored working changes from the current checkout into a fresh worktree. */
   worktreeIncludeChanges: Schema.optional(Schema.Boolean),
@@ -845,6 +936,8 @@ export const taskSchema = mutableStruct({
   fileReviewVersions: Schema.optional(Schema.Record(Schema.String, reviewVersionSchema)),
   draft: Schema.String,
   draftTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
+  /** The next composer message asks for a read-only plan turn. */
+  draftPlan: Schema.optional(Schema.Boolean),
   draftAttachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
   example: Schema.Boolean,
   origin: Schema.optional(Schema.String),
@@ -857,6 +950,29 @@ export const taskSchema = mutableStruct({
   workItem: Schema.optional(taskWorkItemSchema),
   sessionId: Schema.optional(Schema.String),
   sessionAgentId: Schema.optional(Schema.String),
+  /** Runtime-owned terminal import receipt, persisted with the authoritative task history. */
+  importedCodexSession: Schema.optional(
+    mutableStruct({
+      key: Schema.String,
+      sessionId: Schema.String,
+      home: Schema.String,
+      transcriptPath: Schema.String,
+      cwd: Schema.String,
+      importedAt: Schema.String,
+    }),
+  ),
+  importedPiSession: Schema.optional(
+    mutableStruct({
+      key: Schema.String,
+      sessionId: Schema.String,
+      directory: Schema.String,
+      transcriptPath: Schema.String,
+      /** Runtime-owned copy; the terminal's original file is never used for continuation. */
+      privatePath: Schema.optional(Schema.String),
+      cwd: Schema.String,
+      importedAt: Schema.String,
+    }),
+  ),
   error: Schema.optional(Schema.String),
   activity: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String),
@@ -985,9 +1101,9 @@ export type Repository = Schema.Schema.Type<typeof repositorySchema>
 /** Keep managed General threads consistent with runtimes that still save the legacy name. */
 export function projectDisplayName(
   repository: Pick<Repository, 'kind' | 'name'> | undefined,
-  fallback = 'No project',
+  fallback = 'No Project',
 ) {
-  return repository?.kind === 'scratch' ? 'General' : (repository?.name ?? fallback)
+  return repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? fallback)
 }
 /** Display context only: a General thread keeps its original execution project. */
 export function taskDisplayProject(
@@ -1166,7 +1282,7 @@ export function defaultTaskHarness(provider: TaskHarness['provider']): TaskHarne
     model: '',
     reasoning: '',
     instructions: '',
-    permission: 'full-access',
+    permission: provider === 'pi' ? 'read-only' : 'full-access',
     endpoint: '',
   }
 }

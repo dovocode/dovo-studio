@@ -1,16 +1,52 @@
-import { terminalGroups, splitTerminal, type TerminalGroup } from '@dovo/protocol'
+import {
+  readTerminalLayout,
+  saveTerminalLayout,
+  MAX_TERMINAL_PANES,
+  nextTerminalPane,
+} from './terminal-layout-state'
+import { Schema } from 'effect'
+import { mutableStruct } from '@dovo/protocol'
+import type { TerminalFileLink } from './terminal-file-links'
+import {
+  STUDIO_TERMINAL_SCOPE,
+  terminalGroups,
+  splitTerminal,
+  type TerminalGroup,
+} from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ChevronDown, Plus, X, Columns2, Rows2 } from 'lucide-react'
 import { canChangeTaskCheckout, responses, useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, cn, ChoicePicker } from '@dovo/studio-ui'
+import { TerminalCloseDialog } from './terminal-close-dialog'
 import { TerminalSession } from './terminal-session'
+const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+function scopedTerminalLayout(scope: string, previousScope: string, anchor?: string) {
+  const saved = readTerminalLayout(scope)
+  if (!anchor || saved.groups.length) return saved
+  // Migrate only this anchor's existing split group from the former shared standalone layout.
+  const previous = readTerminalLayout(previousScope)
+  const group = previous.groups.find((group) => group.sessions.includes(anchor))
+  return group
+    ? {
+        selected: group.sessions.includes(previous.selected) ? previous.selected : anchor,
+        groups: [group],
+      }
+    : saved
+}
 export function TerminalPane({
   taskId,
   onClose,
   focusId = '',
   visible = true,
   onAddSelection,
+  onOpenFile,
+  repositoryId,
+  autoCreate = true,
+  onSelectSession,
+  onNewSession,
+  sessionScopeId,
+  onSessionsClosed,
 }: {
   taskId: string
   onClose: () => void
@@ -18,19 +54,102 @@ export function TerminalPane({
   focusId?: string
   visible?: boolean
   onAddSelection?: (taskId: string, text: string) => void
+  onOpenFile?: (file: TerminalFileLink & { checkoutId?: string }) => void
+  repositoryId?: string
+  autoCreate?: boolean
+  onSelectSession?: (id: string) => void
+  /** Standalone sessions are opened through the workspace starter and sidebar. */
+  onNewSession?: () => void
+  /** Fixed standalone workspace anchor. Only this session and locally created peers are shown. */
+  sessionScopeId?: string
+  /** Confirmed successful closes only, including the successful subset of a failed batch. */
+  onSessionsClosed?: (ids: readonly string[]) => void
 }) {
-  const { snapshot, workspace, connected, request } = useWorkspace(),
-    [selected, setSelected] = useApplicationState(focusId),
+  const { snapshot, workspace, connected, request, connection } = useWorkspace()
+  const scopedSession = taskId === STUDIO_TERMINAL_SCOPE ? sessionScopeId : undefined
+  const sharedScope = JSON.stringify([connection?.runtimeId ?? connection?.address, taskId])
+  const scope = JSON.stringify([
+    connection?.runtimeId ?? connection?.address,
+    taskId,
+    ...(scopedSession ? [scopedSession] : []),
+  ])
+  const ownerScope = JSON.stringify([scope, connection?.address, connection?.token])
+  const initialLayout = useRef(scopedTerminalLayout(scope, sharedScope, scopedSession))
+  const currentScope = useRef({ scope: ownerScope, request, generation: 0 })
+  if (currentScope.current.scope !== ownerScope || currentScope.current.request !== request) {
+    currentScope.current = {
+      scope: ownerScope,
+      request,
+      generation: currentScope.current.generation + 1,
+    }
+  }
+  useEffect(
+    () => () => {
+      currentScope.current.generation++
+    },
+    [scope, request, ownerScope],
+  )
+  const previousScope = useRef(scope)
+  const [layoutOwner, setLayoutOwner] = useApplicationState(scope)
+  const [selected, setSelected] = useApplicationState(
+      scopedSession
+        ? initialLayout.current.selected || focusId
+        : focusId || initialLayout.current.selected,
+    ),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
-  const [savedGroups, setGroups] = useApplicationState<TerminalGroup[]>([])
+  const [savedGroups, setGroups] = useApplicationState<TerminalGroup[]>(
+    initialLayout.current.groups,
+  )
+  const [closedSessions, setClosedSessions] = useApplicationState<string[]>([])
+  useEffect(() => {
+    closeTarget.current = null
+    setClosing(null)
+    pending.current = false
+    setBusy(false)
+    setError('')
+    if (previousScope.current === scope) return
+    previousScope.current = scope
+    const saved = scopedTerminalLayout(scope, sharedScope, scopedSession)
+    setGroups(saved.groups)
+    setLayoutOwner(scope)
+    setSelected(scopedSession ? saved.selected || focusId : focusId || saved.selected)
+    setClosedSessions([])
+    autoTried.current = false
+    setFocusRequest({ id: '', count: 0 })
+  }, [scope, request, ownerScope])
   const [checkoutId, setCheckoutId] = useApplicationState('')
+  type CloseTarget = {
+    ids: string[]
+    labels: string[]
+    next?: string
+    restore?: string
+    generation: number
+    request: typeof request
+  }
+  const closeFocus = useRef<string | undefined>(undefined)
+  const closeTarget = useRef<CloseTarget | null>(null)
+  const [closing, setClosing] = useApplicationState<CloseTarget | null>(null)
+  useEffect(() => {
+    if (!visible || !connected) {
+      closeTarget.current = null
+      setClosing(null)
+    }
+  }, [visible, connected])
   const pending = useRef(false)
   const autoTried = useRef(false)
   useEffect(() => {
-    if (focusId) setSelected(focusId)
-  }, [focusId])
-  const sessions = snapshot?.terminals.filter((session) => session.taskId === taskId) ?? [],
+    if (focusId && !scopedSession) focusPane(focusId)
+  }, [focusId, scopedSession])
+  const scopedIds = scopedSession
+    ? new Set([scopedSession, ...savedGroups.flatMap((group) => group.sessions)])
+    : undefined
+  const sessions =
+      snapshot?.terminals.filter(
+        (session) =>
+          session.taskId === taskId &&
+          (!scopedIds || (scopedIds.has(session.id) && !closedSessions.includes(session.id))),
+      ) ?? [],
     active =
       sessions.find((session) => session.id === selected) ??
       sessions.find((session) =>
@@ -43,8 +162,15 @@ export function TerminalPane({
     savedGroups,
     sessions.map((session) => session.id),
   )
+  const liveSessions = useRef(sessions)
+  liveSessions.current = sessions
   const group = groups.find((group) => group.sessions.includes(active?.id ?? ''))
   const checkoutLabel = (session: (typeof sessions)[number]) => {
+    if (taskId === STUDIO_TERMINAL_SCOPE)
+      return (
+        workspace.repositories.find((repo) => repo.id === session.repositoryId)?.name ??
+        'Home folder'
+      )
     const link = task?.linkedCheckouts?.find((item) => item.id === session.checkoutId)
     const repository = workspace.repositories.find(
       (repo) => repo.id === (link?.repositoryId ?? task?.repositoryId),
@@ -52,53 +178,221 @@ export function TerminalPane({
     return `${repository?.name ?? 'Project'} · ${link?.branch ?? (link ? link.execution : (task?.checkoutBranch ?? 'Primary checkout'))}`
   }
   const layout = group?.layout ?? 'columns'
+  const splitLimit =
+    Math.max(
+      group?.sessions.length ?? 0,
+      scopedSession
+        ? (savedGroups.find((group) => group.sessions.includes(active?.id ?? selected))?.sessions
+            .length ?? 0)
+        : 0,
+    ) >= MAX_TERMINAL_PANES
+  const [focusRequest, setFocusRequest] = useApplicationState({ id: '', count: 0 })
+  const focusPane = (id: string) => {
+    setSelected(id)
+    setFocusRequest((current) => ({ id, count: current.count + 1 }))
+    onSelectSession?.(id)
+  }
+  useEffect(() => {
+    if (connected && (scopedSession || sessions.length) && layoutOwner === scope)
+      saveTerminalLayout(
+        scope,
+        scopedSession ? selected : (active?.id ?? selected),
+        scopedIds
+          ? terminalGroups(
+              savedGroups,
+              [...scopedIds].filter((id) => !closedSessions.includes(id)),
+            )
+          : groups,
+      )
+  }, [
+    scope,
+    layoutOwner,
+    connected,
+    selected,
+    savedGroups,
+    closedSessions,
+    sessions.map((session) => session.id).join(','),
+  ])
+  useEffect(() => {
+    if (
+      visible &&
+      active &&
+      !focusRequest.id &&
+      (!scopedIds || !scopedIds.has(selected) || active.id === selected)
+    )
+      focusPane(active.id)
+  }, [visible, active?.id])
   const task = workspace.tasks.find((item) => item.id === taskId)
   const shellReady =
-    !!task &&
-    (task.execution !== 'worktree' || !!task.existingWorktreePath || !canChangeTaskCheckout(task))
+    taskId === STUDIO_TERMINAL_SCOPE ||
+    (!!task &&
+      (task.execution !== 'worktree' ||
+        !!task.existingWorktreePath ||
+        !canChangeTaskCheckout(task)))
   const act = (operation: () => Promise<unknown>) => {
-    if (!connected || !shellReady || pending.current) return
+    if (!connected || !shellReady || pending.current || closeTarget.current) return
     pending.current = true
+    const generation = currentScope.current.generation
     setBusy(true)
     setError('')
     void operation()
-      .catch((error) => setError(String(error)))
+      .catch((error) => {
+        if (generation === currentScope.current.generation) setError(String(error))
+      })
       .finally(() => {
+        if (generation !== currentScope.current.generation) return
         pending.current = false
         setBusy(false)
       })
   }
-  const create = (split?: TerminalGroup['layout']) =>
+  const askClose = (ids: string[]) => {
+    if (!connected || !visible || pending.current || closeTarget.current) return
+    const target: CloseTarget = {
+      // Keep the workspace anchor alive if another pane in a group fails to close.
+      ids:
+        scopedSession && ids.includes(scopedSession)
+          ? [...ids.filter((id) => id !== scopedSession), scopedSession]
+          : [...ids],
+      labels: ids.map((id) => sessions.find((session) => session.id === id)?.title ?? id),
+      next: ids.includes(active?.id ?? '')
+        ? (group?.sessions.find((id) => !ids.includes(id)) ??
+          groups.flatMap((item) => item.sessions).find((id) => !ids.includes(id)))
+        : active?.id,
+      restore: active?.id,
+      generation: currentScope.current.generation,
+      request,
+    }
+    closeFocus.current = target.restore
+    closeTarget.current = target
+    setClosing(target)
+  }
+  const closePane = (id: string) => askClose([id])
+  const cancelClose = () => {
+    closeTarget.current = null
+    setClosing(null)
+  }
+  const confirmClose = () => {
+    const target = closeTarget.current
+    cancelClose()
+    if (!target || target.generation !== currentScope.current.generation || !visible) return
+    closeFocus.current = target.next
+    act(async () => {
+      const closed: string[] = []
+      try {
+        for (const id of target.ids) {
+          if (target.generation !== currentScope.current.generation) return
+          await target.request('/api/terminals/close', { id }, responses.ok)
+          closed.push(id)
+        }
+        if (target.next && target.generation === currentScope.current.generation)
+          focusPane(target.next)
+      } catch (error) {
+        if (target.generation === currentScope.current.generation) {
+          const remaining = liveSessions.current.filter((session) => !closed.includes(session.id))
+          const restore = remaining.find((session) => session.id === target.restore) ?? remaining[0]
+          if (restore) focusPane(restore.id)
+        }
+        throw error
+      } finally {
+        if (closed.length && target.generation === currentScope.current.generation) {
+          if (scopedSession) {
+            setClosedSessions((previous) => [...new Set([...previous, ...closed])])
+            setGroups((previous) =>
+              previous
+                .map((group) => ({
+                  ...group,
+                  sessions: group.sessions.filter((id) => !closed.includes(id)),
+                }))
+                .filter((group) => group.sessions.length),
+            )
+          }
+          onSessionsClosed?.(closed)
+        }
+      }
+    })
+  }
+  const create = (split?: TerminalGroup['layout']) => {
+    if (scopedSession && !split) {
+      onNewSession?.()
+      return
+    }
+    if (split && splitLimit) return
+    const generation = currentScope.current.generation
     act(() =>
       request(
-        '/api/terminals',
-        {
-          taskId,
-          checkoutId: checkoutId || undefined,
-        },
+        taskId === STUDIO_TERMINAL_SCOPE ? '/api/terminals/workspace' : '/api/terminals',
+        taskId === STUDIO_TERMINAL_SCOPE
+          ? active
+            ? { sourceTerminalId: active.id }
+            : { repositoryId }
+          : {
+              taskId,
+              checkoutId: split ? active?.checkoutId : checkoutId || undefined,
+            },
         responses.terminal,
       ).then((session) => {
-        if (split && active) setGroups(splitTerminal(groups, active.id, session.id, split))
-        setSelected(session.id)
+        if (generation !== currentScope.current.generation) return
+        if (scopedSession)
+          setGroups((previous) => {
+            const known = terminalGroups(
+              previous,
+              [
+                ...new Set([
+                  scopedSession,
+                  ...previous.flatMap((group) => group.sessions),
+                  ...sessions.map((session) => session.id),
+                ]),
+              ].filter((id) => !closedSessions.includes(id)),
+            )
+            return split && active
+              ? splitTerminal(known, active.id, session.id, split)
+              : terminalGroups(known, [...known.flatMap((group) => group.sessions), session.id])
+          })
+        else if (split && active) setGroups(splitTerminal(groups, active.id, session.id, split))
+        focusPane(session.id)
       }),
     )
+  }
   useEffect(() => {
+    if (!autoCreate || taskId === STUDIO_TERMINAL_SCOPE) return
     if (!visible) {
       autoTried.current = false
       return
     }
     if (autoTried.current || !connected || !shellReady || !!focusId) return
     autoTried.current = true
+    if (sessions.length) return
+    const generation = currentScope.current.generation
     act(() =>
-      request('/api/terminals/ensure', { taskId }, responses.terminal).then((session) =>
-        setSelected(session.id),
-      ),
+      request('/api/terminals/ensure', { taskId }, responses.terminal).then((session) => {
+        if (generation === currentScope.current.generation) setSelected(session.id)
+      }),
     )
   }, [connected, shellReady, taskId, sessions, focusId, visible])
   return (
     <section
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0d0e10]"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-t bg-background text-foreground"
       aria-label="Terminal"
+      onKeyDownCapture={(event) => {
+        if (
+          event.nativeEvent.isComposing ||
+          event.keyCode === 229 ||
+          !visible ||
+          event.altKey ||
+          (mac
+            ? !event.metaKey || event.ctrlKey
+            : !event.ctrlKey || !event.shiftKey || event.metaKey)
+        )
+          return
+        const key = event.key.toLowerCase()
+        if (!(mac ? ['d', 'n', 'w'] : ['d', 'e', 'n', 'w']).includes(key)) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (key === 'd') create(mac && event.shiftKey ? 'rows' : 'columns')
+        else if (key === 'e') create('rows')
+        else if (key === 'n') create()
+        else if (active) closePane(active.id)
+      }}
     >
       {!!task?.linkedCheckouts?.length && (
         <ChoicePicker
@@ -116,64 +410,111 @@ export function TerminalPane({
           ))}
         </ChoicePicker>
       )}
-      <header className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
-        {groups.map((tab, index) => {
-          const session = sessions.find((session) => session.id === tab.sessions[0])!
-          return (
-            <div key={tab.id} className="flex shrink-0 items-center rounded">
-              <Button
-                size="sm"
-                variant="ghost"
-                className={cn('h-6 px-2 text-[0.625rem]', tab.id === group?.id && 'bg-accent')}
-                onClick={() => setSelected(session.id)}
+      <header
+        aria-label={scopedSession ? 'Terminal controls' : 'Terminal tabs and controls'}
+        className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2"
+      >
+        {!scopedSession &&
+          groups.map((tab, index) => {
+            const session = sessions.find((session) => session.id === tab.sessions[0])!
+            return (
+              <div
+                key={tab.id}
+                data-terminal-tab
+                className={cn(
+                  'flex shrink-0 items-center rounded-md',
+                  tab.id === group?.id && 'studio-selected-surface',
+                )}
               >
-                {tab.sessions.length > 1
-                  ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
-                  : session.title}
-                {task?.linkedCheckouts?.length ? ` · ${checkoutLabel(session)}` : ''}
-                {session.exited ? ' · exited' : ''}
-              </Button>
-              <IconButton
-                label={`Close terminal tab ${index + 1}`}
-                className="size-6"
-                disabled={!connected || busy}
-                onClick={() =>
-                  act(async () => {
-                    for (const id of tab.sessions)
-                      await request('/api/terminals/close', { id }, responses.ok)
-                  })
-                }
-              >
-                <X size={12} />
-              </IconButton>
-            </div>
-          )
-        })}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[0.6875rem]"
+                  onClick={() => focusPane(session.id)}
+                >
+                  {tab.sessions.length > 1
+                    ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
+                    : session.title}
+                  {task?.linkedCheckouts?.length ? ` · ${checkoutLabel(session)}` : ''}
+                  {session.exited ? ' · exited' : ''}
+                </Button>
+                <IconButton
+                  label={`Close terminal tab ${index + 1}`}
+                  className="size-6"
+                  disabled={!connected || busy}
+                  onClick={() => askClose(tab.sessions)}
+                >
+                  <X size={12} />
+                </IconButton>
+              </div>
+            )
+          })}
+        {scopedSession && group && (
+          <IconButton
+            label="Close terminal session"
+            className="size-6"
+            disabled={!connected || busy}
+            onClick={() => askClose(group.sessions)}
+          >
+            <X size={12} />
+          </IconButton>
+        )}
         <IconButton
           label="New terminal session"
           className="size-6"
-          disabled={!connected || !shellReady || busy}
+          disabled={!connected || !shellReady || busy || (!!scopedSession && !onNewSession)}
           onClick={() => create()}
         >
           <Plus size={12} />
         </IconButton>
         <span className="flex-1" />
         <IconButton
-          label="Split terminal left/right"
+          label={`Split terminal left/right (${mac ? 'Cmd+D' : 'Ctrl+Shift+D'}, max 4 panes)`}
           className="size-6"
-          disabled={!connected || !active || busy || !shellReady}
+          disabled={!connected || !active || busy || !shellReady || splitLimit}
           onClick={() => create('columns')}
         >
           <Columns2 size={12} />
         </IconButton>
         <IconButton
-          label="Split terminal top/bottom"
+          label={`Split terminal top/bottom (${mac ? 'Cmd+Shift+D' : 'Ctrl+Shift+E'}, max 4 panes)`}
           className="size-6"
-          disabled={!connected || !active || busy || !shellReady}
+          disabled={!connected || !active || busy || !shellReady || splitLimit}
           onClick={() => create('rows')}
         >
           <Rows2 size={12} />
         </IconButton>
+        {group && group.sessions.length > 1 && (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[0.625rem]"
+              onClick={() => {
+                const next = nextTerminalPane(group.sessions, active?.id ?? '', 1)
+                if (next) focusPane(next)
+              }}
+            >
+              Next pane
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[0.625rem]"
+              onClick={() =>
+                setGroups((previous) =>
+                  previous.map((item) =>
+                    item.id === group.id
+                      ? { ...item, layout: layout === 'rows' ? 'columns' : 'rows' }
+                      : item,
+                  ),
+                )
+              }
+            >
+              {layout === 'rows' ? 'Side by side' : 'Stack panes'}
+            </Button>
+          </>
+        )}
         <IconButton label="Hide terminal pane" className="size-6" onClick={onClose}>
           <ChevronDown size={12} />
         </IconButton>
@@ -185,40 +526,107 @@ export function TerminalPane({
             layout === 'columns' ? 'flex-row' : 'flex-col',
           )}
         >
-          {sessions.map((session) => (
-            <div
-              key={session.id}
-              className={cn(
-                'min-h-0 min-w-0 flex-1 flex flex-col',
-                !group?.sessions.includes(session.id) && 'hidden',
-                group && group.sessions.length > 1 && 'border border-white/10',
-              )}
-            >
-              {group && group.sessions.length > 1 && (
-                <div className="flex h-7 shrink-0 items-center justify-between px-2 text-[0.625rem] text-muted-foreground">
-                  <span title={checkoutLabel(session)}>
-                    {session.title} · {checkoutLabel(session)}
-                  </span>
-                  <IconButton
-                    label={`Close ${session.title} pane`}
-                    className="size-6"
-                    disabled={!connected || busy}
-                    onClick={() =>
-                      act(() => request('/api/terminals/close', { id: session.id }, responses.ok))
-                    }
+          {groups
+            .flatMap((group) => group.sessions)
+            .map((id) => sessions.find((session) => session.id === id)!)
+            .map((session) => (
+              <div
+                key={session.id}
+                data-terminal-session={session.id}
+                data-active-pane={session.id === active?.id}
+                onPointerDown={() => setSelected(session.id)}
+                onFocusCapture={() => setSelected(session.id)}
+                className={cn(
+                  'min-h-0 min-w-0 flex-1 flex flex-col',
+                  !group?.sessions.includes(session.id) && 'hidden',
+                  group && group.sessions.length > 1 && 'border',
+                  group &&
+                    group.sessions.length > 1 &&
+                    (session.id === active?.id ? 'border-primary/70' : 'border-border'),
+                )}
+              >
+                {group && group.sessions.length > 1 && (
+                  <div className="flex h-7 shrink-0 items-center justify-between px-2 text-[0.625rem] text-muted-foreground">
+                    <span title={checkoutLabel(session)}>
+                      {session.title} · {checkoutLabel(session)}
+                    </span>
+                    <IconButton
+                      label={`Close ${session.title} pane`}
+                      className="size-6"
+                      disabled={!connected || busy}
+                      onClick={() => closePane(session.id)}
+                    >
+                      <X size={12} />
+                    </IconButton>
+                  </div>
+                )}
+                {(session.recoveryError || session.recoverySetup) && (
+                  <p
+                    role="status"
+                    className="shrink-0 border-b px-3 py-2 text-xs text-muted-foreground"
                   >
-                    <X size={12} />
-                  </IconButton>
-                </div>
-              )}
-              <TerminalSession
-                id={session.id}
-                readOnly={!!session.exited}
-                active={visible && !!group?.sessions.includes(session.id)}
-                onAddSelection={onAddSelection ? (text) => onAddSelection(taskId, text) : undefined}
-              />
-            </div>
-          ))}
+                    {session.recoveryError ?? session.recoverySetup}
+                  </p>
+                )}
+                {session.dormant && !session.exited ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+                    <p>
+                      This terminal is sleeping
+                      {session.recoveryProgram ? ` · ${session.recoveryProgram}` : ''}.
+                    </p>
+                    <Button
+                      size="sm"
+                      disabled={!connected || busy}
+                      onClick={() =>
+                        act(() =>
+                          request(
+                            '/api/terminals/update',
+                            { id: session.id, settled: false },
+                            responses.terminal,
+                          ),
+                        )
+                      }
+                    >
+                      Restore session
+                    </Button>
+                  </div>
+                ) : (
+                  <TerminalSession
+                    id={session.id}
+                    focusRequest={focusRequest.id === session.id ? focusRequest.count : 0}
+                    onOpenFile={
+                      onOpenFile
+                        ? async (file) => {
+                            const generation = currentScope.current.generation
+                            const result = await request(
+                              '/api/terminals/file',
+                              { id: session.id, path: file.path },
+                              mutableStruct({
+                                taskId: Schema.String,
+                                path: Schema.String,
+                                checkoutId: Schema.optional(Schema.String),
+                              }),
+                            )
+                            if (generation !== currentScope.current.generation) return
+                            if (result.taskId !== taskId)
+                              throw new Error('This terminal belongs to another thread')
+                            onOpenFile({
+                              ...file,
+                              path: result.path,
+                              ...(result.checkoutId ? { checkoutId: result.checkoutId } : {}),
+                            })
+                          }
+                        : undefined
+                    }
+                    readOnly={!!session.exited}
+                    active={visible && !!group?.sessions.includes(session.id)}
+                    onAddSelection={
+                      onAddSelection ? (text) => onAddSelection(taskId, text) : undefined
+                    }
+                  />
+                )}
+              </div>
+            ))}
         </div>
       )}
       {!sessions.length && (
@@ -226,7 +634,9 @@ export function TerminalPane({
           <p>
             {connected
               ? shellReady
-                ? 'No terminal open. Open a shell in this task’s checkout.'
+                ? taskId === STUDIO_TERMINAL_SCOPE
+                  ? 'No terminal open. Open a shell on this computer.'
+                  : 'No terminal open. Open a shell in this thread’s checkout.'
                 : 'Send the first message to create this worktree before opening a shell.'
               : 'Connect a runtime to use terminals.'}
           </p>
@@ -240,6 +650,25 @@ export function TerminalPane({
           </Button>
         </div>
       )}
+      {closing &&
+        closing.generation === currentScope.current.generation &&
+        visible &&
+        connected && (
+          <TerminalCloseDialog
+            labels={closing.labels}
+            onCancel={cancelClose}
+            onConfirm={confirmClose}
+            onRestoreFocus={() => {
+              if (
+                closing.generation === currentScope.current.generation &&
+                visible &&
+                connected &&
+                closeFocus.current
+              )
+                focusPane(closeFocus.current)
+            }}
+          />
+        )}
       {error && (
         <p role="alert" className="break-words p-2 text-xs text-destructive">
           {error}

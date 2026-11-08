@@ -1,5 +1,6 @@
+import { Disclosure } from './disclosure'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useId } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import {
   Bot,
   Check,
@@ -13,6 +14,8 @@ import {
   Layers,
   SlidersHorizontal,
   WandSparkles,
+  Zap,
+  X,
 } from 'lucide-react'
 import {
   providers,
@@ -31,7 +34,13 @@ import { cn } from './lib/utils'
 import { HarnessIcon } from './harness-icon'
 import { useHarnessCatalog } from './harness-catalog'
 import { useHarnessAvailability } from './use-harness-availability'
-import { harnessChoiceId, acpHarnessChoiceId, isNamedModelId } from '@dovo/protocol'
+import {
+  harnessChoiceId,
+  acpHarnessChoiceId,
+  isNamedModelId,
+  modelCatalogChoices,
+  modelDisplayName,
+} from '@dovo/protocol'
 import { modelPreferenceKey, runtimeDefaultsSchema, type RuntimeDefaults } from '@dovo/protocol'
 const modelModeIcons = { inherit: Layers, auto: SlidersHorizontal, smart: WandSparkles }
 const favoritesKey = 'dovo:model-favorites'
@@ -59,11 +68,17 @@ export function ComposerModelPicker({
   onSelectMode,
   automaticModesEnabled = false,
   modelsOnly = false,
-  joined = false,
+  settings,
+  footer,
+  effortLabel,
+  fast = false,
 }: {
+  settings?: ReactNode
+  footer?: ReactNode
+  effortLabel?: string
+  fast?: boolean
   automaticModesEnabled?: boolean
   modelsOnly?: boolean
-  joined?: boolean
   modelSelection?: 'inherit' | 'auto' | 'smart'
   onSelectMode?: (mode: 'inherit' | 'auto' | 'smart') => Promise<boolean>
   agents: readonly Agent[]
@@ -82,6 +97,16 @@ export function ComposerModelPicker({
   const { snapshot, request } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [boundary, setBoundary] = useApplicationState<{
+    left: number
+    right: number
+    width: number
+  } | null>(null)
+  const settingsRef = useRef<HTMLDivElement>(null)
+  const [choosing, setChoosing] = useApplicationState(false)
+  const choosingRef = useRef(false)
   const availability = useHarnessAvailability(repositoryId, open, agents, true)
   const [provider, setProvider] = useApplicationState(value.provider)
   const [installationId, setInstallationId] = useApplicationState(value.acpInstallationId)
@@ -193,6 +218,10 @@ export function ComposerModelPicker({
     refresh: refreshCatalog,
   } = useHarnessCatalog(selectedHarness, open && mode === 'models' && harnessAvailable)
   const selectedCatalog = useHarnessCatalog(value, true)
+  useEffect(() => {
+    setProvider(value.provider)
+    setInstallationId(value.acpInstallationId)
+  }, [value.provider, value.acpInstallationId])
   const listId = useId()
   const items: PickerItem[] = !open
     ? []
@@ -232,8 +261,10 @@ export function ComposerModelPicker({
                       installation ? `acp:${installation.id}:`.length : provider.length + 1,
                     ),
                     name:
-                      key.slice(
-                        installation ? `acp:${installation.id}:`.length : provider.length + 1,
+                      modelDisplayName(
+                        key.slice(
+                          installation ? `acp:${installation.id}:`.length : provider.length + 1,
+                        ),
                       ) || 'Provider default',
                     provider,
                     installationId: installation?.id,
@@ -243,7 +274,7 @@ export function ComposerModelPicker({
               : []
           })
         : [
-            ...(catalog?.models ?? []).map((model) => ({
+            ...modelCatalogChoices(catalog?.models ?? []).map((model) => ({
               ...model,
               provider: activeProvider,
               installationId: selectedHarness.acpInstallationId,
@@ -268,7 +299,10 @@ export function ComposerModelPicker({
       (!lockedProvider || item.provider === lockedProvider) &&
       (lockedInstallationId === undefined ||
         (item.installationId ?? item.agent?.acpInstallationId ?? '') === lockedInstallationId) &&
-      (legacy || !item.hidden || query.trim()) &&
+      (legacy ||
+        !item.hidden ||
+        query.trim() ||
+        (item.provider === value.provider && item.id === value.model)) &&
       `${item.name} ${item.id} ${item.agent?.model ?? ''} ${providers[item.provider].short}`
         .toLowerCase()
         .includes(query.toLowerCase().trim()),
@@ -276,7 +310,7 @@ export function ComposerModelPicker({
   filtered.sort(
     (a, b) => Number(favorites.includes(itemKey(b))) - Number(favorites.includes(itemKey(a))),
   )
-  const choose = async (item: (typeof items)[number]) => {
+  const applyChoice = async (item: (typeof items)[number]) => {
     if (
       disabled ||
       !itemAvailable(item) ||
@@ -287,7 +321,7 @@ export function ComposerModelPicker({
     )
       return
     if (item.agent) {
-      if (await onSelectAgent(item.agent.id)) setOpen(false)
+      await onSelectAgent(item.agent.id)
       return
     }
     const sameHarness =
@@ -309,13 +343,41 @@ export function ComposerModelPicker({
         item.id === value.model && sameHarness ? value.cyberAccessProgram : undefined,
       serviceTier: item.id === value.model && sameHarness ? value.serviceTier : undefined,
     })
-    if (saved) setOpen(false)
+    if (saved && settings) {
+      requestAnimationFrame(() =>
+        settingsRef.current
+          ?.querySelector<HTMLButtonElement>(
+            'button[tabindex="0"]:not(:disabled), button[data-choice-picker]:not(:disabled)',
+          )
+          ?.focus(),
+      )
+    }
+  }
+  const choose = async (item: PickerItem) => {
+    if (disabled || choosingRef.current) return
+    choosingRef.current = true
+    setChoosing(true)
+    try {
+      await applyChoice(item)
+    } finally {
+      choosingRef.current = false
+      setChoosing(false)
+    }
   }
   return (
     <Popover.Root
-      open={open && !disabled}
+      open={open}
       onOpenChange={(next) => {
         setOpen(next)
+        if (next) {
+          const pane = triggerRef.current?.closest<HTMLElement>('[data-conversation-boundary]')
+          const bounds = pane?.getBoundingClientRect()
+          setBoundary(
+            bounds && bounds.width >= 360
+              ? { left: bounds.left, right: bounds.right, width: bounds.width }
+              : null,
+          )
+        }
         setProvider(value.provider)
         setInstallationId(value.acpInstallationId)
         setMode(selectedAgent ? 'agents' : 'models')
@@ -329,10 +391,13 @@ export function ComposerModelPicker({
           variant="ghost"
           disabled={disabled}
           aria-label="Choose agent and model"
-          className={cn(
-            'h-8 min-w-0 max-w-64 gap-1.5 rounded-lg px-2 text-xs font-normal',
-            joined && 'max-w-48 rounded-r-none pr-1',
-          )}
+          ref={triggerRef}
+          title={
+            modelSelection
+              ? { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[modelSelection]
+              : undefined
+          }
+          className="h-8 min-w-0 max-w-64 gap-1.5 rounded-lg px-2 text-xs font-normal"
         >
           {ModeIcon ? (
             <ModeIcon className="size-4 shrink-0" aria-hidden="true" />
@@ -355,419 +420,567 @@ export function ComposerModelPicker({
               </>
             )}
           </span>
-          {!joined && <ChevronDown className="size-3 text-muted-foreground" />}
+          {settings && (
+            <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+              {fast && <Zap className="size-3 fill-current" aria-hidden="true" />}
+              {effortLabel
+                ? ({
+                    auto: 'Auto',
+                    low: 'Low',
+                    medium: 'Medium',
+                    high: 'High',
+                    xhigh: 'Extra High',
+                    max: 'Max',
+                    ultra: 'Ultra',
+                    minimal: 'Minimal',
+                    none: 'None',
+                  }[effortLabel] ?? effortLabel)
+                : 'Default'}
+            </span>
+          )}
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          side={joined ? 'bottom' : 'top'}
+          side="top"
           align="start"
           sideOffset={8}
-          collisionPadding={12}
-          className="z-50 flex h-[min(27rem,var(--radix-popover-content-available-height))] w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-2xl"
+          collisionPadding={{
+            top: 12,
+            bottom: 12,
+            left: boundary ? boundary.left + 12 : 12,
+            right: boundary ? window.innerWidth - boundary.right + 12 : 12,
+          }}
+          style={{ maxWidth: boundary ? boundary.width - 24 : undefined }}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            searchRef.current?.focus()
+          }}
+          className="studio-menu-surface z-50 flex max-h-[min(38rem,var(--radix-popover-content-available-height))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl"
+          data-model-picker=""
           aria-label="Choose agent and model"
         >
-          <div
-            className="flex w-28 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r p-1.5"
-            aria-label="Harnesses"
-          >
-            {onSelectMode &&
-              (
-                ['inherit', ...(automaticModesEnabled ? (['auto', 'smart'] as const) : [])] as const
-              ).map((mode) => {
-                const Icon = modelModeIcons[mode]
-                return (
-                  <Button
-                    key={mode}
-                    type="button"
-                    variant="ghost"
-                    className={cn(
-                      'w-full justify-start gap-2 px-2 text-xs',
-                      modelSelection === mode &&
-                        'bg-accent text-primary ring-1 ring-inset ring-primary/50',
-                    )}
-                    aria-pressed={modelSelection === mode}
-                    onClick={async () => {
-                      if (await onSelectMode(mode)) setOpen(false)
-                    }}
-                  >
-                    <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                    {{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
-                  </Button>
-                )
-              })}
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Favorite models"
-              aria-pressed={mode === 'favorites'}
-              onClick={() => {
-                setMode('favorites')
-                setQuery('')
-                setActive(0)
-              }}
-              className={cn(
-                'w-full justify-start gap-2 px-2 text-xs',
-                mode === 'favorites' && 'bg-accent',
-              )}
-            >
-              <Star className="size-3.5 shrink-0" aria-hidden="true" />
-              Favorites
-            </Button>
-            {!modelsOnly && (
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Custom configurations"
-                title="Custom configurations"
-                aria-pressed={mode === 'agents'}
-                className={cn(
-                  'w-full justify-start gap-2 px-2 text-xs',
-                  mode === 'agents' && 'bg-accent',
-                )}
-                onClick={() => {
-                  setMode('agents')
-                  setQuery('')
-                  setActive(0)
-                }}
-              >
-                <Bot className="size-3.5 shrink-0" aria-hidden="true" />
-                Custom
-              </Button>
-            )}
-            <div className="my-1 w-full border-t" />
-            {availableProviders.map((p) => (
-              <Button
-                key={p}
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label={`${providers[p].short} models`}
-                aria-pressed={mode === 'models' && p === activeProvider && !activeInstallationId}
-                title={`${providers[p].short} · available on this computer`}
-                className={cn(
-                  'h-9 w-full justify-start gap-2 px-2',
-                  mode === 'models' &&
-                    p === activeProvider &&
-                    !activeInstallationId &&
-                    (modelSelection
-                      ? 'bg-accent'
-                      : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
-                )}
-                onClick={() => {
-                  setProvider(p)
-                  setInstallationId(undefined)
-                  setMode('models')
-                  setActive(0)
-                  setQuery('')
-                }}
-              >
-                <HarnessIcon provider={p} className="size-4" />
-                <span className="text-xs">{providers[p].short}</span>
-              </Button>
-            ))}
-            {!availability.loading &&
-              !availability.error &&
-              signInProviders.map((p) => (
-                <Button
-                  key={p}
-                  type="button"
-                  variant="ghost"
-                  disabled
-                  aria-label={`${providers[p].short} requires sign-in`}
-                  title={`Install and authenticate ${providers[p].short} on this computer, then refresh providers`}
-                  className="h-auto w-full justify-start gap-2 px-2 py-1.5"
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+            <div className="flex shrink-0 flex-col">
+              <div className="grid gap-2 border-b px-3 py-2.5">
+                <div
+                  role="group"
+                  aria-label="Harnesses"
+                  className="flex flex-wrap items-center gap-1"
                 >
-                  <HarnessIcon provider={p} className="size-4 shrink-0" />
-                  <span className="text-left text-xs">
-                    {providers[p].short}
-                    <span className="block text-[0.625rem]">Sign in</span>
+                  <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
+                    Harness
                   </span>
-                </Button>
-              ))}
-            {availableInstallations.length > 0 && <div className="my-1 w-full border-t" />}
-            {availableInstallations.map((installation) => (
-              <Button
-                key={installation.id}
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label={`${installation.name} models`}
-                aria-pressed={
-                  mode === 'models' &&
-                  activeProvider === 'acp' &&
-                  activeInstallationId === installation.id
-                }
-                title={installation.name}
-                className={cn(
-                  'size-9',
-                  mode === 'models' &&
-                    activeProvider === 'acp' &&
-                    activeInstallationId === installation.id &&
-                    (modelSelection
-                      ? 'bg-accent'
-                      : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
+                  {availableProviders.map((p) => (
+                    <Button
+                      key={p}
+                      type="button"
+                      variant="ghost"
+                      aria-label={`${providers[p].short} models`}
+                      aria-pressed={
+                        mode === 'models' && p === activeProvider && !activeInstallationId
+                      }
+                      title={`${providers[p].short} · available on this computer`}
+                      className={cn(
+                        'h-7 gap-1.5 px-2 text-xs',
+                        mode === 'models' &&
+                          p === activeProvider &&
+                          !activeInstallationId &&
+                          (modelSelection ? 'bg-accent' : 'bg-accent text-foreground'),
+                      )}
+                      onClick={() => {
+                        setProvider(p)
+                        setInstallationId(undefined)
+                        setMode('models')
+                        setActive(0)
+                        setQuery('')
+                      }}
+                    >
+                      <HarnessIcon provider={p} className="size-4" />
+                      <span className="truncate">{providers[p].short}</span>
+                    </Button>
+                  ))}
+                  {!availability.loading &&
+                    !availability.error &&
+                    signInProviders.map((p) => (
+                      <Button
+                        key={p}
+                        type="button"
+                        variant="ghost"
+                        disabled
+                        aria-label={`${providers[p].short} requires sign-in`}
+                        title={`Install and authenticate ${providers[p].short} on this computer, then refresh providers`}
+                        className="h-7 gap-1.5 px-2 text-xs"
+                      >
+                        <HarnessIcon provider={p} className="size-4 shrink-0" />
+                        <span className="truncate">
+                          {providers[p].short}
+                          <span className="block text-[0.625rem]">Sign in</span>
+                        </span>
+                      </Button>
+                    ))}
+
+                  {availableInstallations.map((installation) => (
+                    <Button
+                      key={installation.id}
+                      type="button"
+                      variant="ghost"
+                      aria-label={`${installation.name} models`}
+                      aria-pressed={
+                        mode === 'models' &&
+                        activeProvider === 'acp' &&
+                        activeInstallationId === installation.id
+                      }
+                      title={installation.name}
+                      className={cn(
+                        'h-7 min-w-0 gap-1.5 px-2 text-xs',
+                        mode === 'models' &&
+                          activeProvider === 'acp' &&
+                          activeInstallationId === installation.id &&
+                          (modelSelection ? 'bg-accent' : 'bg-accent text-foreground'),
+                      )}
+                      onClick={() => {
+                        setProvider('acp')
+                        setInstallationId(installation.id)
+                        setMode('models')
+                        setActive(0)
+                        setQuery('')
+                      }}
+                    >
+                      <span className="max-w-36 truncate">{installation.name}</span>
+                    </Button>
+                  ))}
+                </div>
+                {onSelectMode && (
+                  <div
+                    role="group"
+                    aria-label="Automatic model selection"
+                    className="flex flex-wrap items-center gap-1"
+                  >
+                    <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
+                      Selection
+                    </span>
+                    {onSelectMode &&
+                      (
+                        [
+                          'inherit',
+                          ...(automaticModesEnabled ? (['auto', 'smart'] as const) : []),
+                        ] as const
+                      ).map((mode) => {
+                        const Icon = modelModeIcons[mode]
+                        return (
+                          <Button
+                            key={mode}
+                            aria-label={
+                              { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]
+                            }
+                            title={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                            disabled={disabled || choosing}
+                            type="button"
+                            variant="ghost"
+                            className={cn(
+                              'h-7 gap-1.5 px-2 text-xs',
+                              modelSelection === mode && 'bg-accent text-foreground',
+                            )}
+                            aria-pressed={modelSelection === mode}
+                            onClick={async () => {
+                              await onSelectMode(mode)
+                            }}
+                          >
+                            <Icon className="size-4 shrink-0" aria-hidden="true" />
+                            <span className="truncate">
+                              {{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                            </span>
+                          </Button>
+                        )
+                      })}
+                  </div>
                 )}
-                onClick={() => {
-                  setProvider('acp')
-                  setInstallationId(installation.id)
-                  setMode('models')
-                  setActive(0)
-                  setQuery('')
-                }}
-              >
-                <span className="text-[10px] font-semibold uppercase">
-                  {installation.name.slice(0, 2)}
-                </span>
-              </Button>
-            ))}
-            {!modelsOnly && (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label="Agent configuration"
-                title="Agent configuration"
-                className="mt-auto size-9"
-                onClick={() => {
-                  setOpen(false)
-                  onConfigure()
-                }}
-              >
-                <Settings2 className="size-4" />
-              </Button>
-            )}
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col p-2">
-            <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>Available on this computer</span>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-7 shrink-0"
-                aria-label="Refresh providers and models"
-                disabled={availability.loading || loading}
-                onClick={() => {
-                  availability.refresh()
-                  refreshCatalog()
-                }}
-              >
-                <RefreshCw
-                  className={cn('size-3.5', (availability.loading || loading) && 'animate-spin')}
-                />
-              </Button>
-            </div>
-            <div className="relative mb-2 border-b pb-2">
-              <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
-              <Input
-                autoFocus
-                aria-label={mode === 'agents' ? 'Search configurations' : 'Search models'}
-                role="combobox"
-                aria-expanded="true"
-                aria-controls={listId}
-                aria-activedescendant={
-                  filtered.length ? `${listId}-${Math.min(active, filtered.length - 1)}` : undefined
-                }
-                placeholder={mode === 'agents' ? 'Search configurations…' : 'Search models…'}
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value)
-                  setActive(0)
-                }}
-                className="h-9 rounded-none border-0 bg-transparent pl-8 shadow-none focus-visible:ring-0"
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing || event.keyCode === 229) return
-                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                    event.preventDefault()
-                    const next =
-                      (active + (event.key === 'ArrowDown' ? 1 : -1) + filtered.length) %
-                      Math.max(filtered.length, 1)
-                    setActive(next)
-                    document.getElementById(`${listId}-${next}`)?.scrollIntoView({
-                      block: 'nearest',
-                    })
-                  } else if (event.key === 'Enter' && filtered[active]) {
-                    event.preventDefault()
-                    void choose(filtered[active])
-                  }
-                }}
-              />
-            </div>
-            {selectedAgent &&
-              harnessAvailable &&
-              mode !== 'agents' &&
-              activeProvider === selectedAgent.provider && (
-                <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-accent/30 px-2 py-1.5">
-                  <span className="min-w-0 truncate text-xs text-muted-foreground">
-                    For {selectedAgent.name}
-                  </span>
+              </div>
+              <div className="flex min-w-0 shrink-0 flex-col px-3 py-2">
+                <div
+                  role="group"
+                  aria-label="Model selection"
+                  className="mb-2 flex w-fit max-w-full items-center gap-0.5 rounded-lg bg-muted/50 p-0.5"
+                >
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    className="h-7 shrink-0 px-2 text-xs"
-                    disabled={disabled}
-                    onClick={async () => {
-                      if (await onUseHarness(selectedHarness)) setOpen(false)
+                    aria-label="All models"
+                    aria-pressed={mode === 'models'}
+                    className={cn(
+                      'h-7 gap-1.5 px-2 text-xs',
+                      mode === 'models' && 'bg-background shadow-sm',
+                    )}
+                    onClick={() => {
+                      setMode('models')
+                      setQuery('')
+                      setActive(0)
                     }}
                   >
-                    Use{' '}
-                    {acpHarnessName(selectedHarness, installations) ??
-                      providers[activeProvider].short}{' '}
-                    directly
+                    Models
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    title="Favorites"
+                    aria-label="Favorite models"
+                    aria-pressed={mode === 'favorites'}
+                    onClick={() => {
+                      setMode('favorites')
+                      setQuery('')
+                      setActive(0)
+                    }}
+                    className={cn(
+                      'h-7 gap-1.5 px-2 text-xs',
+                      mode === 'favorites' && 'bg-background shadow-sm',
+                    )}
+                  >
+                    <Star className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">Favorites</span>
+                  </Button>
+                  {!modelsOnly && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label="Custom configurations"
+                      title="Custom configurations"
+                      aria-pressed={mode === 'agents'}
+                      className={cn(
+                        'h-7 gap-1.5 px-2 text-xs',
+                        mode === 'agents' && 'bg-background shadow-sm',
+                      )}
+                      onClick={() => {
+                        setMode('agents')
+                        setQuery('')
+                        setActive(0)
+                      }}
+                    >
+                      <Bot className="size-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">Custom agents</span>
+                    </Button>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2 border-b pb-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
+                    <Input
+                      ref={searchRef}
+                      aria-label={mode === 'agents' ? 'Search configurations' : 'Search models'}
+                      role="combobox"
+                      aria-expanded="true"
+                      aria-controls={listId}
+                      aria-activedescendant={
+                        filtered.length
+                          ? `${listId}-${Math.min(active, filtered.length - 1)}`
+                          : undefined
+                      }
+                      placeholder={mode === 'agents' ? 'Search configurations…' : 'Search models…'}
+                      value={query}
+                      onChange={(event) => {
+                        setQuery(event.target.value)
+                        setActive(0)
+                      }}
+                      className="h-9 rounded-lg bg-transparent pl-8 shadow-none focus-visible:border-ring focus-visible:outline-1! focus-visible:outline-offset-0! focus-visible:ring-0"
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                        if (
+                          event.key === 'ArrowRight' &&
+                          !event.altKey &&
+                          !event.ctrlKey &&
+                          !event.metaKey &&
+                          event.currentTarget.selectionStart === query.length &&
+                          settings
+                        ) {
+                          const target = settingsRef.current?.querySelector<HTMLButtonElement>(
+                            'button[tabindex="0"]:not(:disabled), button[data-choice-picker]:not(:disabled)',
+                          )
+                          if (target) {
+                            event.preventDefault()
+                            target.focus()
+                          }
+                        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                          event.preventDefault()
+                          const next =
+                            (active + (event.key === 'ArrowDown' ? 1 : -1) + filtered.length) %
+                            Math.max(filtered.length, 1)
+                          setActive(next)
+                          document.getElementById(`${listId}-${next}`)?.scrollIntoView({
+                            block: 'nearest',
+                          })
+                        } else if (event.key === 'Enter' && filtered[active]) {
+                          event.preventDefault()
+                          void choose(filtered[active])
+                        }
+                      }}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="size-7 shrink-0"
+                    aria-label="Refresh providers and models"
+                    disabled={availability.loading || loading}
+                    onClick={() => {
+                      availability.refresh()
+                      refreshCatalog()
+                    }}
+                  >
+                    <RefreshCw
+                      className={cn(
+                        'size-3.5',
+                        (availability.loading || loading) && 'animate-spin',
+                      )}
+                    />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0"
+                    aria-label="Close model picker"
+                    onClick={() => setOpen(false)}
+                  >
+                    <X className="size-3.5" />
                   </Button>
                 </div>
-              )}
-            {mode === 'models' && (
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-pressed={manageModels}
-                onClick={() => setManageModels(!manageModels)}
-              >
-                {manageModels ? 'Done managing models' : 'Manage model visibility'}
-              </Button>
-            )}
-            <div
-              id={listId}
-              role="listbox"
-              aria-label={mode === 'agents' ? 'Configurations' : 'Models'}
-              className="min-h-0 flex-1 overflow-y-auto"
-            >
-              {filtered.map((item, index) => {
-                const key = itemKey(item)
-                const favorite = favorites.includes(key)
-                const selected = item.agent
-                  ? item.agent.id === selectedAgent?.id
-                  : item.provider === value.provider &&
-                    item.id === value.model &&
-                    (item.provider !== 'acp' || item.installationId === value.acpInstallationId)
-                return (
-                  <div
-                    key={key}
-                    className={cn(
-                      'group/model flex items-center rounded-lg',
-                      selected ? 'bg-accent' : index === active && 'bg-accent/40',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={selected}
-                      id={`${listId}-${index}`}
-                      data-value={item.id}
-                      className="min-w-0 flex-1 px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onMouseEnter={() => setActive(index)}
-                      onClick={() => void choose(item)}
-                    >
-                      <span className="flex items-center gap-2 text-sm">
-                        {item.agent && (
-                          <AgentAvatar
-                            provider={item.provider}
-                            customIcon={item.agent.icon ?? 'bot'}
-                          />
-                        )}
-                        <span className="truncate">{item.name}</span>
-                        {selected && <Check className="size-3 shrink-0" />}
+                {selectedAgent &&
+                  harnessAvailable &&
+                  mode !== 'agents' &&
+                  activeProvider === selectedAgent.provider && (
+                    <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-accent/30 px-2 py-1.5">
+                      <span className="min-w-0 truncate text-xs text-muted-foreground">
+                        For {selectedAgent.name}
                       </span>
-                      {item.agent && (
-                        <span className="mt-1 block truncate text-xs text-muted-foreground">
-                          {providers[item.provider].short} · {item.agent.model || 'Default model'}
-                        </span>
-                      )}
-                    </button>
-                    {!item.agent && manageModels && (
-                      <button
+                      <Button
                         type="button"
-                        aria-label={`${preferences[key]?.disabled ? 'Enable' : 'Disable'} ${item.name}`}
-                        aria-pressed={!!preferences[key]?.disabled}
-                        className="mr-2 rounded p-1 text-muted-foreground"
-                        onClick={() =>
-                          void savePreference(key, { disabled: !preferences[key]?.disabled })
-                        }
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 shrink-0 px-2 text-xs"
+                        disabled={disabled}
+                        onClick={async () => {
+                          await onUseHarness(selectedHarness)
+                        }}
                       >
-                        {preferences[key]?.disabled ? (
-                          <EyeOff className="size-3.5" />
-                        ) : (
-                          <Eye className="size-3.5" />
-                        )}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${item.name}`}
-                      aria-pressed={favorite}
-                      className="mr-2 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => void savePreference(key, { favorite: !favorite })}
-                    >
-                      <Star className={cn('size-3.5', favorite && 'fill-current')} />
-                    </button>
-                  </div>
-                )
-              })}
-              {!filtered.length && (
-                <p className="p-6 text-center text-xs text-muted-foreground">
-                  {availability.loading
-                    ? 'Checking available providers…'
-                    : !availability.available.size
-                      ? 'No providers ready on this computer. Install and sign in to a provider, then refresh.'
-                      : mode === 'agents'
-                        ? agents.length
-                          ? 'No matching configurations.'
-                          : 'Create configurations in Settings → Agents.'
-                        : mode === 'favorites'
-                          ? 'Star models to keep them here.'
-                          : 'No models found.'}
-                </p>
-              )}
-              {mode === 'models' && catalog?.models.some((model) => model.hidden) && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="w-full justify-between text-xs"
-                  onClick={() => setLegacy(!legacy)}
+                        Use{' '}
+                        {acpHarnessName(selectedHarness, installations) ??
+                          providers[activeProvider].short}{' '}
+                        directly
+                      </Button>
+                    </div>
+                  )}
+                <div
+                  id={listId}
+                  role="listbox"
+                  aria-label={mode === 'agents' ? 'Configurations' : 'Models'}
+                  className="max-h-40 shrink-0 overflow-y-auto overscroll-contain py-1.5"
                 >
-                  Legacy models
-                  <ChevronDown className={cn('size-3', legacy && 'rotate-180')} />
-                </Button>
-              )}
+                  {filtered.map((item, index) => {
+                    const key = itemKey(item)
+                    const favorite = favorites.includes(key)
+                    const selected = item.agent
+                      ? item.agent.id === selectedAgent?.id
+                      : item.provider === value.provider &&
+                        item.id === value.model &&
+                        (item.provider !== 'acp' || item.installationId === value.acpInstallationId)
+                    return (
+                      <div
+                        key={key}
+                        className={cn(
+                          'group/model flex items-center rounded-md',
+                          selected ? 'bg-accent' : index === active && 'bg-accent/40',
+                        )}
+                      >
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          id={`${listId}-${index}`}
+                          data-value={item.id}
+                          disabled={disabled || choosing || !!preferences[key]?.disabled}
+                          className="min-w-0 flex-1 px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onMouseEnter={() => setActive(index)}
+                          onClick={() => void choose(item)}
+                        >
+                          <span className="flex items-center gap-2 text-[0.8125rem]">
+                            {item.agent && (
+                              <AgentAvatar
+                                provider={item.provider}
+                                customIcon={item.agent.icon ?? 'bot'}
+                              />
+                            )}
+                            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                            {selected && <Check className="size-3 shrink-0" />}
+                          </span>
+                          {item.agent && (
+                            <span className="mt-1 block truncate text-xs text-muted-foreground">
+                              {providers[item.provider].short} ·{' '}
+                              {modelDisplayName(item.agent.model) || 'Default model'}
+                            </span>
+                          )}
+                        </button>
+                        {!item.agent && manageModels && (
+                          <button
+                            type="button"
+                            aria-label={`${preferences[key]?.disabled ? 'Enable' : 'Disable'} ${item.name}`}
+                            aria-pressed={!!preferences[key]?.disabled}
+                            className="mr-2 rounded p-1 text-muted-foreground"
+                            onClick={() =>
+                              void savePreference(key, { disabled: !preferences[key]?.disabled })
+                            }
+                          >
+                            {preferences[key]?.disabled ? (
+                              <EyeOff className="size-3.5" />
+                            ) : (
+                              <Eye className="size-3.5" />
+                            )}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${item.name}`}
+                          aria-pressed={favorite}
+                          className={cn(
+                            'mr-2 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+                            !favorite &&
+                              'opacity-0 group-hover/model:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+                          )}
+                          onClick={() => void savePreference(key, { favorite: !favorite })}
+                        >
+                          <Star className={cn('size-3.5', favorite && 'fill-current')} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {!filtered.length && (
+                    <p className="p-6 text-center text-xs text-muted-foreground">
+                      {availability.loading
+                        ? 'Checking available providers…'
+                        : !availability.available.size
+                          ? 'No providers ready on this computer. Install and sign in to a provider, then refresh.'
+                          : mode === 'agents'
+                            ? agents.length
+                              ? 'No matching configurations.'
+                              : 'Create configurations in Settings → Agents.'
+                            : mode === 'favorites'
+                              ? 'Star models to keep them here.'
+                              : 'No models found.'}
+                    </p>
+                  )}
+                  {mode === 'models' && catalog?.models.some((model) => model.hidden) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="w-full justify-between text-xs"
+                      onClick={() => setLegacy(!legacy)}
+                    >
+                      Legacy models
+                      <ChevronDown className={cn('size-3', legacy && 'rotate-180')} />
+                    </Button>
+                  )}
+                </div>
+                {!availability.loading && !availability.error && signInProviders.length > 0 && (
+                  <Disclosure title="Provider setup" className="px-2 pt-1">
+                    <p>
+                      Install and sign in on this computer with{' '}
+                      {signInProviders.map((p, index) => (
+                        <span key={p}>
+                          {index > 0 && ' or '}
+                          <code>{p === 'claude' ? 'claude auth login' : 'codex login'}</code>
+                        </span>
+                      ))}
+                      , then refresh providers. For WSL, install and sign in inside the selected
+                      Linux distribution.
+                    </p>
+                  </Disclosure>
+                )}
+                {lockedProvider && (
+                  <p className="sr-only">
+                    This conversation uses {providers[lockedProvider].short}. Choose models or
+                    custom agents using the same provider.
+                  </p>
+                )}
+                {loading && mode === 'models' && (
+                  <p role="status" className="p-2 text-xs text-muted-foreground">
+                    Loading provider models…
+                  </p>
+                )}
+                {availability.error && (
+                  <p role="alert" className="p-2 text-xs text-destructive">
+                    Could not check available providers: {availability.error}
+                  </p>
+                )}
+                {((mode === 'models' && error) || storageError) && (
+                  <p role="alert" className="p-2 text-xs text-destructive">
+                    {(mode === 'models' && error) || storageError}
+                  </p>
+                )}
+                {(mode === 'models' || !modelsOnly) && (
+                  <div className="mt-auto flex shrink-0 flex-wrap items-center justify-between gap-1 border-t pt-2">
+                    {mode === 'models' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-2 text-xs"
+                        title="Manage model visibility"
+                        aria-label="Manage model visibility"
+                        aria-pressed={manageModels}
+                        onClick={() => setManageModels(!manageModels)}
+                      >
+                        <Eye className="size-3.5" />
+                        Model visibility
+                      </Button>
+                    )}
+                    {!modelsOnly && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label="Agent configuration"
+                        title="Agent configuration"
+                        disabled={disabled || choosing}
+                        className="ml-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                        onClick={() => {
+                          setOpen(false)
+                          onConfigure()
+                        }}
+                      >
+                        <Settings2 className="size-3.5" />
+                        Agent settings
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            {!availability.loading && !availability.error && signInProviders.length > 0 && (
-              <p className="px-2 pt-2 text-[0.6875rem] text-muted-foreground">
-                Install and sign in on this computer with{' '}
-                {signInProviders.map((p, index) => (
-                  <span key={p}>
-                    {index > 0 && ' or '}
-                    <code>{p === 'claude' ? 'claude auth login' : 'codex login'}</code>
-                  </span>
-                ))}
-                , then refresh providers. For WSL, install and sign in inside the selected Linux
-                distribution.
-              </p>
-            )}
-            {lockedProvider && (
-              <p className="px-2 pt-2 text-[0.6875rem] text-muted-foreground">
-                This conversation uses {providers[lockedProvider].short}. Choose models or custom
-                agents using the same provider.
-              </p>
-            )}
-            {loading && mode === 'models' && (
-              <p role="status" className="p-2 text-xs text-muted-foreground">
-                Loading provider models…
-              </p>
-            )}
-            {availability.error && (
-              <p role="alert" className="p-2 text-xs text-destructive">
-                Could not check available providers: {availability.error}
-              </p>
-            )}
-            {((mode === 'models' && error) || storageError) && (
-              <p role="alert" className="p-2 text-xs text-destructive">
-                {(mode === 'models' && error) || storageError}
-              </p>
+            {settings && (
+              <div
+                ref={settingsRef}
+                data-model-picker-effort=""
+                className="flex shrink-0 flex-col border-t"
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    searchRef.current?.focus()
+                  }
+                }}
+              >
+                {settings}
+              </div>
             )}
           </div>
+          {footer && (
+            <div
+              className="grid shrink-0 gap-2 border-t px-3 py-2"
+              role="group"
+              aria-label="Speed and access"
+            >
+              {footer}
+            </div>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

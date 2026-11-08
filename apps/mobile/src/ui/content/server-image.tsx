@@ -38,10 +38,21 @@ export function ServerImage({
     [preview, setPreview] = useState(false)
   const uri = loaded?.identity === identity ? loaded.uri : undefined,
     error = loaded?.identity === identity ? loaded.error : undefined
+  const [expandedImage, setExpandedImage] = useState<{
+    identity: string
+    uri?: string
+    error?: string
+  }>()
   useEffect(() => {
+    setPreview(false)
+    setExpandedImage(undefined)
+  }, [identity, revision])
+  useEffect(() => {
+    // A connection transition does not invalidate an image already in memory.
+    // Keep it visible offline and avoid downloading it again on every reconnect.
+    if (loaded?.identity === identity && loaded.uri) return
     let active = true
     setLoaded(undefined)
-    setPreview(false)
     if ('uri' in source) {
       setLoaded({ identity, uri: source.uri })
       return
@@ -78,13 +89,9 @@ export function ServerImage({
       void requests.stop()
     }
   }, [identity, revision, connected, readEffect])
-  const [expandedImage, setExpandedImage] = useState<{
-    identity: string
-    uri?: string
-    error?: string
-  }>()
   useEffect(() => {
     if (!preview || !connected || 'uri' in source) return
+    if (expandedImage?.identity === identity && expandedImage.uri) return
     let active = true
     const requests = clientTaskScope()
     setExpandedImage(undefined)

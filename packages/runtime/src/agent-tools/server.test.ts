@@ -170,7 +170,6 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
         name: 'Idle',
         prompt: 'Inspect',
         provider: 'claude',
-        taskId: 'another-thread',
       },
     })
     expect(idleSpawn.isError).toBe(true)
@@ -839,7 +838,7 @@ it('registers a project-scoped PR watch through MCP and immediately rejects old 
     )
     const watch = await client.callTool({
       name: 'pull_request_watch',
-      arguments: { action: 'watch', url, taskId: 'another-thread' },
+      arguments: { action: 'watch', url },
     })
     expect(watch.isError).not.toBe(true)
     expect(JSON.parse(decodeToolText(watch))).toMatchObject({
@@ -850,6 +849,18 @@ it('registers a project-scoped PR watch through MCP and immediately rejects old 
     expect(s.db.prepare('SELECT task_id FROM task_pull_watches').all()).toEqual([
       { task_id: task.id },
     ])
+    for (const extra of [{ runId: '7' }, { taskId: 'another-thread' }]) {
+      const rejected = await client.callTool({
+        name: 'pull_request_watch',
+        arguments: { action: 'stop', ...extra },
+      })
+      expect(rejected.isError).toBe(true)
+      expect(
+        s.db
+          .prepare("SELECT json_extract(value, '$.status') AS status FROM task_pull_watches")
+          .all(),
+      ).toEqual([{ status: 'watching' }])
+    }
     expect(
       (await client.callTool({ name: 'pull_request_watch', arguments: { action: 'watch' } }))
         .isError,
@@ -1028,16 +1039,26 @@ it.each(['ask', 'read-only'] as const)(
           })
           try {
             await client.connect(transport)
+            const arguments_ = {
+              key: 'review',
+              name: 'Review',
+              prompt: 'Review current files',
+              provider: 'claude',
+            }
+            for (const extra of [
+              { permissions: 'read-only' },
+              { taskId: 'forged-parent', parentRunId: 'forged-attempt' },
+            ]) {
+              const rejected = await client.callTool({
+                name: 'subagent_spawn',
+                arguments: { ...arguments_, ...extra },
+              })
+              expect(rejected.isError).toBe(true)
+              expect(s.store.get().tasks).toHaveLength(1)
+            }
             const spawned = await client.callTool({
               name: 'subagent_spawn',
-              arguments: {
-                key: 'review',
-                name: 'Review',
-                prompt: 'Review current files',
-                provider: 'claude',
-                taskId: 'forged-parent',
-                parentRunId: 'forged-attempt',
-              },
+              arguments: arguments_,
             })
             const { id } = decode(
               mutableStruct({ id: Schema.String }),
@@ -1204,7 +1225,7 @@ it('offers pipeline watches beside PR watches, scopes IDs and enforces runtime o
     )
     const result = await client.callTool({
       name: 'pipeline_watch',
-      arguments: { action: 'watch', runIds: ['7', '8'], taskId: 'another' },
+      arguments: { action: 'watch', runIds: ['7', '8'] },
     })
     expect(result.isError).not.toBe(true)
     expect(JSON.parse(decodeToolText(result))).toMatchObject({
@@ -1217,6 +1238,23 @@ it('offers pipeline watches beside PR watches, scopes IDs and enforces runtime o
     expect(s.db.prepare('SELECT DISTINCT task_id FROM task_pipeline_watches').all()).toEqual([
       { task_id: task.id },
     ])
+    for (const extra of [{ runId: '7' }, { taskId: 'another' }]) {
+      const rejected = await client.callTool({
+        name: 'pipeline_watch',
+        arguments: { action: 'stop', ...extra },
+      })
+      expect(rejected.isError).toBe(true)
+      expect(
+        s.db
+          .prepare(
+            "SELECT run_id, json_extract(value, '$.status') AS status FROM task_pipeline_watches ORDER BY run_id",
+          )
+          .all(),
+      ).toEqual([
+        { run_id: '7', status: 'watching' },
+        { run_id: '8', status: 'watching' },
+      ])
+    }
     s.store.update((workspace) => ({
       ...workspace,
       repositories: [
@@ -1456,9 +1494,8 @@ it('rejects subagent and watcher operations from a retired MCP turn', async () =
           name,
           arguments: {
             action,
-            runIds: ['7'],
+            ...(name === 'pipeline_watch' ? { runIds: ['7'] } : {}),
             url: 'https://github.com/team/project/pull/7',
-            parentRunId: s.store.task(parent.id).activeRunId,
           },
         })
         expect(result.isError).toBe(true)

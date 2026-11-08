@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { diagnosticMessage } from '@dovo/protocol'
 
 const key = 'dovo.lastCrash'
 export type CrashRecord = { at: string; message: string; fatal: boolean }
@@ -10,7 +11,7 @@ function recordCrash(error: unknown, fatal: boolean) {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
   const record: CrashRecord = {
     at: new Date().toISOString(),
-    message: message.slice(0, 600),
+    message: diagnosticMessage(message).slice(0, 600),
     fatal,
   }
   pending = pending
@@ -26,10 +27,18 @@ export async function readLastCrash(): Promise<CrashRecord | null> {
     if (
       parsed &&
       typeof parsed === 'object' &&
-      typeof (parsed as CrashRecord).at === 'string' &&
-      typeof (parsed as CrashRecord).message === 'string'
+      'at' in parsed &&
+      typeof parsed.at === 'string' &&
+      'message' in parsed &&
+      typeof parsed.message === 'string' &&
+      'fatal' in parsed &&
+      typeof parsed.fatal === 'boolean'
     )
-      return parsed as CrashRecord
+      return {
+        at: parsed.at,
+        message: diagnosticMessage(parsed.message).slice(0, 600),
+        fatal: parsed.fatal,
+      }
     return null
   } catch {
     return null

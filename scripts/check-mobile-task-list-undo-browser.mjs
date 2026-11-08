@@ -14,7 +14,7 @@ export const Alert={alert:(title,message)=>window.alerts.push({title,message})};
 export const AccessibilityInfo={announceForAccessibility:message=>window.announcements.push(message)};
 `
 const controls = `
-export const useTheme=()=>({colors:{text:'#fff',muted:'#aaa',accent:'#09f',success:'#0f0',warning:'#ff0',error:'#f00',elevated:'#222',border:'#555',surface:'#111'},styles:{muted:{},error:{}}});
+export const useTheme=()=>({colors:{text:'#fff',muted:'#aaa',accent:'#09f',success:'#0f0',done:'#a0f',warning:'#ff0',error:'#f00',elevated:'#222',border:'#555',surface:'#111'},styles:{muted:{},error:{}}});
 export const Icon=()=>null;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 `
@@ -23,7 +23,7 @@ const stubs = [
   { path: 'react-native-gesture-handler', contents: native },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=()=>null;export {Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Network,Icon as Save};`,
+    contents: `const Icon=()=>null;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Network,Icon as Save,Icon as SquareTerminal};`,
   },
   {
     path: './nested-threads',
@@ -47,14 +47,14 @@ const stubs = [
   },
   {
     path: '../../ui/controls/icon',
-    importer: mobile + 'tasks/list/task-list-row.tsx',
+    importer: mobile + 'tasks/list/',
     contents: controls,
   },
   { path: '../../ui/content/text', importer: mobile + 'tasks/list/', contents: controls },
   {
-    path: '../../ui/content/pull-request-icon',
-    importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const PullRequestIcon=()=>null;`,
+    path: '../theme',
+    importer: mobile + 'ui/content/pull-request-icon.tsx',
+    contents: controls,
   },
   {
     path: './device-label',
@@ -74,7 +74,7 @@ const stubs = [
   {
     path: '../detail/use-task-lifecycle',
     importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const chooseSnoozeDuration=(_title,apply)=>apply(1);export const useTaskLifecycle=task=>({busy:false,error:'',enabled:true,onCurrentRuntime:true,toggleSettled:()=>window.legacy('settle',task),snooze:until=>window.legacy('snooze',task,until)});`,
+    contents: `export const chooseSnoozeDuration=(_title,apply)=>apply(new Date(Date.now()+3600000).toISOString());export const useTaskLifecycle=task=>({busy:false,error:'',enabled:true,onCurrentRuntime:true,toggleSettled:()=>window.legacy('settle',task),snooze:until=>window.legacy('snooze',task,until)});`,
   },
   { path: '../../ui/theme', importer: mobile + 'tasks/list/', contents: controls },
   {
@@ -187,6 +187,18 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Undo snooze' }).count(), 0)
   await page.evaluate(() => window.reset(true))
   await page.getByTestId('Thread row').waitFor()
+
+  for (const action of ['settle', 'snooze']) {
+    await page.getByRole('button', { name: `Menu ${action} thread` }).click()
+    await page.getByRole('button', { name: `Undo ${action}` }).waitFor()
+    const beforeDismiss = await page.evaluate(() => window.requests.length)
+    await page.getByRole('button', { name: 'Dismiss undo notification' }).click()
+    assert.equal(await page.getByTestId('Task list undo').count(), 0)
+    assert.equal(await page.getByTestId('Thread row').count(), 0)
+    assert.equal(await page.evaluate(() => window.requests.length), beforeDismiss)
+    await page.evaluate(() => window.reset(true))
+    await page.getByTestId('Thread row').waitFor()
+  }
 
   await page.getByRole('button', { name: 'Menu settle thread' }).click()
   await page.getByRole('button', { name: 'Undo settle' }).waitFor()

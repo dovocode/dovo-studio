@@ -4,7 +4,9 @@ import { startRuntime } from './index'
 import { createServices } from './services'
 import { openDatabase } from './storage/database'
 import { fixture } from './testing/fixture'
+import { runtimeIntegration } from './testing/integration'
 import { GithubTransport } from './scm/git/github-transport'
+vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()

@@ -118,7 +118,7 @@ it('discovers Terra as a normal model from the configured provider and preserves
   expect(catalog.models[0]).toMatchObject(original)
   expect(catalog.models[1]).toEqual({
     id: 'gpt-6.1-terra',
-    name: 'GPT-6.1-Terra',
+    name: '6.1 Terra',
     reasoning: [],
     serviceTiers: [],
   })

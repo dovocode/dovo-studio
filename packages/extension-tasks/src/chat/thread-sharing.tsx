@@ -1,5 +1,5 @@
 import { ThreadSuggestions } from './thread-suggestions'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Share2 } from 'lucide-react'
 import {
   useAccount,
@@ -57,21 +57,28 @@ function SignedInThreadSharing({
 }
 function Content({ taskId, account }: { taskId: string; account: ReturnType<typeof useAccount> }) {
   const { request, connected, activeRuntimeId } = useWorkspace()
-  const runtime = {
-    taskId,
-    preview: () => request('/api/sharing/preview', { taskId }, sharedContentSchema),
-    enable: (config: SharingWriterConfig) =>
-      request('/api/sharing/enable', config, sharingStatusSchema),
-    status: (id: string) => request('/api/sharing/status', { taskId, id }, sharingStatusSchema),
-    stop: (id: string) => request('/api/sharing/stop', { taskId, id }, sharingStatusSchema),
-  }
+  const runtime = useMemo(
+    () =>
+      connected
+        ? {
+            taskId,
+            preview: () => request('/api/sharing/preview', { taskId }, sharedContentSchema),
+            enable: (config: SharingWriterConfig) =>
+              request('/api/sharing/enable', config, sharingStatusSchema),
+            status: (id: string) =>
+              request('/api/sharing/status', { taskId, id }, sharingStatusSchema),
+            stop: (id: string) => request('/api/sharing/stop', { taskId, id }, sharingStatusSchema),
+          }
+        : undefined,
+    [request, taskId, connected, activeRuntimeId],
+  )
   return (
     <SharingPanel
       key={`${account.client.sessionId()}:${activeRuntimeId}:${taskId}`}
       client={account.client}
       sourceId={`${activeRuntimeId}:${taskId}`}
       kind="thread"
-      runtime={connected ? runtime : undefined}
+      runtime={runtime}
     />
   )
 }

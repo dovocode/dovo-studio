@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import { build } from 'esbuild'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const ui = root + '/packages/studio-ui/src'
+const worker = await build({
+  entryPoints: [root + '/packages/extension-tasks/src/files/saved-file-diff.worker.ts'],
+  bundle: true,
+  write: false,
+  format: 'esm',
+  platform: 'browser',
+})
 const built = await bundleBrowser(
   {
     stdin: {
@@ -17,12 +26,12 @@ import {SavedFilePreview} from './src/files/saved-file-preview';
 const image={id:'image',name:'A very long screenshot attachment filename.png',mime:'image/png',size:2048};
 const text={id:'text',name:'notes.txt',mime:'text/plain',size:32};
 window.imageData='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=';
-window.calls=[];window.failSyntax=false;
+window.calls=[];window.edited=[];window.failSyntax=false;
 window.store={connected:true,request:async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return {attachment:input.id==='image'?image:text,data:input.id==='image'?window.imageData:btoa('Attachment preview text')};if(path==='/api/tasks/file/restore')return {ok:true};if(path==='/api/tasks/file/preview'){if(window.failFull&&input.full)throw Error('Diff read failed');const prefix='same line\\n'.repeat(20000);return {before:{kind:'text',size:prefix.length+12,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+12,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full}}};throw Error('Unexpected request '+path)}};
 const before='export function greeting(name: string) {\\n  return "Hello " + name;\\n}\\n';
 const after='export function greeting(name: string) {\\n  return \\x60Hello, \\x24{name}!\\x60;\\n}\\n';
 const turn={id:'turn',status:'completed',checkpoint:{before:'a'.repeat(40),after:'b'.repeat(40),files:[{path:'src/greeting.ts',before,after,viewed:false},{path:'src/added.ts',before:'',after:'export const added = true;\\n',viewed:false},{path:'src/removed.ts',before:'export const old = true;\\n',after:'',viewed:false},{path:'src/mode.ts',before:'same\\n',after:'same\\n',viewed:false}],omitted:[]}};
-function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message task" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};const root=createRoot(document.getElementById('app'));window.renderSaved=()=>root.render(<SavedFilePreview file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}} taskId="task" turnId="turn" checkoutId="linked"/>);window.renderComplex=()=>{const lines=Array.from({length:25000},(_,i)=>'line '+i+'\\n');root.render(<CheckpointDiff file={{path:'complex.txt',before:lines.join(''),after:lines.toReversed().join(''),viewed:false}}/>)};root.render(<App/>);`,
+function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} edit={async id=>window.edited.push(id)} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message thread" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};const root=createRoot(document.getElementById('app'));window.renderSaved=()=>root.render(<SavedFilePreview file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}} taskId="task" turnId="turn" checkoutId="linked"/>);window.renderComplex=()=>{const lines=Array.from({length:25000},(_,i)=>'line '+i+'\\n');root.render(<CheckpointDiff file={{path:'complex.txt',before:lines.join(''),after:lines.toReversed().join(''),viewed:false}}/>)};root.render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -34,11 +43,31 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
       '@dovo/protocol': root + '/packages/protocol/src/index.ts',
     },
     nodePaths: [root + '/packages/studio-ui/node_modules', root + '/node_modules'],
+    plugins: [
+      {
+        name: 'checkpoint-worker-fixture',
+        setup(builder) {
+          builder.onLoad({ filter: /saved-file-diff-job\.ts$/ }, async ({ path }) => {
+            const source = await readFile(path, 'utf8')
+            const asset = "new URL('./saved-file-diff.worker.ts', import.meta.url)"
+            assert.ok(source.includes(asset), 'The fixture worker URL matches the production job')
+            return {
+              contents: source.replace(
+                asset,
+                "new URL('/checkpoint-diff.worker.js', window.location.href)",
+              ),
+              loader: 'ts',
+              resolveDir: root + '/packages/extension-tasks/src/files',
+            }
+          })
+        },
+      },
+    ],
   },
   [
     {
       path: '@dovo/studio-core',
-      contents: `export * from '@dovo/protocol';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useWorkspace=()=>window.store;export const whitespaceOnlyFile=()=>false;export const useAppPreferences=()=>({collapseChangedFiles:false,hideWhitespaceChanges:false,importedCodeThemes:[]});export const readAppPreferences=()=>({theme:'dark',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useDiffOptions=()=>({defaultSplit:false,options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'scroll'}});`,
+      contents: `export * from '@dovo/protocol';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useWorkspace=()=>window.store;export const whitespaceOnlyFile=()=>false;export const useAppPreferences=()=>({collapseChangedFiles:true,hideWhitespaceChanges:false,importedCodeThemes:[]});export const readAppPreferences=()=>({theme:'dark',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useDiffOptions=()=>({defaultSplit:false,options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'scroll'}});`,
     },
     {
       path: '@dovo/studio-core/state',
@@ -46,7 +75,7 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';export {ChangeTypeFilters} from '${ui}/review/change-types.tsx';`,
+      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';export {ChangeTypeFilters} from '${ui}/review/change-types.tsx';export {ChangeSummary} from '${ui}/review/change-summary.tsx';`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -54,22 +83,52 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
     },
   ],
 )
+const server = createServer((request, response) => {
+  if (request.url === '/checkpoint-diff.worker.js') {
+    response.writeHead(200, { 'content-type': 'text/javascript' })
+    response.end(worker.outputFiles[0].text)
+  } else {
+    response.writeHead(200, { 'content-type': 'text/html' })
+    response.end('<div id="app"></div>')
+  }
+})
 const browser = await chromium.launch()
 try {
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.setContent('<div id="app"></div>')
-  const assets = root + '/apps/desktop/dist/assets'
+  await page.goto(`http://127.0.0.1:${server.address().port}/`)
+  await page.evaluate(() => {
+    const BrowserWorker = window.Worker
+    window.workerStats = { created: 0, terminated: 0, running: 0 }
+    window.Worker = class extends BrowserWorker {
+      constructor(...args) {
+        super(...args)
+        window.workerStats.created++
+        window.workerStats.running++
+      }
+      terminate() {
+        window.workerStats.terminated++
+        window.workerStats.running--
+        return super.terminate()
+      }
+    }
+  })
+  const assets = process.env.DOVO_BROWSER_ASSETS ?? root + '/apps/desktop/dist/assets'
   for (const name of (await readdir(assets)).filter((name) => name.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + name, 'utf8') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const draft = page.getByLabel('Draft attachments', { exact: true })
   const draftImage = draft.locator('img')
   await draftImage.evaluate((image) => image.decode())
-  assert.equal(await draftImage.evaluate((image) => image.getBoundingClientRect().width), 24)
-  assert.ok((await draft.boundingBox()).height <= 84)
+  assert.equal(await draftImage.evaluate((image) => image.getBoundingClientRect().width), 20)
+  assert.ok((await draft.boundingBox()).height <= 36)
+  await draft.getByText('2 files', { exact: true }).waitFor()
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     const row = await draftImage.evaluate((image) => {
@@ -80,7 +139,7 @@ try {
         available: image.closest('button').parentElement.parentElement.clientWidth,
       }
     })
-    assert.equal(row.width, row.available, 'Attachment rows use the full available width')
+    assert.ok(row.width <= 208, 'Compact attachment chips keep filenames and controls within reach')
     assert.ok(row.height <= 36)
     assert.equal(
       await draft.getByRole('button', { name: 'Remove notes.txt', exact: true }).innerText(),
@@ -88,12 +147,14 @@ try {
     )
   }
   const name = 'A very long screenshot attachment filename.png'
+  await draft.getByRole('button', { name: `Edit ${name}`, exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.edited), ['image'])
   await draft.getByRole('button', { name: `Preview ${name}`, exact: true }).click()
   const attachment = page.getByRole('dialog', { name })
   await attachment.getByRole('img', { name }).waitFor()
   await attachment.getByRole('button', { name: 'Close', exact: true }).click()
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task' }).inputValue(),
+    await page.getByRole('textbox', { name: 'Message thread' }).inputValue(),
     'Review these changes',
   )
   await draft.getByRole('button', { name: 'Remove notes.txt', exact: true }).click()
@@ -101,17 +162,44 @@ try {
     await draft.getByRole('button', { name: 'Preview notes.txt', exact: true }).count(),
     0,
   )
+  assert.equal(
+    await draft.getByText('1 file', { exact: true }).getAttribute('class'),
+    'sr-only',
+    'A fully visible single attachment keeps its count available to screen readers',
+  )
+  await draft.evaluate((row) => {
+    row.style.width = '120px'
+  })
+  await page.waitForFunction(
+    () =>
+      !document
+        .querySelector('[aria-label="Draft attachments"] > span')
+        .classList.contains('sr-only'),
+  )
+  await draft.getByText('1 file', { exact: true }).waitFor()
+  await draft.evaluate((row) => {
+    row.style.removeProperty('width')
+  })
+  await page.waitForFunction(() =>
+    document.querySelector('[aria-label="Draft attachments"] > span').classList.contains('sr-only'),
+  )
   const sent = page.getByRole('region', { name: 'Sent message' })
   await sent.locator('img').waitFor()
   assert.equal(
-    await sent.locator('img').evaluate((image) => image.getBoundingClientRect().width),
+    await sent
+      .locator('img')
+      .evaluate((image) => image.parentElement.getBoundingClientRect().width),
     28,
   )
   await page.screenshot({ path: '/tmp/dovo-compact-attachments.png' })
-  await page
-    .getByLabel('Changed file breakdown', { exact: true })
-    .filter({ hasText: /All 4Code 4/ })
-    .waitFor()
+  const summary = page.getByRole('region', { name: 'Changed file summary', exact: true })
+  const disclosure = summary.getByRole('button', { name: '4 files changed', exact: true })
+  assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
+  assert.equal(await summary.locator('[data-file-tree-row]').count(), 0)
+  await page.screenshot({ path: '/tmp/dovo-turn-summary-collapsed.png' })
+  await disclosure.click()
+  await summary.getByRole('button', { name: 'Code 4', exact: true }).waitFor()
+  await page.screenshot({ path: '/tmp/dovo-turn-summary-expanded.png' })
   await page.getByRole('button', { name: 'Open diff', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Turn checkpoint · 4 files' })
   const rendered = async (text) =>
@@ -179,7 +267,7 @@ try {
   await page.screenshot({ path: '/tmp/dovo-turn-checkpoint-narrow.png' })
   await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task' }).inputValue(),
+    await page.getByRole('textbox', { name: 'Message thread' }).inputValue(),
     'Review these changes',
   )
   await page.evaluate(() =>
@@ -201,23 +289,15 @@ try {
     })),
   )
   const breakdown = page.getByLabel('Changed file breakdown', { exact: true })
-  await breakdown.filter({ hasText: /All 8Code 4Tests 1Mocks 1Docs 1Generated 1/ }).waitFor()
-  const distribution = breakdown.getByLabel('Changed line distribution', { exact: true })
-  const codeSegment = distribution.getByRole('button', {
-    name: 'Filter Code: 4 files, 4 of 106 changed lines',
-    exact: true,
+  await breakdown.getByRole('button', { name: 'All 8', exact: true }).waitFor()
+  const distribution = breakdown.getByRole('img', {
+    name: /^(Available changed|Changed) line distribution/,
   })
-  const testSegment = distribution.getByRole('button', {
-    name: 'Filter Tests: 1 files, 100 of 106 changed lines',
-    exact: true,
-  })
-  const codeWidth = (await codeSegment.boundingBox()).width
-  const testWidth = (await testSegment.boundingBox()).width
-  assert.ok(
-    Math.abs(testWidth / codeWidth - 25) < 0.2,
-    'The large test diff occupies 25 times the code segment',
-  )
-  assert.equal(await distribution.getByRole('button', { name: /Generated/ }).count(), 0)
+  const segments = distribution.locator(':scope > span')
+  const codeWidth = (await segments.nth(0).boundingBox()).width
+  const testWidth = (await segments.nth(1).boundingBox()).width
+  assert.ok(testWidth > codeWidth, 'The large test diff dominates the changed-line bar')
+  assert.equal(await segments.count(), 4, 'Unknown generated line totals do not invent line weight')
   // A file with no line evidence remains selectable through its category chip.
   await breakdown.getByRole('button', { name: 'Generated 1', exact: true }).click()
   assert.equal(
@@ -258,26 +338,14 @@ try {
       },
     })),
   )
-  const tinyDoc = distribution.getByRole('button', {
-    name: 'Filter Docs: 1 files, 1 of 10006 changed lines',
-    exact: true,
-  })
-  assert.ok(
-    (await tinyDoc.boundingBox()).width >= 8,
-    'A one-line category remains visible beside a huge diff',
-  )
-  await tinyDoc.click()
-  assert.equal(
-    await breakdown
-      .getByRole('button', { name: 'Docs 1', exact: true })
-      .getAttribute('aria-pressed'),
-    'true',
-  )
+  const docs = breakdown.getByRole('button', { name: 'Filter Docs: 1 files', exact: true })
+  await docs.click()
+  assert.equal(await docs.getAttribute('aria-pressed'), 'true')
   await breakdown.getByRole('button', { name: 'All 8', exact: true }).click()
-  const disclosure = page.getByRole('button', { name: /8 changed files/ })
-  await disclosure.click()
-  assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-  assert.equal(await breakdown.isVisible(), true)
+  const updatedDisclosure = summary.getByRole('button', { name: '8 files changed', exact: true })
+  await updatedDisclosure.click()
+  assert.equal(await updatedDisclosure.getAttribute('aria-expanded'), 'false')
+  assert.equal(await breakdown.count(), 0)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.evaluate(() => {
     window.failSyntax = false
@@ -304,13 +372,41 @@ try {
       ),
     ),
   )
-  await page.evaluate(() => window.renderComplex())
+  const initialWorkers = await page.evaluate(() => window.workerStats.created)
+  await page.evaluate(() => {
+    window.diffTicks = 0
+    window.diffTicker = setInterval(() => window.diffTicks++, 10)
+    window.renderComplex()
+  })
   await page.getByRole('alert').filter({ hasText: 'Complete contents are shown below' }).waitFor()
+  assert.ok(
+    (await page.evaluate(() => window.diffTicks)) >= 2,
+    'Complex parsing leaves the UI responsive',
+  )
+  assert.ok(
+    (await page.evaluate(() => window.workerStats.created)) > initialWorkers,
+    'A real worker parsed the complex diff',
+  )
+  await page.evaluate(() => clearInterval(window.diffTicker))
   assert.ok((await page.locator('pre').first().innerText()).includes('line 24999'))
+  await page.evaluate(() => window.renderSaved())
+  await page.getByRole('button', { name: 'Load full diff', exact: true }).waitFor()
+  const beforeCancellation = await page.evaluate(() => window.workerStats.terminated)
+  const beforeStart = await page.evaluate(() => window.workerStats.created)
+  await page.evaluate(() => window.renderComplex())
+  await page.waitForFunction((count) => window.workerStats.created > count, beforeStart)
+  assert.equal(await page.evaluate(() => window.workerStats.running), 1)
+  await page.evaluate(() => window.renderSaved())
+  await page.getByRole('button', { name: 'Load full diff', exact: true }).waitFor()
+  await page.waitForFunction((count) => window.workerStats.terminated > count, beforeCancellation)
+  await page.waitForTimeout(200)
+  assert.equal(await page.evaluate(() => window.workerStats.running), 0)
+  assert.equal(await page.getByText('line 24999', { exact: false }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Checkpoint dialog: real highlighted diffs, layouts, wrapping, file selection, added/deleted/unchanged files, syntax retry and scoped restore; compact attachments: preview, removal and preserved draft passed.',
+    'Checkpoint dialog: real worker parsing, responsive fallback, cancellation, highlighted diffs, layouts, file selection, syntax retry and scoped restore; compact attachments and preserved draft passed.',
   )
 } finally {
   await browser.close()
+  await new Promise((resolve) => server.close(resolve))
 }

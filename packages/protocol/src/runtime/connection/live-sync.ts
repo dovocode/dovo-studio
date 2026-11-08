@@ -172,13 +172,21 @@ export function watchRuntimeActivity(
   listeners.add(listener)
   value.scopes.set(scope, listeners)
   value.live?.watch()
+  let watching = true
   return () => {
+    if (!watching) return
+    watching = false
     listeners.delete(listener)
     value.details.delete(listener)
     if (!listeners.size) {
       value.scopes.delete(scope)
-      value.events.delete(scope)
-      value.compactors.delete(scope)
+      // Effects can replace their listener in the same turn without changing the
+      // wire subscription. Keep its baseline until that handoff has settled.
+      queueMicrotask(() => {
+        if (value.scopes.has(scope)) return
+        value.events.delete(scope)
+        value.compactors.delete(scope)
+      })
     }
     value.live?.watch()
     if (
@@ -355,6 +363,7 @@ export function startRuntimeSync(
   let retry: Fiber.Fiber<void, never> | undefined
   let connecting = false
   let request: AbortController | undefined
+  let lastWatch: string | undefined
   const activities = value.events
   const sendWatch = () => {
     if (stopped) return
@@ -381,20 +390,25 @@ export function startRuntimeSync(
         return
       }
     }
-    if (socket?.readyState === 1)
-      socket.send(
-        JSON.stringify({
-          type: 'watch',
-          ...(taskUpdates ? { tasks: [...value.tasks.keys()] } : {}),
-          scopes: [...value.scopes.keys()].slice(0, 8),
-          detailScopes: [...value.scopes.entries()]
-            .filter(([, listeners]) =>
-              [...listeners].some((listener) => value.details.has(listener)),
-            )
-            .map(([scope]) => scope)
-            .slice(0, 8),
-        }),
-      )
+    if (socket?.readyState !== 1) return
+    const wire = JSON.stringify({
+      type: 'watch',
+      ...(taskUpdates ? { tasks: [...value.tasks.keys()], selectionDelta: true } : {}),
+      scopes: [...value.scopes.keys()].slice(0, 8),
+      detailScopes: [...value.scopes.entries()]
+        .filter(([, listeners]) => [...listeners].some((listener) => value.details.has(listener)))
+        .map(([scope]) => scope)
+        .slice(0, 8),
+    })
+    if (wire === lastWatch) return
+    try {
+      socket.send(wire)
+      lastWatch = wire
+    } catch {
+      failHandshake()
+      closeSocket()
+      reconnect()
+    }
   }
   let watchQueued = false
   const watch = () => {
@@ -432,6 +446,7 @@ export function startRuntimeSync(
   const closeSocket = () => {
     const previous = socket
     socket = undefined
+    lastWatch = undefined
     socketRoute = undefined
     socketEstablished = false
     online = false
@@ -439,6 +454,16 @@ export function startRuntimeSync(
     healthySince = undefined
     resumeStarted = undefined
     previous?.close()
+  }
+  const sendResume = () => {
+    if (!socket || socket.readyState !== 1) return
+    try {
+      socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
+    } catch {
+      failHandshake()
+      closeSocket()
+      reconnect()
+    }
   }
   const failHandshake = () => {
     if (socketRoute && !socketEstablished) failRuntimeStreamingRoute(connection, socketRoute)
@@ -509,8 +534,8 @@ export function startRuntimeSync(
           current.close()
           return
         }
-        current.send(JSON.stringify({ type: 'resume', epoch, sequence }))
-        sendWatch()
+        sendResume()
+        if (current === socket) sendWatch()
       }
       current.onmessage = (event) => {
         if (stopped || current !== socket) return
@@ -555,16 +580,22 @@ export function startRuntimeSync(
             epoch = frame.epoch
             sequence = frame.sequence
             setRuntimeSnapshotTag(snapshot, frame.tag)
-          } else if (frame.type === 'delta') {
+          } else if (frame.type === 'delta' || frame.type === 'selection') {
             if (
               !snapshot ||
-              epoch !== frame.epoch ||
+              epoch !== (frame.type === 'selection' ? frame.previousEpoch : frame.epoch) ||
               sequence !== frame.base ||
-              frame.sequence !== frame.base + 1
+              (frame.type === 'delta' && frame.sequence !== frame.base + 1)
             )
               throw new Error('Sync cursor does not match')
             snapshot = applySnapshotDelta(snapshot, frame.delta)
+            epoch = frame.epoch
             sequence = frame.sequence
+            if (frame.type === 'selection')
+              snapshotTasks = selectionIdentity(
+                snapshot.detailTaskIds ?? [],
+                snapshot.olderSettled?.limit ?? listLimit,
+              )
             setRuntimeSnapshotTag(snapshot, frame.tag)
           } else if (!snapshot || epoch !== frame.epoch || sequence !== frame.sequence)
             throw new Error('Sync needs a fresh baseline')
@@ -669,7 +700,7 @@ export function startRuntimeSync(
               resumeWaited >= resumeDeadline() / 2
             ) {
               resumeResent = true
-              socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
+              sendResume()
             }
             if (!socket && !retry) void connect()
           }),
@@ -689,7 +720,7 @@ export function startRuntimeSync(
         // the server's resume acknowledgement instead of waiting for a heartbeat timeout.
         if (resumeStarted === undefined) resumeResent = false
         resumeStarted ??= Date.now()
-        socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
+        sendResume()
       } else if (!connecting) {
         if (retry) Effect.runFork(Fiber.interrupt(retry))
         retry = undefined

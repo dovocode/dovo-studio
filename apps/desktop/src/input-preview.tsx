@@ -116,7 +116,7 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                     onClick={() => void answer(true).catch(() => {})}
                   >
                     Allow once
-                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
+                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
                       Y / Enter
                     </kbd>
                   </Button>
@@ -127,7 +127,7 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                     onClick={() => void answer(false).catch(() => {})}
                   >
                     Deny
-                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
+                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
                       N
                     </kbd>
                   </Button>

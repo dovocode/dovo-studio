@@ -1,4 +1,12 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+
+contextBridge.exposeInMainWorld('dovoTerminalFilePath', (file: File) =>
+  webUtils.getPathForFile(file),
+)
+
+contextBridge.exposeInMainWorld('dovoCopyText', (text: string): Promise<void> =>
+  ipcRenderer.invoke('clipboard:write-text', text),
+)
 
 const browserFrameListeners = new Map<string, number>()
 
@@ -13,6 +21,7 @@ const runtimeSyncError = (id: string, error: unknown) =>
       error instanceof Error ? error.message : 'Could not reach the runtime connection manager.',
   })
 contextBridge.exposeInMainWorld('dovo', {
+  terminalPorts: true,
   defaultBrowser: {
     status: (): ReturnType<import('@dovo/protocol').DefaultBrowserBridge['status']> =>
       ipcRenderer.invoke('browser:default-status'),
@@ -281,4 +290,31 @@ contextBridge.exposeInMainWorld('dovo', {
   activateExtension: (id: string) => ipcRenderer.invoke('runtime:activate', id),
   setWindowColors: (colors: { background: string; symbol: string }): Promise<void> =>
     ipcRenderer.invoke('window:colors', colors),
+})
+
+// Ports cross the isolated preload through postMessage, never contextBridge callbacks.
+window.addEventListener('message', (event: MessageEvent<unknown>) => {
+  if (
+    event.source !== window ||
+    !event.data ||
+    typeof event.data !== 'object' ||
+    !('id' in event.data) ||
+    typeof event.data.id !== 'string' ||
+    !('type' in event.data)
+  )
+    return
+  if (event.data.type === 'dovo:terminal-cancel') {
+    ipcRenderer.postMessage('terminal:cancel', { id: event.data.id })
+  } else if (
+    event.data.type === 'dovo:terminal-connect' &&
+    'url' in event.data &&
+    typeof event.data.url === 'string'
+  ) {
+    ipcRenderer.postMessage('terminal:connect', { id: event.data.id, url: event.data.url })
+  }
+})
+ipcRenderer.on('terminal:port', (event, value: unknown) => {
+  if (!value || typeof value !== 'object' || !('id' in value) || typeof value.id !== 'string')
+    return
+  window.postMessage({ type: 'dovo:terminal-port', id: value.id }, '*', event.ports)
 })

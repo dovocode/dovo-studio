@@ -10,6 +10,16 @@ import { PushNotifications, notificationRelay, managedNotification } from './pus
 import { openDatabase } from '../storage/database'
 import { WorkspaceStore } from '../storage/workspace'
 import { Devices } from '../auth/devices'
+const subagents = [
+  {
+    name: 'local',
+    metadata: { delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'worker' } },
+  },
+  {
+    name: 'targeted',
+    metadata: { spawnParent: { runtimeId: 'parent-runtime', threadId: 'parent' } },
+  },
+] as const
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
@@ -177,6 +187,67 @@ it('persists retry records across restart without replaying successful deliverie
   expect(f.send.mock.calls[0][0].id).toBe(f.send.mock.calls[1][0].id)
   await reopened.dispose()
 })
+it.each(
+  subagents.flatMap((agent) =>
+    (['review', 'done'] as const).map((status) => ({ ...agent, status })),
+  ),
+)(
+  'does not enqueue a finished push for a $name agent becoming $status',
+  async ({ metadata, status }) => {
+    const f = setup()
+    f.store.updateTask('task', (task) => ({
+      ...task,
+      ...metadata,
+    }))
+    await f.service.flush()
+    f.store.updateTask('task', (task) => ({ ...task, status }))
+    await f.service.flush()
+    expect(f.send).not.toHaveBeenCalled()
+    expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
+  },
+)
+it.each(subagents)('keeps $name agent failures and input notifications', async ({ metadata }) => {
+  const f = setup()
+  f.store.updateTask('task', (task) => ({
+    ...task,
+    ...metadata,
+  }))
+  await f.service.flush()
+  f.input({ id: 'approval', preview: 'Needs approval', type: 'approval' })
+  await f.service.flush()
+  f.input(undefined)
+  f.store.updateTask('task', (task) => ({ ...task, status: 'failed' }))
+  await f.service.flush()
+  expect(f.send.mock.calls.map(([message]) => message.data.kind)).toEqual(['input', 'failed'])
+})
+it.each(subagents)(
+  'drops an already queued $name completion after restarting notification delivery',
+  async ({ metadata }) => {
+    const f = setup()
+    await f.service.flush()
+    f.send.mockRejectedValueOnce(new Error('Relay offline'))
+    f.store.updateTask('task', (task) => ({ ...task, status: 'review' }))
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledOnce()
+    expect(f.db.prepare('SELECT id FROM push_outbox').all()).toHaveLength(1)
+    // Model an outbox entry produced by a runtime before delegated completions were suppressed.
+    f.store.updateTask('task', (task) => ({
+      ...task,
+      ...metadata,
+    }))
+    const reopened = new PushNotifications(f.db, f.store, f.devices, () => undefined, {
+      send: f.send,
+    })
+    try {
+      f.db.prepare('UPDATE push_outbox SET next=0').run()
+      await reopened.flush()
+      expect(f.send).toHaveBeenCalledOnce()
+      expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
+    } finally {
+      await reopened.dispose()
+    }
+  },
+)
 it('stops delivery after device revocation and removes invalid tokens', async () => {
   const f = setup()
   await f.service.flush()

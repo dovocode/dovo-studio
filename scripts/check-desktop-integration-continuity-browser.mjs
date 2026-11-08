@@ -4,7 +4,8 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const core = `
 import {createContext,useContext,useState,useCallback} from 'react';
-export * from '@dovo/protocol';export * from '@dovo/client-runtime';
+export * from '@dovo/protocol';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';export * from '@dovo/client-runtime';
 const Store=createContext(null),Host=createContext(null);
 export const useWorkspace=()=>useContext(Store);export const useStudioHost=()=>useContext(Host);
 // This integration-navigation fixture has no active remote desktop sessions.
@@ -25,7 +26,7 @@ export function WorkspaceProvider({children}) {
 export const WorkspaceRuntimeScope=({runtimeId,children})=>{const global=useWorkspace();const connected=window.sources.some(s=>s.runtimeId===runtimeId&&s.connected);return <Store.Provider value={{...global,activeRuntimeId:runtimeId,workspace:window.spaces[runtimeId],connected}}><section data-owner={runtimeId}>{children}</section></Store.Provider>};
 export const formatDateTime=v=>v;
 `
-const ui = `
+const ui = `export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state.tsx';export {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';
 export * from '${root}packages/studio-ui/src/sidebar-header.tsx';
 export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as ContextMenu from '@radix-ui/react-context-menu';
 export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;
@@ -49,8 +50,9 @@ const stubs = [
     './task-notifications': 'export const useTaskNotifications=()=>({});',
     './extension-catalog':
       'export const createExtensionCatalog=extensions=>({views:extensions.flatMap(e=>e.views),host:{dispose:async()=>{}}});',
+    // Workspace mode visibility is covered by activity-bar.test.ts; this fixture keeps modes visible.
     './activity-bar':
-      'export const ActivityBar=({views,onSelect})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}</nav>;',
+      'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export const ActivityBar=({views,onSelect})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}</nav>;',
     './settings-nav': 'export const SettingsNav=()=>null;',
     './title-bar': 'export const TitleBar=()=>null;',
     './command-palette': 'export const CommandPalette=()=>null;',
@@ -337,7 +339,7 @@ try {
   )
   await page.getByRole('button', { name: 'Back to PRs', exact: true }).click()
   await page.getByText('Detail a upstream #7', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'New task', exact: true }).click()
+  await page.getByRole('button', { name: 'New thread', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New branch from PR', exact: true }).click()
   await page.waitForFunction(() => window.requests.length === 1)
   assert.equal(await page.evaluate(() => window.requests[0].input.expectedDestination), 'dest-a')

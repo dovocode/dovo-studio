@@ -5,12 +5,13 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 // Exercise native input identity and imperative updates; RN Web replacements are covered by Storybook.
 const mocks = {
+  'react-native-reanimated': `const transition={duration:()=>transition,easing:()=>transition,reduceMotion:()=>transition};export const Easing={bezier:()=>undefined},LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View:({children,style})=><div style={style}>{children}</div>};`,
   'react-native': `export const Platform={OS:'ios'};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value),removeItem:async key=>localStorage.removeItem(key)};`,
   '../../runtime/connection/provider': `export const useRuntime=()=>({activeId:window.runtimeId??'computer',legacyDraftRuntimeId:null});`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/theme': `export const useTheme=()=>({styles:{chatText:{}}});`,
-  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({focus:()=>input.current.focus(),clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.composerLayout=style.at(-1);return <textarea style={{height:style.at(-1).height,minHeight:style.at(-1).minHeight,maxHeight:style.at(-1).maxHeight}} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
+  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled,submitBehavior}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({focus:()=>input.current.focus(),clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.composerLayout=style.at(-1);return <textarea style={{height:style.at(-1).height,minHeight:style.at(-1).minHeight,maxHeight:style.at(-1).maxHeight}} data-submit-behavior={submitBehavior} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
 }
 const built = await build({
   stdin: {
@@ -18,8 +19,9 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState,useCallback} from 'react';
 import {ComposerField} from '${root}/apps/mobile/src/tasks/composer/composer-field.tsx';
 import {useDraft} from '${root}/apps/mobile/src/tasks/draft/use-draft.ts';
+import {useComposerHistory} from '${root}/apps/mobile/src/tasks/composer/use-composer-history.ts';
 window.mounts=0;window.writes=[];window.clears=0;window.storageText=()=>localStorage.getItem('dovo.draft.computer.task');
-function App(){const [focusKey,setFocusKey]=useState(undefined);window.editFocus=()=>setFocusKey('queued');const draft=useDraft('task','Recovered draft');const [echo,setEcho]=useState(null);const [sending,setSending]=useState(false);const [stream,setStream]=useState(0);const type=useCallback(text=>draft.update(text,'keyboard'),[draft.update]);const select=useCallback(()=>{},[]);window.draft=draft;window.echo=text=>flushSync(()=>setEcho(text));window.stream=()=>flushSync(()=>setStream(n=>n+1));window.switchRuntime=id=>{window.runtimeId=id;flushSync(()=>setStream(n=>n+1))};window.apply=text=>flushSync(()=>{setEcho(null);setSending(false);draft.update(text)});window.send=()=>flushSync(()=>{setEcho(null);setSending(true)});window.fail=()=>flushSync(()=>setSending(false));return <div data-stream={stream}><ComposerField focusKey={focusKey} key={draft.key} value={echo??(sending?'':draft.text)} revision={JSON.stringify([draft.revision,sending])} onChangeText={type} onSelectionChange={select} editable={draft.ready} showOptions placeholder="Message"/></div>};
+function App(){const [focusKey,setFocusKey]=useState(undefined);window.editFocus=()=>setFocusKey('queued');const savedDraft=useDraft('task','Recovered draft');const history=useComposerHistory({scope:savedDraft.key,text:savedDraft.text,revision:savedDraft.revision,messages:[{role:'user',text:'First sent message'},{role:'assistant',text:'Reply'},{role:'user',text:'Latest sent message'}],enabled:savedDraft.ready});window.historyBrowse=history;const update=useCallback((text,source)=>{history.cancel();savedDraft.update(text,source)},[history.cancel,savedDraft.update]);const draft={...savedDraft,text:history.text,revision:JSON.stringify([savedDraft.revision,history.index]),update};const [echo,setEcho]=useState(null);const [sending,setSending]=useState(false);const [stream,setStream]=useState(0);const type=useCallback(text=>draft.update(text,'keyboard'),[draft.update]);const select=useCallback(()=>{},[]);window.draft=draft;window.echo=text=>flushSync(()=>setEcho(text));window.stream=()=>flushSync(()=>setStream(n=>n+1));window.switchRuntime=id=>{window.runtimeId=id;flushSync(()=>setStream(n=>n+1))};window.apply=text=>flushSync(()=>{setEcho(null);setSending(false);draft.update(text)});window.send=()=>flushSync(()=>{setEcho(null);setSending(true)});window.fail=()=>flushSync(()=>setSending(false));return <div data-stream={stream}><ComposerField focusKey={focusKey} key={draft.key} value={echo??(sending?'':draft.text)} revision={JSON.stringify([draft.revision,sending])} onChangeText={type} onSelectionChange={select} editable={draft.ready} showOptions placeholder="Message"/></div>};
 createRoot(document.getElementById('app')).render(<App/>);
 `,
     loader: 'tsx',
@@ -66,6 +68,22 @@ try {
   const input = page.getByRole('textbox', { name: 'Message' })
   await page.waitForFunction(() => window.draft?.ready)
   assert.equal(await input.inputValue(), 'Recovered draft')
+  const savedBeforeBrowsing = await page.evaluate(() => window.storageText())
+  await input.focus()
+  await page.evaluate(() => window.historyBrowse.begin())
+  await page.waitForFunction(() => window.historyBrowse.active)
+  assert.equal(await input.inputValue(), 'Latest sent message')
+  await page.evaluate(() => window.historyBrowse.older())
+  assert.equal(await input.inputValue(), 'First sent message')
+  assert.equal(await page.evaluate(() => window.storageText()), savedBeforeBrowsing)
+  await page.evaluate(() => window.historyBrowse.cancel())
+  assert.equal(await input.inputValue(), 'Recovered draft')
+  assert.equal(await input.evaluate((node) => node === document.activeElement), true)
+  assert.equal(
+    await page.evaluate(() => window.mounts),
+    1,
+    'Browsing never remounts the native input',
+  )
   await page.evaluate(() => window.apply('Start end'))
   await input.focus()
   await input.evaluate((e) => e.setSelectionRange(6, 6))
@@ -96,9 +114,15 @@ try {
       minHeight: window.composerLayout.minHeight,
       maxHeight: window.composerLayout.maxHeight,
     })),
-    { height: null, minHeight: 44, maxHeight: 144 },
+    { height: null, minHeight: 64, maxHeight: 144 },
   )
   assert.equal(await input.getAttribute('data-scroll-enabled'), 'true')
+  assert.equal(await input.getAttribute('data-submit-behavior'), 'newline')
+  await input.fill('First line')
+  await input.press('Enter')
+  await input.pressSequentially('Second line')
+  assert.equal(await page.evaluate(() => window.draft.text), 'First line\nSecond line')
+  await page.evaluate(() => window.apply('Mention @src/file.ts and dictated words'))
   await page.evaluate(() => window.send())
   assert.equal(await input.inputValue(), '')
   assert.equal(await input.evaluate((e) => e.style.height), '')

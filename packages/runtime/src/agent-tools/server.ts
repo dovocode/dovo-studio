@@ -1,8 +1,8 @@
 import { studioToolDefinitions } from '../studio/tool-definitions.js'
-import { studioToolsSchema, noStudioTools } from '@dovo/protocol'
+import { studioToolsSchema, noStudioTools } from '@dovo/protocol/agent-tools'
 import { deviceHubAgentInstructions } from './device-guidance.js'
 import { readFileSync } from 'node:fs'
-import { terminalInputFrames } from '@dovo/client-runtime'
+import { terminalInputFrames } from '@dovo/client-runtime/terminal-input'
 import {
   decode,
   mutableArray,
@@ -19,7 +19,7 @@ import {
   linkedProjectsCommandSchema,
   agentQuestionCommandSchema,
   agentTodosCommandSchema,
-} from '@dovo/protocol'
+} from '@dovo/protocol/agent-tools'
 import { Schema } from 'effect'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { fromJSONSchema } from 'zod'
@@ -475,7 +475,7 @@ const tools: Array<
   {
     name: 'device',
     description:
-      'Use Device Hub on the owning local/remote host for capabilities, app listing, launch/relaunch/stop/uninstall, deep links, boot/shutdown, appearance and screenshots. stop/uninstall require bundleId; deep-link requires url and physical iOS also requires bundleId. capabilities reports platform limits. Screenshots are returned as images. Use the exact devices ID; no local adb/idb is needed.',
+      'Control the owning Device Hub host using exact discovered IDs. Read capabilities first. Screenshots return images. stop/uninstall need bundleId; uninstall deletes data. deep-link needs url and, on physical iOS, bundleId. No local adb/idb needed.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -511,7 +511,7 @@ const tools: Array<
         {
           name: 'device_install',
           description:
-            'Install a built APK or iOS .app from this thread’s checkout on a local device or an authorized SSH device host. iPhone apps must target iphoneos and be signed/provisioned in the Mac user’s logged-in login shell. Device Hub installs through that user’s login environment and handles Apple GUI-session fallback. Simulator apps must target the simulator. Use this tool even when the coding machine lacks adb/idb/Xcode.',
+            'Install a built APK or signed iOS .app from this checkout on a discovered local/SSH device. Match simulator or iphoneos. Use the Mac user’s existing signing and login shell. Device Hub handles GUI-session fallback; local Xcode/adb is unnecessary.',
           inputSchema: {
             type: 'object' as const,
             properties: {
@@ -543,7 +543,7 @@ const tools: Array<
               {
                 name: 'pipeline_watch',
                 description:
-                  'Watch explicit CI/release runs after relevant pushes, PR updates, triggers, reruns or fixes, or on request; respect opt-outs. Discover run IDs once, then watch runIds (max 20) or a direct GitHub/GitLab URL. Adds watches; does not follow future runs. Returns current details: address completed failures, then finish the turn. Dovo queues actionable states without polling; successful runs finish silently. Watches survive turns/restarts, respect paused queues and move finished threads to Waiting; settling/archiving cancels them. status/stop without selectors applies to all watches. URL accounts default to the primary project; repositoryId selects an editable linked project. General threads use their sole editable Git project or an unambiguous runtime account; select connectionId when ambiguous.',
+                  'Watch relevant CI/release runIds (max 20) or a direct forge URL after pushes, triggers or reruns; respect opt-outs. Discover IDs once. Watches do not follow future runs. Address returned failures, then finish; durable notifications replace polling. Success is silent. status/stop without selectors affects all. Paused queues pause delivery; settling/archiving cancels. repositoryId selects the project account; General can use connectionId when ambiguous.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -588,7 +588,7 @@ const tools: Array<
               {
                 name: 'pull_request_watch',
                 description:
-                  'Monitor requested/authorized PR feedback using a PR URL, including repositories without a checkout. Returns watches and failedChecks; address current failures, then finish the turn. Dovo queues new/edited comments, reviews and check failures without polling. One PR per repository: another replaces that repository’s watch. Watches survive turns/restarts, respect paused queues and stop when the PR closes; finished threads move to Waiting, and settling/archiving cancels watches. status/stop without selectors applies to all. Account defaults to the primary project; repositoryId selects an editable linked project. General threads use their sole editable Git project or an unambiguous runtime account; select connectionId when ambiguous.',
+                  'Watch authorized PR feedback by URL. Address returned failedChecks, then finish; durable notifications replace polling. One PR per repository; a new watch replaces the old one. Watches survive restarts and respect paused queues; PR close/settling/archiving stops them. status/stop without selectors affects all. repositoryId selects the project account; General can use connectionId when ambiguous.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -624,7 +624,7 @@ const tools: Array<
               {
                 name: 'artifact_create',
                 description:
-                  'Create a useful persistent deliverable (markdown/html/svg/code); prefer replies/repository files for routine work and reuse existing artifacts. Interactive HTML needs working controls and no external network. For folders supply complete files and entrypoint (default index.html), omit content, and use bundled relative assets. UTF-8/base64 supported. Returns ID/revision, not body.',
+                  'Create a persistent markdown/html/svg/code deliverable; reuse existing artifacts. Interactive HTML needs working controls and bundled assets, with no external network. Supply content or complete files plus entrypoint. UTF-8/base64 supported. Returns ID/revision.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -640,7 +640,7 @@ const tools: Array<
               {
                 name: 'artifact_update',
                 description:
-                  'Save a new revision of an existing Dovo artifact, keeping earlier versions. Read first and pass expectedRevision to avoid overwriting newer work. Supply its complete title and format, plus content for a single file or the complete files array and entrypoint for a folder. Omitting files converts it to a single-file artifact.',
+                  'Read first; pass expectedRevision to preserve newer work. Supply complete title/format and content, or complete files/entrypoint. Saves a revision. Omitting files converts a folder to a single file.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -1201,13 +1201,20 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
     }
   }
 }
-const enabledTools = tools.filter(
-  (tool) =>
-    (process.env.DOVO_TASK_SKILLS_ENABLED === '1' || tool.name !== 'skill_read') &&
-    (linkedProjectsEnabled || tool.name !== 'linked_projects') &&
-    (deviceHubEnabled || !deviceTools.has(tool.name)) &&
-    (!terminalsDisabled || !tool.name.startsWith('terminal_')),
-)
+const strictInputs = new Set(['subagent_spawn', 'pipeline_watch', 'pull_request_watch'])
+const enabledTools = tools
+  .filter(
+    (tool) =>
+      (process.env.DOVO_TASK_SKILLS_ENABLED === '1' || tool.name !== 'skill_read') &&
+      (linkedProjectsEnabled || tool.name !== 'linked_projects') &&
+      (deviceHubEnabled || !deviceTools.has(tool.name)) &&
+      (!terminalsDisabled || !tool.name.startsWith('terminal_')),
+  )
+  .map((tool) =>
+    strictInputs.has(tool.name)
+      ? { ...tool, inputSchema: { ...tool.inputSchema, additionalProperties: false } }
+      : tool,
+  )
 for (const tool of enabledTools)
   server.registerTool(
     tool.name,

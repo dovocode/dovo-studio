@@ -8,6 +8,7 @@ import {createPortal} from 'react-dom';
 const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s||{};
 const css=s=>{const v=flat(s);return {...v,paddingLeft:v.paddingLeft??v.paddingHorizontal,paddingRight:v.paddingRight??v.paddingHorizontal,paddingTop:v.paddingTop??v.paddingVertical,paddingBottom:v.paddingBottom??v.paddingVertical}};
 const base={display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,minHeight:0};
+export const ScrollView=({children,style,horizontal})=><div style={{overflow:'auto',minWidth:0,...css(style)}}>{children}</div>;
 export const View=({children,style})=><div style={{...base,...css(style)}}>{children}</div>;
 export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole} style={{display:'block',overflowWrap:'anywhere',...css(style)}}>{children}</span>;
 export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-pressed={accessibilityState?.selected} aria-checked={accessibilityState?.checked} onClick={onPress} style={{...base,padding:0,border:0,textAlign:'left',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
@@ -20,22 +21,38 @@ const listeners=new Set();export const AppState={currentState:'active',addEventL
 const store = `
 import {useSyncExternalStore} from 'react';import {changedFileFingerprint} from '@dovo/protocol';
 let files=[{path:'types.ts',before:'export type Props = {}',after:'export type Props = {name:string}',viewed:false},{path:'src/view.tsx',before:'old',after:'new',viewed:false},{path:'src/view.test.ts',before:'old test',after:'new test',viewed:false}];
-let revision=0;const listeners=new Set(),marks=new Map();
+let revision=0,guide;const listeners=new Set(),marks=new Map();
 export const useFiles=()=>{useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>revision);return files};
 window.changeFile=()=>{files=files.map(file=>file.path==='types.ts'?{...file,after:file.after+' '} : file);revision++;listeners.forEach(fn=>fn())};
 export const request=async(path,input)=>{
+ const current=files.map(file=>{const fingerprint=changedFileFingerprint(file);let row=marks.get(file.path);if(!row||row.fingerprint!==fingerprint){row={path:file.path,fingerprint,viewed:false,version:(row?.version??0)+1};marks.set(file.path,row)}return row});
+ const currentRevision='revision-'+revision;
+ if(guide?.revision!==currentRevision)guide=undefined;
+ if(path.endsWith('/guide')){
+  const move=input.move;
+  if(!guide||guide.id!==move.id||guide.version!==move.version)throw new Error('This guide changed. Refresh it.');
+  guide={...guide,version:guide.version+1,position:move.position,seen:[...new Set([...guide.seen,...(move.reviewed===undefined?[]:[move.reviewed])])]};
+ }
+
  if(path.endsWith('/organize')){
   window.lastOrganizerSelection=input.selection;
   if(window.failOrganize){window.failOrganize=false;throw new Error('Organizer unavailable. Try again.')}
   const progress={files:files.map(file=>marks.get(file.path)),groups:[{label:'View feature',summary:'Update the shared props and view',impact:'Inspect callers and linked tests',paths:files.map(file=>file.path),basis:'feature'}]};
   if(window.holdOrganize)await new Promise(resolve=>window.finishOrganize=resolve);
-  return progress;
+  if(input.guided){
+   if(currentRevision!=='revision-'+revision)throw new Error('Changes updated during analysis.');
+   guide={id:'guide-'+revision,revision:currentRevision,generatedAt:new Date().toISOString(),position:0,seen:[],version:0,steps:[
+    {title:'Shared contract',summary:'Check the new public name',impact:'Inspect view callers',paths:['types.ts'],excerpts:[{path:'types.ts',side:'after',start:1,end:1,text:'export type Props = {name:string}'}],questions:['Do all callers provide a name?']},
+    {title:'View and tests',summary:'Check the view behavior',impact:'Inspect the regression assertion',paths:['src/view.tsx','src/view.test.ts'],excerpts:[],questions:[]}
+   ]};
+   return {...progress,revision:currentRevision,guide};
+  }
+  return {...progress,revision:currentRevision};
  }
 
  if(path.endsWith('/set') && window.holdReviewSave)await new Promise(resolve=>window.finishReviewSave=resolve);
- const current=files.map(file=>{const fingerprint=changedFileFingerprint(file);let row=marks.get(file.path);if(!row||row.fingerprint!==fingerprint){row={path:file.path,fingerprint,viewed:false,version:(row?.version??0)+1};marks.set(file.path,row)}return row});
  if(path.endsWith('/set')){const row=marks.get(input.path);if(!row||row.fingerprint!==input.fingerprint||row.version!==input.version)throw new Error('This file changed. Refresh before marking it again.');marks.set(input.path,{...row,viewed:input.viewed,version:row.version+1})}
- return {files:files.map(file=>marks.get(file.path)),groups:[]};
+ return {files:files.map(file=>marks.get(file.path)),groups:[],revision:currentRevision,...(guide?{guide}:{})};
 };
 export const workspace={connected:true,activeRuntimeId:'host',request};export const runtime={connected:true,profile:{id:'host'},read:request,call:(path,...args)=>{if(path.endsWith('/read')||path.endsWith('/organize'))throw new Error('Review reads must not refresh workspace snapshots or persist offline caches');return request(path,...args)}};
 `
@@ -65,7 +82,7 @@ mocks['../../ui/controls/icon'] = mocks['../controls/icon']
 const bundle = await build({
   stdin: {
     contents: `import {createRoot} from 'react-dom/client';import {useMemo,useState} from 'react';import {useFiles} from 'test-store';import {changedFileFingerprint,reviewFileState,orderReviewFiles} from '@dovo/protocol';import {useFileReview as useDesktopReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';import {useFileReview as useMobileReview} from '${root}/apps/mobile/src/scm/review/use-file-review.ts';import {ReviewFiles,FileReviewControls} from '${root}/packages/studio-ui/src/review/file-review.tsx';import {OrganizeReview} from '${root}/packages/studio-ui/src/review/organize-review.tsx';import {MobileFileReview} from '${root}/apps/mobile/src/scm/review/file-review.tsx';import {MobileOrganizeReview} from '${root}/apps/mobile/src/scm/review/organize-review.tsx';
-function Review({mobile=false}){const source=useFiles(),fingerprints=useMemo(()=>new Map(source.map(file=>[file.path,changedFileFingerprint(file)])),[source]);const useReview=mobile?useMobileReview:useDesktopReview;const review=useReview({kind:'task',taskId:'task',source:'working'},JSON.stringify([...fingerprints]));const [related,setRelated]=useState(true),[selected,setSelected]=useState('types.ts'),[editing,setEditing]=useState(false);const files=orderReviewFiles(source.map(file=>({...file,viewed:reviewFileState(review.progress,file.path,fingerprints.get(file.path))?.viewed??false})),review.progress?.groups??[],related);const file=files.find(file=>file.path===selected)||files[0];const props={files,groups:review.progress?.groups??[],selected:file.path,onSelect:setSelected,related,onRelatedChange:setRelated,onViewed:viewed=>review.setViewed(file.path,fingerprints.get(file.path),viewed),disabled:!review.ready||!reviewFileState(review.progress,file.path,fingerprints.get(file.path)),busy:review.busy,navigationDisabled:editing,error:review.error,onRetry:review.reload};return <section data-client={mobile?'mobile':'desktop'} style={{width:mobile?320:650,minWidth:0,border:'1px solid #555',padding:8}}><button onClick={()=>setEditing(v=>!v)}>{editing?'Cancel edit':'Edit draft'}</button>{mobile?<><MobileOrganizeReview review={review} disabled={editing} onOrganized={()=>setRelated(true)}/><MobileFileReview {...props}/></>:<><OrganizeReview review={review} onOrganized={()=>setRelated(true)} disabled={editing}/><FileReviewControls {...props}/><div style={{display:'flex',height:400}}><aside style={{display:'flex',flexDirection:'column',width:300,minHeight:0}}><ReviewFiles {...props} disabled={editing}/></aside><pre data-diff>{file.path}</pre></div></>}</section>}
+function Review({mobile=false}){const source=useFiles(),fingerprints=useMemo(()=>new Map(source.map(file=>[file.path,changedFileFingerprint(file)])),[source]);const useReview=mobile?useMobileReview:useDesktopReview;const review=useReview({kind:'task',taskId:'task',source:'working'},JSON.stringify([...fingerprints]));const [related,setRelated]=useState(true),[selected,setSelected]=useState('types.ts'),[editing,setEditing]=useState(false);const files=orderReviewFiles(source.map(file=>({...file,viewed:reviewFileState(review.progress,file.path,fingerprints.get(file.path))?.viewed??false})),review.progress?.groups??[],related);const file=files.find(file=>file.path===selected)||files[0];const props={files,groups:review.progress?.groups??[],selected:file.path,onSelect:setSelected,related,onRelatedChange:setRelated,onViewed:viewed=>review.setViewed(file.path,fingerprints.get(file.path),viewed),disabled:!review.ready||!reviewFileState(review.progress,file.path,fingerprints.get(file.path)),busy:review.busy,navigationDisabled:editing,error:review.error,onRetry:review.reload};return <section data-client={mobile?'mobile':'desktop'} style={{width:mobile?320:650,minWidth:0,border:'1px solid #555',padding:8}}><button onClick={()=>setEditing(v=>!v)}>{editing?'Cancel edit':'Edit draft'}</button>{mobile?<><MobileOrganizeReview onOpenFile={setSelected} review={review} disabled={editing} onOrganized={()=>setRelated(true)}/><MobileFileReview {...props}/></>:<><OrganizeReview onOpenFile={setSelected} review={review} onOrganized={()=>setRelated(true)} disabled={editing}/><FileReviewControls {...props}/><div style={{display:'flex',height:400}}><aside style={{display:'flex',flexDirection:'column',width:300,minHeight:0}}><ReviewFiles {...props} disabled={editing}/></aside><pre data-diff>{file.path}</pre></div></>}</section>}
 function App(){const [desktop,setDesktop]=useState(true);return <div className="studio dark" style={{display:'flex',gap:12,alignItems:'flex-start'}}><button onClick={()=>setDesktop(v=>!v)}>Reopen desktop</button>{desktop&&<Review/>}<Review mobile/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root + '/packages/studio-ui',
     loader: 'tsx',
@@ -381,6 +398,44 @@ try {
   await desktop.getByRole('button', { name: 'Clear file search', exact: true }).click()
   assert.equal(await changedSearch.inputValue(), '')
   assert.equal(await changedSearch.evaluate((node) => node === document.activeElement), true)
+  await page.evaluate(() => (window.holdOrganize = false))
+  await desktop.getByRole('button', { name: 'Generate guided review', exact: true }).click()
+  const tour = desktop.locator('details[aria-label="Guided review"]')
+  await tour.getByText('Step 1: Shared contract', { exact: true }).waitFor()
+  await tour.getByText('Do all callers provide a name?', { exact: true }).waitFor()
+  assert.equal(await tour.locator('code').innerText(), 'export type Props = {name:string}')
+  await tour.getByRole('button', { name: 'Open types.ts', exact: true }).click()
+  assert.equal(await desktop.locator('[data-diff]').innerText(), 'types.ts')
+  const viewedBefore = await desktop
+    .getByRole('checkbox', { name: 'File viewed', exact: true })
+    .isChecked()
+  await tour.getByRole('button', { name: 'Mark reviewed and continue', exact: true }).click()
+  await tour.getByText('Step 2: View and tests', { exact: true }).waitFor()
+  assert.equal(
+    await desktop.getByRole('checkbox', { name: 'File viewed', exact: true }).isChecked(),
+    viewedBefore,
+  )
+  await page.evaluate(() => window.mobileForeground())
+  await mobile.getByText('Step 2/2: View and tests', { exact: true }).waitFor()
+  await mobile.getByRole('button', { name: 'Mark final step reviewed', exact: true }).click()
+  await mobile
+    .getByText('Walkthrough complete. File viewed marks and review submission remain separate.', {
+      exact: true,
+    })
+    .waitFor()
+  await page.getByRole('button', { name: 'Reopen desktop' }).click()
+  await page.getByRole('button', { name: 'Reopen desktop' }).click()
+  await tour
+    .getByText('Walkthrough complete. File viewed marks and review submission remain separate.', {
+      exact: true,
+    })
+    .waitFor()
+  await tour.getByRole('button', { name: 'Open src/view.test.ts', exact: true }).click()
+  assert.equal(await desktop.locator('[data-diff]').innerText(), 'src/view.test.ts')
+  assert.equal(await mobile.evaluate((el) => el.scrollWidth <= el.clientWidth), true)
+  await page.evaluate(() => window.changeFile())
+  await tour.waitFor({ state: 'detached' })
+  assert.equal(await mobile.getByText('Step 2/2: View and tests', { exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     'Review controls: paired progress, reopen, per-file reset, folder order, search, unviewed filter, draft guard, narrow mobile layout, ephemeral organizer selection/default, feature summaries, reset, errors and stale result guard passed',

@@ -1,4 +1,4 @@
-import { afterAll, expect, it, vi } from 'vite-plus/test'
+import { afterAll, beforeAll, expect, it, vi } from 'vite-plus/test'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -11,7 +11,9 @@ const fixture = vi.hoisted(() => {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   return {
     resourcesDescriptor,
+    copy: vi.fn<(text: string) => Promise<void>>(async () => {}),
     handlers,
+    appHandlers: new Map<string, (...args: unknown[]) => void>(),
     windows: 0,
     ipc: vi.fn<
       (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void
@@ -19,6 +21,15 @@ const fixture = vi.hoisted(() => {
       handlers.set(channel, listener)
     }),
     quit: vi.fn<() => void>(),
+    returnBrowserTabs: vi.fn<() => Promise<void>>(async () => {}),
+    browserQuitting: vi.fn<(ready: boolean) => void>(),
+    stop: vi.fn<() => Promise<void>>(async () => {}),
+    error: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
+    startupErrors: [] as unknown[][],
+    startupIpc: [] as string[],
+    startupUpdates: 0,
+    startupQuits: 0,
+    translated: false,
     choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
     start: vi.fn<() => Promise<{ address: string; token: string }>>(() =>
       Promise.reject(new Error('Runtime protocol is incompatible')),
@@ -43,17 +54,26 @@ vi.mock('./dictation.js', () => ({ registerDictation: () => ({ dispose: () => {}
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
+    get runningUnderARM64Translation() {
+      return fixture.translated
+    },
     getVersion: () => '0.0.7',
     getPath: () => '/tmp/dovo-startup-unit-test',
-    commandLine: { hasSwitch: () => true },
+    commandLine: {
+      hasSwitch: () => true,
+      appendSwitch: vi.fn<(switchName: string, value?: string) => void>(),
+    },
     setName: vi.fn<(...args: unknown[]) => void>(),
     setPath: vi.fn<(...args: unknown[]) => void>(),
-    on: vi.fn<(...args: unknown[]) => void>(),
+    on: vi.fn<(name: string, listener: (...args: unknown[]) => void) => void>((name, listener) => {
+      fixture.appHandlers.set(name, listener)
+    }),
     once: vi.fn<(...args: unknown[]) => void>(),
     whenReady: () => Promise.resolve(),
     requestSingleInstanceLock: () => true,
     quit: fixture.quit,
   },
+  clipboard: { writeText: fixture.copy },
   nativeTheme: { shouldUseDarkColors: true },
   BrowserWindow: class {
     webContents = {
@@ -74,7 +94,7 @@ vi.mock('electron', () => ({
     }
   },
   ipcMain: { handle: fixture.ipc, on: fixture.ipc },
-  dialog: {},
+  dialog: { showMessageBox: fixture.error },
 }))
 vi.mock('./runtime-connection-health.js', () => ({ checkRuntimeConnection: fixture.confirm }))
 vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
@@ -82,11 +102,22 @@ vi.mock('./linux-desktop.js', () => ({
   registerLinuxDesktop: vi.fn<typeof import('./linux-desktop.js').registerLinuxDesktop>(),
 }))
 vi.mock('./task-launcher.js', () => ({ registerTaskLauncher: () => ({ dispose: () => {} }) }))
+vi.mock('./terminal-ports.js', () => ({ registerTerminalPorts: () => ({ dispose: () => {} }) }))
 vi.mock('./updates.js', () => ({ registerUpdates: fixture.updates }))
 vi.mock('./browser.js', () => ({
   registerBrowser: vi.fn<(...args: unknown[]) => { dispose: () => Promise<void> }>(() => ({
     dispose: async () => {},
   })),
+}))
+vi.mock('./browser-window.js', () => ({
+  registerBrowserWindows: () => ({
+    create: vi.fn<() => Promise<import('electron').BrowserWindow>>(),
+    list: () => [],
+    onClose: () => {},
+    returnAll: fixture.returnBrowserTabs,
+    setQuitting: fixture.browserQuitting,
+    dispose: () => {},
+  }),
 }))
 vi.mock('./links.js', () => ({
   queueExternalLinks: vi.fn<typeof import('./links.js').queueExternalLinks>(),
@@ -101,7 +132,7 @@ vi.mock('./connection-storage.js', () => ({
 vi.mock('./local-runtime.js', () => ({
   startLocalRuntime: fixture.start,
   pauseLocalRuntime: fixture.pause,
-  stopLocalRuntime: () => Promise.resolve(),
+  stopLocalRuntime: fixture.stop,
   prepareLocalRuntimeUpdate: vi.fn<typeof import('./local-runtime').prepareLocalRuntimeUpdate>(),
 }))
 vi.mock('./windows-runtime.js', () => ({
@@ -115,21 +146,40 @@ vi.mock('./windows-runtime.js', () => ({
   windowsRuntimeStatus: vi.fn<() => Promise<unknown>>(() => Promise.resolve({})),
 }))
 
-it('opens the recovery UI and registers updates when the installed runtime is incompatible', async () => {
+// The first import transforms the complete main-process dependency graph. Keep
+// that shared setup out of the recovery assertion's budget on cold Windows CI.
+beforeAll(async () => {
   const log = vi.spyOn(console, 'error').mockImplementation(() => {})
   try {
     await import('./main')
-    await vi.waitFor(() => expect(fixture.windows).toBe(1))
-    expect(fixture.ipc).toHaveBeenCalledWith('app:info', expect.any(Function))
-    expect(fixture.updates).toHaveBeenCalledOnce()
-    expect(fixture.quit).not.toHaveBeenCalled()
-    expect(log).toHaveBeenCalledWith(
-      'Local runtime needs attention:',
-      'Runtime protocol is incompatible',
+    await vi.waitUntil(() =>
+      log.mock.calls.some(
+        ([message, detail]) =>
+          message === 'Local runtime needs attention:' &&
+          detail === 'Runtime protocol is incompatible',
+      ),
     )
+    fixture.startupErrors = log.mock.calls.map((args) => [...args])
+    // The runner clears mock calls between setup and tests; retain startup
+    // observations independently of the mocks used by subsequent scenarios.
+    fixture.startupIpc = fixture.ipc.mock.calls.map(([channel]) => channel)
+    fixture.startupUpdates = fixture.updates.mock.calls.length
+    fixture.startupQuits = fixture.quit.mock.calls.length
   } finally {
     log.mockRestore()
   }
+})
+
+it('opens the recovery UI and registers updates when the installed runtime is incompatible', () => {
+  expect(fixture.windows).toBe(1)
+  expect(fixture.startupIpc).toContain('app:info')
+  expect(fixture.handlers.get('app:info')).toEqual(expect.any(Function))
+  expect(fixture.startupUpdates).toBe(1)
+  expect(fixture.startupQuits).toBe(0)
+  expect(fixture.startupErrors).toContainEqual([
+    'Local runtime needs attention:',
+    'Runtime protocol is incompatible',
+  ])
 })
 
 it('rejects untrusted senders before returning runtime credentials or activating extensions', async () => {
@@ -145,6 +195,7 @@ it('rejects untrusted senders before returning runtime credentials or activating
     'runtime:windows-save',
     'runtime:windows-connection',
     'runtime:windows-security',
+    'app:info',
   ]) {
     const handler = fixture.handlers.get(channel)
     if (!handler) throw new Error(`Missing IPC handler ${channel}`)
@@ -160,6 +211,38 @@ const trustedEvent = () => {
   }
   return { senderFrame: frame, sender: { mainFrame: frame } }
 }
+
+it.each([
+  { platform: 'darwin', arch: 'arm64', translated: false, architecture: 'arm64' },
+  { platform: 'darwin', arch: 'x64', translated: false, architecture: 'x64' },
+  { platform: 'darwin', arch: 'x64', translated: true, architecture: 'arm64' },
+  { platform: 'win32', arch: 'x64', translated: false, architecture: 'x64' },
+  { platform: 'win32', arch: 'x64', translated: true, architecture: 'arm64' },
+  { platform: 'linux', arch: 'arm64', translated: false, architecture: 'arm64' },
+] as const)(
+  'reports the desktop viewer from the host: $platform/$arch, translated=$translated',
+  ({ platform, arch, translated, architecture }) => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    const archSpy = vi.spyOn(process, 'arch', 'get').mockReturnValue(arch)
+    fixture.translated = translated
+    try {
+      const handler = fixture.handlers.get('app:info')
+      if (!handler) throw new Error('Missing app info handler')
+      const event = { ...trustedEvent(), returnValue: undefined }
+      handler(event)
+      expect(event.returnValue).toEqual({
+        version: '0.0.7',
+        channel: 'stable',
+        viewer: { platform, architecture, processArchitecture: arch },
+      })
+    } finally {
+      fixture.translated = false
+      platformSpy.mockRestore()
+      archSpy.mockRestore()
+    }
+  },
+)
+
 it('accepts Native Windows setup without restarting active work', async () => {
   await import('./main')
   const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
@@ -332,4 +415,54 @@ it('registers only validated link receiver readiness from the trusted owning ren
   handler(event, false)
   expect(setLinkReceiver).toHaveBeenCalledWith(event.sender, false)
   expect(() => handler(event, 'true')).toThrow('Expected link receiver readiness')
+})
+
+it('keeps repeated quit requests blocked until detached tabs are saved, and permits retry on failure', async () => {
+  await import('./main')
+  const beforeQuit = fixture.appHandlers.get('before-quit')
+  if (!beforeQuit) throw new Error('Missing shutdown handler')
+  const event = { preventDefault: vi.fn<() => void>() }
+  fixture.stop.mockClear()
+  fixture.returnBrowserTabs.mockRejectedValueOnce(new Error('Storage is full'))
+  beforeQuit(event)
+  await vi.waitFor(() => expect(fixture.error).toHaveBeenCalled())
+  expect(fixture.quit).not.toHaveBeenCalled()
+  expect(fixture.stop).not.toHaveBeenCalled()
+  expect(fixture.browserQuitting).not.toHaveBeenCalledWith(true)
+
+  let saved = () => {}
+  fixture.returnBrowserTabs.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        saved = resolve
+      }),
+  )
+  beforeQuit(event)
+  beforeQuit(event)
+  expect(event.preventDefault).toHaveBeenCalledTimes(3)
+  expect(fixture.returnBrowserTabs).toHaveBeenCalledTimes(2)
+  expect(fixture.stop).not.toHaveBeenCalled()
+  expect(fixture.quit).not.toHaveBeenCalled()
+  saved()
+  await vi.waitFor(() => expect(fixture.quit).toHaveBeenCalledOnce())
+  expect(fixture.stop).toHaveBeenCalledOnce()
+  expect(fixture.browserQuitting).toHaveBeenLastCalledWith(true)
+  beforeQuit(event)
+  expect(event.preventDefault).toHaveBeenCalledTimes(3)
+})
+
+it('copies through the trusted Studio bridge without requiring renderer focus', async () => {
+  const copy = fixture.handlers.get('clipboard:write-text')
+  if (!copy) throw new Error('Missing clipboard handler')
+  const url = pathToFileURL(
+    join(dirname(fileURLToPath(import.meta.url)), '../dist/index.html'),
+  ).href
+  const mainFrame = { url }
+  const event = { senderFrame: mainFrame, sender: { mainFrame } }
+  await copy(event, 'Full thread selection ✓')
+  expect(fixture.copy).toHaveBeenLastCalledWith('Full thread selection ✓')
+  await expect(
+    copy({ ...event, senderFrame: { url: 'https://example.com/' } }, 'website'),
+  ).rejects.toThrow('Untrusted')
+  await expect(copy(event, {})).rejects.toThrow('Expected clipboard text')
 })

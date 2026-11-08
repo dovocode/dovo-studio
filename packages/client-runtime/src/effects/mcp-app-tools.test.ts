@@ -18,6 +18,117 @@ afterEach(() => {
   vi.unstubAllGlobals()
   Socket.instances = []
 })
+it('reconnects once when shown while suspension is still stopping', async () => {
+  vi.stubGlobal('WebSocket', Socket)
+  const ticket = vi.fn<() => Promise<string>>(async () => 'ticket')
+  const bridge = startMcpAppTools({
+    socketUrl: (value) => `ws://lan/${value}`,
+    ticket,
+    call: () => {},
+    cancel: () => {},
+    onError: () => {},
+  })
+  try {
+    await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+    bridge.setVisible(false)
+    bridge.setVisible(true)
+    await vi.waitFor(() => expect(Socket.instances).toHaveLength(2))
+    expect(Socket.instances[0]!.close).toHaveBeenCalledOnce()
+    expect(ticket).toHaveBeenCalledTimes(2)
+  } finally {
+    await bridge.stop()
+  }
+})
+
+it('does not create a socket when hidden during ticket acquisition', async () => {
+  vi.stubGlobal('WebSocket', Socket)
+  let resolveTicket: (ticket: string) => void = () => {}
+  const ticket = vi.fn<() => Promise<string>>(
+    () =>
+      new Promise<string>((resolve) => {
+        resolveTicket = resolve
+      }),
+  )
+  const bridge = startMcpAppTools({
+    socketUrl: (value) => `ws://lan/${value}`,
+    ticket,
+    call: () => {},
+    cancel: () => {},
+    onError: () => {},
+  })
+  try {
+    await vi.waitFor(() => expect(ticket).toHaveBeenCalledOnce())
+    bridge.setVisible(false)
+    resolveTicket('stale')
+    await vi.waitFor(() => expect(Socket.instances).toHaveLength(0))
+    bridge.setVisible(true)
+    await vi.waitFor(() => expect(ticket).toHaveBeenCalledTimes(2))
+    resolveTicket('fresh')
+    await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+    expect(Socket.instances[0]!.url).toBe('ws://lan/fresh')
+  } finally {
+    await bridge.stop()
+  }
+})
+
+it('does not restart after final stop during suspension, even if shown', async () => {
+  vi.stubGlobal('WebSocket', Socket)
+  const ticket = vi.fn<() => Promise<string>>(async () => 'ticket')
+  const bridge = startMcpAppTools({
+    socketUrl: (value) => `ws://lan/${value}`,
+    ticket,
+    call: () => {},
+    cancel: () => {},
+    onError: () => {},
+  })
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+  bridge.setVisible(false)
+  const stopped = bridge.stop()
+  bridge.setVisible(true)
+  await stopped
+  await new Promise<void>((resolve) => setTimeout(resolve, 25))
+  expect(ticket).toHaveBeenCalledOnce()
+  expect(Socket.instances).toHaveLength(1)
+  bridge.setVisible(true)
+  await Promise.resolve()
+  expect(ticket).toHaveBeenCalledOnce()
+})
+it('suspends only after hidden pending calls finish and reconnects with tools intact', async () => {
+  vi.stubGlobal('WebSocket', Socket)
+  const cancel = vi.fn<(requestId: string) => void>()
+  const bridge = startMcpAppTools({
+    socketUrl: (ticket) => `ws://lan/${ticket}`,
+    ticket: async () => 'ticket',
+    call: () => {},
+    cancel,
+    onError: () => {},
+    visible: false,
+  })
+  bridge.setTools([{ name: 'selection' }])
+  expect(Socket.instances).toHaveLength(0)
+  bridge.setVisible(true)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+  const socket = Socket.instances[0]!
+  socket.readyState = Socket.OPEN
+  socket.onopen?.()
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'call', requestId: 'one', name: 'selection', arguments: {} }),
+  })
+  bridge.setVisible(false)
+  expect(socket.close).not.toHaveBeenCalled()
+  bridge.reply({ requestId: 'one', result: {} })
+  await vi.waitFor(() => expect(socket.close).toHaveBeenCalled())
+  expect(cancel).not.toHaveBeenCalled()
+  bridge.setVisible(true)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(2))
+  const resumed = Socket.instances[1]!
+  resumed.readyState = Socket.OPEN
+  resumed.onopen?.()
+  expect(JSON.parse(resumed.send.mock.calls[0]![0])).toMatchObject({
+    tools: [{ name: 'selection' }],
+  })
+  await bridge.stop()
+})
 it('keeps HTTP runtimes on ws, forwards only active calls and cancels them on disposal', async () => {
   vi.stubGlobal('WebSocket', Socket)
   const call = vi.fn<(value: { requestId: string; name: string; arguments: unknown }) => void>()

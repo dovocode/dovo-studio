@@ -4,7 +4,6 @@ type TaskListViewState = {
   environment: string
   projectId: string
   query: string
-  expanded: Record<string, boolean>
   threadExpansion: Record<string, boolean>
   finishedThreadExpansion: Record<string, boolean>
   scrollTop: number

@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import type { TaskTurn } from '@dovo/studio-core'
-import { conversationTurns } from './conversation-turns'
+import { conversationTurns, createConversationTurnKeys } from './conversation-turns'
 
 const turn = (assistantId: string, status: TaskTurn['status']): TaskTurn => ({
   id: assistantId,
@@ -10,6 +10,26 @@ const turn = (assistantId: string, status: TaskTurn['status']): TaskTurn => ({
   provider: 'codex',
   model: 'test',
   startedAt: '',
+})
+
+it('keeps visible turn keys when older pages reveal its request or metadata regroups it', () => {
+  const retain = createConversationTurnKeys()
+  const message = (id: string) => ({ id, role: 'assistant' as const, text: id })
+  const group = (...ids: string[]) => ({
+    id: ids[0]!,
+    status: 'completed' as const,
+    messages: ids.map(message),
+  })
+  const initial = retain([group('reply')])[0]!
+  const paged = retain([group('prompt', 'update', 'reply')])[0]!
+  expect(paged.key).toBe(initial.key)
+  const split = retain([group('prompt'), group('update', 'reply')])
+  expect(split[1]?.key).toBe(initial.key)
+  expect(new Set(split.map((item) => item.key)).size).toBe(split.length)
+  const merged = retain([group('prompt', 'update', 'reply')])[0]!
+  expect(merged.key).toBe(initial.key)
+  retain([])
+  expect(retain([group('reply')])[0]?.key).not.toBe(initial.key)
 })
 
 it('uses one marker per user input, including resumed work through completion', () => {

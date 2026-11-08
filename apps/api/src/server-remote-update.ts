@@ -170,20 +170,6 @@ async function prepareRestart(directory: string) {
     }).catch(() => undefined)
   }
 }
-async function verifyInstalled(directory: string, version: string) {
-  const connection = readConnection(join(directory, 'runtime-connection.json'))
-  const response = await fetch(`${connection.address}/api/snapshot?scope=overview`, {
-    headers: { Authorization: `Bearer ${connection.token}` },
-    signal: AbortSignal.timeout(5000),
-  })
-  if (!response.ok) throw new Error('Updated server did not respond')
-  const snapshot = decode(snapshotSchema, await response.json())
-  if (snapshot.releaseVersion !== version)
-    throw new Error(
-      `Server restarted with ${snapshot.releaseVersion ?? 'an unknown version'} instead of ${version}`,
-    )
-}
-
 export async function runRemoteServerUpdate(directory: string, version: string) {
   try {
     if (
@@ -205,6 +191,9 @@ export async function runRemoteServerUpdate(directory: string, version: string) 
       const destination = join(root, `v${version}`)
       const launcher = join(destination, 'bin', name)
       let stage: string | undefined
+      const removeStage = async () => {
+        if (stage) await rm(stage, { recursive: true, force: true })
+      }
       try {
         if (!existsSync(launcher)) {
           await mkdir(root, { recursive: true })
@@ -222,11 +211,20 @@ export async function runRemoteServerUpdate(directory: string, version: string) 
         status(directory, { status: 'installing', version, progress: 100 })
         const cancel = await prepareRestart(directory)
         try {
-          await updateService(directory, launcher, () => verifyInstalled(directory, version))
+          await updateService(directory, launcher, version)
         } catch (error) {
           await cancel()
           throw error
         }
+      } catch (error) {
+        await removeStage().catch((cleanup: unknown) =>
+          console.error('Could not remove the server update stage', cleanup),
+        )
+        throw error
+      }
+      // The new server is active and verified. Follow-up housekeeping is reported, not
+      // presented as a failed update.
+      try {
         const shortcut = join(homedir(), '.local', 'bin', name)
         if (
           await lstat(shortcut).then(
@@ -241,9 +239,15 @@ export async function runRemoteServerUpdate(directory: string, version: string) 
             await rename(temporary, shortcut)
           }
         }
-      } finally {
-        if (stage) await rm(stage, { recursive: true, force: true })
+      } catch (error) {
+        console.error(
+          `The server updated to ${version}, but its launcher shortcut was not updated`,
+          error,
+        )
       }
+      await removeStage().catch((error: unknown) =>
+        console.error(`The server updated to ${version}, but its update stage remains`, error),
+      )
     } else throw new Error('In-app server updates are not available on this platform')
     status(directory, { status: 'complete', version, progress: 100 })
     return { updated: true, version }

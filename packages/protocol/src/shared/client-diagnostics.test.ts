@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { clientDiagnostic, diagnosticMessage } from './client-diagnostics'
+import { clientDiagnostic, diagnosticMessage, redactCredentialText } from './client-diagnostics'
 it('removes credentials and URL query/fragment from copyable diagnostics', () => {
   const value = diagnosticMessage(
     new Error(
@@ -16,4 +16,16 @@ it('includes a bounded error, a stable identifier and only supplied context', ()
   expect(Number.isFinite(Date.parse(value.at))).toBe(true)
   expect(value.context).toEqual({ appVersion: '1.0', surface: 'mobile' })
   expect(value.error).toHaveLength(2000)
+})
+
+it('redacts Basic authorization, API key headers and quoted embedded JSON without losing surrounding text', () => {
+  const text =
+    'request X-API-Key: header-secret Authorization: Basic dXNlcjpwYXNz {"api_key":"json-secret","password":"two words"} done'
+  const redacted = redactCredentialText(text)
+  for (const secret of ['header-secret', 'dXNlcjpwYXNz', 'json-secret', 'two words'])
+    expect(redacted).not.toContain(secret)
+  expect(redacted).toContain('request')
+  expect(redacted).toContain('done')
+  expect(redactCredentialText(redacted)).toBe(redacted)
+  expect(redactCredentialText('token count: 12 exitCode=1')).toBe('token count: 12 exitCode=1')
 })

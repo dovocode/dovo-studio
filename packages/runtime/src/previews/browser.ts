@@ -1,11 +1,21 @@
 import { Schema } from 'effect'
 import {
+  restoreBrowserSessionCookies,
+  clearBrowserSessionCookies,
+  saveBrowserSessionCookies,
+} from './browser-session-cookies.js'
+import {
   createBrowserFaviconLoader,
   fetchRemoteFavicon,
   observeBrowserFavicons,
 } from './browser-favicon.js'
 import {
   selectedBrowserText,
+  readBrowserElementSnapshot,
+  inspectBrowserElement,
+  browserElementSnapshotSchema,
+  browserElementSchema,
+  type BrowserElementPoint,
   STUDIO_BROWSER_SCOPE,
   isPrivateBrowserProfile,
   type BrowserProfile,
@@ -14,6 +24,9 @@ import {
 import { redact } from '../storage/activity.js'
 import { browserScript } from './browser-script.js'
 import { browserInteraction } from './browser-interaction.js'
+import { BrowserUploads } from './browser-uploads.js'
+import { BrowserDownloads } from './browser-downloads.js'
+import { BrowserTransferStorage } from './browser-transfer-storage.js'
 import { decode, decodeResult } from '@dovo/protocol'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -32,6 +45,7 @@ import {
   remoteBrowserInteractionSchema,
   type RemoteBrowserInput,
   type RemoteBrowserMessage,
+  type RemoteBrowserUpload,
 } from '@dovo/protocol'
 import { ChromiumInstallation } from './chromium-installation.js'
 import { HttpError, errorMessage } from '../errors.js'
@@ -72,6 +86,8 @@ type QueuedInput = {
   operation?: Promise<void>
 }
 type Session = {
+  uploads: BrowserUploads
+  downloads?: BrowserDownloads
   logs: { time: string; kind: string; message: string }[]
   release: () => Promise<void>
   page: Page
@@ -100,15 +116,57 @@ type Session = {
   queued: number
   loading: boolean
   streaming: boolean
+  streamFps?: number
+  captureActiveUntil?: number
+  captureIdle?: ReturnType<typeof setTimeout>
   stream: Promise<void>
   idle?: ReturnType<typeof setTimeout>
   frame?: BrowserFrame
   liveFrame?: Uint8Array
   dialog?: Dialog
   failedNavigation?: string
+  /** Epoch milliseconds of the last agent command; mirrored into recent state updates. */
+  agentActiveAt?: number
 }
 // Dots cannot appear in a legacy profile ID, keeping daily-browsing cookies separate.
 const WORKSPACE_PROFILES = 'browser-workspace.profiles'
+export type StudioBrowserKind = 'workspace' | 'thread' | 'agent' | 'studio'
+export type StudioSessionIdentity = {
+  kind: StudioBrowserKind
+  tabId?: string
+  profileId?: string
+  /** Agent-facing ID when it differs from the internal session key. */
+  alias?: string
+  private: boolean
+}
+/** Classify a browser session key for Studio Tools listing and agent addressing. */
+export function studioSessionIdentity(
+  resourceId: string,
+  owner: string | undefined,
+): StudioSessionIdentity {
+  if (resourceId.startsWith('[')) {
+    try {
+      const parts: unknown = JSON.parse(resourceId)
+      if (Array.isArray(parts)) {
+        const tabId = typeof parts[1] === 'string' ? parts[1] : undefined
+        const profileId = typeof parts[2] === 'string' ? parts[2] : undefined
+        const workspace = owner === STUDIO_BROWSER_SCOPE || parts[0] === STUDIO_BROWSER_SCOPE
+        return {
+          kind: workspace ? 'workspace' : 'thread',
+          ...(tabId ? { tabId } : {}),
+          ...(profileId ? { profileId } : {}),
+          ...(workspace && tabId ? { alias: `workspace:${tabId}` } : {}),
+          private: !!profileId && isPrivateBrowserProfile(profileId),
+        }
+      }
+    } catch {
+      /* Not a composite session key. */
+    }
+  }
+  if (resourceId.startsWith('agent-browser:')) return { kind: 'agent', private: false }
+  if (resourceId.startsWith('studio-browser:')) return { kind: 'studio', private: false }
+  return { kind: 'thread', private: false }
+}
 const idleMs = 5 * 60 * 1000
 export class RemoteBrowsers {
   async activeMedia(resourceId: string) {
@@ -135,15 +193,24 @@ export class RemoteBrowsers {
   private artifactQueue: Promise<unknown> = Promise.resolve()
   private pendingArtifactRenders = 0
   private browser?: Promise<Browser>
+  private browserUsers = 0
+  private browserIdle?: ReturnType<typeof setTimeout>
+  private closingBrowser?: Promise<void>
   private sessions = new Map<string, Promise<Session>>()
   private owners = new Map<string, string>()
-  private profiles = new Map<string, { context: Promise<BrowserContext>; users: number }>()
+  private profiles = new Map<
+    string,
+    { context: Promise<BrowserContext>; users: number; profileId: string }
+  >()
+  private cookieDirectories = new WeakMap<BrowserContext, string>()
   private closingProfiles = new Map<string, Promise<void>>()
   private disposed = false
   private installation = new ChromiumInstallation()
+  private downloadDirectories = new WeakMap<BrowserContext, Promise<string>>()
   constructor(
     private profileDirectory?: string,
     private browserProfiles: () => readonly BrowserProfile[] = () => [],
+    private transfers = new BrowserTransferStorage(),
   ) {}
   prepare() {
     void this.installation.ensure().catch((error) => {
@@ -193,6 +260,69 @@ export class RemoteBrowsers {
     }
     return this.browser
   }
+  private scheduleBrowserClose() {
+    clearTimeout(this.browserIdle)
+    this.browserIdle = undefined
+    if (
+      this.disposed ||
+      this.browserUsers ||
+      this.pendingArtifactRenders ||
+      this.closingBrowser ||
+      !this.browser
+    )
+      return
+    const browser = this.browser
+    this.browserIdle = setTimeout(() => {
+      this.browserIdle = undefined
+      if (
+        this.disposed ||
+        this.browserUsers ||
+        this.pendingArtifactRenders ||
+        this.browser !== browser
+      )
+        return
+      // Keep acquisitions behind shutdown so they cannot attach a new context to
+      // the browser being retired. A late disconnect never clears its replacement.
+      const closing = browser
+        .then((instance) => instance.close())
+        .then(() => {
+          if (this.browser === browser) this.browser = undefined
+        })
+        .catch((error: unknown) => console.error('Could not close idle Chromium', error))
+      this.closingBrowser = closing
+      void closing.then(() => {
+        if (this.closingBrowser === closing) this.closingBrowser = undefined
+        this.scheduleBrowserClose()
+      })
+    }, 60_000)
+    this.browserIdle.unref()
+  }
+  private async sharedContext(options: Parameters<Browser['newContext']>[0]) {
+    // Include acquisitions: newContext itself can be pending at the idle deadline.
+    this.browserUsers++
+    clearTimeout(this.browserIdle)
+    this.browserIdle = undefined
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      this.browserUsers--
+      this.scheduleBrowserClose()
+    }
+    try {
+      await this.closingBrowser
+      const context = await (await this.launch()).newContext(options)
+      context.once('close', release)
+      if (this.disposed) {
+        await context.close()
+        throw new HttpError(503, 'Runtime is shutting down')
+      }
+      return context
+    } catch (error) {
+      release()
+      throw error
+    }
+  }
   /** Exports and snapshots share a bounded queue and never use a signed-in profile. */
   private async renderArtifact<T>(render: (page: Page) => Promise<T>): Promise<T> {
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
@@ -201,8 +331,7 @@ export class RemoteBrowsers {
     this.pendingArtifactRenders++
     const pending = this.artifactQueue.then(async () => {
       if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
-      const browser = await this.launch()
-      const context = await browser.newContext({
+      const context = await this.sharedContext({
         viewport: { width: 640, height: 360 },
         serviceWorkers: 'block',
       })
@@ -231,6 +360,7 @@ export class RemoteBrowsers {
       return await pending
     } finally {
       this.pendingArtifactRenders--
+      this.scheduleBrowserClose()
     }
   }
   /** Rasterize in a fresh, networkless guest; never use a signed-in browser profile. */
@@ -435,33 +565,49 @@ export class RemoteBrowsers {
     let entry = this.profiles.get(key)
     if (!entry) {
       const create = async () => {
+        const profile = this.browserProfiles().find((profile) => profile.id === profileId)
+        const extraHTTPHeaders: Record<string, string> =
+          profile?.doNotTrack === true ? { DNT: '1' } : {}
         const options = {
-          locale:
-            this.browserProfiles().find((profile) => profile.id === profileId)?.language ?? 'en-US',
+          locale: profile?.language ?? 'en-US',
+          extraHTTPHeaders,
           viewport: { width: 1280, height: 800 },
           deviceScaleFactor: 2,
-          acceptDownloads: false,
+          acceptDownloads: true,
           serviceWorkers: 'block' as const,
           hasTouch: true,
         }
-        let context: BrowserContext
-        if (this.profileDirectory && !isolated && !isPrivateBrowserProfile(profileId)) {
-          const { chromium, executablePath } = await this.executable()
-          context = await chromium.launchPersistentContext(
-            workspace
+        const directory =
+          this.profileDirectory && !isolated && !isPrivateBrowserProfile(profileId)
+            ? workspace
               ? join(this.profileDirectory, WORKSPACE_PROFILES, profileId)
-              : join(this.profileDirectory, profileId),
-            {
-              ...options,
-              executablePath,
-              headless: true,
-              chromiumSandbox: true,
-            },
-          )
-        } else context = await (await this.launch()).newContext(options)
+              : join(this.profileDirectory, profileId)
+            : undefined
+        let context: BrowserContext
+        if (directory) {
+          const { chromium, executablePath } = await this.executable()
+          context = await chromium.launchPersistentContext(directory, {
+            ...options,
+            executablePath,
+            headless: true,
+            chromiumSandbox: true,
+          })
+        } else context = await this.sharedContext(options)
         try {
+          // Chromium drops session cookies with its last window. Keep an internal blank tab
+          // until release saves the profile, including when the last user tab closes itself.
+          const keeper = directory ? await context.newPage() : undefined
           if (this.profileDirectory && !isolated)
-            for (const page of context.pages()) await page.close()
+            for (const page of context.pages()) if (page !== keeper) await page.close()
+          if (directory) {
+            if (
+              this.browserProfiles().find((profile) => profile.id === profileId)
+                ?.keepSessionCookies === true
+            )
+              await restoreBrowserSessionCookies(context, directory)
+            else await clearBrowserSessionCookies(directory)
+            this.cookieDirectories.set(context, directory)
+          }
           // No runtime credentials, personal browser profile, file access or native permissions
           // are exposed to the preview. Local HTTP services are intentionally reachable.
           await context.route('**/*', (route) => {
@@ -474,7 +620,7 @@ export class RemoteBrowsers {
           throw error
         }
       }
-      entry = { context: create(), users: 0 }
+      entry = { context: create(), users: 0, profileId }
       this.profiles.set(key, entry)
     }
     const current = entry
@@ -484,7 +630,29 @@ export class RemoteBrowsers {
       (released ??= (async () => {
         if (--current.users) return
         if (this.profiles.get(key) === current) this.profiles.delete(key)
-        const closing = current.context.then((context) => context.close())
+        const closing = current.context.then(async (context) => {
+          const directory = this.cookieDirectories.get(context)
+          const close = async () => {
+            try {
+              await context.close()
+            } catch (error) {
+              // Renderer loss can finish closing the context before Playwright replies.
+              if (!context.isClosed()) throw error
+            }
+          }
+          try {
+            if (directory && !context.isClosed()) {
+              if (
+                this.browserProfiles().find((profile) => profile.id === profileId)
+                  ?.keepSessionCookies === true
+              )
+                await saveBrowserSessionCookies(context, directory)
+              else await clearBrowserSessionCookies(directory)
+            }
+          } finally {
+            await close()
+          }
+        })
         this.closingProfiles.set(key, closing)
         try {
           await closing
@@ -515,6 +683,11 @@ export class RemoteBrowsers {
       page.setDefaultTimeout(10000)
       page.setDefaultNavigationTimeout(20000)
       const session: Session = {
+        uploads: new BrowserUploads(
+          (message) => this.emit(session, message),
+          (error) => this.report(session, error),
+          () => this.transfers.allocate('upload'),
+        ),
         logs: [],
         release,
         page,
@@ -542,6 +715,19 @@ export class RemoteBrowsers {
         streaming: false,
         stream: Promise.resolve(),
       }
+      let directory = this.downloadDirectories.get(context)
+      if (!directory) {
+        directory = this.transfers.allocate('download')
+        this.downloadDirectories.set(context, directory)
+      }
+      session.downloads = new BrowserDownloads(
+        session.cdp,
+        await directory,
+        (message) => this.emit(session, message),
+        (message) => this.emit(session, { type: 'error', message }),
+        (error) => this.report(session, error),
+      )
+      await session.downloads.start()
       const faviconLoader = createBrowserFaviconLoader(
         (url, signal) => fetchRemoteFavicon(session.cdp, url, signal),
         (favicon) => {
@@ -577,7 +763,15 @@ export class RemoteBrowsers {
       })
       page.once('close', () => faviconLoader.reset())
       await page.addInitScript(observeBrowserFavicons)
-      if (existingPage) await page.evaluate(observeBrowserFavicons)
+      if (existingPage) {
+        try {
+          await page.evaluate(observeBrowserFavicons)
+        } catch (error) {
+          // A popup can navigate while it is being adopted. The init script is
+          // already installed for the replacement document; its old context is gone.
+          if (!errorMessage(error).includes('Execution context was destroyed')) throw error
+        }
+      }
       await page.exposeBinding('__dovoBrowserInteraction', (_source, value: unknown) => {
         const result = decodeResult(remoteBrowserInteractionSchema, value)
         if (!result.success) return
@@ -646,6 +840,9 @@ export class RemoteBrowsers {
           void dialog.dismiss().catch((error) => this.report(session, error))
         }
       })
+      page.on('filechooser', (chooser) => {
+        void session.uploads.offer(chooser).catch((error) => this.report(session, error))
+      })
       const children = new Map<string, Page>()
       page.on('popup', (popup) => {
         if (!workspace) {
@@ -701,7 +898,11 @@ export class RemoteBrowsers {
         })
       })
       page.on('framenavigated', (frame) => {
+        void session.uploads.navigation().catch((error) => this.report(session, error))
         if (frame === page.mainFrame()) this.scheduleState(session)
+      })
+      page.on('framedetached', () => {
+        void session.uploads.navigation().catch((error) => this.report(session, error))
       })
       page.on('domcontentloaded', () => {
         this.scheduleSharpFrame(session)
@@ -720,6 +921,8 @@ export class RemoteBrowsers {
         void this.close(taskId).catch((error) => this.report(session, error))
       })
       page.once('close', () => {
+        void session.uploads.release().catch((error) => this.report(session, error))
+        void session.downloads?.release().catch((error) => this.report(session, error))
         void release().catch((error) => this.report(session, error))
         clearTimeout(session.sharpTimer)
         clearTimeout(session.idle)
@@ -736,14 +939,17 @@ export class RemoteBrowsers {
       })
       if (initialUrl) {
         session.state.url = initialUrl
+        const started = Date.now()
         try {
           await page.goto(initialUrl, { waitUntil: 'domcontentloaded' })
           await customizationReady
         } catch (error) {
           if (page.isClosed()) throw error
           session.loading = false
-          session.failedNavigation = initialUrl
-          log('navigation:error', errorMessage(error))
+          if (!session.downloads.isNavigationDownload(error, started)) {
+            session.failedNavigation = initialUrl
+            log('navigation:error', errorMessage(error))
+          }
         }
       }
       this.scheduleClose(taskId, session)
@@ -827,6 +1033,9 @@ export class RemoteBrowsers {
         loading: session.loading,
         touch: true,
         primaryModifier: process.platform === 'darwin' ? 'Meta' : 'Control',
+        ...(session.agentActiveAt && Date.now() - session.agentActiveAt < 60000
+          ? { agentActiveAt: session.agentActiveAt }
+          : {}),
       }
       this.emit(session, session.state)
     } catch (error) {
@@ -931,8 +1140,12 @@ export class RemoteBrowsers {
     clearTimeout(session.idle)
     session.listeners.add(listener)
     session.visibleListeners.add(listener)
+    this.activateStream(session)
     if (session.frame) listener(session.frame)
     if (session.interaction) listener(session.interaction)
+    const chooser = session.uploads.message()
+    if (chooser) listener(chooser)
+    for (const download of session.downloads?.messages() ?? []) listener(download)
     try {
       // Activate the host tab when a human viewer opens it, including retained
       // Chromium pages whose compositor was inactive after switching away.
@@ -990,16 +1203,42 @@ export class RemoteBrowsers {
     if (!session || !session.listeners.has(listener)) return
     if (visible) {
       session.visibleListeners.add(listener)
+      this.activateStream(session)
       await session.page.bringToFront()
     } else session.visibleListeners.delete(listener)
     await this.syncStream(session)
     this.scheduleSharpFrame(session)
     if (visible && session.frame) listener(session.frame)
   }
+  private activateStream(session: Session) {
+    session.captureActiveUntil = Date.now() + 2000
+    clearTimeout(session.captureIdle)
+    if (!session.visibleListeners.size || session.closing) return
+    const idle = () => {
+      // Node timers can wake just before the wall-clock deadline. Keep the
+      // deadline armed until capture can actually switch to its idle rate.
+      const remaining = (session.captureActiveUntil ?? 0) - Date.now()
+      if (remaining > 0) {
+        session.captureIdle = setTimeout(idle, remaining)
+        session.captureIdle.unref()
+        return
+      }
+      session.captureIdle = undefined
+      void this.syncStream(session).catch((error) => this.report(session, error))
+    }
+    session.captureIdle = setTimeout(idle, 2000)
+    session.captureIdle.unref()
+  }
   private syncStream(session: Session, restart = false) {
     const operation = session.stream.then(async () => {
-      if (session.page.isClosed()) return
-      if (session.streaming && (restart || !session.visibleListeners.size)) {
+      if (session.page.isClosed() || session.closing) return
+      // Keep motion responsive during interaction, and reduce capture/decode work for viewing.
+      const fps = (session.captureActiveUntil ?? 0) > Date.now() ? 30 : 15
+      if (!session.visibleListeners.size) clearTimeout(session.captureIdle)
+      if (
+        session.streaming &&
+        (restart || !session.visibleListeners.size || session.streamFps !== fps)
+      ) {
         await session.page.screencast.stop()
         session.streaming = false
         session.liveFrame = undefined
@@ -1009,10 +1248,10 @@ export class RemoteBrowsers {
           // Use lighter frames during motion, then restore device-resolution
           // detail with a quality-90 still when input settles.
           quality: 70,
-          fps: 60,
+          fps,
           size: {
-            width: 1920,
-            height: 1920,
+            width: Math.min(session.page.viewportSize()?.width ?? 1920, fps === 30 ? 1920 : 1280),
+            height: Math.min(session.page.viewportSize()?.height ?? 1920, fps === 30 ? 1920 : 1280),
           },
           onFrame: (frame) => {
             const viewport = session.page.viewportSize()
@@ -1042,10 +1281,60 @@ export class RemoteBrowsers {
           },
         })
         session.streaming = true
+        session.streamFps = fps
       }
     })
     session.stream = operation.catch((error) => this.report(session, error))
     return operation
+  }
+  async element(resourceId: string, point?: BrowserElementPoint) {
+    const session = await this.sessions.get(resourceId)
+    if (!session || session.page.isClosed()) throw new HttpError(404, 'Browser tab is unavailable.')
+    const page = session.page
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const read = async () => {
+      if (point) {
+        const value: unknown = await page.evaluate(inspectBrowserElement, point)
+        if (value == null) throw new HttpError(404, 'No element at that point. Pick another spot.')
+        return { element: decode(browserElementSchema, value) }
+      }
+      const snapshot = decode(
+        browserElementSnapshotSchema,
+        await page.evaluate(readBrowserElementSnapshot),
+      )
+      if (snapshot.width * snapshot.height > 16000000)
+        throw new HttpError(
+          413,
+          'The browser viewport is too large to capture. Resize it and try again.',
+        )
+      const image = await page.screenshot({ type: 'png', scale: 'css', timeout: 5000 })
+      const current = decode(
+        browserElementSnapshotSchema,
+        await page.evaluate(readBrowserElementSnapshot),
+      )
+      if (JSON.stringify(current) !== JSON.stringify(snapshot))
+        throw new HttpError(409, 'The page moved or changed. Capture it again.')
+      const data = image.toString('base64')
+      if (data.length > 24000000)
+        throw new HttpError(
+          413,
+          'The captured image is too large. Resize the browser and try again.',
+        )
+      return { snapshot, image: `data:image/png;base64,${data}` }
+    }
+    try {
+      return await Promise.race([
+        read(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new HttpError(504, 'Reading the browser element timed out.')),
+            10000,
+          )
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
   }
   async selection(resourceId: string) {
     const session = await this.sessions.get(resourceId)
@@ -1089,6 +1378,26 @@ export class RemoteBrowsers {
     } finally {
       clearTimeout(timer)
     }
+  }
+  async upload(resourceId: string, command: RemoteBrowserUpload, authorize: () => void) {
+    const session = await this.sessions.get(resourceId)
+    if (!session || session.closing) throw new HttpError(409, 'This browser tab closed.')
+    await session.uploads.execute(command, authorize)
+  }
+  async disconnectUploads(resourceId: string, authorize: () => void) {
+    const session = await this.sessions.get(resourceId)
+    await session?.uploads.disconnect(authorize)
+  }
+  async download(resourceId: string, id: string) {
+    const session = await this.sessions.get(resourceId)
+    if (!session || session.closing || !session.downloads)
+      throw new HttpError(404, 'This browser tab closed.')
+    return session.downloads.read(id)
+  }
+  async cancelDownload(resourceId: string, id: string, authorize: () => void) {
+    const session = await this.sessions.get(resourceId)
+    authorize()
+    await session?.downloads?.remove(id)
   }
   async input(
     taskId: string,
@@ -1148,6 +1457,10 @@ export class RemoteBrowsers {
       if (session.pendingInput === command) session.pendingInput = undefined
       const input = command.input
       authorize()
+      if (input.type !== 'status') {
+        this.activateStream(session)
+        void this.syncStream(session).catch((error) => this.report(session, error))
+      }
       const page = session.page
       if (
         input.type === 'navigate' ||
@@ -1156,6 +1469,7 @@ export class RemoteBrowsers {
         input.type === 'reload'
       ) {
         const url = input.type === 'navigate' ? previewUrl(input.url) : undefined
+        void session.uploads.close().catch((error) => this.report(session, error))
         session.loading = true
         session.state = {
           ...session.state,
@@ -1163,6 +1477,7 @@ export class RemoteBrowsers {
           loading: true,
         }
         this.emit(session, session.state)
+        const started = Date.now()
         try {
           if (url)
             await page.goto(url, {
@@ -1185,8 +1500,11 @@ export class RemoteBrowsers {
           session.failedNavigation = undefined
         } catch (error) {
           session.loading = false
-          session.failedNavigation = url ?? session.state.url
-          throw error
+          if (!session.downloads?.isNavigationDownload(error, started)) {
+            session.failedNavigation = url ?? session.state.url
+            throw error
+          }
+          session.failedNavigation = undefined
         } finally {
           this.scheduleState(session)
         }
@@ -1264,6 +1582,21 @@ export class RemoteBrowsers {
       })
     await operation
   }
+  /** Resolve an agent-facing workspace alias (`workspace:<tabId>`) to its session key. */
+  private resolveStudioSession(id: string) {
+    if (this.sessions.has(id)) return id
+    if (!id.startsWith('workspace:')) return undefined
+    const tabId = id.slice('workspace:'.length)
+    for (const key of this.sessions.keys()) {
+      const identity = studioSessionIdentity(key, this.owners.get(key))
+      if (identity.kind === 'workspace' && identity.tabId === tabId) return key
+    }
+    return undefined
+  }
+  private requireAgentAccessible(resource: string) {
+    if (studioSessionIdentity(resource, this.owners.get(resource)).private)
+      throw new HttpError(403, 'Private browser tabs are not available to agents.')
+  }
   /** Default task sessions are isolated. Studio Tools may explicitly attach to an existing tab. */
   async agentCommand(
     taskId: string,
@@ -1272,11 +1605,16 @@ export class RemoteBrowsers {
     resourceId?: string,
   ) {
     authorize()
-    const resource = resourceId ?? `agent-browser:${taskId}`
-    if (this.owners.get(resource) === STUDIO_BROWSER_SCOPE)
-      throw new HttpError(403, 'Shared Browser tabs are not available to agents.')
-    if (resourceId && !this.sessions.has(resourceId))
-      throw new HttpError(404, 'Browser session not found')
+    const resource =
+      (resourceId ? this.resolveStudioSession(resourceId) : undefined) ??
+      resourceId ??
+      `agent-browser:${taskId}`
+    this.requireAgentAccessible(resource)
+    if (resourceId && !this.sessions.has(resource))
+      throw new HttpError(
+        404,
+        'Browser session not found. For a Browser workspace tab, open it in Studio first, then list sessions again.',
+      )
     if (command.action === 'close') {
       await this.close(resource)
       return { ok: true as const }
@@ -1290,6 +1628,8 @@ export class RemoteBrowsers {
     session.queued++
     const operation = session.queue.then(async () => {
       authorize()
+      session.agentActiveAt = Date.now()
+      this.scheduleState(session)
       const page = session.page
       let scriptResult: unknown
       switch (command.action) {
@@ -1359,26 +1699,41 @@ export class RemoteBrowsers {
     return operation
   }
   async studioList() {
+    const entries = [...this.sessions]
+      .map(([id, pending]) => ({
+        id,
+        pending,
+        identity: studioSessionIdentity(id, this.owners.get(id)),
+      }))
+      .filter(({ identity }) => !identity.private)
     return Promise.all(
-      [...this.sessions]
-        .filter(([id]) => this.owners.get(id) !== STUDIO_BROWSER_SCOPE)
-        .map(async ([id, pending]) => {
-          const session = await pending
-          return {
-            id,
-            taskId: this.owners.get(id),
-            url: session.page.url(),
-            title: await session.page.title(),
-          }
-        }),
+      entries.map(async ({ id, pending, identity }) => {
+        const session = await pending
+        const owner = this.owners.get(id)
+        return {
+          id: identity.alias ?? id,
+          kind: identity.kind,
+          ...(owner && owner !== STUDIO_BROWSER_SCOPE ? { taskId: owner } : {}),
+          ...(identity.tabId ? { tabId: identity.tabId } : {}),
+          ...(identity.profileId ? { profileId: identity.profileId } : {}),
+          url: session.page.url(),
+          title: await session.page.title(),
+          ...(session.agentActiveAt
+            ? { agentActiveAt: new Date(session.agentActiveAt).toISOString() }
+            : {}),
+        }
+      }),
     )
   }
   async studioLogs(id: string) {
-    if (this.owners.get(id) === STUDIO_BROWSER_SCOPE)
-      throw new HttpError(403, 'Shared Browser tabs are not available to agents.')
-    const pending = this.sessions.get(id)
+    const resource = this.resolveStudioSession(id) ?? id
+    this.requireAgentAccessible(resource)
+    const pending = this.sessions.get(resource)
     if (!pending) throw new HttpError(404, 'Browser session not found')
-    return { entries: [...(await pending).logs] }
+    const session = await pending
+    session.agentActiveAt = Date.now()
+    this.scheduleState(session)
+    return { entries: [...session.logs] }
   }
   async closeTask(taskId: string) {
     await Promise.all(
@@ -1390,25 +1745,64 @@ export class RemoteBrowsers {
     if (!pending) return
     const session = await pending
     clearTimeout(session.idle)
+    clearTimeout(session.captureIdle)
     session.closing = true
     try {
       await session.page.close()
     } finally {
-      await session.release()
+      try {
+        await session.uploads.release()
+      } finally {
+        try {
+          await session.downloads?.release()
+        } finally {
+          await session.release()
+        }
+      }
     }
+  }
+  async refreshProfiles() {
+    const profiles = this.browserProfiles()
+    await Promise.all(
+      [...this.profiles.values()].map(async (entry) => {
+        const context = await entry.context
+        if (!context.isClosed())
+          await context.setExtraHTTPHeaders(
+            profiles.find((profile) => profile.id === entry.profileId)?.doNotTrack === true
+              ? { DNT: '1' }
+              : {},
+          )
+      }),
+    )
+    if (!this.profileDirectory) return
+    // Let an already-started save finish before removing a disabled profile's snapshot.
+    await Promise.all([...this.closingProfiles.values()])
+    const directory = this.profileDirectory
+    await Promise.all(
+      this.browserProfiles()
+        .filter((profile) => profile.keepSessionCookies !== true)
+        .flatMap((profile) => [
+          clearBrowserSessionCookies(join(directory, profile.id)),
+          clearBrowserSessionCookies(join(directory, WORKSPACE_PROFILES, profile.id)),
+        ]),
+    )
   }
   async dispose() {
     this.disposed = true
+    clearTimeout(this.browserIdle)
+    this.browserIdle = undefined
     await this.installation.dispose()
     const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.close(id)))
     for (const result of results)
       if (result.status === 'rejected')
         console.error('Could not close browser context', result.reason)
     await Promise.allSettled([...this.closingProfiles.values()])
+    await this.closingBrowser
     // A startup failure is already reported to its caller and must not fail shutdown.
     const browser = await this.browser?.catch(() => undefined)
     if (browser) await browser.close()
     this.sessions.clear()
     this.owners.clear()
+    await this.transfers.dispose()
   }
 }

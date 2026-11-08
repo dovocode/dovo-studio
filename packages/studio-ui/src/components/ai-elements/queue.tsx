@@ -36,13 +36,13 @@ export function QueueSectionTrigger({ className, children, ...props }: Component
   )
 }
 export function QueueList({ className, ...props }: ComponentProps<'ol'>) {
-  return <ol className={cn('mt-1 max-h-36 overflow-auto', className)} {...props} />
+  return <ol tabIndex={0} className={cn('mt-1 max-h-36 overflow-auto', className)} {...props} />
 }
 export function QueueItem({ className, ...props }: ComponentProps<'li'>) {
   return (
     <li
       className={cn(
-        'group flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted',
+        'group flex items-center gap-2 rounded-md px-2 py-1 text-[0.8125rem] transition-colors hover:bg-muted',
         className,
       )}
       {...props}

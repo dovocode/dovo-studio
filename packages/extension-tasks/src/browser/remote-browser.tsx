@@ -275,7 +275,7 @@ export function RemoteBrowser({
         title="Host browser"
         srcDoc={remoteBrowserHtml}
         className="h-0 min-h-0 w-full flex-1 border-0"
-        sandbox="allow-scripts allow-forms"
+        sandbox="allow-scripts allow-forms allow-downloads"
         onLoad={() => void connect()}
       />
     </>

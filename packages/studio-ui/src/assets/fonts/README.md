@@ -13,3 +13,8 @@ NERD-FONTS-LICENSE.txt for upstream licenses.
 Desktop/web load these files through the shared stylesheet. The mobile terminal build embeds the
 same files as data URLs so the WebView works offline without file permissions or third-party font
 requests. No font tooling is needed to build Dovo; the converted files are checked in.
+
+Inter Variable (upright, weights 100–900) is bundled for the desktop/web interface. Source:
+[Inter’s official font files](https://github.com/rsms/inter/blob/master/docs/font-files/InterVariable.woff2).
+See `inter-LICENSE.txt` for the SIL Open Font License. Loading the font does not require a network
+request.

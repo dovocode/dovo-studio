@@ -54,8 +54,21 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "buildArchs": ["arm64-v8a", "x86_64"]
+          },
+          "ios": {
+            "deploymentTarget": "16.4"
           }
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "../../packages/terminal/src/native/fonts/JetBrainsMonoNLNerdFontMono-Regular.ttf",
+            "../../packages/terminal/src/native/fonts/JetBrainsMonoNLNerdFontMono-Bold.ttf"
+          ]
         }
       ],
       "./plugins/with-scenes.ts",
@@ -68,13 +81,16 @@
             "appGroupId": "group.com.dovo.studio",
             "activationRule": {
               "supportsText": true,
+              "supportsImageWithMaxCount": 5,
+              "supportsMovieWithMaxCount": 5,
+              "supportsFileWithMaxCount": 5,
               "supportsWebUrlWithMaxCount": 10
             }
           },
           "android": {
             "enabled": true,
-            "singleShareMimeTypes": ["text/plain"],
-            "multipleShareMimeTypes": ["text/plain"]
+            "singleShareMimeTypes": ["*/*"],
+            "multipleShareMimeTypes": ["*/*"]
           }
         }
       ],

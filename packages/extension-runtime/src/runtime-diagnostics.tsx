@@ -1,14 +1,17 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useCallback, useEffect, useState } from 'react'
 import {
   runtimeBackupResponseSchema,
   runtimeDiagnosticsSchema,
   type RuntimeDiagnostics,
+  type RuntimeMemoryDiagnostics,
 } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 
 export function RuntimeDiagnosticsPanel() {
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot } = useWorkspace()
+  const policy = snapshot?.managedPolicy
   const [status, setStatus] = useState<RuntimeDiagnostics | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -48,6 +51,42 @@ export function RuntimeDiagnosticsPanel() {
   }
   return (
     <article className="space-y-3 rounded-md border p-4 text-xs">
+      {policy && (
+        <section
+          aria-label="Managed runtime policy"
+          className="space-y-2 rounded-md border bg-muted/30 p-3"
+        >
+          <p className="font-medium">Managed by {policy.organization}</p>
+          <p className="break-all text-muted-foreground">
+            Policy fingerprint: {policy.fingerprint}
+          </p>
+          <p>
+            This computer enforces these rules for desktop, web, mobile and agents. Changes require
+            an administrator and a runtime restart.
+          </p>
+          {policy.maxPermission && <p>Maximum access: {policy.maxPermission}.</p>}
+          {policy.allowedClients && <p>Allowed clients: {policy.allowedClients.join(', ')}.</p>}
+          {policy.allowedProviders && (
+            <p>Allowed providers: {policy.allowedProviders.join(', ')}.</p>
+          )}
+          {!!policy.lockedSettings.length && (
+            <p>Locked settings: {policy.lockedSettings.join(', ')}.</p>
+          )}
+          {!!policy.disabledCapabilities.length && (
+            <p>Unavailable: {policy.disabledCapabilities.join(', ')}.</p>
+          )}
+          {Object.entries(policy.lockedProviderFields).map(([provider, fields]) => (
+            <p key={provider}>
+              Managed {provider} fields: {fields.join(', ')}.
+            </p>
+          ))}
+          {policy.supportUrl && (
+            <a className="underline" href={policy.supportUrl} target="_blank" rel="noreferrer">
+              Contact your administrator
+            </a>
+          )}
+        </section>
+      )}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-medium">Runtime readiness & recovery</h2>
         <Button
@@ -97,14 +136,12 @@ export function RuntimeDiagnosticsPanel() {
             </p>
           ))}
           <p>
-            Last task scheduler tick: {status.schedulers.tasks.lastSuccess ?? 'None'} · Automation
+            Last thread scheduler tick: {status.schedulers.tasks.lastSuccess ?? 'None'} · Automation
             tick: {status.schedulers.jobs.lastSuccess ?? 'None'}
           </p>
+          {status.memory && <RuntimeMemory memory={status.memory} />}
           {status.internet && (
-            <details className="space-y-2">
-              <summary className="cursor-pointer font-medium">
-                Internet connection diagnostics
-              </summary>
+            <Disclosure className="space-y-2" title={<>Internet connection diagnostics</>}>
               <p>
                 Signaling: {status.internet.signaling.online} /{' '}
                 {status.internet.signaling.configured} online
@@ -157,7 +194,7 @@ export function RuntimeDiagnosticsPanel() {
                 Keeps the latest 20 connection attempts in memory. Includes no ICE passwords, relay
                 credentials, candidate addresses or raw SDP.
               </p>
-            </details>
+            </Disclosure>
           )}
           <h3 className="font-medium">Database backups</h3>
           <p className="text-muted-foreground">
@@ -189,5 +226,74 @@ export function RuntimeDiagnosticsPanel() {
         </>
       )}
     </article>
+  )
+}
+
+const megabytes = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`
+function RuntimeMemory({ memory }: { memory: RuntimeMemoryDiagnostics }) {
+  return (
+    <Disclosure className="space-y-2" title={<>Runtime memory</>}>
+      <p>
+        Runtime: {megabytes(memory.rssBytes)} resident · JavaScript heap{' '}
+        {megabytes(memory.heapUsedBytes)} of {megabytes(memory.heapLimitBytes)}
+      </p>
+      {memory.externalBytes !== undefined && (
+        <p>
+          External memory: {megabytes(memory.externalBytes)}
+          {memory.arrayBufferBytes !== undefined &&
+            `, including ${megabytes(memory.arrayBufferBytes)} of buffers`}
+        </p>
+      )}
+      {memory.gc && (
+        <p>
+          Garbage collection: {memory.gc.collections} collections ·{' '}
+          {Math.round(memory.gc.durationMs)} ms since monitoring started
+        </p>
+      )}
+      {memory.eventLoopUtilization !== undefined && (
+        <p>
+          Event loop active: {Math.round(memory.eventLoopUtilization * 100)}% since monitoring
+          started
+        </p>
+      )}
+      <p>
+        {memory.children
+          ? `Agents, terminals and tools started by the runtime: ${memory.children.processes} processes · ${megabytes(memory.children.rssBytes)} resident${memory.children.truncated ? ' (partial)' : ''}. Shared memory is counted once per process.`
+          : 'Memory of processes started by the runtime is not available on this computer.'}
+      </p>
+      {memory.spikes.map((spike) => (
+        <div key={spike.at} className="space-y-1 rounded border p-2">
+          <p className="text-status-warning">
+            {new Date(spike.at).toLocaleString()} · Heap grew {megabytes(spike.growthBytes)} to{' '}
+            {megabytes(spike.heapUsedBytes)}
+            {spike.externalGrowthBytes
+              ? ` · external grew ${megabytes(spike.externalGrowthBytes)}`
+              : ''}{' '}
+            · {spike.concurrentOperations} operations running
+          </p>
+          <p>
+            Suspects:{' '}
+            {spike.suspects
+              .map(
+                (suspect) =>
+                  `${suspect.name} +${megabytes(suspect.heapGrowthBytes)}${suspect.running ? ' (running)' : ''}`,
+              )
+              .join(', ') || 'none recorded'}
+          </p>
+        </div>
+      ))}
+      {memory.recent.length > 0 && <h3 className="font-medium">Recent expensive operations</h3>}
+      {memory.recent.map((operation, index) => (
+        <p key={`${operation.endedAt}-${index}`}>
+          {new Date(operation.endedAt).toLocaleTimeString()} · {operation.name} ·{' '}
+          {operation.durationMs} ms · heap {operation.heapGrowthBytes >= 0 ? '+' : ''}
+          {megabytes(operation.heapGrowthBytes)}
+        </p>
+      ))}
+      <p className="text-muted-foreground">
+        Heap growth includes concurrent work and garbage collection, so suspects are leads, not
+        proof. Keeps the latest 32 operations and 5 spikes in memory.
+      </p>
+    </Disclosure>
   )
 }

@@ -1,6 +1,7 @@
 import { Button } from '@dovo/studio-ui'
 import type { Task } from '@dovo/studio-core'
 import { ComposerProject, type SelectRemoteProject } from '../chat/composer/composer-project'
+import { StartupHeading } from './startup-heading'
 
 export function TaskEmptyState({
   onBrowse,
@@ -20,13 +21,7 @@ export function TaskEmptyState({
   onSelectRemote?: SelectRemoteProject
 }) {
   return (
-    <div
-      data-thread-start=""
-      className={`flex min-h-0 flex-col items-center justify-center gap-2 px-5 text-center ${welcome ? 'mt-auto shrink-0 pb-4 pt-6' : 'flex-1 py-6'}`}
-    >
-      <h2 className="max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl">
-        What would you like to work on?
-      </h2>
+    <StartupHeading data-thread-start="" welcome={welcome}>
       {projectName && !task && <p className="text-xs text-muted-foreground">In {projectName}</p>}
       {task && (
         <ComposerProject
@@ -43,6 +38,6 @@ export function TaskEmptyState({
           Browse threads
         </Button>
       )}
-    </div>
+    </StartupHeading>
   )
 }

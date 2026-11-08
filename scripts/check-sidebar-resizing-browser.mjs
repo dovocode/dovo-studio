@@ -13,6 +13,8 @@ import { TooltipProvider, ResizablePanel, ResizablePanelGroup } from '@dovo/stud
 import { ResizableSidebar } from '../extension-tasks/src/detail/resizable-sidebar.tsx';
 import { TaskFiles } from '../extension-tasks/src/detail/task-files.tsx';
 import { FileTree } from '../extension-tasks/src/review/file-tree.tsx';
+import { TaskTools } from '../extension-tasks/src/detail/task-tools.tsx';
+import { TaskLinkedPullPanel } from '../extension-tasks/src/detail/task-linked-pull-panel.tsx';
 const root=createRoot(document.getElementById('app'));
 window.saved=()=>readAppPreferences();
 function Fixture(){
@@ -21,11 +23,13 @@ function Fixture(){
  window.toggleDiff=()=>setDiff(v=>!v);
  const changedFiles=[{path:'src/first.ts',before:'old',after:'new',viewed:false},{path:'src/second.ts',before:'old',after:'new',viewed:false}];
  const diffView=<div className="flex h-screen w-screen min-h-0 min-w-0"><main className="min-w-0 flex-1" data-testid="diff-content">{selected}</main><FileTree files={changedFiles} stats={[]} selected={selected} onSelect={setSelected}/></div>;
+ const [surface,setSurface]=useState('browser');
+ const task={id:'project',files:[],linkedPullRequests:[{number:42,url:'https://github.com/test/project/pull/42',repositoryUrl:'https://github.com/test/project',title:'Polish the workspace sidebar'}]};
  const [left,setLeft]=useState(true),[right,setRight]=useState(true),[files,setFiles]=useState(false),[expanded,setExpanded]=useState(false);
  window.toggleLeft=()=>setLeft(v=>!v);window.toggleRight=()=>setRight(v=>!v);window.files=()=>setFiles(v=>!v);window.expand=()=>setExpanded(v=>!v);
  if(project)return <div className="h-screen w-screen"><TaskFiles task={{id:'project',files:[]}}/></div>;
  if(diff)return diffView;
- return <div className="flex h-screen w-screen min-w-0"><nav id="left-icons" style={{width:56,minWidth:56}} className="shrink-0">Icons</nav><div className="flex min-h-0 min-w-0 flex-1"><ResizableSidebar as="div" preference="threadSidebarWidth" side="left" label="thread sidebar" maxFraction={.45} maxWidth={640} resizable={left} className={left?'':'hidden'} data-testid="left"><div>Threads</div></ResizableSidebar><ResizablePanelGroup direction="horizontal" className="min-w-0 flex-1"><ResizablePanel id="conversation" minSize={30}><div className="relative flex h-full min-w-0"><main className={expanded?'hidden':'min-w-0 flex-1'}>Chat</main><ResizableSidebar key={files?'viewer':'tools'} preference={files?'viewerSidebarWidth':'toolsSidebarWidth'} side="right" label="tools sidebar" maxFraction={files?.5:.48} maxWidth={960} resizable={right&&!expanded} data-testid="right" className={!right?'hidden':expanded?'flex-1':'flex flex-col'}><iframe title="Preview" srcDoc="<p>Remote browser</p>" className="h-full w-full"/></ResizableSidebar><nav id="right-icons" style={{width:56,minWidth:56}} className="shrink-0">Tools</nav></div></ResizablePanel></ResizablePanelGroup></div></div>
+ return <div className="flex h-screen w-screen min-w-0"><nav id="left-icons" style={{width:56,minWidth:56}} className="shrink-0">Icons</nav><div className="flex min-h-0 min-w-0 flex-1"><ResizableSidebar as="div" preference="threadSidebarWidth" side="left" label="thread sidebar" maxFraction={.45} maxWidth={640} resizable={left} className={left?'':'hidden'} data-testid="left"><div>Threads</div></ResizableSidebar><ResizablePanelGroup direction="horizontal" className="min-w-0 flex-1"><ResizablePanel id="conversation" minSize={30}><div className="relative flex h-full min-w-0"><main className={expanded?'hidden':'min-w-0 flex-1'}>Chat</main><ResizableSidebar key={files?'viewer':'tools'} preference={files?'viewerSidebarWidth':'toolsSidebarWidth'} side="right" label="tools sidebar" maxFraction={files?.5:.48} maxWidth={960} resizable={right&&!expanded} data-testid="right" className={!right?'hidden':expanded?'flex-1':'studio-thread-tools-panel flex flex-col'}><div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[inherit]">{surface==='linked-pulls'?<TaskLinkedPullPanel task={task} onPullLink={()=>true} onClose={()=>setRight(false)}/>:<iframe title="Preview" srcDoc="<p>Remote browser</p>" className="h-full w-full"/>}</div></ResizableSidebar><div id="right-icons" style={{width:56,minWidth:56}} className="flex shrink-0"><TaskTools task={task} surface={surface} onSelect={setSurface} hasDiff hasLinkedPulls/></div></div></ResizablePanel></ResizablePanelGroup></div></div>
 }
 window.mount=()=>root.render(<ApplicationStateProvider><TooltipProvider><Fixture key={Math.random()}/></TooltipProvider></ApplicationStateProvider>);window.mount();
 `,
@@ -48,7 +52,7 @@ window.mount=()=>root.render(<ApplicationStateProvider><TooltipProvider><Fixture
           namespace: 'fixture',
         }))
         build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
-          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({});const request=async()=>({files:['src/first.ts','src/second.ts']});export const useWorkspace=()=>({connected:true,request});`,
+          contents: `import {Effect} from 'effect';export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({});const request=async(path,input)=>path.endsWith('/directory')?{entries:input.directory?[{path:'src/first.ts',kind:'file'},{path:'src/second.ts',kind:'file'}]:[{path:'src',kind:'directory'}],truncated:false}:{files:['src/first.ts','src/second.ts'].filter(path=>path.includes(input.query??'')),truncated:false};const requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});export const useWorkspace=()=>({workspace:{tasks:[]},connected:true,request,requestEffect});`,
           loader: 'ts',
           resolveDir: fileURLToPath(new URL('../packages/studio-core/', import.meta.url)),
         }))
@@ -72,6 +76,30 @@ try {
   await page.addStyleTag({ content: await readFile(new URL(css, directory), 'utf8') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const width = async (name) => (await page.getByTestId(name).boundingBox()).width
+  const expectPane = async (pane, flat = false) => {
+    const style = await pane.evaluate((element) => {
+      const style = getComputedStyle(element)
+      const content = getComputedStyle(element.firstElementChild)
+      return {
+        radius: style.borderRadius,
+        border: style.borderTopWidth,
+        inset: style.marginTop,
+        clip: content.overflow,
+        contentRadius: content.borderRadius,
+      }
+    })
+    if (
+      style.radius !== (flat ? '0px' : '18px') ||
+      style.border !== (flat ? '0px' : '1px') ||
+      style.inset !== (flat ? '0px' : '6px') ||
+      style.clip !== 'hidden' ||
+      style.contentRadius !== (flat ? '0px' : '18px')
+    )
+      throw new Error(
+        'Pane must share the linked-projects frame with clipped rounded content: ' +
+          JSON.stringify(style),
+      )
+  }
   const expectWidth = async (name, value) => {
     await page.waitForFunction(
       ({ name, value }) =>
@@ -90,6 +118,21 @@ try {
       await page.locator('#right-icons').boundingBox(),
     ].map((box) => box.width)
   const originalIcons = await icons()
+
+  await page.getByRole('button', { name: 'Linked PRs', exact: true }).click()
+  await page.getByRole('heading', { name: 'Linked pull requests', exact: true }).waitFor()
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme
+      document.documentElement.classList.toggle('dark', theme === 'dark')
+    }, theme)
+    await page.getByTestId('right').screenshot({ path: '/tmp/dovo-right-panel-' + theme + '.png' })
+  }
+  await page.getByRole('button', { name: 'Close linked pull requests', exact: true }).click()
+  await page.getByTestId('right').waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.toggleRight())
+  await page.getByRole('button', { name: 'Browsers', exact: true }).click()
+  await expectWidth('right', 380)
   const drag = async (name, delta) => {
     const box = await page.getByRole('separator', { name }).boundingBox()
     await page.mouse.move(box.x + box.width / 2, 200)
@@ -98,6 +141,12 @@ try {
     await page.mouse.up()
   }
   await drag('Resize thread sidebar', 100)
+  await expectWidth('left', 380)
+  const threadResize = page.getByRole('separator', { name: 'Resize thread sidebar' })
+  await threadResize.focus()
+  await page.keyboard.press('ArrowRight')
+  await expectWidth('left', 390)
+  await page.keyboard.press('ArrowLeft')
   await expectWidth('left', 380)
   await drag('Resize tools sidebar', -80)
   await expectWidth('right', 460)
@@ -159,6 +208,7 @@ try {
     )
   }
   await expectFileWidth(256)
+  await expectPane(filePane)
   await drag('Resize diff files pane', -80)
   await expectFileWidth(336)
   await page.waitForFunction(() => window.saved().diffFilesSidebarWidth === 336)
@@ -199,23 +249,30 @@ try {
       expected,
     )
   }
-  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
-  if (
-    (await projectPane.getByRole('button', { name: 'src', exact: true }).innerText()).trim() !==
-    'src'
-  )
+  const projectFolder = projectPane.locator('summary[aria-label="Folder src"]')
+  await projectFolder.waitFor()
+  if ((await projectFolder.innerText()).trim() !== 'src')
     throw new Error('Project directory still displays a file count')
+  await projectFolder.click()
+  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).click()
   await projectWidth(256)
-  await drag('Resize project file tree', -80)
+  await expectPane(projectPane, true)
+  await drag('Resize project file tree', 80)
   await projectWidth(336)
   await page.waitForFunction(() => window.saved().projectFilesSidebarWidth === 336)
   await page.getByRole('searchbox', { name: 'Search project files' }).fill('second')
   await projectPane
     .getByRole('button', { name: 'src/first.ts', exact: true })
     .waitFor({ state: 'hidden' })
+  await projectPane.getByRole('button', { name: 'src/second.ts', exact: true }).waitFor()
   await page.evaluate(() => window.toggleProject())
   await projectPane.waitFor({ state: 'hidden' })
   await page.evaluate(() => window.toggleProject())
+  await projectFolder.waitFor()
+  if (!(await projectFolder.evaluate((element) => element.parentElement.open)))
+    await projectFolder.click()
+  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).click()
   await projectWidth(336)
   await page.setViewportSize({ width: 500, height: 800 })
   await projectWidth(200)

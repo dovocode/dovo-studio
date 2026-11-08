@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import type { Task, Subagent } from '../index.js'
+import { decode } from '../shared/schema.js'
 import {
   taskFamilyIds,
   taskFamilyInputIds,
@@ -8,7 +9,18 @@ import {
   taskFamilyWorking,
   taskFamilyRunToken,
   taskRemoteHumanInputs,
+  subagentSpawnSchema,
 } from './delegation.js'
+
+it('rejects misspelled permission fields at the delegation request boundary', () => {
+  const input = { taskId: 'parent', key: 'review', name: 'Review', prompt: 'Inspect files' }
+  expect(() => decode(subagentSpawnSchema, { ...input, permissions: 'read-only' })).toThrow(
+    /permissions/,
+  )
+  expect(decode(subagentSpawnSchema, { ...input, permission: 'read-only' })).toMatchObject({
+    permission: 'read-only',
+  })
+})
 
 const task = (id: string, parentTaskId?: string): Task => ({
   id,
@@ -146,6 +158,27 @@ it('surfaces nested child input on ancestors without crossing independent famili
   expect(taskFamilyInputIds(tasks, ['nested', 'other'])).toEqual(
     new Set(['nested', 'child', 'root', 'other']),
   )
+})
+
+it('rolls side-thread input up to the parent without adding lifecycle ownership', () => {
+  const parent = task('parent')
+  const side: Task = {
+    ...task('side'),
+    sideThread: {
+      parentTaskId: parent.id,
+      objective: '',
+      source: 'head',
+      contextMessageCount: 0,
+      parentHistoryRevision: 0,
+      contextHash: '',
+      permissionCeiling: { provider: 'codex', permission: 'read-only' },
+    },
+  }
+  const worker = task('worker', side.id)
+  expect(taskFamilyInputIds([parent, side, worker], [worker.id])).toEqual(
+    new Set(['worker', 'side', 'parent']),
+  )
+  expect(taskFamilyIds([parent, side, worker], parent.id)).toEqual(new Set(['parent']))
 })
 
 it('rolls remote attention up through local ancestors without treating offline or paused snapshots as live input', () => {

@@ -5,7 +5,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const ui = `${root}/packages/studio-ui/src`
 const mocks = {
-  '@dovo/studio-core': `export const useWorkspace=()=>window.runtime;export const useSettingsDraft=()=>{};`,
+  './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
+  '@dovo/studio-core': `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const useWorkspace=()=>window.runtime;export const useSettingsDraft=()=>{};`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui':
     ['button', 'input', 'select', 'dialog']
@@ -17,6 +18,7 @@ const mocks = {
 const built = await build({
   stdin: {
     contents: `
+      import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';
       import React from 'react';import {createRoot} from 'react-dom/client';
       import {decode,runtimeRequest} from '@dovo/protocol';
       import View from '${root}/packages/extension-runtime/src/device-hosts-view.tsx';
@@ -37,7 +39,7 @@ const built = await build({
         }
       };
       const uiRoot=createRoot(document.getElementById('app'));let viewRevision=0;
-      window.remount=()=>uiRoot.render(<View key={++viewRevision}/>);window.remount();
+      window.remount=()=>uiRoot.render(<StudioConfirmationProvider><View key={++viewRevision}/></StudioConfirmationProvider>);window.remount();
     `,
     loader: 'tsx',
     resolveDir: root,
@@ -134,8 +136,11 @@ try {
   await page.getByRole('option', { name: 'Device Mac', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: 'Save host', exact: true }).isEnabled(), true)
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Remove', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.saved.hosts.length), 1)
+  await page.getByRole('button', { name: 'Remove', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove host', exact: true }).click()
   await page.waitForFunction(() => window.saved.hosts.length === 0 && !window.saved.defaultHostId)
   await page.evaluate(() => {
     window.saved = {

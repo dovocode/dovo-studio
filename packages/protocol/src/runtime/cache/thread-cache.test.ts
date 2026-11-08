@@ -48,6 +48,22 @@ const snapshot = (tasks: Task[], detailTaskIds?: string[]) =>
     devices: [],
     pendingDevices: [],
   })
+it('retains fresh side-thread provenance and receipts in cached summaries', () => {
+  const previous = task('child')
+  const sideThread: NonNullable<Task['sideThread']> = {
+    parentTaskId: 'parent',
+    objective: 'Review',
+    contextMessageCount: 0,
+    parentHistoryRevision: 0,
+    contextHash: 'hash',
+    source: 'head',
+    permissionCeiling: { provider: 'codex', permission: 'ask' },
+    broughtBackThrough: 'turn',
+  }
+  const fresh = { ...previous, messages: [], sideThread }
+  expect(cachedThread(fresh, previous).sideThread).toEqual(sideThread)
+  expect(boundedSnapshotCache(snapshot([fresh])).workspace.tasks[0]?.sideThread).toEqual(sideThread)
+})
 it('accepts legacy snapshots and preserves the Undo capability through snapshot caching', () => {
   const legacy = snapshot([task('a')])
   expect(legacy.taskListUndoSupported).toBeUndefined()

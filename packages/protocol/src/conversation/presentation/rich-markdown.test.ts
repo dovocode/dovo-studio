@@ -72,6 +72,28 @@ it('leaves malformed citations, nested citations and examples literal', () => {
   ])
     expect(renderFileCitations(text)).toBe(text)
 })
+it('renders citations without changing code, links, unsafe paths or incomplete directives', () => {
+  const citation = ':codex-file-citation{path="src/a.ts" line_range_start="7"}'
+  const text = [
+    citation,
+    '`' + citation + '`',
+    '```md\n' + citation + '\n```',
+    '[' + citation + '](https://example.com)',
+    ':codex-file-citation{path="javascript:alert(1)"}',
+    ':codex-file-citation{path="src/incomplete',
+  ].join('\n\n')
+  expect(richMarkdown(text)).toEqual([
+    { kind: 'markdown', text: text.replace(citation, '[a.ts:7](<src/a.ts#L7>)'), offset: 0 },
+  ])
+})
+
+it('does not promote later links on the same line and still promotes links on later lines', () => {
+  const text = '[one](https://example.com) [two](two.png)\n[three](three.png)\n[four](four.pdf)'
+  expect(richMarkdown(text).filter((part) => part.kind !== 'markdown')).toEqual([
+    { kind: 'image', path: 'three.png', label: 'three', offset: text.indexOf('[three]') },
+    { kind: 'file', path: 'four.pdf', label: 'four', offset: text.indexOf('[four]') },
+  ])
+})
 it('renders valid artifact templates without interpreting arbitrary directives', () => {
   const directive =
     '::artifact-template{artifact_kind="site" display_name="Landing page" skill_name="artifact-template-site" skill_directory="/tmp/skills/site"}'
@@ -137,4 +159,27 @@ it('keeps invalid, remote, incomplete and code-example visualization markers lit
     expect(richMarkdown(text)).toEqual([{ kind: 'markdown', text, offset: 0 }])
     expect(richMarkdownPaths(text)).toEqual([])
   }
+})
+
+it('preserves inline links and still recognizes standalone autolinks after prose', () => {
+  const prose = 'Read [the docs](https://example.com) before continuing.\n'
+  expect(richMarkdown(prose.repeat(500))).toEqual([
+    { kind: 'markdown', text: prose.repeat(500), offset: 0 },
+  ])
+  for (const link of [
+    'https://example.com/clip.mp4',
+    'www.example.com/clip.mp4',
+    '<https://example.com/clip.mp4>',
+  ]) {
+    const parts = richMarkdown(prose + link)
+    expect(parts.find((part) => part.kind === 'video')).toMatchObject({
+      path: link.startsWith('www.')
+        ? 'http://www.example.com/clip.mp4'
+        : 'https://example.com/clip.mp4',
+    })
+  }
+  const indented = prose + '\u00a0[shot](shot.png)'
+  expect(richMarkdown(indented).find((part) => part.kind === 'image')).toMatchObject({
+    path: 'shot.png',
+  })
 })

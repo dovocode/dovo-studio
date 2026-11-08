@@ -430,7 +430,11 @@ export class AzureForge implements ForgeAdapter {
       return {
         pulls: await summaries(values.slice((page - 1) * 50, page * 50)),
         page,
-        hasMore: values.length > page * 50,
+        hasMore: page < 100 && values.length > page * 50,
+        paginationNotice:
+          page === 100 && values.length > page * 50
+            ? 'Showing the newest 5,000 requests. Open older requests on Azure DevOps.'
+            : undefined,
       }
     }
     const result = decode(
@@ -448,7 +452,11 @@ export class AzureForge implements ForgeAdapter {
     return {
       pulls: await summaries(result.value.slice(0, 50)),
       page,
-      hasMore: result.value.length > 50,
+      hasMore: page < 100 && result.value.length > 50,
+      paginationNotice:
+        page === 100 && result.value.length > 50
+          ? 'Showing the newest 5,000 requests. Open older requests on Azure DevOps.'
+          : undefined,
     }
   }
   private async get(number: number) {

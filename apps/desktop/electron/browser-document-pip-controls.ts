@@ -5,6 +5,16 @@ import { EventEmitter } from 'node:events'
 
 export const DOCUMENT_PIP_HEADER_HEIGHT = 36
 
+const dismissals = new WeakMap<BrowserWindow, () => void>()
+
+/** App lifecycle cleanup must not be mistaken for a user returning to the call. */
+export function dismissDocumentPipWindow(window: BrowserWindow) {
+  if (window.isDestroyed()) return
+  const dismiss = dismissals.get(window)
+  if (dismiss) dismiss()
+  else window.close()
+}
+
 const PRELOAD = `
 const { ipcRenderer } = require('electron')
 window.addEventListener('DOMContentLoaded', () => {
@@ -19,7 +29,8 @@ window.addEventListener('DOMContentLoaded', () => {
 export function createDocumentPipWindow(
   options: Electron.BrowserWindowConstructorOptions & { webContents?: Electron.WebContents },
   sourceURL: string,
-  returnToTab?: () => void,
+  returnToTab?: () => void | Promise<void>,
+  showReturnToTab = true,
 ) {
   const hostname = new URL(sourceURL).hostname
   const directory = join(app.getPath('userData'), 'browser-media')
@@ -30,6 +41,9 @@ export function createDocumentPipWindow(
   // It must be adopted exactly once; the trusted header needs its own WebContents.
   const { webContents: guest, ...chromeOptions } = options
   if (!guest) throw new Error('Document PiP requires the pending popup WebContents.')
+  // Electron reuses the pending guest's preferences when createWindow adopts it.
+  // Setting this only in the requested window options leaves real PiP pages throttled.
+  guest.setBackgroundThrottling(false)
   const page = new WebContentsView({ webContents: guest, webPreferences: options.webPreferences })
   const popup = new BrowserWindow({
     ...chromeOptions,
@@ -58,13 +72,46 @@ export function createDocumentPipWindow(
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
   contents.on('will-navigate', (event) => event.preventDefault())
   contents.on('will-redirect', (event) => event.preventDefault())
+  let returning = false
+  let dismissing = false
+  const dismiss = () => {
+    if (popup.isDestroyed()) return
+    dismissing = true
+    popup.close()
+  }
+  dismissals.set(popup, dismiss)
+  const returnToCall = () => {
+    if (returning || popup.isDestroyed()) return
+    if (!returnToTab) {
+      dismiss()
+      return
+    }
+    returning = true
+    void Promise.resolve()
+      .then(returnToTab)
+      .then(dismiss)
+      .catch((error) => console.error('Could not return the call to its tab.', error))
+      .finally(() => {
+        returning = false
+      })
+  }
+  // Cmd+W and Window > Close bypass the HTML header. Restore the owner before
+  // closing its guest, just as the trusted Close button does.
+  popup.on('close', (event) => {
+    if (dismissing || guest.isDestroyed() || !returnToTab) return
+    event.preventDefault()
+    returnToCall()
+  })
   contents.ipc.on('browser:document-pip-control', (event, action: unknown) => {
     if (event.senderFrame !== contents.mainFrame || popup.isDestroyed()) return
-    if (action === 'return' && returnToTab) returnToTab()
-    else if (action !== 'close') return
-    popup.close()
+    if (action !== 'close' && action !== 'return') return
+    if (action === 'return' && !showReturnToTab) return
+    // Restore visibility before pagehide: Teams otherwise leaves the call in the closed child.
+    // Only trusted user controls return to the tab; site/automatic closes must not steal focus.
+    returnToCall()
   })
   popup.once('closed', () => {
+    dismissals.delete(popup)
     popup.removeListener('resize', layout)
     if (!guest.isDestroyed()) guest.close()
   })
@@ -96,7 +143,7 @@ button:hover {background:#ffffff25} button:focus-visible {outline:2px solid whit
 svg {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 </style></head><body><div class="bar" role="toolbar" aria-label="Picture-in-picture controls">
 <span class="domain" title="${escapedHostname}">${escapedHostname}</span>
-${returnToTab ? button('Back to tab', 'return', ['M14 4h6v16H4v-6', 'M4 4h7v7', 'M11 4 3 12']) : ''}
+${returnToTab && showReturnToTab ? button('Back to tab', 'return', ['M14 4h6v16H4v-6', 'M4 4h7v7', 'M11 4 3 12']) : ''}
 ${button('Close picture-in-picture', 'close', ['m6 6 12 12', 'M18 6 6 18'])}
 </div></body></html>`
   void contents

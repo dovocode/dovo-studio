@@ -1,4 +1,7 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
+import { selectConversationConnection } from './workspace-selection'
 import {
+  providerRetryLabel,
   createRuntimeClient,
   threadPullLink,
   unassignedConversationTools,
@@ -20,7 +23,12 @@ import { TurnWindow, TurnWindowContext } from './turn-window'
 import { TurnWork } from './turn-work'
 import { PullLinkActions } from './pull-link-actions'
 import { ThreadLinkMenu } from './thread-link-menu'
-import { conversationTurns, conversationTurnLabel } from './conversation-turns'
+import {
+  conversationTurns,
+  conversationTurnLabel,
+  createConversationTurnKeys,
+} from './conversation-turns'
+import { compactionsByMessage } from './compactions-by-message'
 import { useThreadSearch } from './use-thread-search'
 import {
   Fragment,
@@ -45,7 +53,7 @@ import {
   IconButton,
 } from '@dovo/studio-ui'
 import type { Task } from '@dovo/studio-core'
-import { useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useWorkspaceSelector, sameWorkspaceFields, useStudioHost } from '@dovo/studio-core'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
 const emptyTools: ReturnType<typeof useTaskActivity>['tools'] = []
 const emptyCompactions: NonNullable<Task['compactions']> = []
@@ -84,7 +92,10 @@ export function ChatThread({
   emptyState?: ReactNode
   active?: boolean
 }) {
-  const { request, connected, workspace, connection, activeRuntimeId } = useWorkspace()
+  const { request, connected, connection, activeRuntimeId } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const linkScope = JSON.stringify([connection?.address, connection?.token, liveTask.id])
   const [recentScope, setRecentScope] = useState('')
   const onRecentReady = useCallback(() => setRecentScope(linkScope), [linkScope])
@@ -99,7 +110,12 @@ export function ChatThread({
   const [linkError, setLinkError] = useState('')
   const [selectedPull, setSelectedPull] = useState<{ scope: string; url: string } | null>(null)
   const pull = selectedPull?.scope === linkScope ? threadPullLink(selectedPull.url) : null
-  const fullTask = workspace.tasks.find((item) => item.id === liveTask.id)
+  const fullTask = useWorkspaceSelector(
+    useCallback(
+      (value) => value.workspace.tasks.find((item) => item.id === liveTask.id),
+      [liveTask.id],
+    ),
+  )
   const linkOperation = useRef<AbortController | null>(null)
   useLayoutEffect(() => {
     const controller = new AbortController()
@@ -132,7 +148,7 @@ export function ChatThread({
         operation.signal,
       )
       if (!operation.signal.aborted)
-        await navigator.clipboard.writeText(
+        await copyTextToClipboard(
           taskTranscript({ ...transcript, title: fullTask?.title ?? 'Thread' }),
         )
     } catch (cause) {
@@ -151,6 +167,7 @@ export function ChatThread({
     return true
   }
   const [bookmarkJump, setBookmarkJump] = useState('')
+  const [restoreTurn, setRestoreTurn] = useState<string>()
   useEffect(() => {
     if (!bookmarkJump) return
     const frame = requestAnimationFrame(() =>
@@ -264,22 +281,22 @@ export function ChatThread({
     const unassigned = unassignedConversationTools(task, activity.tools, byMessage)
     return { ...retainActivityGroups({ byMessage, byTurn }), unassigned }
   }, [activity.tools, task.messages, turns, retainActivityGroups])
-  const compactionsByMessage = useMemo(() => {
-    const byTurn = new Map<string, NonNullable<Task['compactions']>>()
-    for (const event of task.compactions ?? []) {
-      const messageId =
-        event.messageId ?? task.turns?.find((turn) => turn.id === event.turnId)?.assistantId
-      if (!messageId) continue
-      const events = byTurn.get(messageId) ?? []
-      events.push(event)
-      byTurn.set(messageId, events)
-    }
-    return byTurn
-  }, [task.compactions, task.turns])
-  const groups = useMemo(() => conversationTurns(task), [task.messages, task.turns])
+  const messageCompactions = useMemo(
+    () => compactionsByMessage(task),
+    [task.compactions, task.turns],
+  )
+  const retainTurnKeys = useMemo(() => createConversationTurnKeys(), [linkScope])
+  const groups = useMemo(
+    () => retainTurnKeys(conversationTurns(task)),
+    [task.messages, task.turns, retainTurnKeys],
+  )
   const retention = useRef({ groups, seeking: false, trim: history.trim })
   useEffect(() => {
-    retention.current = { groups, seeking: !!target && !targetVisible, trim: history.trim }
+    retention.current = {
+      groups,
+      seeking: (!!target && !targetVisible) || !!restoreTurn,
+      trim: history.trim,
+    }
   })
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -290,7 +307,7 @@ export function ChatThread({
         const { groups, seeking, trim } = retention.current
         // Only at the live end can distant earlier pages leave without moving the reader.
         if (seeking || !root || root.scrollHeight - root.clientHeight - root.scrollTop > 16) return
-        trim(groups.find((group) => turnWindow.mounted.has(group.id))?.messages[0]?.id)
+        trim(groups.find((group) => turnWindow.mounted.has(group.key))?.messages[0]?.id)
       }, 1000)
     })
     return () => {
@@ -481,6 +498,11 @@ export function ChatThread({
           }}
         >
           <ConversationHistory
+            positionKey={linkScope}
+            navigationKey={target}
+            hasEarlier={history.hasMore && connected && !history.error}
+            loadingEarlier={history.busy}
+            onRestoreAnchor={setRestoreTurn}
             active={active}
             settled={liveTask.archived}
             onReady={onRecentReady}
@@ -492,15 +514,16 @@ export function ChatThread({
             }
           >
             <ConversationContent
+              scrollClassName="studio-conversation-scroll"
               className={
                 emptyDraft
                   ? 'mx-auto h-full w-full max-w-[var(--chat-max)] gap-0 p-0'
-                  : 'mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-16 md:pr-5'
+                  : 'studio-conversation-content mx-auto w-full max-w-[var(--chat-max)] gap-5 py-4'
               }
             >
               {liveTask.autoProjectFallback && (
                 <p role="note" className="text-xs text-muted-foreground">
-                  Scope found no matching project; continued in General.
+                  Scope found no matching project; continued without a project.
                 </p>
               )}
               {history.busy && (
@@ -558,8 +581,9 @@ export function ChatThread({
               <div className="flex flex-col gap-5">
                 {groups.map((group, groupIndex) => (
                   <section
-                    key={group.id}
+                    key={group.key}
                     id={`turn-${task.id}-${group.id}`}
+                    data-conversation-anchor
                     aria-label={`User request · ${conversationTurnLabel(group.status)}`}
                     className="studio-chat-turn flex min-w-0 flex-col gap-3"
                     style={
@@ -572,8 +596,9 @@ export function ChatThread({
                     }
                   >
                     <DeferredTurn
-                      id={group.id}
+                      id={group.key}
                       pinned={
+                        restoreTurn === `turn-${task.id}-${group.id}` ||
                         groupIndex >= groups.length - 2 ||
                         group.status === 'running' ||
                         group.messages.some(
@@ -593,6 +618,11 @@ export function ChatThread({
                           .at(-1)
                         const render = (open: boolean, header?: ReactNode) => (
                           <div className="flex flex-col gap-3">
+                            {group.turn && providerRetryLabel(group.turn) && (
+                              <p role="status" className="text-xs text-muted-foreground">
+                                {providerRetryLabel(group.turn)}
+                              </p>
+                            )}
                             {group.messages.map((message) => {
                               const turn = turns.get(message.id)
                               return (
@@ -616,7 +646,7 @@ export function ChatThread({
                                         : emptyTools
                                     }
                                     compactions={
-                                      compactionsByMessage.get(message.id) ?? emptyCompactions
+                                      messageCompactions.get(message.id) ?? emptyCompactions
                                     }
                                     highlighted={selectedMatch?.id === message.id}
                                     pending={
@@ -635,7 +665,8 @@ export function ChatThread({
                             })}
                           </div>
                         )
-                        return group.turn ? (
+                        // Keep the message tree mounted as an optimistic prompt gains its turn.
+                        return (
                           <TurnWork
                             turn={group.turn}
                             reveal={group.messages.some(
@@ -647,8 +678,6 @@ export function ChatThread({
                           >
                             {render}
                           </TurnWork>
-                        ) : (
-                          render(true)
                         )
                       }}
                     </DeferredTurn>
@@ -657,6 +686,14 @@ export function ChatThread({
               </div>
               <TaskActivity
                 tools={activityGroups.unassigned}
+                working={
+                  connected &&
+                  task.status === 'running' &&
+                  !task.messages.some(
+                    (message) =>
+                      message.role === 'assistant' && turns.get(message.id)?.status === 'running',
+                  )
+                }
                 status={
                   task.status === 'running'
                     ? 'running'

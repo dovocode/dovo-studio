@@ -1,6 +1,6 @@
-import { taskSnoozeOptions } from '@dovo/protocol'
+import { taskSnoozeMenuChoices } from '@dovo/protocol'
 import { AlarmClock, Check, Undo2 } from 'lucide-react'
-import { updateTask, type Task } from '@dovo/studio-core'
+import { useAppPreferences, updateTask, type Task } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import { useRef, useState } from 'react'
 import { taskActionClient, useTaskActionStore, type TaskRowChanges } from '../list/task-row-actions'
@@ -13,6 +13,7 @@ export function TaskLifecycleActions({
   task: Task
   owner?: Pick<TaskSource, 'runtimeId' | 'name' | 'online'>
 }) {
+  const { taskSnoozeMinutes, taskSnoozeSchedule } = useAppPreferences()
   const store = useTaskActionStore()
   const pendingRef = useRef(false)
   const [pending, setPending] = useState(false)
@@ -44,8 +45,8 @@ export function TaskLifecycleActions({
               size="icon"
               className="size-6"
               disabled={pending}
-              aria-label="Snooze task"
-              title="Snooze task"
+              aria-label="Snooze thread"
+              title="Snooze thread"
             >
               <AlarmClock className="size-3.5" />
             </Button>
@@ -55,15 +56,17 @@ export function TaskLifecycleActions({
               sideOffset={4}
               className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             >
-              {taskSnoozeOptions.map(({ hours, label }) => (
-                <DropdownMenu.Item
-                  key={hours}
-                  className="rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[highlighted]:bg-accent/55 motion-reduce:transition-none"
-                  onSelect={() => snooze(new Date(Date.now() + hours * 3600000).toISOString())}
-                >
-                  {label}
-                </DropdownMenu.Item>
-              ))}
+              {taskSnoozeMenuChoices(taskSnoozeMinutes, taskSnoozeSchedule).map(
+                ({ id, until, label }) => (
+                  <DropdownMenu.Item
+                    key={id}
+                    className="rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[highlighted]:bg-accent/55 motion-reduce:transition-none"
+                    onSelect={() => snooze(until())}
+                  >
+                    {label}
+                  </DropdownMenu.Item>
+                ),
+              )}
               {isSnoozed(task, Date.now()) && (
                 <DropdownMenu.Item
                   className="rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[highlighted]:bg-accent/55 motion-reduce:transition-none"
@@ -80,7 +83,7 @@ export function TaskLifecycleActions({
         type="button"
         variant="ghost"
         className="h-6 gap-1 px-1 text-[0.6875rem]"
-        aria-label={task.archived ? 'Reopen task' : 'Settle task'}
+        aria-label={task.archived ? 'Reopen thread' : 'Settle thread'}
         disabled={pending || task.status === 'running'}
         onClick={() => void change({ archived: !task.archived, snoozedUntil: null })}
       >

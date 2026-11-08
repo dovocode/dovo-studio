@@ -9,9 +9,11 @@ export function taskIsWorking(
     task.status === 'running' ||
     task.subagents?.some(
       (agent) =>
-        (agent.source === 'dovo'
+        agent.kind !== 'background' &&
+        ((agent.source === 'dovo'
           ? agent.status === 'working' && !agent.finishedAt
-          : nativeAgentWorking(agent)) || agent.completion === 'pending',
+          : nativeAgentWorking(agent)) ||
+          agent.completion === 'pending'),
     ) === true ||
     task.threadWatches?.some(
       (watch) =>
@@ -22,5 +24,13 @@ export function taskIsWorking(
     ) === true ||
     !!task.subagentInbox?.length ||
     task.queue?.some((message) => !!message.subagentResultId) === true
+  )
+}
+
+/** Provider-owned shell jobs can outlive an agent turn without keeping the thread Working. */
+export function taskBackgroundTerminalCount(task: Pick<TaskMetadata, 'subagents'>) {
+  return (
+    task.subagents?.filter((agent) => agent.kind === 'background' && nativeAgentWorking(agent))
+      .length ?? 0
   )
 }

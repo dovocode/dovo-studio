@@ -73,8 +73,8 @@ function usePullSection(
     refreshing: false,
     revision: 0,
   })
-  const forceNext = useRef(false)
   const urlIdentity = useRef<string | undefined>(undefined)
+  const requestedRefresh = useRef(false)
   const setError = (error: string) => setState((current) => ({ ...current, error }))
   useEffect(() => {
     urlIdentity.current = undefined
@@ -112,17 +112,22 @@ function usePullSection(
       ),
     )
     let changesLoaded = false
-    let force = forceNext.current
-    forceNext.current = false
+    let force = true
     const load = Effect.gen(function* () {
       yield* hydrated
       if (!enabled || !readConnected || document.visibilityState !== 'visible') return
       const refresh = force
       force = false
+      const showRefresh = requestedRefresh.current
+      requestedRefresh.current = false
       // A successful diff pinned to both commit hashes cannot change. Overview polling
       // discovers pushes; explicit refresh, reconnection and scope changes still revalidate.
       if (section === 'changes' && changesLoaded && !refresh) return
-      setState((current) => ({ ...current, busy: true, refreshing: refresh }))
+      setState((current) => ({
+        ...current,
+        busy: !current.detail || showRefresh,
+        refreshing: refresh && showRefresh,
+      }))
       const identity =
         !origin && repositoryId.startsWith('http')
           ? yield* request(
@@ -170,7 +175,9 @@ function usePullSection(
             ? { ...value, destination, pull: { ...value.pull, destination } }
             : value,
         ),
-        Effect.map((value) => retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value)),
+        Effect.map((value) =>
+          retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value, refresh),
+        ),
         Effect.tap((value) =>
           Effect.sync(() => {
             if (!stopped) {
@@ -210,7 +217,7 @@ function usePullSection(
       ),
     )
     const polling = startPolling(load, {
-      interval: 10000,
+      interval: section === 'status' || section === 'checks' ? 5000 : 10000,
       onError: (error) => {
         if (!stopped)
           setState((current) => ({
@@ -220,10 +227,17 @@ function usePullSection(
           }))
       },
     })
-    document.addEventListener('visibilitychange', polling.refresh)
+    const resume = () => {
+      if (document.visibilityState !== 'visible') return
+      force = true
+      polling.refresh()
+    }
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('focus', resume)
     return () => {
       stopped = true
-      document.removeEventListener('visibilitychange', polling.refresh)
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('focus', resume)
       void polling.stop()
     }
   }, [
@@ -244,7 +258,7 @@ function usePullSection(
   ])
   const refresh = () => {
     if (!readConnected) return
-    forceNext.current = true
+    requestedRefresh.current = true
     setState((current) => ({ ...current, refreshing: true, revision: current.revision + 1 }))
   }
   const invalidate = () => {
@@ -269,7 +283,7 @@ function usePullSection(
     error:
       state.error ||
       (origin?.connected && !reader
-        ? 'The selected PR account is unavailable or changed. Choose its source explicitly; no other machine will take over.'
+        ? 'The selected PR account is unavailable or changed. Choose its source explicitly; no other computer will take over.'
         : ''),
     setError,
     busy: state.busy,
@@ -339,7 +353,9 @@ export function usePullDetail(
     number,
     connectionId,
     'checks',
-    available && tab === 'checks',
+    // The header and merge dialog use this same report set on every tab. Keep it
+    // current so opening Checks cannot change the meaning of the summary.
+    available,
     revision,
   )
   const stack = usePullSection(

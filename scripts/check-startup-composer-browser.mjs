@@ -4,13 +4,16 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
+  '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
+  // Session import has its own browser regression; this fixture exercises startup continuity.
   // Sharing is verified separately from draft, selection and route continuity.
   '@dovo/extension-scm/repository-dialog': 'export const RepositoryDialog=()=>null;',
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
-  '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
-  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  '@dovo/studio-core/state': `export {useApplicationState} from '../studio-core/src/runtime/application-state';`,
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     export * from '@dovo/protocol';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
@@ -20,7 +23,7 @@ const mocks = {
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>window.host;
     export const WorkspaceScope=({children})=>children;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],followUp:'queue'});
+    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});
@@ -42,13 +45,14 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     const Box=({children})=><div>{children}</div>;
     export const ResizablePanel=Box,ResizablePanelGroup=Box,ResizableHandle=()=>null;
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
-    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box;
+    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box,DialogFooter=Box;
+    export const SearchField=({onValueChange,...props})=><input {...props} onChange={event=>onValueChange?.(event.target.value)}/>;
     export const ProjectIcon=()=>null;
     export const Button=({children,onClick,disabled,type,variant,size,...props})=><button {...props} type={type} disabled={disabled} onClick={onClick}>{children}</button>;
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
-    export const ComposerSurface=({children,toolbar,actions,footer,onSubmit})=><form onSubmit={onSubmit}>{toolbar}{children}{actions}{footer}</form>;
+    export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit})=><form onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}</form>;
     export const ComposerSubmit=props=><button {...props}/>;
     export const ComposerTextarea=props=><textarea {...props}/>;
     export const ContextMenu={Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
@@ -129,31 +133,36 @@ const built = await build({
   stdin: {
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
+      import {useApplicationState} from '@dovo/studio-core/state';
       import {WorkspaceValueProvider,createTask} from '@dovo/studio-core';
       import TasksView from '../extension-tasks/src/view';
-      window.requests=[];window.navigations=[];window.commands=new Map();
-      window.host={navigate:target=>{window.navigations.push(target);window.setEntity(target.entityId)},registerCommand:command=>{window.commands.set(command.id,command.run);return ()=>window.commands.delete(command.id)}};
+      window.requests=[];window.navigations=[];window.commands=new Map();window.commandRegistrations=0;window.commandDisposals=0;
+      // Workbench invalidates its palette on register/dispose. Unified may recreate the host
+      // object on that render while preserving registerCommand itself.
+      window.host={navigate:target=>{window.navigations.push(target);window.setEntity(target.entityId)},registerCommand:command=>{if(window.commands.has(command.id))throw Error('Duplicate command: '+command.id);window.commands.set(command.id,command.run);window.commandRegistrations++;window.refreshCommands(value=>value+1);return ()=>{window.commands.delete(command.id);window.commandDisposals++;window.refreshCommands(value=>value+1)}}};
       const other=createTask({title:'Existing',objective:'',agentId:'',repositoryId:'scratch'});
       function App(){
+        const [commandVersion,refreshCommands]=useApplicationState(0);window.refreshCommands=refreshCommands;window.commandVersion=commandVersion;
+        window.host={...window.host};
         const [entity,setEntity]=useState(),[revision,setRevision]=useState(0),[active,setActive]=useState('mac');
         const repositories=id=>[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:id==='mac'?'local-project':'remote-project',name:'Shared project',path:'/project',branch:'main'}];
         const [workspace,setWorkspace]=useState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
         const snapshot={autoProjectSelectionEnabled:true,autoProjectModelSelection:"smart",questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
+        window.replaceCommandRegistry=()=>{const previous=window.host.registerCommand;window.host={...window.host,registerCommand:command=>previous(command)};setRevision(value=>value+1)};
         const request=async(path,input)=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({path,input});
           if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Claude native prompt'},{id:'native-answer',role:'assistant',text:'Claude native answer'}]};
-          if(path==='/api/tasks/title')return {title:'New task'};
-          if(path==='/api/tasks/side-chat/save'){if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve({id:'side-'+input.id})});return {id:'side-'+input.id}};
-          if(path==='/api/tasks/side-chat/ask')return {answer:'Side answer'};
+          if(path==='/api/tasks/title')return {title:'New thread'};
+          if(path==='/api/tasks/side-thread/create'){const create=()=>{const child={...createTask({title:'Side chat '+input.childId.slice(0,4),objective:input.objective,agentId:'',repositoryId:'scratch'}),id:'side-'+input.childId,draft:input.objective,sideThread:{parentTaskId:input.id,objective:input.objective,contextMessageCount:0,source:'head',permissionCeiling:{permission:'workspace-write'}}};setWorkspace(current=>({...current,tasks:[...current.tasks,child]}));return {id:child.id}};if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve(create())});return create()};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
         };
         return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:active,switchRuntime:async id=>{setWorkspace(current=>({...current,tasks:id==='mac'?[other]:[],repositories:repositories(id)}));setActive(id)},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceValueProvider>
       }
-      createRoot(document.getElementById('app')).render(<App/>);
+      const root=createRoot(document.getElementById('app'));window.unmount=()=>root.unmount();root.render(<App/>);
     `,
     resolveDir,
     loader: 'tsx',
@@ -191,12 +200,18 @@ try {
   })
   page.on('pageerror', (error) => {
     errors.push(error.message)
-    console.error(error.message)
+    console.error(error.stack)
   })
   await page.setContent('<style>.hidden{display:none}</style><div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const editor = page.getByLabel('Message task', { exact: true })
+  const editor = page.getByLabel('Message thread', { exact: true })
   await editor.waitFor()
+  await page.waitForFunction(() => window.commandVersion === 4)
+  assert.deepEqual(
+    await page.evaluate(() => [window.commandRegistrations, window.commandDisposals]),
+    [4, 0],
+    'Palette invalidation and a recreated host settle after the four thread commands register',
+  )
   assert.equal(
     await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
     'true',
@@ -207,7 +222,7 @@ try {
   )
   assert.equal(await page.evaluate(() => window.saved.length), 1)
   // Visible start modes switch the temporary draft directly, without opening a picker or sending.
-  const general = page.getByRole('button', { name: 'Start in General', exact: true })
+  const general = page.getByRole('button', { name: 'Start without a project', exact: true })
   const scope = page.getByRole('button', { name: 'Start in Scope', exact: true })
   assert.equal(await scope.getAttribute('aria-pressed'), 'true')
   await general.click()
@@ -241,16 +256,19 @@ try {
     await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
     'false',
   )
-  // A starter commits the existing draft, keeps the welcome and focuses the same editor.
+  // Typing commits the existing draft, keeps the welcome and focuses the same editor.
   await editor.evaluate((element) => {
-    window.starterEditor = element
+    window.draftEditor = element
   })
-  await page.getByRole('button', { name: 'Fix a bug', exact: true }).click()
+  await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
+  await page.keyboard.press('Escape')
+  await editor.fill('Help me investigate and fix this issue: ')
   await page.waitForFunction(() => window.saved.length === 2)
   assert.equal(await editor.inputValue(), 'Help me investigate and fix this issue: ')
   assert(
     await editor.evaluate(
-      (element) => element === window.starterEditor && document.activeElement === element,
+      (element) => element === window.draftEditor && document.activeElement === element,
     ),
   )
   assert.equal(
@@ -325,7 +343,11 @@ try {
     window.finishSend()
   })
   await page.waitForFunction(() => window.saved.some((task) => task.status === 'running'))
-  await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
+  // Watch controls live in Thread info; runtime updates must not restore the old chat bar.
+  assert.equal(
+    await page.getByRole('region', { name: 'Related items and watchers', exact: true }).count(),
+    0,
+  )
   assert.equal(await editor.evaluate((element) => element === window.originalEditor), true)
   await editor.fill('Next input')
   await page.waitForFunction(() => window.saved.some((task) => task.draft === 'Next input'))
@@ -374,18 +396,32 @@ try {
   await editor.fill('Shortcut from the current thread')
   await page.keyboard.press('ControlOrMeta+;')
   await page.waitForFunction(() =>
-    window.requests.some((request) => request.path === '/api/tasks/side-chat/ask'),
+    window.requests.some((request) => request.path === '/api/tasks/side-thread/create'),
   )
   const sideRequest = await page.evaluate(() =>
-    window.requests.findLast((request) => request.path === '/api/tasks/side-chat/ask'),
+    window.requests.findLast((request) => request.path === '/api/tasks/side-thread/create'),
   )
-  assert.deepEqual(sideRequest.input, {
-    id: sideTask,
-    chatId: 'side-' + sideTask,
-    question: 'Shortcut from the current thread',
-  })
-  await page.locator('[data-side-chat="side-' + sideTask + '"]').waitFor()
-  assert.equal(await editor.inputValue(), '')
+  assert.equal(sideRequest.input.id, sideTask)
+  assert.equal(sideRequest.input.objective, 'Shortcut from the current thread')
+  // The draft side chat opens beside its parent as a normal, unsent thread.
+  const besideParent = page.locator('section[aria-label^="Side by side: Side chat"]')
+  await besideParent.waitFor()
+  assert.equal(await besideParent.getByText('Side chat ·', { exact: true }).count(), 1)
+  // Its own composer holds the question for review; the parent composer is cleared.
+  assert.equal(
+    await besideParent.getByLabel('Message thread', { exact: true }).inputValue(),
+    'Shortcut from the current thread',
+  )
+  assert.equal(await page.locator(`textarea[data-task-id="${sideTask}"]`).inputValue(), '')
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some(
+        (request) => request.path === '/api/tasks/message' && request.input.id.startsWith('side-'),
+      ),
+    ),
+    false,
+  )
+  await besideParent.getByRole('button', { name: /Close side-by-side thread/ }).click()
   // A late save must not open the panel for a different thread after navigation.
   await editor.fill('Question before switching threads')
   await page.evaluate(() => {
@@ -398,10 +434,13 @@ try {
     document.querySelector('[data-thread-header]')?.textContent.startsWith('Existing'),
   )
   await page.evaluate(() => window.finishSideSave())
-  await page.waitForFunction(
-    () =>
-      window.requests.filter((request) => request.path === '/api/tasks/side-chat/ask').length === 2,
+  await page.waitForFunction(() =>
+    window.saved.some(
+      (task) => task.sideThread && task.draft === 'Question before switching threads',
+    ),
   )
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+  assert.equal(await page.locator('section[aria-label^="Side by side"]').count(), 0)
   assert.equal(await page.locator('[data-side-task]').count(), 0)
   assert.ok((await page.locator('[data-thread-header]').textContent()).startsWith('Existing'))
   // Leaving an untouched new thread discards it without creating another persisted task.
@@ -410,7 +449,7 @@ try {
   const count = await page.evaluate(() => window.saved.length)
   await page.getByRole('button', { name: 'Existing · draft', exact: true }).click()
   await page.waitForFunction(
-    () => !document.querySelector('[aria-current=true]')?.textContent.includes('New task'),
+    () => !document.querySelector('[aria-current=true]')?.textContent.includes('New thread'),
   )
   assert.equal(await page.evaluate(() => window.saved.length), count)
   // Exercise both reference producers through the actual TasksView → conversation → composer.
@@ -465,9 +504,23 @@ try {
       'Deleted code reference came back after switching threads',
     )
   }
+  assert.deepEqual(
+    await page.evaluate(() => [window.commandRegistrations, window.commandDisposals]),
+    [4, 0],
+    'Navigation, hydration and continued typing do not churn command subscriptions',
+  )
+  await page.evaluate(() => window.replaceCommandRegistry())
+  await page.waitForFunction(() => window.commandRegistrations === 8)
+  assert.equal(await page.evaluate(() => window.commandDisposals), 4)
+  await page.evaluate(() => window.unmount())
+  assert.deepEqual(
+    await page.evaluate(() => [window.commands.size, window.commandDisposals]),
+    [0, 8],
+    'Replacing the registry and unmounting both release their command subscriptions',
+  )
   assert.deepEqual(errors, [])
   console.log(
-    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; side-chat shortcuts target the current thread and late saves respect navigation; untouched drafts still discard; diff and file references are inserted once and stay deleted across thread switches.',
+    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; agent side-chat shortcuts create an unsent draft beside the current thread and late creations respect navigation; untouched drafts still discard; diff and file references are inserted once and stay deleted across thread switches.',
   )
 } finally {
   await browser.close()

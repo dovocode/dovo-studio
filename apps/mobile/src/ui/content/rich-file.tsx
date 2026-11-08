@@ -8,7 +8,10 @@ import {
   artifactTemplatePrompt,
   type ArtifactTemplate,
   createRuntimeClient,
+  parsePdfViewerMessage,
+  type PdfViewState,
 } from '@dovo/protocol'
+import * as Crypto from 'expo-crypto'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../theme'
 import { Action } from '../controls/action'
@@ -67,7 +70,12 @@ export function RichFile({
   const { colors, styles } = useTheme()
   const [opened, setOpened] = useState(previewOnly)
   const [revision, setRevision] = useState(0)
-  const [result, setResult] = useState<{ key: string; url?: string; error?: string }>()
+  const [result, setResult] = useState<{
+    key: string
+    url?: string
+    bridgeId?: string
+    error?: string
+  }>()
   const local = localMarkdownPath(path) !== undefined
   const transportAddress = connection ? createRuntimeClient(connection).url('/') : undefined
   const identity = JSON.stringify([
@@ -80,6 +88,9 @@ export function RichFile({
   const key = JSON.stringify([identity, revision])
   const currentKey = useRef(key)
   currentKey.current = key
+  const saved = useRef<{ identity: string; state: PdfViewState | null }>({ identity, state: null })
+  if (saved.current.identity !== identity) saved.current = { identity, state: null }
+  const web = useRef<WebView>(null)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -112,6 +123,7 @@ export function RichFile({
           setResult({
             key,
             url: createRuntimeClient(connection).url(result.url),
+            bridgeId: Crypto.randomUUID(),
           })
       })
       .catch((error: unknown) => {
@@ -123,6 +135,17 @@ export function RichFile({
   }, [local, video, opened, taskId, path, read, connected, connection, key, revision])
   const current = result?.key === key ? result : undefined
   const url = local ? current?.url : path
+  const previewUrl = url && current?.bridgeId ? `${url}#dovo-pdf=${current.bridgeId}` : url
+  const sendRestore = () => {
+    if (!current?.bridgeId || currentKey.current !== key) return
+    const message = {
+      channel: 'dovo-pdf',
+      id: current.bridgeId,
+      type: 'restore',
+      state: saved.current.state,
+    }
+    web.current?.injectJavaScript(`window.postMessage(${JSON.stringify(message)}, '*');true;`)
+  }
   const error =
     local && (!connected || !taskId)
       ? 'Connect to the file’s computer to preview it.'
@@ -134,10 +157,11 @@ export function RichFile({
       )
   }
   // Only the trusted capability page runs scripts; file HTML/SVG stays sandboxed.
-  const preview = url ? (
+  const preview = previewUrl ? (
     <WebView
       key={key}
-      source={{ uri: url }}
+      ref={web}
+      source={{ uri: previewUrl }}
       style={{ height: video && !opened ? 260 : 480, backgroundColor: colors.surface }}
       javaScriptEnabled={local}
       allowsInlineMediaPlayback
@@ -152,10 +176,33 @@ export function RichFile({
           (!local && /^https?:\/\//i.test(event.url)) ||
           event.url === 'about:blank' ||
           event.url === url ||
+          event.url === previewUrl ||
           (local && event.url === url + '?content=1')
         )
       }}
       onFileDownload={() => launch(true)}
+      onLoad={({ nativeEvent }) => {
+        if (url && nativeEvent.url.split('#')[0] === url) sendRestore()
+      }}
+      onMessage={({ nativeEvent }) => {
+        if (
+          !current?.bridgeId ||
+          !url ||
+          currentKey.current !== key ||
+          nativeEvent.url.split('#')[0] !== url ||
+          nativeEvent.data.length > 2048
+        )
+          return
+        let value: unknown
+        try {
+          value = JSON.parse(nativeEvent.data)
+        } catch {
+          return
+        }
+        const message = parsePdfViewerMessage(value, current.bridgeId)
+        if (message?.type === 'ready') sendRestore()
+        else if (message?.type === 'state') saved.current.state = message.state
+      }}
       onContentProcessDidTerminate={processLost}
       onRenderProcessGone={processLost}
       onError={({ nativeEvent }) => {

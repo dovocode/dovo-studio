@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { Image, Pressable, ScrollView, View } from 'react-native'
 import { shareAttachment } from './attachment-share'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import {
   attachmentArchiveListSchema,
   attachmentArchiveReadSchema,
   attachmentReadSchema,
-  attachmentResultSchema,
+  attachmentCommitResultSchema,
+  mutableStruct,
   fileSizeLabel,
   randomUUID,
   type Attachment,
@@ -48,12 +49,27 @@ export function AttachmentArchive({
   taskId,
   attachment,
   onClose,
+  onBusy,
+  disabled,
 }: {
   taskId: string
   attachment: Attachment
   onClose: () => void
+  onBusy?: (busy: boolean) => void
+  disabled?: boolean
 }) {
-  const { connected, readEffect, callEffect } = useRuntime()
+  const {
+    connected,
+    readEffect,
+    callEffect,
+    profile,
+    requestAttachmentEffect,
+    attachmentPendingEffect,
+    reviewAttachments,
+    readRuntimeEffect,
+    refreshRuntimeEffect,
+    finishAttachmentEffect,
+  } = useRuntime()
   const { colors, styles } = useTheme()
   const [entries, setEntries] = useApplicationState<AttachmentArchiveEntry[] | null>(null)
   const [folder, setFolder] = useApplicationState('')
@@ -64,6 +80,31 @@ export function AttachmentArchive({
   const [added, setAdded] = useApplicationState(false)
   const { busy, error, act } = useAction()
   const uploadIds = useRef(new Map<string, string>())
+  const heldUploads = useRef(new Set<string>())
+  const attachedUploads = useRef(new Set<string>())
+  const scopeKey = JSON.stringify([
+    taskId,
+    profile?.id,
+    profile?.connection.address,
+    profile?.connection.token,
+    path,
+    !!disabled,
+  ])
+  const owner = useRef({ key: scopeKey, generation: 0, mounted: true })
+  if (owner.current.key !== scopeKey) {
+    owner.current.key = scopeKey
+    owner.current.generation++
+  }
+  const close = () => {
+    owner.current.mounted = false
+    onClose()
+  }
+  useEffect(() => {
+    owner.current.mounted = true
+    return () => {
+      owner.current.mounted = false
+    }
+  }, [])
   const current = selected?.path === path ? selected : null
   useEffect(() => {
     setEntries(null)
@@ -97,7 +138,7 @@ export function AttachmentArchive({
   useEffect(() => {
     setSelected(null)
     setLoadError('')
-    setAdded(false)
+    setAdded(!!path && (heldUploads.current.has(path) || attachedUploads.current.has(path)))
     if (!path || !connected) return
     const requests = clientTaskScope()
     let cancelled = false
@@ -142,7 +183,7 @@ export function AttachmentArchive({
     )
 
   return (
-    <SafeModal visible animationType="slide" onRequestClose={onClose}>
+    <SafeModal visible animationType="slide" onRequestClose={close}>
       <View style={styles.screen}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
           {(path || folder) && (
@@ -174,7 +215,7 @@ export function AttachmentArchive({
             disabled={!connected || busy}
             onPress={share}
           />
-          <IconButton label="Close archive" icon="close" variant="glass" onPress={onClose} />
+          <IconButton label="Close archive" icon="close" variant="glass" onPress={close} />
         </View>
         {(loadError || error || !connected) && (
           <View style={{ paddingHorizontal: 16, gap: 8 }}>
@@ -216,25 +257,74 @@ export function AttachmentArchive({
               </ScrollView>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={added ? 'Added to draft' : 'Attach selected file to draft'}
-                disabled={!connected || busy || added}
-                onPress={() =>
+                accessibilityLabel={
+                  added
+                    ? heldUploads.current.has(current.path)
+                      ? 'Check saved uploads'
+                      : 'Attached to draft'
+                    : 'Attach selected file to draft'
+                }
+                disabled={!connected || busy || added || disabled}
+                onPress={() => {
+                  onBusy?.(true)
                   act(() =>
                     mobileWorkflow(function* () {
+                      const generation = owner.current.generation
                       let id = uploadIds.current.get(current.path)
                       if (!id) {
                         id = randomUUID()
                         uploadIds.current.set(current.path, id)
                       }
-                      yield* callEffect(
-                        '/api/attachments/upload',
-                        { taskId, id, name: current.name, data: current.data },
-                        attachmentResultSchema,
+                      if (!profile) throw new Error('Connect a computer first.')
+                      const { guard } = yield* readRuntimeEffect(
+                        profile,
+                        '/api/attachments/draft-guard',
+                        { taskId },
+                        mutableStruct({ guard: Schema.String }),
                       )
-                      setAdded(true)
-                    }),
+                      const result = yield* Effect.result(
+                        requestAttachmentEffect(
+                          profile,
+                          { taskId, id, name: current.name, data: current.data, detached: true },
+                          false,
+                        ),
+                      )
+                      if (result._tag === 'Failure') {
+                        const pending = yield* Effect.result(attachmentPendingEffect(profile, id))
+                        if (pending._tag === 'Failure' || pending.success) {
+                          heldUploads.current.add(current.path)
+                          setAdded(true)
+                          reviewAttachments(profile)
+                        }
+                        return yield* Effect.fail(result.failure)
+                      }
+                      const sameOwner =
+                        owner.current.mounted && owner.current.generation === generation
+                      const committed = sameOwner
+                        ? yield* Effect.result(
+                            readRuntimeEffect(
+                              profile,
+                              '/api/attachments/commit-upload',
+                              { id, guard },
+                              attachmentCommitResultSchema,
+                            ),
+                          )
+                        : null
+                      if (!committed || committed._tag === 'Failure') {
+                        heldUploads.current.add(current.path)
+                        setAdded(true)
+                        reviewAttachments(profile)
+                      } else {
+                        attachedUploads.current.add(current.path)
+                        setAdded(true)
+                        yield* refreshRuntimeEffect(profile).pipe(Effect.catch(() => Effect.void))
+                        yield* finishAttachmentEffect(profile, id).pipe(
+                          Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),
+                        )
+                      }
+                    }).pipe(Effect.ensuring(Effect.sync(() => onBusy?.(false)))),
                   )
-                }
+                }}
                 style={{
                   minHeight: 48,
                   margin: 16,
@@ -246,7 +336,11 @@ export function AttachmentArchive({
                 }}
               >
                 <Text style={{ color: colors.text }}>
-                  {added ? 'Added to draft' : 'Attach to draft'}
+                  {added
+                    ? heldUploads.current.has(current.path)
+                      ? 'Check saved uploads'
+                      : 'Attached to draft'
+                    : 'Attach to draft'}
                 </Text>
               </Pressable>
             </>

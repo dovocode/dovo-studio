@@ -3,7 +3,8 @@ import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-po
 import { legacyAcpModels } from './acp-models.js'
 import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
-import { acpMcpServers } from '../../configuration/mcp-settings.js'
+import { acpMcpHttp } from './acp-mcp.js'
+import { acpMcpServers, mcpHeaders } from '../../configuration/mcp-settings.js'
 import { isImageAttachment } from '@dovo/protocol'
 import { acpModels } from '../../catalogs/acp.js'
 import { formQuestions } from '../shared/form-questions.js'
@@ -15,6 +16,7 @@ import {
   type LoadSessionResponse,
   type PromptRequest,
   type SubagentUpdate,
+  type McpServer,
 } from '@agentclientprotocol/sdk/unstable'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { executableAvailable } from '../../../process.js'
@@ -339,7 +341,21 @@ export function createAcpAdapter(): AgentAdapter {
           !initialization.agentCapabilities?.loadSession
         )
           throw new Error('This ACP agent cannot resume sessions. Start a new session explicitly.')
-        const mcpServers = acpMcpServers(run.agent.resources?.mcpServers ?? [])
+        const configuredServers = run.agent.resources?.mcpServers ?? []
+        const mcpServers: McpServer[] = reusable ? [] : acpMcpServers(configuredServers)
+        if (!reusable && initialization.agentCapabilities?.mcpCapabilities?.acp) {
+          for (const server of configuredServers.filter(
+            (server) => server.enabled && server.transport === 'http' && server.acpTransport,
+          )) {
+            const headers = mcpHeaders(server)
+            const registration = connection.mcp.registerServer(rpc, {
+              name: server.name,
+              handler: (context) => acpMcpHttp(server.url, headers, context),
+            })
+            const index = mcpServers.findIndex((entry) => entry.name === server.name)
+            mcpServers[index] = registration.declaration
+          }
+        }
         if (
           mcpServers.some((server) => 'type' in server && server.type === 'http') &&
           !initialization.agentCapabilities?.mcpCapabilities?.http

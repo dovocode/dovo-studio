@@ -1,0 +1,408 @@
+{
+  "correct": 18,
+  "total": 20,
+  "questionCorrect": 78,
+  "questionTotal": 80,
+  "rows": [
+    {
+      "text": "Could Opus handle this bug fix?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Can Sol 6.1 solve a memory leak?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "sol-6.1",
+          "project": "keep"
+        }
+      },
+      "correct": false,
+      "questionCorrect": 3,
+      "questionTotal": 4
+    },
+    {
+      "text": "Would Fable 5.1 handle a large refactor?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "fable-5.1",
+          "project": "keep"
+        }
+      },
+      "correct": false,
+      "questionCorrect": 3,
+      "questionTotal": 4
+    },
+    {
+      "text": "Is Opus 5.5 suited for reviewing database migrations?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Do you think Sol could debug this issue?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Should I use Opus for code reviews?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Which is better for this task, Opus 5.5 or Fable 5.1?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Can you explain whether Fable 5.1 is capable of this?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Could you use Opus to fix this bug?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "opus-5.5",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Can you use Sol 6.1 to review the implementation?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "sol-6.1",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "sol-6.1",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Would you ask Fable 5.1 to investigate this crash?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "fable-5.1",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Please have Opus 5.5 inspect the diff",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "opus-5.5",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "I want Sol to implement the feature",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "sol-6.1",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "sol-6.1",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Ask Fable to repair the failing tests",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "fable-5.1",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Use Opus to debug the issue",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "opus-5.5",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Put Sol 6.1 on this bug fix",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "sol-6.1",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "sol-6.1",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Let Opus 5.5 review this change",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "opus-5.5",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Would you use Fable 5.1 to look at the bug?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "fable-5.1",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "The proposal mentions using Opus 5.5, but do not change the selected model",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    },
+    {
+      "text": "Explain whether Opus could help with a migration",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "questionCorrect": 4,
+      "questionTotal": 4
+    }
+  ]
+}

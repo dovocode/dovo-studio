@@ -1,0 +1,242 @@
+{
+  "baseRepository": "knowledgator/gliclass-base-v3.0",
+  "baseRevision": "77a70e6cd52e602ed18184ef37d18bdd3741e3d5",
+  "initializationPath": "selections-20261104/run-02/checkpoint",
+  "initializationSha256": "1039eed0b287f68f2b4ca8ce1f782a18e8f36b0e6ef20703f84bb066e5ad7bd0",
+  "datasetSha256": "99b68a270957e9b8aedd49f55f6069e3230ec6e3a64fbed96fadbac9b952a7d9",
+  "benchmarkSha256": "ab4edc619035deba1c8490fa9bf52deb8ab770d0aeffc7c46edff8b24b08ce8a",
+  "seed": 20261105,
+  "epochs": 2,
+  "batchSize": 16,
+  "learningRate": 6e-6,
+  "optimizer": "AdamW",
+  "weightDecay": 0.01,
+  "schedule": "10% linear warmup, linear decay",
+  "gradientNorm": 1.0,
+  "device": "Apple MPS",
+  "machine": "arm64",
+  "macOS": "27.3",
+  "parameters": 186545922,
+  "dtype": "float32",
+  "maxOptions": 16,
+  "maxLength": 384,
+  "trainingSeconds": 184.68210829099917,
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "baselineValidation": {
+    "correct": 1504,
+    "total": 1531,
+    "accuracy": 0.9823644676681907,
+    "confusion": {
+      "browser": {
+        "browser": 271,
+        "terminal": 0,
+        "thread": 10
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 262,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 794,
+        "total": 806
+      },
+      "profile": {
+        "correct": 145,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "project": {
+        "correct": 200,
+        "total": 200
+      },
+      "model": {
+        "correct": 190,
+        "total": 205
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Select Muse and inspect startup on Study PC",
+        "task": "model",
+        "expected": "model:validation:alias:8:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Select Kestrel and inspect startup on Garden Desktop",
+        "task": "model",
+        "expected": "model:validation:alias:20:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Select Muse and inspect startup on Study PC",
+        "task": "model",
+        "expected": "model:validation:alias:41:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Select Kestrel and inspect startup on Validation Mac",
+        "task": "model",
+        "expected": "model:validation:alias:29:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:30:2"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Select Fable and inspect startup on Graphics Station",
+        "task": "model",
+        "expected": "model:validation:alias:59:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Select Raven and inspect startup on CI Node",
+        "task": "model",
+        "expected": "model:validation:alias:32:2",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Let Kestrel handle the cleanup",
+        "task": "model",
+        "expected": "model:validation:alias:15:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Select Fable and inspect startup on Garden Desktop",
+        "task": "model",
+        "expected": "model:validation:alias:56:2",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Select Raven and inspect startup on Validation Mac",
+        "task": "model",
+        "expected": "model:validation:alias:5:2",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Select Muse and inspect startup on Graphics Station",
+        "task": "model",
+        "expected": "model:validation:alias:35:0",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Select Muse and inspect startup on Graphics Station",
+        "task": "model",
+        "expected": "model:validation:alias:53:3",
+        "actual": "keep"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "Select Muse and inspect startup on CI Node",
+        "task": "model",
+        "expected": "model:validation:alias:44:3",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Select Fable and inspect startup on Garden Desktop",
+        "task": "model",
+        "expected": "model:validation:alias:14:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:75:0"
+      }
+    ],
+    "loss": 0.08374225140654348
+  },
+  "selection": "Validation accuracy, then validation cross-entropy. No test/benchmark checkpoint selection."
+}

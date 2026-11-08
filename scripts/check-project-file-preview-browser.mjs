@@ -11,7 +11,8 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {TaskFiles} from '${detail}task-files.tsx';
 window.fail=true;window.requests=[];window.opened=[];
-const request=async(path,input)=>{window.requests.push({path,input});if(path.endsWith('/list')&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/list'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'],...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
+window.projectFile=(path,contents)=>{const size=new TextEncoder().encode(contents).length,complete=size<=256*1024;return {path,contents:complete?contents:contents.slice(0,128*1024),size,complete,truncated:!complete,startLine:1,hasMore:!complete}};
+const request=async(path,input)=>{window.requests.push({path,input});if((path.endsWith('/directory')||path.endsWith('/search-paths'))&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/directory'))return {entries:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].map(path=>({path,kind:'file'})),truncated:false};if(path.endsWith('/search-paths'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].filter(path=>path.includes(input.query)),...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return window.projectFile(input.path,input.path==='large.txt'?'é'.repeat(600000):'Small file')};throw new Error('Unexpected request: '+path)};
 window.runtime={connected:true,connection:{address:'http://runtime.test:7777',token:'paired-token'},request};
 createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',files:[]}}/>);`,
     },
@@ -33,11 +34,11 @@ createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',fi
     },
     {
       path: '@dovo/studio-core',
-      contents: `export {responses} from '@dovo/protocol';export const useWorkspace=()=>window.runtime;export const useStudioHost=()=>({openExternalLink:async url=>window.opened.push(url)});export const useDiffOptions=()=>({options:{}});`,
+      contents: `import {Effect} from 'effect';export {responses} from '@dovo/protocol';const requestEffect=(...args)=>Effect.tryPromise({try:signal=>{if(args[0].endsWith('/search-content'))(window.searchSignals??=[]).push({query:args[1].query,signal});return window.runtime.request(...args)},catch:error=>error});export const useWorkspace=()=>({...window.runtime,requestEffect});export const useStudioHost=()=>({openExternalLink:async url=>window.opened.push(url)});export const useDiffOptions=()=>({options:{}});`,
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
+      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const FileChangeCounts=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -111,7 +112,7 @@ try {
   await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
   assert.equal(await page.getByTestId('file-preview').count(), 1)
   const listingsBeforeSelection = await page.evaluate(
-    () => window.requests.filter((item) => item.path.endsWith('/list')).length,
+    () => window.requests.filter((item) => item.path.endsWith('/directory')).length,
   )
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.getByRole('button', { name: 'large.txt', exact: true }).click()
@@ -120,7 +121,9 @@ try {
     .waitFor()
   assert.equal(await page.getByRole('button', { name: 'Edit', exact: true }).isDisabled(), true)
   assert.equal(
-    await page.evaluate(() => window.requests.filter((item) => item.path.endsWith('/list')).length),
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path.endsWith('/directory')).length,
+    ),
     listingsBeforeSelection,
   )
   await page.evaluate(() => {
@@ -189,10 +192,10 @@ try {
         if (first) {
           first = false
           return new Promise((resolve) => {
-            window.resolveOldRead = () => resolve({ path: 'small.txt', contents: 'Stale A' })
+            window.resolveOldRead = () => resolve(window.projectFile('small.txt', 'Stale A'))
           })
         }
-        return Promise.resolve({ path: 'small.txt', contents: 'Fresh A' })
+        return Promise.resolve(window.projectFile('small.txt', 'Fresh A'))
       }
       return original(path, input)
     }
@@ -225,6 +228,80 @@ try {
       await page.getByText('No matching files in this listing.', { exact: true }).waitFor()
     }
   }
+  await page.evaluate(() => {
+    const request = window.runtime.request
+    window.folderCalls = []
+    window.runtime.request = async (path, input, ...rest) => {
+      if (!path.endsWith('/directory')) return request(path, input, ...rest)
+      window.folderCalls.push(input)
+      if (input.directory === 'src')
+        return input.cursor
+          ? { entries: [{ path: 'src/second.ts', kind: 'file' }], truncated: false }
+          : {
+              entries: [
+                { path: 'src/first.ts', kind: 'file' },
+                { path: 'src/nested', kind: 'directory' },
+              ],
+              nextCursor: 'second',
+              truncated: true,
+            }
+      if (input.directory === 'src/nested')
+        return { entries: [{ path: 'src/nested/deep.ts', kind: 'file' }], truncated: false }
+      if (input.directory === 'docs')
+        return { entries: [{ path: 'docs/guide.md', kind: 'file' }], truncated: false }
+      return {
+        entries: [
+          { path: 'src', kind: 'directory' },
+          { path: 'docs', kind: 'directory' },
+          { path: 'root.txt', kind: 'file' },
+        ],
+        truncated: false,
+      }
+    }
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await search.fill('')
+  const folder = (path) => page.locator('summary').filter({ hasText: path })
+  await page.getByRole('button', { name: 'root.txt', exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.folderCalls.map((input) => input.directory)), [
+    '',
+  ])
+  await folder('src').click()
+  await page.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'root.txt', exact: true }).isVisible(), true)
+  await page.getByRole('button', { name: 'More entries', exact: true }).click()
+  await page.getByRole('button', { name: 'src/second.ts', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'src/first.ts', exact: true }).isVisible(),
+    true,
+    'Pagination appends children',
+  )
+  await folder('nested').click()
+  await page.getByRole('button', { name: 'src/nested/deep.ts', exact: true }).waitFor()
+  await folder('docs').click()
+  await page.getByRole('button', { name: 'docs/guide.md', exact: true }).waitFor()
+  const beforeReopen = await page.evaluate(() => window.folderCalls.length)
+  await folder('src').click()
+  await page.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor({ state: 'hidden' })
+  await folder('src').click()
+  await page.getByRole('button', { name: 'src/nested/deep.ts', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.folderCalls.length),
+    beforeReopen,
+    'Reopening a loaded subtree avoids network reads',
+  )
+  await page.evaluate(() => {
+    window.runtime.connected = false
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await folder('src').click()
+  await folder('src').click()
+  assert.equal(
+    await page.getByRole('button', { name: 'src/nested/deep.ts', exact: true }).isVisible(),
+    true,
+    'Loaded folders remain browsable offline',
+  )
+  assert.equal(await page.evaluate(() => window.folderCalls.length), beforeReopen)
   assert.deepEqual(errors, [])
   console.log(
     'Project text/image previews, retry, format switching, external opening and read-only checks passed.',

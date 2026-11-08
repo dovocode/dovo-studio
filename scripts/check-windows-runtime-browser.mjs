@@ -180,12 +180,13 @@ try {
     { ...base, configured: true, choice: { mode: 'wsl', distribution: 'Ubuntu Work' } },
     true,
   )
-  await page.getByRole('alert').filter({ hasText: 'Distribution no longer available' }).waitFor()
-  await page.getByRole('combobox', { name: 'Execution environment', exact: true }).click()
-  await page.getByRole('option', { name: 'Native Windows (recommended)', exact: true }).click()
-  await page.getByRole('button', { name: 'Apply environment', exact: true }).click()
   await page.getByText('Workspace ready').waitFor()
-  assert.deepEqual(await page.evaluate(() => window.saved), [{ mode: 'native' }])
+  assert.equal(
+    await page.evaluate(() => window.connectionChecks),
+    0,
+    'configured startup must not wait for the local runtime',
+  )
+  assert.deepEqual(await page.evaluate(() => window.saved), [])
   await setup(base)
   await page.evaluate(() => {
     window.holdConnection = true

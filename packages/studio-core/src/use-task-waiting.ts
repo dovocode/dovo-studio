@@ -15,6 +15,7 @@ export function useTaskWaiting(
   connected: boolean,
   request: (input: Input) => Promise<TaskWaiting>,
   scope?: string,
+  active = true,
 ) {
   const key = scope ? JSON.stringify([scope, taskId]) : undefined
   const [data, setData] = useState<TaskWaiting | null>(() =>
@@ -25,20 +26,34 @@ export function useTaskWaiting(
   const mounted = useRef(false)
   const inFlight = useRef<Promise<void> | null>(null)
   const generation = useRef(0)
+  const online = useRef(connected)
+  online.current = connected
   const refresh = useCallback(
     async (unlink?: Input['unlink']) => {
       const current = generation.current
-      if (!connected) return
+      if (!online.current) {
+        if (unlink && mounted.current)
+          setError('Reconnect to stop watching this item. No changes were made.')
+        return
+      }
       if (!unlink && inFlight.current) return inFlight.current
       while (inFlight.current) await inFlight.current
       if (!mounted.current || current !== generation.current) return
+      if (!online.current) {
+        if (unlink) setError('Reconnect to stop watching this item. No changes were made.')
+        return
+      }
       setBusy(true)
       setError('')
       const operation = (async () => {
         try {
-          const result = await Promise.resolve().then(() =>
-            request({ taskId, ...(unlink ? { unlink } : {}) }),
-          )
+          const result = await Promise.resolve().then(() => {
+            if (unlink && (!mounted.current || generation.current !== current))
+              throw new Error('Watching context changed. No changes were made.')
+            if (!online.current)
+              throw new Error('Reconnect to update watching items. No changes were made.')
+            return request({ taskId, ...(unlink ? { unlink } : {}) })
+          })
           if (mounted.current && generation.current === current) {
             if (key) remember(key, result)
             setData(result)
@@ -56,21 +71,40 @@ export function useTaskWaiting(
       inFlight.current = operation
       await operation
     },
-    [taskId, connected, request, key],
+    [taskId, request, key],
   )
   useEffect(() => {
     mounted.current = true
     setBusy(false)
     setData(key ? (saved.get(key) ?? null) : null)
     setError('')
-    void refresh()
-    const timer = setInterval(() => void refresh(), 15000)
     return () => {
       mounted.current = false
       generation.current++
       inFlight.current = null
-      clearInterval(timer)
     }
   }, [refresh, key])
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined
+    const visibility = () => {
+      clearInterval(timer)
+      timer = undefined
+      if (
+        !active ||
+        !connected ||
+        (typeof document !== 'undefined' && document.visibilityState === 'hidden')
+      )
+        return
+      void refresh()
+      timer = setInterval(() => void refresh(), 15000)
+    }
+    visibility()
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility)
+    return () => {
+      clearInterval(timer)
+      if (typeof document !== 'undefined')
+        document.removeEventListener('visibilitychange', visibility)
+    }
+  }, [active, connected, refresh])
   return { data, error, busy, refresh }
 }

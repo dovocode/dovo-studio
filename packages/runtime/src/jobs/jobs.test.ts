@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { responses, type Automation, type AutomationData } from '@dovo/protocol'
+import { Jobs } from './jobs.js'
+import { ManagedPolicy } from '../policy/managed-policy.js'
 // These integration tests run real Git checkout/checkpoint subprocesses.
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
@@ -33,6 +35,84 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+})
+it('deletes idle automations through the API, retaining history and rejecting active runs', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const token = 'automation-delete-owner-token-at-least-32-characters'
+  const runtime = await startRuntime({
+    databasePath: await databaseFile('delete.sqlite'),
+    ownerToken: token,
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Done'),
+  })
+  const post = (path: string, input: unknown, credential = token) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  expect((await post('/api/jobs/delete', { id: 'flow' }, 'invalid')).status).toBe(401)
+  expect((await post('/api/jobs/delete', { id: '' })).status).toBe(400)
+  const hook = decode(
+    responses.webhook,
+    await (await post('/api/jobs/webhook-secret', { id: 'flow' })).json(),
+  )
+  const id = s.jobs.start('flow')
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('waiting'))
+  expect((await post('/api/jobs/delete', { id: 'flow' })).status).toBe(409)
+  expect(s.store.get().automations).toHaveLength(1)
+  s.jobs.approve(id, true)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+  const threads = s.store.get().tasks.map((task) => task.id)
+  expect((await post('/api/jobs/delete', { id: 'flow' })).status).toBe(200)
+  expect(s.store.get().automations).toEqual([])
+  expect(s.jobs.detail(id).status).toBe('completed')
+  expect(s.store.get().tasks.map((task) => task.id)).toEqual(threads)
+  expect(s.db.prepare('SELECT value FROM documents WHERE id=?').get('webhook:flow')).toBeUndefined()
+  expect((await post('/api/jobs/delete', { id: 'flow' })).status).toBe(200)
+  expect((await post('/api/jobs/run', { id: 'flow' })).status).toBe(404)
+  expect((await post(hook.path, {}, hook.secret)).status).not.toBe(200)
+})
+it('keeps a saved webhook review paused while policy blocks its resumption', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: await databaseFile('policy-webhook.sqlite'),
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  runtime.services.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Done'),
+  })
+  const id = runtime.services.jobs.start('flow', 'webhook:delivery')
+  await waitForJob(() => expect(runtime.services.jobs.detail(id).status).toBe('waiting'))
+  const blocked = new Jobs(
+    runtime.services.db,
+    runtime.services.store,
+    runtime.services.tasks,
+    undefined,
+    undefined,
+    undefined,
+    new ManagedPolicy({ schemaVersion: 1, organization: 'Test', limits: { webhookTasks: false } }),
+  )
+  try {
+    expect(() => blocked.approve(id, true)).toThrow(/policy/)
+    expect(blocked.detail(id).status).toBe('waiting')
+  } finally {
+    await blocked.shutdown()
+  }
+  runtime.services.jobs.approve(id, true)
+  await waitForJob(() => expect(runtime.services.jobs.detail(id).status).toBe('completed'))
 })
 it(
   'persists review gates across restart and deduplicates external deliveries',

@@ -1,5 +1,5 @@
 import type { Agent, ProviderStatus, AgentDiscovery, ModelCatalog } from '@dovo/protocol'
-import type { QuestionPrompt, QuestionAnswers } from '@dovo/protocol'
+import type { QuestionPrompt, QuestionAnswers, QuestionOutcomes } from '@dovo/protocol'
 export type AgentInput = {
   id: string
   prompt: string
@@ -82,6 +82,7 @@ export interface AgentRun {
     prompt: QuestionPrompt,
     signal?: AbortSignal,
     validate?: (answers: QuestionAnswers) => void,
+    onUnanswered?: (outcomes: QuestionOutcomes) => void,
   ) => Promise<QuestionAnswers | null>
 }
 export interface AgentAdapter {

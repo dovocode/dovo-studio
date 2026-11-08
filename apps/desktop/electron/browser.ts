@@ -1,26 +1,60 @@
+import { configureBrowserIdentity } from './browser-user-agent.js'
+import {
+  createBrowserSessionCookies,
+  clearSavedBrowserSessionCookies,
+} from './browser-session-cookies.js'
+import { documentPipDisallowsReturn, isTeamsBrowserUrl } from './browser-document-pip-policy.js'
+import { createBrowserZoom, nextBrowserZoom } from './browser-zoom.js'
+import { browserDownloads, disposeBrowserDownloads } from './browser-downloads.js'
+import { writeFile } from 'node:fs/promises'
 import { createBrowserVisibility } from './browser-visibility.js'
+import { createBrowserTabActivity } from './browser-tab-activity.js'
+import { createBrowserFind } from './browser-find.js'
+import { renderBrowserJson } from './browser-json.js'
 import {
   DOCUMENT_PIP_NAME,
   authorizeDocumentPip,
   createDocumentPipWindow,
+  dismissDocumentPipWindow,
 } from './browser-document-pip.js'
 import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
   selectedBrowserText,
+  readBrowserElementSnapshot,
+  inspectBrowserElement,
+  browserElementSnapshotSchema,
+  browserElementSchema,
+  browserDefaultKeepAwake,
+  browserProfilesResultSchema,
+  decodeResult,
   isPrivateBrowserProfile,
   type BrowserWorkspaceTab,
+  type BrowserWorkspaceState,
+  type BrowserTabState,
 } from '@dovo/protocol'
 import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
-import { app, BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  WebContentsView,
+  ipcMain,
+  shell,
+  Menu,
+  clipboard,
+  dialog,
+  session,
+} from 'electron'
 import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
 import { browserPermissions, forgetPrivateBrowserPermissions } from './browser-permissions.js'
 import {
   configureBrowserLanguage,
+  keepBrowserSessionCookies,
   websiteCustomization,
   websiteLinkProfile,
+  websiteSearchUrl,
 } from './browser-language.js'
 import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
@@ -44,13 +78,22 @@ type Entry = {
   favicon?: string | null
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
   navigationError?: string
+  documentRevision?: number
+  findOpen?: boolean
   popups: Set<BrowserWindow>
   documentPip?: BrowserWindow
+  documentPipContents?: Electron.WebContents
+  activity?: ReturnType<typeof createBrowserTabActivity>
+  find?: ReturnType<typeof createBrowserFind>
+  pipActivity?: ReturnType<typeof createBrowserTabActivity>
   taskId?: string
   cdp?: string
   view: WebContentsView
   contents: Electron.WebContents
   browserSession: Electron.Session
+  nativeUserAgent: string
+  prepareNavigation: (url: string) => void
+  cookiesReady?: Promise<void>
   url: string
   /** Extension page an extension opened here; the renderer adopts the tab with this exact URL. */
   extensionUrl?: string
@@ -64,6 +107,7 @@ type Entry = {
   /** Restore page focus after a passive tooltip, unless Studio receives deliberate input. */
   restoreFocus?: boolean
   keepAwake?: boolean
+  sleeping?: boolean
   videoPictureInPicture?: boolean
   fullscreenBounds?: Electron.Rectangle
   fullscreenWindowWasFullscreen?: boolean
@@ -90,6 +134,7 @@ const isAborted = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED'
 /** A live renderer can be shown while images or other subresources are still loading. */
 async function loadUntilReady(entry: Entry, url: string) {
+  if (entry.cookiesReady) await entry.cookiesReady
   entry.routeNavigation = undefined
   const contents = entry.view.webContents
   let domReady = false
@@ -105,6 +150,7 @@ async function loadUntilReady(entry: Entry, url: string) {
     contents.on('destroyed', onDestroyed)
   })
   try {
+    entry.prepareNavigation(url)
     await Promise.race([
       ready,
       contents.loadURL(url).catch((error: unknown) => {
@@ -145,7 +191,7 @@ const primaryModifier = (input: Electron.Input) =>
 const tabShortcut = (input: Electron.Input) => {
   if (input.type !== 'keyDown' || !primaryModifier(input)) return
   const key = input.key.toLowerCase()
-  if (key === 't' || (!input.shift && ['l', 'w', 'd', 'r', 'n'].includes(key))) return key
+  if (key === 't' || (!input.shift && ['l', 'w', 'd', 'r', 'n', 'f'].includes(key))) return key
 }
 /** App-menu accelerators would act on the Studio window; pages keep only editing and Quit. */
 const syncMenuShortcuts = (contents: Electron.WebContents, input: Electron.Input) => {
@@ -185,7 +231,11 @@ export function registerBrowser(
   indexPath: string,
   directory?: string,
   preload?: string,
-  browserWindows?: { create: () => Promise<BrowserWindow>; list: () => BrowserWindow[] },
+  browserWindows?: {
+    create: () => Promise<BrowserWindow>
+    list: () => BrowserWindow[]
+    main?: () => Promise<BrowserWindow>
+  },
 ) {
   let cdp: Awaited<ReturnType<typeof createBrowserCdp>> | undefined
   let cdpPending: Promise<Awaited<ReturnType<typeof createBrowserCdp>>> | undefined
@@ -194,23 +244,76 @@ export function registerBrowser(
   const registered = new WeakSet<BrowserWindow>()
   const workspaces = new Set<BrowserWindow>()
   const tabCounts = new Map<number, number>()
+  // Renderer-owned metadata also covers unloaded and remote tabs during a window handoff.
+  const workspaceStates = new Map<number, BrowserWorkspaceState>()
+  const detachedWindows = new Map<number, BrowserWindow>()
+  // A detached workspace returns even if its source window was closed or reloaded.
+  const detachedWorkspaces = new WeakSet<BrowserWindow>()
+  const detachedPinnedTabs = new WeakMap<BrowserWindow, { key: string; source: BrowserWindow }>()
+  const workspaceWaiters = new Map<number, Set<() => void>>()
+  const adoptionWaiters = new Map<number, Set<{ keys: Set<string>; done: () => void }>>()
+  const persistedKeys = new Map<number, Set<string>>()
+  const pendingReturns = new Map<number, { target: BrowserWindow; keys: Set<string> }>()
+  const returnOperations = new Map<number, Promise<void>>()
   const views = new Map<string, Entry>()
+  const entriesByContents = new WeakMap<Electron.WebContents, Entry>()
+  const zoom = createBrowserZoom()
+  const downloadSessions = new Set<Electron.Session>()
+  const downloadsFor = (browserSession: Electron.Session, profileId: string) => {
+    downloadSessions.add(browserSession)
+    return browserDownloads(browserSession, profileId)
+  }
+  const applyZoom = (entry: Entry) => {
+    entry.contents.setZoomFactor(zoom.get(entry.profileId, entry.contents.getURL()))
+  }
+  const changeZoom = (entry: Entry, direction: 'in' | 'out' | 'reset') => {
+    const url = entry.contents.getURL()
+    const factor = nextBrowserZoom(entry.contents.getZoomFactor(), direction)
+    zoom.set(entry.profileId, url, factor)
+    const origin = new URL(url).origin
+    for (const tab of views.values()) {
+      if (
+        !tab.contents.isDestroyed() &&
+        tab.profileId === entry.profileId &&
+        /^https?:\/\//i.test(tab.contents.getURL()) &&
+        new URL(tab.contents.getURL()).origin === origin
+      )
+        tab.contents.setZoomFactor(factor)
+    }
+    return factor
+  }
+  const printPage = (entry: Entry) =>
+    new Promise<void>((resolve, reject) => {
+      entry.contents.print({ printBackground: true }, (success, reason) => {
+        if (success || /cancel/i.test(reason)) resolve()
+        else reject(new Error(reason || 'Printing failed.'))
+      })
+    })
+  const sessionCookies = createBrowserSessionCookies()
   const routingSessions = new Set<Electron.Session>()
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
   let disposed = false
   const pageVisible = (entry: Entry) =>
-    entry.foreground && !entry.window.isMinimized() && entry.window.isVisible()
+    // Child WebContents can outlive their native window during update shutdown.
+    // Undefined also retires the visibility watchdog for this page.
+    entry.window.isDestroyed()
+      ? undefined
+      : entry.foreground && !entry.window.isMinimized() && entry.window.isVisible()
   const visibility = createBrowserVisibility((contents) => {
-    const entry = [...views.values()].find((entry) => entry.contents === contents)
+    const entry = entriesByContents.get(contents)
     return entry ? pageVisible(entry) : undefined
   })
   const reportVisibility = (entry: Entry) => visibility.report(entry.contents)
+  const keepsAwake = (entry: Entry) =>
+    entry.workspace &&
+    !entry.sleeping &&
+    (entry.keepAwake ?? browserDefaultKeepAwake(entry.contents.getURL() || entry.url))
   const syncBackgroundThrottling = (entry: Entry) => {
     if (!entry.contents.isDestroyed())
       entry.contents.setBackgroundThrottling(
         !(
-          entry.keepAwake ||
+          keepsAwake(entry) ||
           entry.videoPictureInPicture ||
           entry.documentPip ||
           entry.stopFrames ||
@@ -240,15 +343,32 @@ export function registerBrowser(
     entry.window.show()
     entry.window.focus()
   }
+  const returnFromPip = async (entry: Entry) => {
+    focusTab(entry)
+    activeViews.set(entry.windowId, { key: JSON.stringify([entry.windowId, entry.key]) })
+    for (const other of views.values())
+      if (other.windowId === entry.windowId && other !== entry) setVisible(other, false)
+    // Restore the native view too: changing document.visibilityState alone leaves
+    // the live call in a hidden view until the renderer catches up with tab selection.
+    if (entry.window.contentView.children.at(-1) !== entry.view)
+      entry.window.contentView.addChildView(entry.view)
+    entry.inactiveAt = undefined
+    entry.restoreFocus = false
+    setVisible(entry, true)
+    // Teams restores its call on pagehide only when the owner is already visible.
+    const visible: unknown = await entry.contents.executeJavaScript(
+      'document.visibilityState === "visible"',
+    )
+    if (visible !== true) throw new Error('The picture-in-picture tab could not be restored.')
+    if (!entry.contents.isDestroyed() && entry.foreground && entry.view.getVisible())
+      entry.contents.focus()
+  }
   const callTabs = (windowId: number) => {
     const captures = media.snapshot(windowId).captures ?? []
     return [...views.values()].flatMap((entry) => {
       if (entry.windowId !== windowId || !entry.workspace || entry.contents.isDestroyed()) return []
       const url = openableUrl(entry.contents.getURL())
-      const host = url ? new URL(url).hostname : ''
-      const teams = ['teams.microsoft.com', 'teams.cloud.microsoft', 'teams.live.com'].includes(
-        host,
-      )
+      const teams = url ? isTeamsBrowserUrl(new URL(url)) : false
       const pictureInPicture = !!(entry.videoPictureInPicture || entry.documentPip)
       return teams || pictureInPicture || captures.some((capture) => capture.key === entry.key)
         ? [
@@ -264,6 +384,33 @@ export function registerBrowser(
         : []
     })
   }
+  const audioContents = (entry: Entry) =>
+    [entry.contents, entry.documentPipContents].filter(
+      (contents): contents is Electron.WebContents => !!contents && !contents.isDestroyed(),
+    )
+  const tabStates = (windowId: number): BrowserTabState[] =>
+    [...views.values()].flatMap((entry) => {
+      if (entry.windowId !== windowId || !entry.workspace || entry.contents.isDestroyed()) return []
+      const state = entry.activity?.()
+      const pip =
+        entry.documentPipContents && !entry.documentPipContents.isDestroyed()
+          ? entry.pipActivity?.()
+          : undefined
+      return [
+        {
+          key: entry.key,
+          url: entry.contents.getURL(),
+          title: entry.contents.getTitle(),
+          badge: state?.badge,
+          audible: audioContents(entry).some((contents) => contents.isCurrentlyAudible()),
+          muted: entry.contents.isAudioMuted(),
+          camera: !!(state?.camera || pip?.camera),
+          microphone: !!(state?.microphone || pip?.microphone),
+          screenSharing: !!(state?.screenSharing || pip?.screenSharing),
+          agent: !!cdp?.connected(JSON.stringify([entry.windowId, entry.key])),
+        },
+      ]
+    })
   const focusStudio = (entry: Entry) => {
     if (
       !entry.contents.isDestroyed() &&
@@ -294,7 +441,7 @@ export function registerBrowser(
         })
   }
   const closePopups = (entry: Entry) => {
-    for (const popup of entry.popups) if (!popup.isDestroyed()) popup.close()
+    for (const popup of entry.popups) dismissDocumentPipWindow(popup)
     entry.popups.clear()
   }
   /** Extension-opened and extension-closed tabs, drained by any `status` in that window. */
@@ -326,7 +473,8 @@ export function registerBrowser(
     // A thread preview can poll in the same Studio window while Browser is opening.
     const movedTabs = consumeMoves ? (events?.moved.splice(0) ?? []) : []
     const faviconUpdates = consumeMoves ? (events?.favicons.splice(0) ?? []) : []
-    if (movedTabs.length) tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
+    if (movedTabs.length && !workspaceStates.has(windowId))
+      tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
     return {
       ...(createdTabs.length ? { createdTabs } : {}),
       ...(closedTabs.length ? { closedTabs } : {}),
@@ -435,6 +583,9 @@ export function registerBrowser(
     )
       return
     forgetPrivateBrowserPermissions(profileId)
+    zoom.forget(profileId)
+    disposeBrowserDownloads(browserSession)
+    downloadSessions.delete(browserSession)
     void Promise.all([
       browserSession.clearStorageData(),
       browserSession.clearCache(),
@@ -448,6 +599,7 @@ export function registerBrowser(
     exitFullscreen(entry, true)
     focusStudio(entry)
     views.delete(key)
+    entriesByContents.delete(entry.contents)
     awakeRequests.delete(key)
     if (activeViews.get(entry.windowId)?.key === key) activeViews.delete(entry.windowId)
     cdp?.remove(key)
@@ -464,9 +616,10 @@ export function registerBrowser(
     const inactive = [...views].filter(
       ([key, entry]) =>
         entry.inactiveAt !== undefined &&
+        !entry.foreground &&
         !isPrivateBrowserProfile(entry.profileId) &&
         !cdp?.connected(key) &&
-        !entry.keepAwake &&
+        !keepsAwake(entry) &&
         !entry.videoPictureInPicture &&
         !entry.documentPip &&
         !(entry.workspace && media.keepAlive(entry.view.webContents)),
@@ -476,7 +629,11 @@ export function registerBrowser(
     for (const [, entry] of inactive)
       counts.set(entry.windowId, (counts.get(entry.windowId) ?? 0) + 1)
     for (const [key, entry] of inactive) {
-      if ((counts.get(entry.windowId) ?? 0) <= 4 && Date.now() - entry.inactiveAt! < 5 * 60_000)
+      if (
+        !entry.sleeping &&
+        (counts.get(entry.windowId) ?? 0) <= 4 &&
+        Date.now() - entry.inactiveAt! < 5 * 60_000
+      )
         continue
       releaseView(key)
       counts.set(entry.windowId, counts.get(entry.windowId)! - 1)
@@ -486,7 +643,13 @@ export function registerBrowser(
   reap.unref()
   const releaseWindow = (window: BrowserWindow, detach: boolean) => {
     workspaces.delete(window)
+    detachedWindows.delete(window.id)
+    for (const [source, target] of detachedWindows)
+      if (target === window) detachedWindows.delete(source)
     tabCounts.delete(window.id)
+    workspaceStates.delete(window.id)
+    persistedKeys.delete(window.id)
+    pendingReturns.delete(window.id)
     activeViews.delete(window.id)
     windowTabs.delete(window.id)
     focusedTabs.delete(window.id)
@@ -500,6 +663,7 @@ export function registerBrowser(
       current.stopFrames?.()
       exitFullscreen(current, true)
       views.delete(key)
+      entriesByContents.delete(current.contents)
       awakeRequests.delete(key)
       cdp?.remove(key)
       if (current.workspace) {
@@ -620,6 +784,9 @@ export function registerBrowser(
       },
     })
     view.setVisible(false)
+    const nativeUserAgent = view.webContents.getUserAgent()
+    const prepareNavigation = configureBrowserIdentity(view.webContents, nativeUserAgent)
+    prepareNavigation('about:blank')
     const created: Entry = {
       windowId: window.id,
       window,
@@ -633,8 +800,16 @@ export function registerBrowser(
       view,
       contents: view.webContents,
       browserSession: view.webContents.session,
+      nativeUserAgent,
+      prepareNavigation,
+      cookiesReady: sessionCookies(view.webContents.session, () =>
+        keepBrowserSessionCookies(profileId),
+      ),
       url: '',
     }
+    if (workspace) created.activity = createBrowserTabActivity(view.webContents)
+    created.find = createBrowserFind(view.webContents)
+    if (workspace) downloadsFor(created.browserSession, profileId)
     if (workspace && !routingSessions.has(created.browserSession)) {
       const browserSession = created.browserSession
       routingSessions.add(browserSession)
@@ -690,6 +865,18 @@ export function registerBrowser(
       created.videoPictureInPicture = active
       syncBackgroundThrottling(created)
     })
+    view.webContents.ipc.on('browser:video-pip-return', (event) => {
+      if (
+        !created.workspace ||
+        !event.senderFrame ||
+        (event.senderFrame !== view.webContents.mainFrame &&
+          !view.webContents.mainFrame.framesInSubtree.includes(event.senderFrame))
+      )
+        return
+      void returnFromPip(created).catch((error: unknown) =>
+        console.error('Could not return the video to its tab.', error),
+      )
+    })
     view.webContents.on('enter-html-full-screen', () => {
       if (
         !created.workspace ||
@@ -713,10 +900,16 @@ export function registerBrowser(
     })
     view.webContents.on('audio-state-changed', () => syncBackgroundThrottling(created))
     view.webContents.on('did-navigate', () => {
-      if (created.documentPip && !created.documentPip.isDestroyed()) created.documentPip.close()
+      try {
+        applyZoom(created)
+      } catch (error) {
+        created.navigationError = error instanceof Error ? error.message : String(error)
+      }
+      if (created.documentPip) dismissDocumentPipWindow(created.documentPip)
       created.videoPictureInPicture = false
       syncBackgroundThrottling(created)
     })
+    view.webContents.on('did-navigate-in-page', () => syncBackgroundThrottling(created))
     // Service-worker clients.focus() and Chromium's native notification focus follow this path.
     view.webContents.on('focus', () => {
       if (
@@ -727,13 +920,8 @@ export function registerBrowser(
       )
         focusTab(created)
     })
-    // Websites such as Teams reject Electron-branded user agents despite a supported engine.
-    // Only website views use Chromium's UA; Studio and runtime request identities are unchanged.
-    const userAgent = view.webContents
-      .getUserAgent()
-      .replace(/\s+(?:Electron|DovoStudio|Dovo-Studio)\/[^\s]+/g, '')
-    view.webContents.setUserAgent(userAgent)
-    configureBrowserLanguage(view.webContents.session, profileId, userAgent)
+    // Profile language belongs to the session; site compatibility belongs to each view.
+    configureBrowserLanguage(view.webContents.session, profileId, nativeUserAgent)
     view.webContents.on('dom-ready', () => {
       // A new document's preload has no memory of its predecessor's selection state.
       reportVisibility(created)
@@ -782,6 +970,13 @@ export function registerBrowser(
     })
     view.webContents.on('did-finish-load', () => {
       void faviconLoader.load(view.webContents.getURL(), faviconCandidates)
+      void renderBrowserJson(view.webContents)
+        .catch((error: unknown) => {
+          if (!view.webContents.isDestroyed()) console.error('Could not format browser JSON', error)
+        })
+        .finally(() => {
+          created.documentRevision = (created.documentRevision ?? 0) + 1
+        })
     })
     view.webContents.on('will-navigate', (_event, url) => {
       if (created.workspace) created.routeNavigation = openableUrl(url)
@@ -796,6 +991,11 @@ export function registerBrowser(
       )
         return
       const navigation = view.webContents.navigationHistory
+      const revision = navigationRevision
+      const live = () =>
+        !view.webContents.isDestroyed() &&
+        views.get(JSON.stringify([created.windowId, created.key])) === created &&
+        navigationRevision === revision
       const items: Electron.MenuItemConstructorOptions[] = []
       if (
         params.mediaType === 'video' &&
@@ -846,7 +1046,18 @@ export function registerBrowser(
           enabled: navigation.canGoForward(),
           click: () => navigation.goForward(),
         },
-        { label: 'Reload', click: () => view.webContents.reload() },
+        {
+          label: 'Reload',
+          click: () => {
+            if (live()) view.webContents.reload()
+          },
+        },
+        {
+          label: 'Reload without cache',
+          click: () => {
+            if (live()) view.webContents.reloadIgnoringCache()
+          },
+        },
         { type: 'separator' },
       )
       if (params.linkURL && openableUrl(params.linkURL))
@@ -854,17 +1065,77 @@ export function registerBrowser(
           {
             label: 'Open link in new tab',
             click: () => {
+              if (!live()) return
               if (!routeProfileLink(created, params.linkURL)) queueLink(created, params.linkURL)
+            },
+          },
+          {
+            label: 'Open link in default browser',
+            click: () => {
+              if (live())
+                void shell.openExternal(params.linkURL).catch((error: unknown) => {
+                  console.error('Could not open link in default browser.', error)
+                })
+            },
+          },
+          {
+            label: 'Download linked file',
+            click: () => {
+              if (live()) view.webContents.downloadURL(params.linkURL)
             },
           },
           { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) },
           { type: 'separator' },
         )
+      if (params.mediaType === 'image' || params.mediaType === 'canvas') {
+        const { srcURL, x, y, hasImageContents } = params
+        const imageUrl = URL.canParse(srcURL) ? new URL(srcURL) : undefined
+        if (openableUrl(srcURL))
+          items.push({
+            label: 'Open image in new tab',
+            click: () => {
+              if (!routeProfileLink(created, srcURL)) queueLink(created, srcURL)
+            },
+          })
+        if (
+          imageUrl &&
+          ['http:', 'https:', 'data:', 'blob:'].includes(imageUrl.protocol) &&
+          !imageUrl.username &&
+          !imageUrl.password
+        )
+          items.push({
+            label: 'Download image',
+            click: () => {
+              if (live()) view.webContents.downloadURL(srcURL)
+            },
+          })
+        items.push({
+          label: 'Copy image',
+          enabled: hasImageContents,
+          click: () => {
+            if (hasImageContents && live()) view.webContents.copyImageAt(x, y)
+          },
+        })
+        if (srcURL)
+          items.push({ label: 'Copy image address', click: () => clipboard.writeText(srcURL) })
+        items.push({ type: 'separator' })
+      }
       const text =
         params.formControlType === 'input-password' ? '' : params.selectionText.slice(0, 32000)
       if (text)
         items.push(
-          { label: 'Copy', click: () => clipboard.writeText(text) },
+          { label: 'Copy', click: () => clipboard.writeText(params.selectionText) },
+          {
+            label: 'Search selection in new tab',
+            click: () => {
+              if (!live()) return
+              try {
+                queueLink(created, websiteSearchUrl(profileId, text))
+              } catch (error) {
+                console.error('Could not search selected text.', error)
+              }
+            },
+          },
           {
             label: 'Add selection to thread…',
             click: () =>
@@ -896,6 +1167,15 @@ export function registerBrowser(
       )
       const page = openableUrl(view.webContents.getURL())
       if (page) {
+        items.push({
+          label: 'Open page in default browser',
+          click: () => {
+            if (live())
+              void shell.openExternal(page).catch((error: unknown) => {
+                console.error('Could not open page in default browser.', error)
+              })
+          },
+        })
         const origin = new URL(page).origin
         const permissions = browserPermissions(profileId)
         items.push(
@@ -908,6 +1188,24 @@ export function registerBrowser(
           },
         )
       }
+      items.push(
+        { type: 'separator' },
+        {
+          label: 'Print…',
+          click: () => {
+            if (live())
+              void printPage(created).catch((error: unknown) => {
+                console.error('Could not print page.', error)
+              })
+          },
+        },
+        {
+          label: 'Inspect element',
+          click: () => {
+            if (live()) view.webContents.inspectElement(params.x, params.y)
+          },
+        },
+      )
       Menu.buildFromTemplate(items).popup({ window: created.window })
     })
     view.webContents.setIgnoreMenuShortcuts(workspace)
@@ -935,6 +1233,9 @@ export function registerBrowser(
       }
       if (documentPip) {
         created.documentPip = popup
+        created.documentPipContents = contents
+        created.pipActivity = createBrowserTabActivity(contents)
+        contents.setAudioMuted(view.webContents.isAudioMuted())
         const keepOnTop = () => {
           if (!popup.isDestroyed()) popup.setAlwaysOnTop(true, 'floating')
         }
@@ -952,8 +1253,11 @@ export function registerBrowser(
               {
                 label: 'Return to tab',
                 click: () => {
-                  focusTab(created)
-                  popup.close()
+                  void returnFromPip(created)
+                    .then(() => {
+                      dismissDocumentPipWindow(popup)
+                    })
+                    .catch((error) => console.error('Could not return the call to its tab.', error))
                 },
               },
             ]).popup({ window: popup })
@@ -964,6 +1268,8 @@ export function registerBrowser(
         created.popups.delete(popup)
         if (created.documentPip === popup) {
           created.documentPip = undefined
+          created.documentPipContents = undefined
+          created.pipActivity = undefined
           if (!view.webContents.isDestroyed()) syncBackgroundThrottling(created)
         }
       })
@@ -985,16 +1291,20 @@ export function registerBrowser(
       const pipOptions = pipWindowOptions(details)
       if (pipOptions) {
         for (const entry of views.values())
-          if (entry.documentPip && !entry.documentPip.isDestroyed()) entry.documentPip.close()
+          if (entry.documentPip) dismissDocumentPipWindow(entry.documentPip)
         return {
           action: 'allow',
           overrideBrowserWindowOptions: pipOptions,
           createWindow: (options) => {
-            const disallowReturn = /(?:^|,)dovo-disallow-return=1(?:,|$)/.test(details.features)
+            const disallowReturn = documentPipDisallowsReturn(
+              details.features,
+              new URL(view.webContents.getURL()),
+            )
             const pip = createDocumentPipWindow(
               options,
               view.webContents.getURL(),
-              disallowReturn ? undefined : () => focusTab(created),
+              () => returnFromPip(created),
+              !disallowReturn,
             )
             trackPopup(pip.window, pip.contents, true, disallowReturn)
             return pip.contents
@@ -1007,11 +1317,13 @@ export function registerBrowser(
         const url = openableUrl(details.url)
         const options = url && postNavigation(details)
         if (!url || !options) created.navigationError = POST_REFUSED
-        else
+        else {
+          created.prepareNavigation(url)
           created.view.webContents.loadURL(url, options).catch((error: unknown) => {
             // A newer navigation by the user aborts this one; that is not a failure.
             if (!isAborted(error)) created.navigationError = POST_FAILED
           })
+        }
         return { action: 'deny' }
       }
       // Explicit link-domain preferences also apply to window.open popup requests.
@@ -1058,6 +1370,7 @@ export function registerBrowser(
               true,
               options,
             )
+            child.prepareNavigation(details.url)
             child.pageCreated = true
             child.inactiveAt = Date.now()
             child.url = openableUrl(details.url) ?? 'about:blank'
@@ -1074,7 +1387,10 @@ export function registerBrowser(
       }
       return { action: 'deny' }
     })
-    view.webContents.on('did-create-window', (popup) => trackPopup(popup, popup.webContents))
+    view.webContents.on('did-create-window', (popup, details) => {
+      configureBrowserIdentity(popup.webContents, nativeUserAgent)(details.url)
+      trackPopup(popup, popup.webContents)
+    })
     view.webContents.on('before-mouse-event', (_event, input) => {
       // A site-isolated redirect or extension popup may leave keyboard focus in another
       // renderer. Give the page focus on deliberate clicks, never on polling or resizing.
@@ -1085,7 +1401,40 @@ export function registerBrowser(
         view.webContents.focus()
     })
     view.webContents.on('before-input-event', (event, input) => {
-      if (!created.workspace) return
+      if (input.type === 'keyDown' && input.key === 'Escape' && created.findOpen) {
+        event.preventDefault()
+        created.findOpen = false
+        created.find?.clear()
+        created.window.webContents.send('browser:context-action', {
+          key: created.key,
+          action: 'close-find',
+          text: '',
+          url: '',
+          title: '',
+        })
+        return
+      }
+      if (created.workspace && input.type === 'keyDown' && primaryModifier(input)) {
+        const key = input.key.toLowerCase()
+        if (['+', '=', '-', '0', 'p'].includes(key)) {
+          event.preventDefault()
+          syncMenuShortcuts(view.webContents, input)
+          if (key === 'p') {
+            if (!input.isAutoRepeat)
+              void printPage(created).catch((error: unknown) =>
+                console.error('Could not print browser page.', error),
+              )
+          } else {
+            try {
+              changeZoom(created, key === '0' ? 'reset' : key === '-' ? 'out' : 'in')
+            } catch (error) {
+              created.navigationError = error instanceof Error ? error.message : String(error)
+            }
+          }
+          return
+        }
+      }
+      if (!created.workspace && !(primaryModifier(input) && input.key.toLowerCase() === 'f')) return
       syncMenuShortcuts(view.webContents, input)
       const key = tabShortcut(input)
       if (!key) return
@@ -1093,6 +1442,18 @@ export function registerBrowser(
       event.preventDefault()
       const main = created.window.webContents
       if (input.isAutoRepeat || main.isDestroyed()) return
+      if (key === 'f') {
+        created.findOpen = true
+        main.focus()
+        main.send('browser:context-action', {
+          key: created.key,
+          action: 'find',
+          text: '',
+          url: '',
+          title: '',
+        })
+        return
+      }
       const modifiers: Array<'meta' | 'control' | 'shift'> = [
         process.platform === 'darwin' ? 'meta' : 'control',
         ...(input.shift ? (['shift'] as const) : []),
@@ -1122,6 +1483,7 @@ export function registerBrowser(
     )
     window.contentView.addChildView(view)
     views.set(viewKey, created)
+    entriesByContents.set(created.contents, created)
     if (workspace) extensions.addTab(profileId, view.webContents, window)
     registerWindow(window)
     return created
@@ -1155,16 +1517,13 @@ export function registerBrowser(
    * Connection storage owns this channel's reply; this listener only re-reads the saved setting.
    */
   const syncExtensions = async () => {
-    if (await extensions.sync()) {
-      for (const entry of views.values())
-        if (entry.workspace && !entry.view.webContents.isDestroyed())
-          configureBrowserLanguage(
-            entry.view.webContents.session,
-            entry.profileId,
-            entry.view.webContents.getUserAgent(),
-          )
-      return
+    const configured = new Set<Electron.Session>()
+    for (const entry of views.values()) {
+      if (entry.view.webContents.isDestroyed() || configured.has(entry.browserSession)) continue
+      configured.add(entry.browserSession)
+      configureBrowserLanguage(entry.browserSession, entry.profileId, entry.nativeUserAgent)
     }
+    if (await extensions.sync()) return
     awakeRequests.clear()
     media.reset()
     // Content scripts outlive their extension in already-open pages, so close those pages too.
@@ -1187,6 +1546,197 @@ export function registerBrowser(
       })
     })
   })
+  const validateWorkspaceState = (state: BrowserWorkspaceState) => {
+    if (
+      new Set(state.tabs.map(({ key }) => key)).size !== state.tabs.length ||
+      new Set(state.tabs.map(({ tab }) => tab.id)).size !== state.tabs.length ||
+      !state.tabs.some(({ tab }) => tab.id === state.activeId)
+    )
+      throw new Error('The browser workspace contains invalid tab identities.')
+  }
+  const emptyPlaceholder = (tab: BrowserWorkspaceTab) =>
+    !tab.url && !tab.pinned && !tab.previewOf && !tab.thread
+  const waitForWorkspace = async (window: BrowserWindow) => {
+    if (workspaceStates.has(window.id)) return
+    window.webContents.send('browser:focus-workspace')
+    let done = () => {}
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await new Promise<void>((resolve, reject) => {
+        done = resolve
+        let waiters = workspaceWaiters.get(window.id)
+        if (!waiters) workspaceWaiters.set(window.id, (waiters = new Set()))
+        waiters.add(done)
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error('The destination browser is not ready. Tabs were kept in their window.'),
+            ),
+          10000,
+        )
+      })
+    } finally {
+      clearTimeout(timer)
+      workspaceWaiters.get(window.id)?.delete(done)
+      if (!workspaceWaiters.get(window.id)?.size) workspaceWaiters.delete(window.id)
+    }
+  }
+  /** A renderer sync follows its localStorage save; receipt makes closing the source safe. */
+  const waitForAdoption = (window: BrowserWindow, keys: Set<string>) => {
+    if ([...keys].every((key) => persistedKeys.get(window.id)?.has(key))) return Promise.resolve()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const waiters = adoptionWaiters.get(window.id) ?? new Set()
+    adoptionWaiters.set(window.id, waiters)
+    const entry = { keys, done: () => {} }
+    const pending = new Promise<void>((resolve, reject) => {
+      entry.done = resolve
+      waiters.add(entry)
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error('The main window has not saved the returned tabs yet. Try closing again.'),
+          ),
+        10000,
+      )
+    })
+    return pending.finally(() => {
+      clearTimeout(timer)
+      waiters.delete(entry)
+      if (!waiters.size) adoptionWaiters.delete(window.id)
+    })
+  }
+  /** Include pages opened/moved since the renderer's last update, before a window can close. */
+  const workspaceState = (window: BrowserWindow): BrowserWorkspaceState => {
+    const saved = workspaceStates.get(window.id)
+    const events = windowTabs.get(window.id)
+    const closed = new Set(events?.closed)
+    const tabs = new Map(
+      (saved?.tabs ?? []).filter(({ key }) => !closed.has(key)).map((item) => [item.key, item]),
+    )
+    for (const item of events?.moved ?? []) tabs.set(item.key, item)
+    for (const item of events?.created ?? [])
+      if (!tabs.has(item.key))
+        tabs.set(item.key, {
+          key: item.key,
+          tab: {
+            id: randomUUID(),
+            url: item.url,
+            title: '',
+            kind: 'web',
+            profileId: item.profileId,
+          },
+        })
+    for (const entry of views.values())
+      if (entry.workspace && entry.windowId === window.id && !tabs.has(entry.key))
+        tabs.set(entry.key, {
+          key: entry.key,
+          tab: {
+            id: randomUUID(),
+            url: entry.contents.getURL() || entry.url,
+            title: entry.contents.getTitle().slice(0, 4096),
+            kind: 'web',
+            profileId: entry.profileId,
+            keepAwake: entry.keepAwake,
+          },
+        })
+    const result = [...tabs.values()]
+    return { tabs: result, activeId: saved?.activeId ?? result[0]?.tab.id ?? '' }
+  }
+  /** Move the existing WebContentsView, retaining documents, sign-in, history and live calls. */
+  const moveEntry = (entry: Entry, target: BrowserWindow) => {
+    const source = entry.window
+    const viewKey = JSON.stringify([entry.windowId, entry.key])
+    entry.stopFrames?.()
+    exitFullscreen(entry, true)
+    for (const popup of entry.popups)
+      if (!popup.isDestroyed() && popup.getParentWindow() === source) popup.setParentWindow(target)
+    if (activeViews.get(source.id)?.key === viewKey) activeViews.delete(source.id)
+    setVisible(entry, false)
+    source.contentView.removeChildView(entry.view)
+    views.delete(viewKey)
+    awakeRequests.delete(viewKey)
+    extensions.removeTab(entry.profileId, entry.contents)
+    entry.windowId = target.id
+    entry.window = target
+    media.moveTab(entry.contents, target.id)
+    entry.inactiveAt = Date.now()
+    entry.restoreFocus = false
+    views.set(JSON.stringify([target.id, entry.key]), entry)
+    target.contentView.addChildView(entry.view)
+    extensions.addTab(entry.profileId, entry.contents, target)
+    profileWindows.set(entry.profileId, { window: target, key: entry.key })
+  }
+  const movedTab = (key: string, tab: BrowserWorkspaceTab, entry?: Entry) => ({
+    key,
+    tab: entry
+      ? {
+          ...tab,
+          url:
+            entry.contents.getURL() === 'about:blank'
+              ? tab.url
+              : entry.contents.getURL() || tab.url,
+          title: entry.contents.getTitle().slice(0, 4096) || tab.title,
+          favicon: entry.favicon ?? tab.favicon,
+        }
+      : tab,
+  })
+  const moveWorkspace = (
+    source: BrowserWindow,
+    target: BrowserWindow,
+    state: BrowserWorkspaceState,
+  ) => {
+    if (source === target || source.isDestroyed() || target.isDestroyed())
+      throw new Error('The destination browser window is unavailable.')
+    const existing = workspaceState(target).tabs.filter(({ tab }) => !emptyPlaceholder(tab))
+    const incoming = state.tabs
+    if (existing.length + incoming.length > 100)
+      throw new Error('Close some tabs in the main window before returning these tabs (limit 100).')
+    const ids = new Set(existing.map(({ tab }) => tab.id))
+    for (const { key, tab } of incoming) {
+      const entry = views.get(JSON.stringify([source.id, key]))
+      if (
+        ids.has(tab.id) ||
+        views.has(JSON.stringify([target.id, key])) ||
+        (entry && (!entry.workspace || entry.profileId !== tab.profileId || tab.kind !== 'web'))
+      )
+        throw new Error('The browser tabs changed before they could be moved.')
+    }
+    registerWindow(target)
+    const transferred: BrowserWorkspaceState['tabs'] = []
+    for (const { key, tab } of incoming) {
+      persistedKeys.get(target.id)?.delete(key)
+      const viewKey = JSON.stringify([source.id, key])
+      awakeRequests.delete(viewKey)
+      if (activeViews.get(source.id)?.key === viewKey) activeViews.delete(source.id)
+      const entry = views.get(viewKey)
+      if (entry) moveEntry(entry, target)
+      const item = movedTab(key, tab, entry)
+      transferred.push(item)
+      tabEvents(target.id).moved.push(item)
+    }
+    const selected = incoming.find(({ tab }) => tab.id === state.activeId)
+    if (selected) focusedTabs.set(target.id, selected.key)
+    workspaceStates.set(target.id, {
+      tabs: [...existing, ...transferred],
+      activeId:
+        selected?.tab.id ?? workspaceStates.get(target.id)?.activeId ?? incoming[0]?.tab.id ?? '',
+    })
+    tabCounts.set(target.id, existing.length + transferred.length)
+    const movedKeys = new Set(incoming.map(({ key }) => key))
+    tabEvents(target.id).closed = tabEvents(target.id).closed.filter((key) => !movedKeys.has(key))
+    const sourceState = workspaceStates.get(source.id)
+    if (sourceState) sourceState.tabs = sourceState.tabs.filter(({ key }) => !movedKeys.has(key))
+    const pending = windowTabs.get(source.id)
+    if (pending) {
+      pending.moved = pending.moved.filter(({ key }) => !movedKeys.has(key))
+      pending.created = pending.created.filter(({ key }) => !movedKeys.has(key))
+    }
+    tabEvents(source.id).closed.push(...movedKeys)
+    target.webContents.send('browser:focus-workspace')
+    if (target.isMinimized()) target.restore()
+    target.show()
+    target.focus()
+  }
   /** Retain external links until the workspace can adopt their native or remote destination. */
   const openWorkspaceTab = async (
     window: BrowserWindow,
@@ -1214,6 +1764,8 @@ export function registerBrowser(
       page.inactiveAt = Date.now()
       setVisible(page, false)
       page.url = tab.url
+      page.keepAwake = tab.keepAwake
+      syncBackgroundThrottling(page)
       page.loading = loadUntilReady(page, tab.url).catch((cause: unknown) => {
         if (!isAborted(cause))
           page.navigationError = cause instanceof Error ? cause.message : String(cause)
@@ -1226,6 +1778,58 @@ export function registerBrowser(
   ipcMain.handle('preview:browser', async (event, raw: unknown) => {
     const window = trustedWindow(event)
     const command = decode(browserCommandSchema, raw)
+    if (command.action === 'sync-tabs' || command.action === 'detach-tabs') {
+      validateWorkspaceState(command)
+      const keys = new Set(command.tabs.map(({ key }) => key))
+      if (command.persisted) {
+        persistedKeys.set(window.id, keys)
+        for (const waiter of adoptionWaiters.get(window.id) ?? [])
+          if ([...waiter.keys].every((key) => keys.has(key))) waiter.done()
+      }
+      const pending = (windowTabs.get(window.id)?.moved ?? []).filter(({ key }) => !keys.has(key))
+      workspaceStates.set(window.id, {
+        tabs: [...command.tabs, ...pending],
+        activeId: command.activeId,
+      })
+      for (const ready of workspaceWaiters.get(window.id) ?? []) ready()
+      workspaces.add(window)
+      tabCounts.set(window.id, command.tabs.length)
+      if (command.action === 'detach-tabs') {
+        const target = await browserWindows?.create()
+        if (!target) throw new Error('A separate browser window is unavailable.')
+        await waitForWorkspace(target)
+        if (window.isDestroyed()) return
+        moveWorkspace(window, target, command)
+        detachedWindows.set(window.id, target)
+        detachedWorkspaces.add(target)
+      }
+      return
+    }
+    if (command.action === 'downloads') {
+      const downloads = downloadsFor(
+        session.fromPartition(workspacePartition(command.profileId)),
+        command.profileId,
+      )
+      const { operation, id } = command
+      if (operation === 'folder') await downloads.showFolder()
+      else if (operation !== 'list') {
+        if (id === undefined) throw new Error('Choose a download.')
+        if (operation === 'pause') downloads.pause(id)
+        if (operation === 'resume') downloads.resume(id)
+        if (operation === 'cancel') downloads.cancel(id)
+        if (operation === 'open') await downloads.open(id)
+        if (operation === 'reveal') downloads.show(id)
+        if (operation === 'retry') {
+          const previous = downloads.search({ id })[0]
+          if (!previous || previous.state !== 'interrupted')
+            throw new Error('Download cannot be retried.')
+          if (!/^https?:\/\//i.test(previous.url))
+            throw new Error('Return to the website to download this file again.')
+          await downloads.download({ url: previous.url, saveAs: true })
+        }
+      }
+      return { url: '', back: false, forward: false, downloads: downloads.search({ limit: 100 }) }
+    }
     if (command.action === 'open-tab') return openWorkspaceTab(window, command.key, command.tab)
     if (command.action === 'external') {
       await shell.openExternal(previewUrl(command.url))
@@ -1236,7 +1840,7 @@ export function registerBrowser(
     if (command.action === 'keep-awake') {
       const request = {}
       awakeRequests.set(viewKey, request)
-      if (!entry && command.enabled) {
+      if (!entry && (command.enabled ?? browserDefaultKeepAwake(command.url))) {
         const url = previewUrl(command.url)
         await extensions.prepare(command.profileId)
         if (awakeRequests.get(viewKey) !== request || window.isDestroyed()) return
@@ -1253,12 +1857,34 @@ export function registerBrowser(
       if (!entry.workspace || entry.profileId !== command.profileId)
         throw new Error('The tab changed before Keep awake could be updated.')
       entry.keepAwake = command.enabled
+      entry.sleeping = false
       syncBackgroundThrottling(entry)
       await entry.loading
       return
     }
+    if (command.action === 'sleep') {
+      awakeRequests.delete(viewKey)
+      if (entry?.workspace) {
+        entry.sleeping = true
+        syncBackgroundThrottling(entry)
+        // Media/PiP remain protected. The regular sweep releases them once activity ends.
+        prune()
+      }
+      return
+    }
     if (command.action === 'status' && command.tabCount !== undefined)
       tabCounts.set(window.id, command.tabCount)
+    if (command.action === 'focus-detached-browser') {
+      const target = detachedWindows.get(window.id)
+      if (!target || target.isDestroyed()) {
+        detachedWindows.delete(window.id)
+        return { url: '', back: false, forward: false }
+      }
+      if (target.isMinimized()) target.restore()
+      target.show()
+      target.focus()
+      return { url: '', back: false, forward: false, focusedWindowId: target.id }
+    }
     if (command.action === 'browser-windows') {
       const windows = [...new Set([...workspaces, ...(browserWindows?.list() ?? [])])]
         .filter((other) => other !== window && !other.isDestroyed())
@@ -1300,40 +1926,18 @@ export function registerBrowser(
         throw new Error('The destination browser window has reached its 100-tab limit.')
       registerWindow(target)
       awakeRequests.delete(viewKey)
-      if (entry) {
-        entry.stopFrames?.()
-        for (const popup of entry.popups)
-          if (!popup.isDestroyed() && popup.getParentWindow() === window)
-            popup.setParentWindow(target)
-        if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
-        setVisible(entry, false)
-        window.contentView.removeChildView(entry.view)
-        views.delete(viewKey)
-        extensions.removeTab(entry.profileId, entry.view.webContents)
-        entry.windowId = target.id
-        entry.window = target
-        media.moveTab(entry.contents, target.id)
-        entry.inactiveAt = Date.now()
-        entry.restoreFocus = false
-        views.set(JSON.stringify([target.id, command.key]), entry)
-        target.contentView.addChildView(entry.view)
-        extensions.addTab(entry.profileId, entry.view.webContents, target)
-        profileWindows.set(entry.profileId, { window: target, key: command.key })
-      }
-      tabEvents(target.id).moved.push({
-        key: command.key,
-        tab: entry
-          ? {
-              ...command.tab,
-              url:
-                entry.view.webContents.getURL() === 'about:blank'
-                  ? ''
-                  : entry.view.webContents.getURL(),
-              title: entry.view.webContents.getTitle().slice(0, 4096),
-              favicon: entry.favicon ?? undefined,
-            }
-          : command.tab,
+      if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
+      if (entry) moveEntry(entry, target)
+      tabEvents(target.id).moved.push(movedTab(command.key, command.tab, entry))
+      const destination = workspaceState(target)
+      workspaceStates.set(target.id, {
+        tabs: destination.tabs.filter(({ tab }) => !emptyPlaceholder(tab)),
+        activeId: command.tab.id,
       })
+      if (command.targetWindowId === undefined && command.tab.pinned)
+        detachedPinnedTabs.set(target, { key: command.key, source: window })
+      const sourceState = workspaceStates.get(window.id)
+      if (sourceState) sourceState.tabs = sourceState.tabs.filter(({ key }) => key !== command.key)
       if (target.isMinimized()) target.restore()
       target.webContents.send('browser:focus-workspace')
       target.show()
@@ -1393,7 +1997,7 @@ export function registerBrowser(
         other.restoreFocus = false
         setVisible(other, false)
         other.inactiveAt ??= Date.now()
-        if (other.taskId === command.taskId && !command.agentAccess) {
+        if (other.taskId === command.taskId && !command.agentAccess && !workspace) {
           other.agentAccess = false
           cdp?.remove(key)
           other.cdp = undefined
@@ -1407,6 +2011,8 @@ export function registerBrowser(
         entry = undefined
       }
       entry ??= createEntry(window, viewKey, command.key, profileId, workspace)
+      entry.keepAwake = command.keepAwake
+      entry.sleeping = false
       // Selection precedes loading/painting. A selected page must not auto-pop out
       // merely because its new renderer is not ready to be displayed yet.
       entry.foreground = true
@@ -1429,7 +2035,13 @@ export function registerBrowser(
           entry.view.webContents.isDestroyed()
         )
           return
-        entry.cdp = cdp.register(viewKey, command.taskId, profileId, entry.view.webContents)
+        entry.cdp = cdp.register(
+          viewKey,
+          command.taskId,
+          profileId,
+          entry.view.webContents,
+          command.tabId,
+        )
       } else if (entry.cdp) {
         cdp?.remove(viewKey)
         entry.cdp = undefined
@@ -1471,6 +2083,7 @@ export function registerBrowser(
         entry.loading =
           entry.view.webContents.getURL() === url ? undefined : loadUntilReady(entry, url)
       }
+      syncBackgroundThrottling(entry)
       const loading = entry.loading
       if (loading) {
         try {
@@ -1553,7 +2166,7 @@ export function registerBrowser(
             entry.windowId === window.id &&
             entry.workspace &&
             (media.keepAlive(entry.view.webContents) ||
-              entry.keepAwake ||
+              keepsAwake(entry) ||
               entry.videoPictureInPicture ||
               entry.documentPip),
         )
@@ -1568,6 +2181,7 @@ export function registerBrowser(
       if (command.action !== 'status') return
       const events = {
         ...drainTabEvents(window.id, command.tabCount !== undefined),
+        ...(command.tabCount !== undefined ? { tabStates: tabStates(window.id) } : {}),
         ...media.snapshot(window.id),
         ...(command.tabCount !== undefined && focusedTabs.has(window.id)
           ? { focusedTabKey: focusedTabs.get(window.id) }
@@ -1577,6 +2191,45 @@ export function registerBrowser(
       return Object.keys(events).length
         ? { url: '', back: false, forward: false, ...events }
         : undefined
+    }
+    if (command.action === 'zoom') {
+      const zoomFactor = changeZoom(entry, command.direction)
+      return { url: entry.contents.getURL(), back: false, forward: false, zoomFactor }
+    }
+    if (command.action === 'print') {
+      await printPage(entry)
+      return
+    }
+    if (command.action === 'save-pdf') {
+      const name = (entry.contents.getTitle() || 'Page')
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .split('')
+        .map((character) => (character.charCodeAt(0) < 32 ? '_' : character))
+        .join('')
+        .slice(0, 160)
+      const result = await dialog.showSaveDialog(window, {
+        title: 'Save page as PDF',
+        defaultPath: `${name}.pdf`,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      })
+      if (result.canceled || !result.filePath) return
+      const pdf = await entry.contents.printToPDF({
+        printBackground: true,
+        preferCSSPageSize: true,
+      })
+      await writeFile(result.filePath, pdf)
+      return
+    }
+    if (command.action === 'stop-find') {
+      entry.findOpen = false
+      entry.find?.clear()
+      if (command.focus && entry.view.getVisible()) entry.contents.focus()
+      return
+    }
+    if (command.action === 'find') {
+      entry.findOpen = true
+      const find = await entry.find?.search(command, command.direction)
+      return { url: entry.contents.getURL(), back: false, forward: false, find }
     }
     if (command.action === 'watch-frames') {
       const source = entry
@@ -1623,6 +2276,11 @@ export function registerBrowser(
       if (!entry.workspace) throw new Error('Only Browser workspace tabs can be focused.')
       return focusTab(entry)
     }
+    if (command.action === 'set-audio-muted') {
+      if (!entry.workspace) throw new Error('Only Browser workspace tabs can be muted.')
+      for (const contents of audioContents(entry)) contents.setAudioMuted(command.muted)
+      return { url: '', back: false, forward: false, tabStates: tabStates(window.id) }
+    }
     const navigation = entry.view.webContents.navigationHistory
     if (
       [
@@ -1667,6 +2325,48 @@ export function registerBrowser(
         forward: navigation.canGoForward(),
         sitePermissions: permissions.site(origin),
       }
+    }
+    if (command.action === 'element-snapshot' || command.action === 'element-inspect') {
+      const contents = entry.view.webContents
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const operation = async () => {
+        if (command.action === 'element-inspect') {
+          const point = { snapshot: command.snapshot, x: command.x, y: command.y }
+          const value: unknown = await contents.executeJavaScript(
+            `(${inspectBrowserElement.toString()})(${JSON.stringify(point)})`,
+          )
+          if (value == null) throw new Error('No element at that point. Pick another spot.')
+          const element = decode(browserElementSchema, value)
+          return { url: contents.getURL(), element }
+        }
+        const snapshot = decode(
+          browserElementSnapshotSchema,
+          await contents.executeJavaScript(`(${readBrowserElementSnapshot.toString()})()`),
+        )
+        if (snapshot.width * snapshot.height > 16000000)
+          throw new Error('The browser viewport is too large to capture. Resize it and try again.')
+        const image = await contents.capturePage(undefined, { stayHidden: true })
+        if (image.isEmpty()) throw new Error('The browser has no image to capture yet.')
+        const current = decode(
+          browserElementSnapshotSchema,
+          await contents.executeJavaScript(`(${readBrowserElementSnapshot.toString()})()`),
+        )
+        if (JSON.stringify(current) !== JSON.stringify(snapshot))
+          throw new Error('The page moved or changed. Capture it again.')
+        const data = image.toDataURL()
+        if (data.length > 24000000)
+          throw new Error('The captured image is too large. Resize the browser and try again.')
+        return { url: contents.getURL(), elementCapture: { snapshot, image: data } }
+      }
+      return Promise.race([
+        operation(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Reading the browser element timed out.')),
+            10000,
+          )
+        }),
+      ]).finally(() => clearTimeout(timer))
     }
     if (command.action === 'selection') {
       // A busy or hung page must not hold the request open; one attempt, then a clear error.
@@ -1715,8 +2415,11 @@ export function registerBrowser(
         url: entry.view.webContents.getURL() || entry.url,
         title: entry.view.webContents.getTitle(),
         favicon: entry.favicon,
+        documentRevision: entry.documentRevision,
+        zoomFactor: entry.contents.getZoomFactor(),
         cdp: entry.cdp,
         ...(focusedTabKey ? { focusedTabKey } : {}),
+        ...(command.tabCount !== undefined ? { tabStates: tabStates(window.id) } : {}),
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),
         ...(openedLinks.length ? { openedLinks } : {}),
@@ -1731,6 +2434,45 @@ export function registerBrowser(
     if (command.action === 'devtools') entry.view.webContents.openDevTools({ mode: 'detach' })
   })
   return {
+    /** Detached workspaces return all tabs; pinned-tab windows return only their original tab. */
+    returnWindowTabs: (window: BrowserWindow) => {
+      const pinned = detachedPinnedTabs.get(window)
+      if (!detachedWorkspaces.has(window) && !pinned) return Promise.resolve()
+      const existing = returnOperations.get(window.id)
+      if (existing) return existing
+      const operation = (async () => {
+        const pending = pendingReturns.get(window.id)
+        if (pending) {
+          await waitForAdoption(pending.target, pending.keys)
+          pendingReturns.delete(window.id)
+          return
+        }
+        const returningState = () => {
+          const state = workspaceState(window)
+          return pinned
+            ? {
+                tabs: state.tabs.filter(({ key }) => key === pinned.key),
+                activeId: state.tabs.find(({ key }) => key === pinned.key)?.tab.id ?? '',
+              }
+            : state
+        }
+        if (!returningState().tabs.some(({ tab }) => !emptyPlaceholder(tab))) return
+        const target =
+          pinned && !pinned.source.isDestroyed() ? pinned.source : await browserWindows?.main?.()
+        if (!target) throw new Error('The main window is unavailable. Browser tabs were kept here.')
+        await waitForWorkspace(target)
+        const state = returningState()
+        if (!state.tabs.length) return
+        moveWorkspace(window, target, state)
+        if (detachedWindows.get(target.id) === window) detachedWindows.delete(target.id)
+        const keys = new Set(state.tabs.map(({ key }) => key))
+        pendingReturns.set(window.id, { target, keys })
+        await waitForAdoption(target, keys)
+        pendingReturns.delete(window.id)
+      })().finally(() => returnOperations.delete(window.id))
+      returnOperations.set(window.id, operation)
+      return operation
+    },
     /** Native external links become independent tabs, so bursts never overwrite navigation. */
     openRoutedLink: async (window: BrowserWindow, raw: string) => {
       const url = previewUrl(raw)
@@ -1750,6 +2492,19 @@ export function registerBrowser(
       window.focus()
       return true
     },
+    refreshSessionCookies: (settings: unknown) => {
+      const result = decodeResult(browserProfilesResultSchema, settings)
+      if (result.success)
+        for (const profile of result.data.profiles) {
+          if (profile.keepSessionCookies === true || isPrivateBrowserProfile(profile.id)) continue
+          for (const partition of [
+            workspacePartition(profile.id),
+            `persist:dovo-preview:${profile.id}`,
+          ])
+            clearSavedBrowserSessionCookies(session.fromPartition(partition))
+        }
+      sessionCookies.refresh()
+    },
     dispose: async () => {
       disposed = true
       visibility.dispose()
@@ -1760,6 +2515,7 @@ export function registerBrowser(
       clearInterval(reap)
       media.reset()
       for (const [key, entry] of views) {
+        entriesByContents.delete(entry.contents)
         cdp?.remove(key)
         closePopups(entry)
         if (!entry.contents.isDestroyed()) entry.contents.close()
@@ -1767,8 +2523,14 @@ export function registerBrowser(
       views.clear()
       activeViews.clear()
       windowTabs.clear()
+      workspaceStates.clear()
+      detachedWindows.clear()
+      persistedKeys.clear()
+      pendingReturns.clear()
       profileWindows.clear()
       await extensions.dispose()
+      for (const browserSession of downloadSessions) disposeBrowserDownloads(browserSession)
+      downloadSessions.clear()
       const bridge = cdp ?? (await cdpPending)
       await bridge?.close()
     },

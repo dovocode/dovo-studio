@@ -10,6 +10,48 @@ const scheduler = mutableStruct({
   lastSuccess: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
 })
+const memoryOperation = mutableStruct({
+  name: Schema.String,
+  endedAt: Schema.String,
+  durationMs: Schema.Number,
+  heapGrowthBytes: Schema.Number,
+})
+/** Approximate: heap growth includes concurrent work and garbage-collection timing. */
+export const runtimeMemoryDiagnosticsSchema = mutableStruct({
+  sampledAt: Schema.String,
+  heapUsedBytes: Schema.Number,
+  heapLimitBytes: Schema.Number,
+  rssBytes: Schema.Number,
+  /** External memory includes ArrayBuffers; these values must not be summed. */
+  externalBytes: Schema.optional(Schema.Number),
+  arrayBufferBytes: Schema.optional(Schema.Number),
+  gc: Schema.optional(mutableStruct({ collections: Schema.Number, durationMs: Schema.Number })),
+  eventLoopUtilization: Schema.optional(Schema.Number),
+  /** Null when this platform cannot list the runtime's own descendant processes. */
+  children: Schema.NullOr(
+    mutableStruct({ processes: Schema.Number, rssBytes: Schema.Number, truncated: Schema.Boolean }),
+  ),
+  recent: mutableArray(memoryOperation),
+  spikes: mutableArray(
+    mutableStruct({
+      at: Schema.String,
+      heapUsedBytes: Schema.Number,
+      growthBytes: Schema.Number,
+      externalBytes: Schema.optional(Schema.Number),
+      externalGrowthBytes: Schema.optional(Schema.Number),
+      rssBytes: Schema.Number,
+      concurrentOperations: Schema.Number,
+      suspects: mutableArray(
+        mutableStruct({
+          name: Schema.String,
+          heapGrowthBytes: Schema.Number,
+          running: Schema.Boolean,
+        }),
+      ),
+    }),
+  ),
+})
+export type RuntimeMemoryDiagnostics = Schema.Schema.Type<typeof runtimeMemoryDiagnosticsSchema>
 export const runtimeDiagnosticsSchema = mutableStruct({
   ready: Schema.Boolean,
   checkedAt: Schema.String,
@@ -57,6 +99,8 @@ export const runtimeDiagnosticsSchema = mutableStruct({
     maxCount: Schema.Number,
     maxBytes: Schema.Number,
   }),
+  // Optional so clients keep reading runtimes released before memory attribution.
+  memory: Schema.optional(runtimeMemoryDiagnosticsSchema),
 })
 export type RuntimeDiagnostics = Schema.Schema.Type<typeof runtimeDiagnosticsSchema>
 export const runtimeBackupResponseSchema = backupEntry

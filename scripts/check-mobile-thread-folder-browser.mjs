@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from 'playwright'
 const mocks = {
+  'expo-router': `export const router={push:()=>{throw new Error('Unexpected navigation in thread folder fixture')}};`,
   '../../ui/controls/use-action': `export const useAction=()=>({busy:false,error:'',act:work=>{Promise.resolve(work()).catch(error=>window.transferError=String(error))}});`,
   '../../shell/navigation': `export const useNavigation=()=>({navigate:(...args)=>window.navigation=args});`,
   '../draft/use-draft': `export const saveRuntimeDraft=async(...args)=>{window.savedDraft=args};`,
-  'react-native': `export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityValue,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;`,
+  'react-native': `export const Image=({source})=><img src={source.uri} alt=""/>;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityValue,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../runtime/connection/provider': `import {createContext,useContext} from 'react'; export const Context=createContext(null);export const useRuntime=()=>useContext(Context);export const RuntimeScope=({runtimeId,children})=>{const root=useRuntime();return <Context.Provider value={{...root,scope:runtimeId}}>{children}</Context.Provider>};`,
   '../../ui/layout/sheet': `export const Sheet=({title,children,onClose,headerAction})=><div role="dialog" aria-label={title}>{headerAction&&<button disabled={headerAction.disabled} onClick={headerAction.onPress}>{headerAction.label}</button>}{children}<button onClick={onClose}>Close sheet</button></div>;`,
@@ -64,13 +65,13 @@ try {
   }
   await load()
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'No Project', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Broken folder', exact: true }).isDisabled(),
     true,
   )
   await page.getByLabel('Search projects').fill('local')
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'No Project', exact: true }).count(), 1)
   await page.getByRole('button', { name: 'Local folder', exact: true }).click()
   assert.equal(await page.getByText('a|local').count(), 1)
   await load()
@@ -84,7 +85,7 @@ try {
   assert.equal(await page.getByText('b|added').count(), 1)
   await page.evaluate(() => window.transfer(false))
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   await page.waitForFunction(() => window.navigation)
   assert.deepEqual(
     await page.evaluate(() =>

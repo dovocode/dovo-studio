@@ -1,3 +1,4 @@
+import { registerTerminalPorts } from './terminal-ports.js'
 import { registerRepositoryOpeners } from './repository-openers.js'
 import { registerBrowserWindows } from './browser-window.js'
 import { registerDictation } from './dictation.js'
@@ -61,8 +62,9 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme } from 'electron'
 import { Effect } from 'effect'
+import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 
 import {
   activateExtension,
@@ -72,7 +74,25 @@ import {
   runDesktop,
 } from './runtime.js'
 
+// Electron uses BCP 47 language tags (en_US is en-US). Set before app readiness.
+app.commandLine.appendSwitch('lang', 'en-US')
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const startupProfile =
+  process.env.DOVO_STARTUP_PROFILE === '1'
+    ? (() => {
+        let previous = process.uptime() * 1000
+        return (phase: string) => {
+          const now = process.uptime() * 1000
+          console.error(
+            `[dovo startup] desktop ${phase}: +${(now - previous).toFixed(1)}ms, total ${now.toFixed(1)}ms`,
+          )
+          previous = now
+        }
+      })()
+    : undefined
+startupProfile?.('modules loaded')
+let startupWindowPending = true
 const rendererPath = join(__dirname, '../dist/index.html')
 const nightly = app.isPackaged && /-nightly\.\d+$/.test(app.getVersion())
 const appName = !app.isPackaged
@@ -156,7 +176,9 @@ if (ownsInstance && !explicitDirectory) {
 }
 registerLinuxDesktop(nightly, appName, rendererPath)
 registerDefaultBrowser(rendererPath, nightly)
-registerConnectionStorage(join(__dirname, '../dist/index.html'))
+registerConnectionStorage(join(__dirname, '../dist/index.html'), (settings) =>
+  browserBridge.refreshSessionCookies(settings),
+)
 registerAccountStorage(rendererPath)
 const dictation = registerDictation(
   rendererPath,
@@ -175,14 +197,27 @@ const browserBridge = registerBrowser(
   join(__dirname, '../dist/index.html'),
   dataDirectory,
   join(__dirname, 'preload.mjs'),
-  browserWindows,
+  {
+    ...browserWindows,
+    main: async () => {
+      if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+      const window = mainWindow
+      if (!window) throw new Error('The main window could not be opened.')
+      await mainWindowReady
+      if (window.isDestroyed()) throw new Error('The main window was closed.')
+      return window
+    },
+  },
 )
+browserWindows.onClose(browserBridge.returnWindowTabs)
 app.once('will-quit', () => {
   void browserBridge.dispose()
 })
 
 const taskLauncher = registerTaskLauncher(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => taskLauncher.dispose())
+const terminalPorts = registerTerminalPorts(rendererPath)
+app.once('will-quit', () => terminalPorts.dispose())
 const runtimeSync = registerRuntimeSync(rendererPath, async (connection) => {
   const local = await startLocalRuntime(__dirname)
   return local.token === connection.token && local.address !== connection.address ? local : null
@@ -191,6 +226,7 @@ app.once('will-quit', () => runtimeSync.dispose())
 const threadWindows = registerThreadWindows(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => threadWindows.dispose())
 let mainWindow: BrowserWindow | undefined
+let mainWindowReady: Promise<void> = Promise.resolve()
 queueExternalLinks(process.argv.slice(1))
 const deliverExternalLinks = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return
@@ -206,6 +242,12 @@ app.on('open-url', (event, url) => {
   if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow()
   deliverExternalLinks()
 })
+ipcMain.handle('clipboard:write-text', async (event, text: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (typeof text !== 'string') throw new Error('Expected clipboard text')
+  await clipboard.writeText(text)
+})
+
 /** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
  * natively, so they would otherwise stay dark on a light theme. The last palette is kept for
  * the next launch, before any renderer has painted. */
@@ -249,6 +291,10 @@ function createWindow(): void {
       preload: join(__dirname, 'preload.mjs'),
     },
   })
+  if (startupProfile && startupWindowPending) {
+    startupWindowPending = false
+    window.webContents.once('did-finish-load', () => startupProfile('window loaded'))
+  }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void offerLink(window, url)
@@ -313,10 +359,13 @@ function createWindow(): void {
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    void window.loadURL(process.env.VITE_DEV_SERVER_URL)
+    mainWindowReady = window.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    void window.loadFile(join(__dirname, '../dist/index.html'))
+    mainWindowReady = window.loadFile(join(__dirname, '../dist/index.html'))
   }
+  void mainWindowReady.catch((error: unknown) =>
+    console.error('Could not load the main window.', error),
+  )
 }
 
 app.on('second-instance', (_event, args) => {
@@ -508,10 +557,15 @@ ipcMain.handle('runtime:activate', async (event, id: unknown) => {
 })
 
 const startup = Effect.gen(function* () {
+  yield* Effect.try({
+    try: () => ManagedPolicy.load().requireClient('desktop'),
+    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+  })
   yield* Effect.tryPromise({
     try: () => app.whenReady(),
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   })
+  startupProfile?.('Electron ready')
   // Show the window immediately; the renderer renders its loading state and awaits
   // runtime:connection itself. Booting the runtime in the background removes the runtime
   // cold-start latency from time-to-first-pixel.
@@ -523,13 +577,22 @@ const startup = Effect.gen(function* () {
       event.returnValue = {
         version: app.getVersion(),
         channel: !app.isPackaged ? 'dev' : nightly ? 'nightly' : 'stable',
-      }
+        viewer: {
+          platform: process.platform,
+          // An x64 Electron build can run on Apple Silicon through Rosetta.
+          architecture: app.runningUnderARM64Translation ? 'arm64' : process.arch,
+          processArchitecture: process.arch,
+        },
+      } satisfies NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     })
     const updates = registerUpdates(__dirname, async () => {
+      await browserWindows.returnAll()
       const restore = await prepareLocalRuntimeUpdate(__dirname)
       quitting = true
+      browserWindows.setQuitting(true)
       return async () => {
         quitting = false
+        browserWindows.setQuitting(false)
         await restore()
       }
     })
@@ -558,6 +621,7 @@ const startup = Effect.gen(function* () {
       await updates.install()
     })
     createWindow()
+    startupProfile?.('window created')
     const checkUpdates = () =>
       void updates
         .refresh()
@@ -576,6 +640,7 @@ const startup = Effect.gen(function* () {
       }),
     ),
   )
+  startupProfile?.('local runtime attempt finished')
   yield* activateOnStartup
 
   app.on('activate', () => {
@@ -595,11 +660,30 @@ app.on('window-all-closed', () => {
 })
 
 let quitting = false
+let shuttingDown = false
 app.on('before-quit', (event) => {
   if (quitting) return
   event.preventDefault()
-  quitting = true
-  void Promise.all([stopLocalRuntime(), runDesktop(disposeRuntime)])
-    .catch((error) => console.error('Desktop shutdown failed', error))
-    .finally(() => app.quit())
+  if (shuttingDown) return
+  shuttingDown = true
+  void (async () => {
+    try {
+      // Return and persist detached workspaces before any window/runtime is torn down.
+      await browserWindows.returnAll()
+    } catch (error) {
+      shuttingDown = false
+      await dialog.showMessageBox({
+        type: 'error',
+        message: 'Dovo could not save the detached browser tabs before quitting.',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+    await Promise.all([stopLocalRuntime(), runDesktop(disposeRuntime)]).catch((error) =>
+      console.error('Desktop shutdown failed', error),
+    )
+    quitting = true
+    browserWindows.setQuitting(true)
+    app.quit()
+  })()
 })

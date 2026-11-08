@@ -16,7 +16,7 @@ const built = await build({
       const initial=createTask({title:'Remote task',objective:'',agentId:'',repositoryId:'repo'});
       window.writes=[];window.fail=false;window.localWrites=0;
       function App(){
-        const [task,setTask]=useState(initial);
+        const [task,setTask]=useState(initial);const [snoozeMinutes,setSnoozeMinutes]=useState(undefined);window.snoozeMinutes=snoozeMinutes;window.changeSnoozeMinutes=setSnoozeMinutes;
         const owner={runtimeId:'remote',name:'Remote',online:true};
         window.store={activeRuntimeId:'local',runtimeRegistry:{profiles:[profile]},
           request:async()=>{window.localWrites++;throw new Error('Wrong server')},
@@ -38,7 +38,7 @@ const built = await build({
       name: 'lifecycle-environment',
       setup(builder) {
         const mocks = {
-          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;`,
+          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useAppPreferences=()=>({taskSnoozeMinutes:window.snoozeMinutes});export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;`,
           '@dovo/studio-ui': `export {Button} from '../studio-ui/src/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -70,11 +70,11 @@ try {
   })
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page.getByRole('button', { name: 'Snooze task' }).click()
+  await page.getByRole('button', { name: 'Snooze thread' }).click()
   await page.getByRole('menuitem', { name: 'For 1 hour' }).click()
   await page.waitForFunction(() => !!window.task.snoozedUntil)
   for (const days of [2, 3, 7]) {
-    await page.getByRole('button', { name: 'Snooze task' }).click()
+    await page.getByRole('button', { name: 'Snooze thread' }).click()
     await page.getByRole('menuitem', { name: `For ${days} days`, exact: true }).click()
     await page.waitForFunction(
       (days) =>
@@ -82,29 +82,35 @@ try {
       days,
     )
   }
-  await page.getByRole('button', { name: 'Settle task' }).click()
-  await page.getByRole('button', { name: 'Reopen task' }).waitFor()
+  await page.evaluate(() => window.changeSnoozeMinutes([15, 90]))
+  await page.getByRole('button', { name: 'Snooze thread' }).click()
+  await page.getByRole('menuitem', { name: 'For 15 minutes', exact: true }).click()
+  await page.waitForFunction(
+    () => Math.abs(Date.parse(window.task.snoozedUntil) - Date.now() - 900000) < 10000,
+  )
+  await page.getByRole('button', { name: 'Settle thread' }).click()
+  await page.getByRole('button', { name: 'Reopen thread' }).waitFor()
   assert.equal(await page.evaluate(() => window.task.snoozedUntil), null)
-  await page.getByRole('button', { name: 'Reopen task' }).click()
-  await page.getByRole('button', { name: 'Settle task' }).waitFor()
+  await page.getByRole('button', { name: 'Reopen thread' }).click()
+  await page.getByRole('button', { name: 'Settle thread' }).waitFor()
   assert.equal(await page.evaluate(() => window.localWrites), 0)
   assert.deepEqual(
     await page.evaluate(() =>
       window.writes.map(({ owner, path, method }) => ({ owner, path, method })),
     ),
-    Array(6).fill({ owner: 'remote', path: '/api/workspace', method: 'PATCH' }),
+    Array(7).fill({ owner: 'remote', path: '/api/workspace', method: 'PATCH' }),
   )
   await page.evaluate(() => {
     window.fail = true
   })
-  await page.getByRole('button', { name: 'Settle task' }).click()
+  await page.getByRole('button', { name: 'Settle thread' }).click()
   assert.equal(await page.getByRole('alert').textContent(), 'Remote write failed')
   assert.equal(await page.evaluate(() => window.task.archived), false)
   await page.evaluate(() => {
     window.fail = false
   })
-  await page.getByRole('button', { name: 'Settle task' }).click()
-  await page.getByRole('button', { name: 'Reopen task' }).waitFor()
+  await page.getByRole('button', { name: 'Settle thread' }).click()
+  await page.getByRole('button', { name: 'Reopen thread' }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Sidebar lifecycle actions snooze, settle and reopen on the owning server; failed writes remain visible and retryable.',

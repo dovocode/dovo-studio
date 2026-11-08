@@ -1,3 +1,4 @@
+import { ManagedPolicy } from './policy/managed-policy.js'
 import { taskInputOwner, taskRemoteHumanInputs } from '@dovo/protocol'
 import { indexTaskFamilyWorking, taskIsWorking } from '@dovo/protocol'
 import { PeerConnections } from './http/peer-connections.js'
@@ -16,7 +17,12 @@ import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent } from '@dovo/protocol'
 import { TaskReviews } from './scm/reviews/task-reviews.js'
 import { ReviewMarks } from './scm/reviews/progress.js'
-import { FileReviews, pullReviewScope, pullReviewFiles } from './scm/reviews/reviews.js'
+import {
+  FileReviews,
+  pullReviewScope,
+  pullReviewFiles,
+  pullReviewRevision,
+} from './scm/reviews/reviews.js'
 import { DeviceHosts, splitDeviceId } from './previews/device-hosts.js'
 import { previewDevices } from './previews/devices.js'
 import { DeviceHostUploads } from './previews/device-host-install.js'
@@ -57,6 +63,7 @@ import { Pairing } from './auth/pairing.js'
 import { GitService } from './scm/git/git.js'
 import { cliRead } from './scm/git/command-read.js'
 import { Terminals } from './terminal/terminals.js'
+import { TerminalRecovery } from './terminal/recovery.js'
 import { AgentRegistry } from './agents/configuration/registry.js'
 import { Approvals } from './agents/execution/approvals.js'
 import { Questions } from './agents/execution/questions.js'
@@ -65,11 +72,17 @@ import { Jobs } from './jobs/jobs.js'
 import { SocketTickets } from './http/support/socket-tickets.js'
 import { SimulatorPreviews } from './previews/simulators.js'
 import { RemoteBrowsers } from './previews/browser.js'
+import { BrowserTransferStorage } from './previews/browser-transfer-storage.js'
+import { errorMessage } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
 import { ThreadReplicationJournal } from './storage/thread-replication-journal.js'
 import { ThreadReplication } from './storage/thread-replication.js'
-export function createServices(db: Database.Database, ownerToken: string): Services {
+export function createServices(
+  db: Database.Database,
+  ownerToken: string,
+  policy = ManagedPolicy.load(),
+): Services {
   db.prepare("INSERT OR IGNORE INTO documents (id, value) VALUES ('runtime-identity', ?)").run(
     JSON.stringify(randomUUID()),
   )
@@ -84,7 +97,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   const activity = new Activity(db)
   const threadServers = new ThreadServers(runtimeId)
   const commands = new Commands(db)
-  const preferences = new RuntimePreferences(db, () => store.update((workspace) => workspace))
+  const preferences = new RuntimePreferences(
+    db,
+    () => store.update((workspace) => workspace),
+    policy,
+  )
   const deviceHostUploads = new DeviceHostUploads()
   const deviceHosts = new DeviceHosts(
     db,
@@ -163,16 +180,28 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       (connectionId, remote, cwd) => forges.gitAuthorization(connectionId, remote, cwd),
       (cwd) => pulls.githubEnvironment(cwd),
       (common, directory) => store.rememberWorktree(common, directory),
+      (identity) => {
+        const host = identity.split('/')[0]
+        const connections = forges
+          .list()
+          .filter((connection) => new URL(connection.baseUrl).host.toLowerCase() === host)
+        return connections.length &&
+          connections.every((connection) => connection.provider === 'github')
+          ? 'github'
+          : undefined
+      },
     ),
     pulls: ForgePullRequests = new ForgePullRequests(git, forges, store),
     terminals = new Terminals(
       () => commands.get(),
       activity,
       (id) => threadServers.environment(id, 'terminal'),
+      db.name === ':memory:' ? undefined : new TerminalRecovery(db),
     ),
     agents = new AgentRegistry(
       () => commands.get(),
       (id) => acpInstallations.launch(id),
+      policy,
     ),
     approvals = new Approvals(activity, store, preferences),
     questions = new Questions(activity, store),
@@ -180,6 +209,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   // Task and message activity is recorded as the store changes. Replaying the stored
   // workspace here would resurrect pruned rows and duplicate task events on every start.
   const attachments = new Attachments(db, store, activity)
+  questions.setAttachments(attachments)
   const reviewMarks = new ReviewMarks(db)
   const pullCache = new PullCache(
     db,
@@ -188,7 +218,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     (cwd, refresh) => pulls.identity(cwd, refresh),
     (detail) => {
       if (!detail.warnings.some((warning) => warning.startsWith('Files:')))
-        reviewMarks.reconcile(pullReviewScope(detail), pullReviewFiles(detail))
+        reviewMarks.reconcile(
+          pullReviewScope(detail),
+          pullReviewFiles(detail),
+          pullReviewRevision(detail),
+        )
     },
   )
   const scratch = new ScratchWorkspaces(
@@ -234,7 +268,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => enabledStudioTools(preferences.get()),
       () => preferences.get().enableLinkedProjectsTool,
     ),
-    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
+    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy)
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })
   const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
@@ -313,7 +347,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   forgeWork.retrieval = retrieval
   retrieval.onInvalidate = () => {
     forgeWork.invalidateShared()
-    for (const repo of store.get().repositories) pullCache.invalidate(repo.path)
+    // Include bound URLs and worktrees which may no longer have a workspace row.
+    pullCache.invalidateAll()
   }
   const pipelineWatch = new PipelineWatch(db, {
     pulls,
@@ -435,7 +470,23 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     })
   })
 
+  const browserTransfers = new BrowserTransferStorage(
+    db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-transfers'),
+  )
+  // Reclaims staging left by runs that exited abruptly. Failures only retain files, but are
+  // recorded so remaining disk use is visible.
+  void browserTransfers.recover().catch((error: unknown) => {
+    console.error('Could not remove stale browser transfers', error)
+    try {
+      activity.add('integration', 'browser-transfers', 'Could not remove stale browser transfers', {
+        error: errorMessage(error),
+      })
+    } catch {
+      // The database may already be closed by a short-lived runtime; the log above remains.
+    }
+  })
   const services: Services = {
+    policy,
     projectTransfers: new ProjectTransfers(() => services, db),
     threadWatch,
     remoteDesktop: new RemoteDesktop(
@@ -455,7 +506,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     instanceId: randomUUID(),
     runtimeId,
     runtimeAddresses: () => [],
-    peers: (peerConnections = new PeerConnections(db, devices)),
+    peers: (peerConnections = new PeerConnections(db, devices, policy)),
     mcpApps,
     artifacts,
     artifactFeeds: new ArtifactFeeds(
@@ -469,6 +520,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         if (!peerConnections) throw new Error('Runtime connections are not initialized')
         return peerConnections.internet.origin
       },
+      policy,
     ),
     sharedThreads: new SharedThreads(
       db,
@@ -478,6 +530,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => services.artifactFeeds,
       mcpApps,
       () => preferences.get().enableArtifacts,
+      policy,
     ),
     memory,
     scratch,
@@ -522,6 +575,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     browsers: new RemoteBrowsers(
       db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-profiles'),
       () => preferences.get().browserProfiles,
+      browserTransfers,
     ),
     browserTickets: new SocketTickets(),
     checkouts,
@@ -532,6 +586,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
 export interface Services {
   stateReplication: SharedStateReplication
   threadReplication: ThreadReplication
+  policy: ManagedPolicy
   projectTransfers: ProjectTransfers
   remoteDesktop: RemoteDesktop
   threadWatch: ThreadWatch

@@ -1,3 +1,4 @@
+import { PullAgentChat } from './agent-chat'
 import { PullLinkedThreads } from './linked-threads'
 import { PullSectionStatus } from './section-status'
 import { PullRequestIcon } from '../../../ui/content/pull-request-icon'
@@ -14,7 +15,6 @@ import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
 import { pullHref } from '../../../shell/source-route'
 import { useLinkOrigin } from '../../../ui/content/link-origin'
 import { openAppLink } from '../../../ui/content/open-link'
-import { formatTime } from '../../../runtime/preferences/app-preferences'
 import { nativeEffect } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -86,6 +86,10 @@ export function PullDetail({
   const origin = useLinkOrigin(undefined, repositoryId)
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
   const [account, setAccount] = useApplicationState(connectionId)
+  const [agentContext, setAgentContext] = useState<{
+    detail: import('@dovo/protocol').PullDetail
+    path?: string
+  } | null>(null)
   const [accounts, setAccounts] = useApplicationState<ForgeConnection[]>([])
   const urlTarget = forgePullTarget(repositoryId)
   useEffect(() => {
@@ -366,7 +370,133 @@ export function PullDetail({
             }
           >
             <View ref={content} collapsable={false} style={{ gap: 8 }}>
+              <View accessibilityLabel="Pull request summary" style={{ gap: 10, paddingBottom: 8 }}>
+                <Text
+                  selectable
+                  accessibilityRole="header"
+                  style={[
+                    styles.title,
+                    {
+                      fontSize: 20,
+                      lineHeight: 26,
+                    },
+                  ]}
+                >
+                  {detail.pull.title}
+                </Text>
+                <View style={styles.row}>
+                  <PullRequestIcon state={detail.pull.state} draft={detail.pull.draft} />
+                  <Signal signal={pullState(detail.pull)} emphasis />
+                  <Text style={styles.muted}>·</Text>
+                  <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        flexShrink: 1,
+                      },
+                    ]}
+                  >
+                    {detail.pull.author}
+                  </Text>
+                </View>
+                <Text style={styles.muted}>Updated {formatDateTime(detail.pull.updatedAt)}</Text>
+                <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
+                  <Icon name="changes" size={14} color={colors.muted} />
+                  <Text selectable numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
+                    {detail.pull.base}
+                  </Text>
+                  <Text style={styles.muted}>←</Text>
+                  <Text selectable numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
+                    {detail.pull.head}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    gap: 5,
+                    paddingVertical: 10,
+                    borderTopWidth: 0.5,
+                    borderBottomWidth: 0.5,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <View style={[styles.row, { flexWrap: 'wrap', gap: 12 }]}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="View pull request files"
+                      onPress={() => {
+                        setFragment('')
+                        setTab('changes')
+                        setChangesOpened(true)
+                        body.current?.scrollTo({ y: 0, animated: false })
+                      }}
+                      style={{ minHeight: 44, justifyContent: 'center' }}
+                    >
+                      <Text style={styles.muted}>
+                        {detail.pull.changedFiles == null
+                          ? 'Files'
+                          : `${detail.pull.changedFiles.toLocaleString()} files`}
+                      </Text>
+                    </Pressable>
+                    {detail.pull.additions != null && (
+                      <Text
+                        style={[
+                          styles.muted,
+                          { color: colors.success, fontVariant: ['tabular-nums'] },
+                        ]}
+                      >
+                        +{detail.pull.additions.toLocaleString()}
+                      </Text>
+                    )}
+                    {detail.pull.deletions != null && (
+                      <Text
+                        style={[
+                          styles.muted,
+                          { color: colors.error, fontVariant: ['tabular-nums'] },
+                        ]}
+                      >
+                        −{detail.pull.deletions.toLocaleString()}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <PullSectionStatus label="Status" section={sections.status} />
+                <View style={[styles.row, { flexWrap: 'wrap', gap: 10 }]}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="View pull request checks"
+                    onPress={() => {
+                      setFragment('')
+                      setTab('checks')
+                      body.current?.scrollTo({ y: 0, animated: false })
+                    }}
+                    style={{ minHeight: 44, justifyContent: 'center' }}
+                  >
+                    <Signal
+                      signal={
+                        sections.status.ready || sections.checks.ready
+                          ? pullDetailChecks(detail)
+                          : { label: 'Loading checks…', tone: 'neutral' }
+                      }
+                    />
+                  </Pressable>
+                  <Signal
+                    signal={
+                      sections.status.ready || sections.discussion.ready
+                        ? pullDetailReviews(detail)
+                        : { label: 'Loading review status…', tone: 'neutral' }
+                    }
+                  />
+                  <Signal signal={pullMergeability(detail.pull)} />
+                </View>
+              </View>
               <PullLinkedThreads pull={detail.pull} />
+              <Action
+                secondary
+                label="Ask agent about this PR"
+                disabled={actionDisabled}
+                onPress={() => setAgentContext({ detail })}
+              />
               {!!fragment && !destination?.comment && (
                 <Text style={styles.muted}>
                   This linked section is not available in the loaded PR. Use the server action to
@@ -378,16 +508,13 @@ export function PullDetail({
                   {error}
                 </Text>
               )}
-              {(detail.stale || detail.refreshError || !connected) && (
+              {(!connected || (detail.refreshError && !error)) && (
                 <Text style={styles.muted}>
-                  {!connected && readConnected
-                    ? 'Reading from another runtime · actions require the original runtime.'
-                    : !connected
-                      ? 'Offline · showing last loaded details.'
-                      : detail.refreshError
-                        ? `Refresh failed: ${detail.refreshError}`
-                        : 'Showing cached details · refreshing.'}
-                  {detail.cachedAt ? ` Last fetched ${formatTime(new Date(detail.cachedAt))}.` : ''}
+                  {!connected
+                    ? readConnected
+                      ? 'Original computer offline · viewing latest available details.'
+                      : 'Offline · reconnect to refresh.'
+                    : `Unable to refresh: ${detail.refreshError}`}
                 </Text>
               )}
               {detail.warnings.map((warning) => (
@@ -406,38 +533,7 @@ export function PullDetail({
                     gap: 8,
                   }}
                 >
-                  <Text
-                    selectable
-                    accessibilityRole="header"
-                    style={[
-                      styles.title,
-                      {
-                        fontSize: 20,
-                        lineHeight: 26,
-                      },
-                    ]}
-                  >
-                    {detail.pull.title}
-                  </Text>
-                  <View style={styles.row}>
-                    <PullRequestIcon state={detail.pull.state} draft={detail.pull.draft} />
-                    <Signal signal={pullState(detail.pull)} emphasis />
-                    <Text style={styles.muted}>·</Text>
-                    <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
-                    <Text
-                      style={[
-                        styles.muted,
-                        {
-                          flexShrink: 1,
-                        },
-                      ]}
-                    >
-                      {detail.pull.author}
-                    </Text>
-                  </View>
-                  <Text selectable style={styles.muted}>
-                    {detail.pull.head} → {detail.pull.base}
-                  </Text>
+                  <PullSectionStatus label="Stack" section={sections.stack} />
                   {repository && (detail.stack || detail.pull.state === 'open') && (
                     <View style={[styles.card, { gap: 10 }]}>
                       <View style={styles.row}>
@@ -496,54 +592,6 @@ export function PullDetail({
                       )}
                     </View>
                   )}
-                  <View
-                    style={{
-                      gap: 5,
-                      paddingVertical: 10,
-                      borderTopWidth: 0.5,
-                      borderBottomWidth: 0.5,
-                      borderColor: colors.border,
-                    }}
-                  >
-                    <Text style={styles.text}>
-                      {detail.pull.changedFiles === null
-                        ? 'File count unavailable'
-                        : `${detail.pull.changedFiles} changed files`}
-                      {detail.pull.additions !== null && detail.pull.deletions !== null
-                        ? ` · +${detail.pull.additions} / −${detail.pull.deletions}`
-                        : ''}
-                    </Text>
-                    <Text style={styles.muted}>
-                      Reviewers: {detail.pull.reviewers.join(', ') || 'None requested'}
-                    </Text>
-                    <Text style={styles.muted}>
-                      Assigned to: {detail.pull.assignees.join(', ') || 'Unassigned'}
-                    </Text>
-                    <Text style={styles.muted}>
-                      Updated {formatDateTime(detail.pull.updatedAt)}
-                    </Text>
-                  </View>
-                  <PullSectionStatus label="Status" section={sections.status} />
-                  <PullSectionStatus label="Stack" section={sections.stack} />
-                  <View style={styles.row}>
-                    <Signal
-                      signal={
-                        sections.status.ready || sections.checks.ready
-                          ? pullDetailChecks(detail)
-                          : { label: 'Loading checks…', tone: 'neutral' }
-                      }
-                    />
-                    <Text style={styles.muted}>·</Text>
-                    <Signal
-                      signal={
-                        sections.status.ready || sections.discussion.ready
-                          ? pullDetailReviews(detail)
-                          : { label: 'Loading review status…', tone: 'neutral' }
-                      }
-                    />
-                    <Text style={styles.muted}>·</Text>
-                    <Signal signal={pullMergeability(detail.pull)} />
-                  </View>
                 </View>
                 <View
                   style={{
@@ -694,6 +742,11 @@ export function PullDetail({
                     key={`${repositoryId}:${detail.pull.number}`}
                     repositoryId={repositoryId}
                     detail={changesDetail}
+                    onAskAgent={
+                      !sections.changes.ready || actionDisabled
+                        ? undefined
+                        : (path) => setAgentContext({ detail: changesDetail, path })
+                    }
                     viewportHeight={bodyHeight}
                     initialPath={destination?.path}
                     fragment={fragment}
@@ -739,6 +792,21 @@ export function PullDetail({
           target={action}
           onClose={() => setAction(null)}
           onDone={onPosted}
+        />
+      )}
+      {agentContext && (
+        <PullAgentChat
+          repositoryId={repositoryId}
+          detail={agentContext.detail}
+          latestDetail={detail ?? agentContext.detail}
+          sourceIdentity={JSON.stringify([
+            account,
+            detail?.destination,
+            detail?.pull.destination,
+            detail?.pull.connectionId,
+          ])}
+          path={agentContext.path}
+          onClose={() => setAgentContext(null)}
         />
       )}
       {lineComment && detail && (

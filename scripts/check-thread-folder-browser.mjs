@@ -3,7 +3,7 @@ import { build } from 'esbuild'
 import { chromium } from 'playwright'
 const mocks = {
   '../../list/task-collection': `export const taskSources=store=>[{runtimeId:store.activeRuntimeId,name:'Selected machine',workspace:store.workspace,snapshot:{checkedDraftMoveSupported:true},online:true},...(store.otherSources??[])];`,
-  '@dovo/studio-ui': `export {Button} from './src/components/ui/button'; export {Input} from './src/components/ui/input'; export {Dialog,DialogContent,DialogDescription,DialogTitle} from './src/components/ui/dialog'; export * as Popover from '@radix-ui/react-popover';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
+  '@dovo/studio-ui': `export {Button} from './src/components/ui/button'; export {Input} from './src/components/ui/input'; export {ProjectIcon} from './src/project-icon'; export {Dialog,DialogContent,DialogDescription,DialogTitle} from './src/components/ui/dialog'; export * as Popover from '@radix-ui/react-popover';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
   '@dovo/studio-core': `import {createContext,useContext} from 'react'; export const useAppPreferences=()=>({projectGrouping:'name',projectOrder:'name'}); export const projectActivity=()=>0;export const useStudioHost=()=>({navigate:value=>window.navigation=value});export const WorkspaceScope=({profile,children})=>{window.addScope=profile.id;return children}; export const Context=createContext(null); export const useWorkspace=()=>useContext(Context); export const canChangeTaskCheckout=t=>t.status==='draft'; export const resolveTaskDefaults=()=>({execution:'main'}); export const updateTask=(w,id,fn)=>({...w,tasks:w.tasks.map(t=>t.id===id?fn(t):t)});`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=({initialSource,onClose,onAdded})=><div role="dialog" aria-label="Add repository"><span>{String(initialSource)}</span><button onClick={()=>{onAdded?.({id:'added',name:'Added folder',path:'/added',kind:'folder'});onClose()}}>Add folder</button><button onClick={onClose}>Close</button></div>;`,
@@ -47,7 +47,7 @@ try {
   page.on('pageerror', (e) => errors.push(e.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page.getByRole('button', { name: 'Task project', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread project', exact: true }).click()
   await page.getByRole('textbox', { name: 'Search projects' }).fill('second')
   assert.equal(await page.getByRole('button', { name: 'First folder', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Second folder', exact: true }).focus()
@@ -61,39 +61,39 @@ try {
     ]),
     ['two', '', undefined, undefined],
   )
-  await page.getByRole('button', { name: 'Task project', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread project', exact: true }).click()
   assert.equal(await page.getByRole('textbox', { name: 'Search projects' }).inputValue(), '')
   assert.equal(
     await page.getByRole('button', { name: 'Broken folder', exact: true }).isDisabled(),
     true,
   )
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   assert.equal(await page.evaluate(() => window.task.repositoryId), 'chat')
-  await page.getByRole('button', { name: 'Task project', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread project', exact: true }).click()
   await page.getByRole('button', { name: 'Add project on Selected machine', exact: true }).click()
   await page.getByRole('dialog', { name: 'Add repository' }).waitFor()
   assert.equal(await page.getByRole('dialog').innerText(), 'undefinedAdd folderClose')
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Machines', exact: true }).click()
-  assert.equal(await page.getByLabel('New thread machine').inputValue(), 'a')
+  assert.equal(await page.getByLabel('New thread computer').inputValue(), 'a')
   assert.equal(await page.getByRole('button', { name: /Local folder/ }).count(), 1)
   assert.equal(await page.getByRole('button', { name: /Remote folder/ }).count(), 0)
-  await page.getByLabel('New thread machine').selectOption('b')
+  await page.getByLabel('New thread computer').selectOption('b')
   assert.equal(await page.getByRole('button', { name: /Local folder/ }).count(), 0)
   await page.getByRole('button', { name: /Remote folder/ }).click()
   assert.equal(await page.evaluate(() => window.selection), JSON.stringify(['b', 'b-folder']))
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.showMachines(true))
-  await page.getByRole('dialog', { name: 'New task', exact: true }).waitFor()
-  assert.equal(await page.getByLabel('New thread machine').count(), 0)
+  await page.getByRole('dialog', { name: 'New thread', exact: true }).waitFor()
+  assert.equal(await page.getByLabel('New thread computer').count(), 0)
   await page.getByRole('button', { name: /Remote folder/ }).click()
   assert.equal(await page.evaluate(() => window.selection), JSON.stringify(['b', 'b-folder']))
   await page.keyboard.press('Escape')
   await page.evaluate(() => {
     window.requests = []
   })
-  await page.getByRole('button', { name: 'Task project', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread project', exact: true }).click()
   await page.getByRole('button', { name: 'Remote folder', exact: true }).click()
   await page.waitForFunction(() => window.switched === 'b')
   assert.deepEqual(

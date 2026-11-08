@@ -4,6 +4,8 @@ type PollingOptions<E> = {
   interval: number
   onError: (error: E) => void
   immediate?: boolean
+  /** Park without a timer while false; call refresh when availability changes. */
+  enabled?: () => boolean
   /** Stretch the wait after consecutive failures, up to this many milliseconds. */
   backoff?: number
 }
@@ -24,7 +26,8 @@ export function startPolling<E>(work: Effect.Effect<void, E>, options: PollingOp
     // Jitter keeps several clients of one recovering host from retrying in lockstep.
     return Math.round(grown * (0.8 + Math.random() * 0.2))
   }
-  const cycle = work.pipe(
+  const enabled = () => options.enabled?.() !== false
+  const cycle = Effect.suspend(() => (enabled() ? work : Effect.void)).pipe(
     Effect.tap(() =>
       Effect.sync(() => {
         failures = 0
@@ -50,14 +53,19 @@ export function startPolling<E>(work: Effect.Effect<void, E>, options: PollingOp
     ),
     Effect.andThen(
       Effect.suspend(() =>
-        Effect.raceFirst(Queue.take(wakeups), Effect.sleep(delay())).pipe(Effect.asVoid),
+        (enabled()
+          ? Effect.raceFirst(Queue.take(wakeups), Effect.sleep(delay()))
+          : Queue.take(wakeups)
+        ).pipe(Effect.asVoid),
       ),
     ),
   )
   const fiber = Effect.runFork(
     Effect.gen(function* () {
       if (options.immediate === false)
-        yield* Effect.raceFirst(Queue.take(wakeups), Effect.sleep(options.interval))
+        yield* enabled()
+          ? Effect.raceFirst(Queue.take(wakeups), Effect.sleep(options.interval))
+          : Queue.take(wakeups)
       yield* Effect.forever(cycle)
     }).pipe(
       Effect.tapCause((cause) =>

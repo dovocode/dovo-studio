@@ -63,7 +63,7 @@ export function opencodeNative(
         ])
       }
     },
-    async close(cancelled: boolean) {
+    async close(cancelled: boolean, confirmRoot?: () => Promise<void> | undefined) {
       if (cancelled) {
         try {
           await cancel()
@@ -74,6 +74,7 @@ export function opencodeNative(
           })
         }
       }
+      await confirmRoot?.()
       run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
     },
   }

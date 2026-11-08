@@ -1,3 +1,4 @@
+import { generatedAssetsCache } from './generated-assets-cache.mjs'
 import { build } from 'esbuild'
 import { tokenStyles } from '../packages/design/src/tokens.ts'
 import { createRequire } from 'node:module'
@@ -6,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobileRequire = createRequire(new URL('../apps/mobile/package.json', import.meta.url))
 const require = createRequire(new URL('../packages/web-ui/package.json', import.meta.url))
+const cssDependencies = []
 const { compile } = require('@tailwindcss/node')
 const { Scanner } = require('@tailwindcss/oxide')
 const source = (await readFile(root + 'packages/web-ui/src/styles.css', 'utf8')).replace(
@@ -14,7 +16,9 @@ const source = (await readFile(root + 'packages/web-ui/src/styles.css', 'utf8'))
 )
 const compiler = await compile(source + '\n' + tokenStyles, {
   base: root + 'packages/web-ui/src',
-  onDependency() {},
+  onDependency(path) {
+    cssDependencies.push(path)
+  },
 })
 const scanner = new Scanner({
   sources: ['packages/extension-runtime/src', 'packages/web-ui/src'].map((path) => ({
@@ -24,7 +28,19 @@ const scanner = new Scanner({
   })),
 })
 const css = compiler.build(scanner.scan())
+const cache = await generatedAssetsCache(
+  import.meta.url,
+  ['../apps/mobile/assets/remote-desktop.json'],
+  [
+    ...cssDependencies,
+    ...scanner.files,
+    root + 'packages/web-ui/src/styles.css',
+    root + 'packages/design/src/tokens.ts',
+  ],
+)
+if (cache.current) process.exit(0)
 const result = await build({
+  metafile: true,
   entryPoints: [root + 'apps/mobile/remote-desktop/client.tsx'],
   bundle: true,
   write: false,
@@ -42,7 +58,7 @@ const result = await build({
       },
     },
   ],
-  // postinstall runs before workspace packages emit dist files.
+  // Assets can be prepared before workspace packages emit dist files.
   alias: {
     '@dovo/web-ui/button': root + 'packages/web-ui/src/button.tsx',
     '@dovo/web-ui/input': root + 'packages/web-ui/src/input.tsx',
@@ -56,3 +72,11 @@ const html = `<!doctype html><html class="dark"><head><meta charset="utf-8"><met
 *,::before,::after{border-color:var(--border)}html,body{margin:0;min-height:100%;background:var(--background);color:var(--foreground);font-family:-apple-system,system-ui,sans-serif}#app{padding:16px}button,input{min-height:44px}input{font-size:16px!important}img[tabindex]{touch-action:none}button{white-space:normal!important}</style></head><body><div id="app"></div><script type="module">${script}</script></body></html>`
 await mkdir(root + 'apps/mobile/assets', { recursive: true })
 await writeFile(root + 'apps/mobile/assets/remote-desktop.json', JSON.stringify(html))
+
+await cache.save([
+  ...Object.keys(result.metafile.inputs),
+  ...cssDependencies,
+  ...scanner.files,
+  root + 'packages/web-ui/src/styles.css',
+  root + 'packages/design/src/tokens.ts',
+])

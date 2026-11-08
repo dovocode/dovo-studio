@@ -1,3 +1,8 @@
+import { useOperationGuard } from '../../runtime/state/use-operation-guard'
+import { prepareRuntimeSideThread, finishRuntimeSideThread } from '../draft/runtime-drafts'
+import { router } from 'expo-router'
+import { taskHref } from '../../shell/task-route'
+import { ActionMenu, type MenuAction, type MenuAnchor } from '../../ui/controls/action-menu'
 import { blockAccessibleNotificationInputs } from '../../notifications/visibility'
 import { randomUUID } from 'expo-crypto'
 import { useForkDraft } from './use-fork-draft'
@@ -6,13 +11,17 @@ import { DraftStash } from './draft-stash'
 import { draftStashScope } from '@dovo/protocol'
 import { contentColumn } from '../../ui/layout/content-column'
 import { ThreadStartModes } from '../creation/thread-start-modes'
-import { ThreadStarters } from '../creation/thread-starters'
 import { TurnModelControls } from './turn-model-controls'
-import { applyTurnSettings } from '@dovo/protocol'
+import {
+  applyTurnSettings,
+  planModeIssue,
+  selectedCatalogModel,
+  serviceTierValue,
+} from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
 import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
-import { checkpointCanUndo } from '@dovo/protocol'
+import { checkpointUndoTurn } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
@@ -20,11 +29,36 @@ import { LinkedCheckoutEditor } from '../detail/linked-projects'
 import { TaskMachineSelector } from '../creation/task-machine-selector'
 import { WorktreeBasePicker } from '../creation/worktree-base-picker'
 import { useApplicationState } from '../../runtime/state/application-state'
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  ReduceMotion,
+} from 'react-native-reanimated'
+import { HarnessIcon } from '../../agents/harness-icon'
 import { Glass } from '../../ui/layout/glass'
 import { MessageAttachments } from '../conversation/components/message-attachments'
-import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  BackHandler,
+  Keyboard,
+  Linking,
+  Platform,
+  Pressable,
+  View,
+} from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentRef,
+  type ReactNode,
+} from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
@@ -37,10 +71,13 @@ import {
 } from '@dovo/protocol'
 import { Effect, Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
+import type { BackgroundStart } from '../conversation/state/use-actions'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
-import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+import { ComposerActivity } from './composer-activity'
+import { ComposerHistoryGesture } from './composer-history-gesture'
+import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -52,17 +89,19 @@ import { CarComposer } from './car-composer'
 import { FileMentions, type ComposerCommandId } from '../conversation/components/file-mentions'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
-import { useCarMode } from '../../runtime/preferences/app-preferences'
+import { useCarMode, useMobilePreferences } from '../../runtime/preferences/app-preferences'
 export function Composer({
   task,
   onAsk,
   onSelectRemote,
+  onStartInBackground,
   renderAbove,
-  queuedMessages,
+  onHistoryBrowsingChange,
 }: {
   task: Task
-  queuedMessages?: ReactNode
-  renderAbove?: (setup: ReactNode, starters?: ReactNode, startModes?: ReactNode) => ReactNode
+  onStartInBackground?: (configuration: Task, attemptId: string) => BackgroundStart
+  renderAbove?: (setup: ReactNode, startModes?: ReactNode) => ReactNode
+  onHistoryBrowsingChange?: (browsing: boolean) => void
   onAsk?: (chatId?: string) => void
   onSelectRemote?: (
     runtimeId: string,
@@ -72,7 +111,14 @@ export function Composer({
     autoProjectExecution?: Task['autoProjectExecution'],
   ) => Promise<void>
 }) {
-  const { colors, styles } = useTheme()
+  const { colors, styles, reduceMotion } = useTheme()
+  const { showContextUsage, minimalComposer, showPlanButton } = useMobilePreferences()
+  const motion = reduceMotion ? ReduceMotion.Always : ReduceMotion.System
+  const transition = LinearTransition.duration(280)
+    .easing(Easing.bezier(0.22, 1, 0.36, 1))
+    .reduceMotion(motion)
+  const reveal = FadeIn.duration(180).delay(60).reduceMotion(motion)
+  const conceal = FadeOut.duration(120).reduceMotion(motion)
 
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
@@ -80,6 +126,7 @@ export function Composer({
     connected,
     snapshot,
     draft,
+    composerHistory,
     dictation,
     busy: actionBusy,
     stopping,
@@ -93,12 +140,30 @@ export function Composer({
     checkoutEditable,
     hasInput,
     canSend,
+    submitting,
+    defaultSendMode,
+    stageSupported,
     patch,
     editing,
     cancelEdit,
     turnSettings,
     setTurnSettings,
+    plan,
+    planSupported,
+    setPlan,
   } = actions
+  useLayoutEffect(() => {
+    onHistoryBrowsingChange?.(composerHistory.active)
+  }, [composerHistory.active, onHistoryBrowsingChange])
+  useLayoutEffect(() => () => onHistoryBrowsingChange?.(false), [onHistoryBrowsingChange])
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !composerHistory.active) return
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      composerHistory.cancel()
+      return true
+    })
+    return () => back.remove()
+  }, [composerHistory.active, composerHistory.cancel])
   const nextTurnControls =
     !!snapshot?.queuedTurnSettingsSupported &&
     !!agent &&
@@ -113,6 +178,32 @@ export function Composer({
     modelName,
     modelCatalog?.harness?.name,
   )
+  const automaticModel =
+    !(nextTurnControls && turnSettings) &&
+    (task.modelSelection === 'auto' || task.modelSelection === 'smart')
+  const selectedModel =
+    modelCatalog && selectedCatalogModel(modelCatalog, composerAgent?.model ?? '')
+  const reasoning = automaticModel
+    ? task.modelSelectionDifficulty || 'auto'
+    : composerAgent?.reasoning || selectedModel?.defaultReasoning
+  const reasoningLabel = reasoning
+    ? ({
+        auto: 'Auto',
+        low: 'Low',
+        medium: 'Medium',
+        high: 'High',
+        xhigh: 'Extra High',
+        max: 'Max',
+        ultra: 'Ultra',
+        minimal: 'Minimal',
+        none: 'None',
+      }[reasoning] ??
+      (selectedModel?.reasoning ?? modelCatalog?.reasoning)?.find(
+        (effort) => effort.id === reasoning,
+      )?.name ??
+      reasoning)
+    : 'Default'
+  const fastMode = ['priority', 'fast'].includes(serviceTierValue(composerAgent?.serviceTier))
   const { activeId: stashRuntimeId } = useRuntime()
   const checkoutAction = useAction()
   const [turnModelOpen, setTurnModelOpen] = useApplicationState(false)
@@ -124,6 +215,7 @@ export function Composer({
   const [asideCreating, setAsideCreating] = useState(false)
   const [asideBusy, setAsideBusy] = useState(false)
   const asideRequest = useRef(false)
+  const asideAttempt = useRef<{ id: string; text: string } | undefined>(undefined)
   const latestDraft = useRef(draft)
   latestDraft.current = draft
   const fork = useForkDraft({
@@ -151,10 +243,20 @@ export function Composer({
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
-  const [draftTools, setDraftTools] = useState<'menu' | 'stash' | 'context'>()
-  const toolsSheet = useRef<SheetHandle>(null)
-  useEffect(() => setDraftTools(undefined), [task.id, stashRuntimeId])
-  const [starterFocus, setStarterFocus] = useState<string>()
+  const [draftTools, setDraftTools] = useState<'stash' | 'context'>()
+  const toolsTrigger = useRef<ComponentRef<typeof View>>(null)
+  const messageTrigger = useRef<ComponentRef<typeof View>>(null)
+  const [toolsAnchor, setToolsAnchor] = useState<MenuAnchor | null>(null)
+  const [messageActions, setMessageActions] = useState<MenuAnchor | null>(null)
+  useEffect(
+    () => setMessageActions(null),
+    [task.id, task.status, editing?.message.id, stashRuntimeId],
+  )
+  useEffect(() => {
+    setDraftTools(undefined)
+    setToolsAnchor(null)
+  }, [task.id, stashRuntimeId])
+  const [draftFocus, setDraftFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
   const focus = useCallback(() => setFocused(true), [setFocused])
@@ -168,8 +270,9 @@ export function Composer({
   )
   const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
-  const { call, callEffect: commandCall } = useRuntime()
-  const askAside = async () => {
+  const { call, callEffect: commandCall, activeId, legacyDraftRuntimeId } = useRuntime()
+  const asideCurrent = useOperationGuard(JSON.stringify([activeId, task.id, draft.key]))
+  const askAside = async (text: string) => {
     if (
       !!editing ||
       !!draft.pendingFork ||
@@ -180,40 +283,51 @@ export function Composer({
       busy ||
       asideRequest.current ||
       dictation.active ||
-      task.archived ||
       task.archivedAt
     )
       return
-    const text = latestDraft.current.text
     if (!text.trim()) {
       onAsk()
       return
     }
-    if (text.length > 4000) {
-      Alert.alert('Side question too long', 'Side questions can contain up to 4,000 characters.')
+    if (text.length > 20000) {
+      Alert.alert(
+        'Side chat message too long',
+        'Side chat drafts can contain up to 20,000 characters.',
+      )
       return
     }
     asideRequest.current = true
     setAsideBusy(true)
     setAsideCreating(true)
     try {
+      if (!activeId) throw new Error('Choose the thread’s computer first.')
+      if (!asideAttempt.current || asideAttempt.current.text !== text)
+        asideAttempt.current = { id: randomUUID(), text }
+      const id = await prepareRuntimeSideThread(
+        activeId,
+        task.id,
+        asideAttempt.current.id,
+        text,
+        text,
+        legacyDraftRuntimeId,
+      )
+      if (!asideCurrent()) return
       const chat = await call(
-        '/api/tasks/side-chat/save',
-        { id: task.id, draft: text },
+        '/api/tasks/side-thread/create',
+        { id: task.id, childId: id, objective: text },
         mutableStruct({ id: Schema.String }),
       )
+      await finishRuntimeSideThread(activeId, task.id, id)
+      if (!asideCurrent() || latestDraft.current.key !== draft.key) return
       if (latestDraft.current.key === draft.key && latestDraft.current.text === text)
         draft.update('')
-      setAsideCreating(false)
-      onAsk(chat.id)
-      await call(
-        '/api/tasks/side-chat/ask',
-        { id: task.id, chatId: chat.id, question: text },
-        mutableStruct({ answer: Schema.String }),
-      )
+      asideAttempt.current = undefined
+      Keyboard.dismiss()
+      router.push(taskHref(activeId, chat.id))
     } catch (cause) {
       Alert.alert(
-        'Could not ask side question',
+        'Could not start side chat',
         cause instanceof Error ? cause.message : String(cause),
       )
     } finally {
@@ -239,7 +353,8 @@ export function Composer({
     checkout ||
     settings ||
     linkingProjects ||
-    draftTools === 'menu' ||
+    messageActions ||
+    toolsAnchor ||
     attachmentPicker.editor
   )
   useLayoutEffect(() => {
@@ -294,10 +409,12 @@ export function Composer({
           },
         ],
       )
-    const turn = [...(task.turns ?? [])]
-      .reverse()
-      .find((item) => item.status !== 'running' && checkpointCanUndo(item.checkpoint))
-    if (!turn) return Alert.alert('Nothing to undo', 'No turn has file changes left to undo.')
+    const turn = checkpointUndoTurn(task.turns ?? [])
+    const turnId =
+      (turn?.checkpoint?.restorePending ? turn.id : task.historyTotals?.pendingUndoTurnId) ??
+      turn?.id ??
+      task.historyTotals?.undoableTurnId
+    if (!turnId) return Alert.alert('Nothing to undo', 'No turn has file changes left to undo.')
     Alert.alert(
       'Undo the last turn’s changes?',
       'Those files go back to how they were before it. Your current files are saved first, so you can redo this.',
@@ -310,7 +427,7 @@ export function Composer({
             commandAction.act(() =>
               commandCall(
                 '/api/tasks/turn/restore',
-                { id: task.id, turnId: turn.id, direction: 'undo' },
+                { id: task.id, turnId, direction: 'undo' },
                 responses.ok,
               ),
             ),
@@ -321,28 +438,208 @@ export function Composer({
   const car = useCarMode()
   // Car mode starts with speech; the regular composer is one tap away for a passenger.
   const [typing, setTyping] = useApplicationState(false)
-  const showOptions = focused || hasInput || firstMessage
-  const hasSideQuestion = !editing && !!onAsk && task.messages.length > 0
-  const showFollowupActions =
-    showOptions && !dictation.active && task.status === 'running' && hasInput
+  const showOptions =
+    !minimalComposer || focused || hasInput || dictation.active || composerHistory.active
+  const canBrowseHistory = composerHistory.available && !busy && !attaching && !dictation.active
+  const canAskAside =
+    !task.sideThread &&
+    !editing &&
+    !!onAsk &&
+    task.messages.length > 0 &&
+    connected &&
+    !busy &&
+    !asideBusy &&
+    draft.ready &&
+    !dictation.active &&
+    !task.archivedAt &&
+    !draft.pendingFork &&
+    !draft.pendingRestore
   const showFork = hasGit && !!task.repositoryId
-  const sideQuestionAction = hasSideQuestion && (
-    <IconButton
-      variant="plain"
-      icon="chat"
-      label="Ask a side question"
-      disabled={
+  const showBackgroundStart =
+    !!onStartInBackground && !editing && !task.messages.length && task.status !== 'running'
+  const showMessageMenu =
+    !editing && (task.status === 'running' || stageSupported || showBackgroundStart)
+  const normalSendLabel = defaultSendMode === 'stage' ? 'Add and run queue' : 'Add to queue'
+  const backgroundStartActions: MenuAction[] = showBackgroundStart
+    ? [
+        {
+          title: actions.backgroundSubmitting ? 'Starting in background…' : 'Start in background',
+          label: 'Start in background',
+          icon: 'sendBackground' as const,
+          disabled: machineMoving || !canSend || !actions.canStartInBackground || fork.busy,
+          onPress: () => {
+            if (!onStartInBackground) return
+            const configuration = {
+              ...task,
+              draftTurnSettings: actions.turnSettings ?? undefined,
+              draftPlan: actions.plan,
+            }
+            send('queue', (attemptId) => onStartInBackground(configuration, attemptId))
+          },
+        },
+      ]
+    : []
+  const messageMenuActions: MenuAction[] =
+    !stageSupported && task.status !== 'running'
+      ? backgroundStartActions
+      : [
+          ...backgroundStartActions,
+          ...(stageSupported
+            ? [
+                {
+                  title: 'Add without starting',
+                  label: 'Add without starting',
+                  icon: 'queue' as const,
+                  disabled: !canSend || busy,
+                  onPress: () => send('stage'),
+                },
+              ]
+            : []),
+          ...(task.status !== 'running'
+            ? [
+                {
+                  title: normalSendLabel,
+                  label: normalSendLabel,
+                  icon: 'send' as const,
+                  disabled: !canSend || busy || !!task.queue?.[0]?.paused,
+                  onPress: () => send('queue'),
+                },
+              ]
+            : []),
+          ...(snapshot?.directMessageSupported === true &&
+          task.status !== 'running' &&
+          (task.queuePaused || task.queue?.[0]?.paused)
+            ? [
+                {
+                  title: 'Send now',
+                  label: 'Send now',
+                  icon: 'send' as const,
+                  disabled: !canSend || busy,
+                  onPress: () => send('direct'),
+                },
+              ]
+            : []),
+          ...(showFork
+            ? [
+                {
+                  title: 'Fork',
+                  label: 'Fork',
+                  icon: 'changes' as const,
+                  disabled: !canSend || busy || !!turnSettings || plan,
+                  onPress: fork.start,
+                },
+              ]
+            : []),
+          {
+            title:
+              task.status === 'running' && defaultSendMode === 'stage'
+                ? 'Add and run queue'
+                : 'Queue follow-up',
+            label:
+              task.status === 'running' && defaultSendMode === 'stage'
+                ? 'Add and run queue'
+                : 'Queue follow-up',
+            icon: 'queue',
+            disabled: !canSend || busy,
+            onPress: () => send('queue'),
+          },
+          {
+            title: 'Steer agent',
+            label: 'Steer agent',
+            icon: 'steer',
+            disabled: !canSend || busy || !!turnSettings || plan,
+            onPress: () => send('steer'),
+          },
+          {
+            title: 'Stop',
+            label: 'Stop',
+            icon: 'stop',
+            disabled: !connected || stopping || machineMoving,
+            onPress: stop,
+          },
+        ]
+  const draftMenuActions: MenuAction[] = [
+    {
+      title: 'Message history',
+      label: 'Message history',
+      icon: 'history',
+      disabled: !canBrowseHistory,
+      onPress: composerHistory.begin,
+    },
+    ...(planSupported && !showPlanButton
+      ? [
+          {
+            title: plan ? 'Turn off Plan' : 'Plan',
+            label: 'Plan',
+            icon: 'checklist' as const,
+            disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
+            onPress: () => setPlan(!plan),
+          },
+        ]
+      : []),
+    ...(
+      [
+        { source: 'camera', title: 'Camera', icon: 'camera' },
+        { source: 'photos', title: 'Photos', icon: 'fileImage' },
+        { source: 'files', title: 'Files', icon: 'attach' },
+      ] as const
+    ).map(({ source, title, icon }) => ({
+      title,
+      label: title,
+      icon,
+      disabled:
+        (!!editing && !snapshot?.fullTurnSettingsSupported) ||
         !connected ||
         busy ||
-        asideBusy ||
+        attaching ||
+        dictation.active ||
+        !!task.archivedAt,
+      onPress: () => attachmentPicker.select(source),
+    })),
+    {
+      title: 'Paste Image',
+      label: 'Paste Image',
+      icon: 'fileImage',
+      disabled:
+        (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+        !connected ||
+        busy ||
+        attaching ||
+        dictation.active ||
+        !!task.archivedAt,
+      onPress: attachmentPicker.pasteImage,
+    },
+    {
+      title: 'Stashed drafts',
+      label: 'Stashed drafts',
+      icon: 'save',
+      disabled:
+        !stashRuntimeId ||
+        !!editing ||
+        busy ||
         !draft.ready ||
         dictation.active ||
+        !!task.archivedAt ||
         !!task.archived ||
-        !!task.archivedAt
-      }
-      onPress={() => void askAside()}
-    />
-  )
+        !!task.example,
+      onPress: () => setDraftTools('stash'),
+    },
+    {
+      title: 'Attach thread context',
+      label: 'Attach thread context',
+      icon: 'chat',
+      disabled:
+        !connected ||
+        !!editing ||
+        busy ||
+        !draft.ready ||
+        attaching ||
+        !!task.archivedAt ||
+        !!task.archived ||
+        !!task.example,
+      onPress: () => setDraftTools('context'),
+    },
+  ]
   const canDictate = draft.ready && !busy && !task.archivedAt && !attaching
   const listening = dictation.isRecording || dictation.isStarting
   const dictationStatus = dictation.isStarting
@@ -406,7 +703,7 @@ export function Composer({
   const showStartModes =
     !!renderAbove && firstMessage && task.status === 'draft' && checkoutEditable
   const startModeDisabled =
-    !connected ||
+    (!connected && !onSelectRemote) ||
     busy ||
     !draft.ready ||
     attaching ||
@@ -616,7 +913,7 @@ export function Composer({
     return (
       <>
         {renderAbove?.(null)}
-        {queuedMessages}
+        <ComposerActivity task={task} />
         <View
           style={[
             styles.content,
@@ -634,7 +931,7 @@ export function Composer({
     return (
       <>
         {renderAbove?.(null)}
-        {queuedMessages}
+        <ComposerActivity task={task} />
         <CarComposer task={task} onType={() => setTyping(true)} />
       </>
     )
@@ -658,7 +955,7 @@ export function Composer({
         {
           paddingHorizontal: 12,
           paddingTop: 6,
-          paddingBottom: focused ? 8 : Math.max(8, insets.bottom),
+          paddingBottom: focused ? 20 : Math.max(20, insets.bottom),
           gap: 4,
         },
       ]}
@@ -702,7 +999,7 @@ export function Composer({
         </Pressable>
       )}
       {!renderAbove && setup}
-      {queuedMessages}
+      <ComposerActivity task={task} inComposer />
       {editing && (
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 }}>
           <Text style={[styles.muted, { flex: 1 }]}>
@@ -718,457 +1015,609 @@ export function Composer({
           />
         </View>
       )}
-      <Glass
-        style={{
-          borderRadius: 26,
-          padding: 3,
-          gap: 0,
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: focused ? colors.accent : colors.border,
-        }}
-      >
-        <MessageAttachments
-          taskId={task.id}
-          files={actions.draftAttachments}
-          remove={editing ? actions.removeEditAttachment : undefined}
-          removable
-          edit={attachmentPicker.edit}
-          disabled={
-            (!!editing && !snapshot?.fullTurnSettingsSupported) ||
-            busy ||
-            attaching ||
-            (!!draft.pendingFork && !draft.pendingFork.accepted)
-          }
-          onBusy={setAttaching}
-        />
-        {focused && (
-          <FileMentions
+      <Animated.View layout={transition} testID="Composer surface">
+        <Glass
+          style={{
+            borderRadius: 26,
+            padding: 3,
+            gap: 0,
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: focused ? colors.accent : colors.border,
+          }}
+        >
+          <MessageAttachments
             taskId={task.id}
-            text={draft.text}
-            caret={caret}
-            resources={taskResources(
-              turnSettings?.harness
-                ? { ...task, agentId: '', agentOverrides: undefined, harness: turnSettings.harness }
-                : task,
-              {
-                agents: snapshot?.workspace.agents ?? [],
-                repositories: snapshot?.workspace.repositories ?? [],
-              },
-              snapshot?.defaults,
-            )}
-            onChange={draft.update}
-            onCommand={
-              !editing && (task.messages.length || task.queue?.length || task.turns?.length)
-                ? runCommand
-                : undefined
+            files={actions.draftAttachments}
+            remove={editing ? actions.removeEditAttachment : undefined}
+            removable
+            edit={attachmentPicker.edit}
+            disabled={
+              (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+              busy ||
+              attaching ||
+              (!!draft.pendingFork && !draft.pendingFork.accepted)
             }
-            prompts={projectPrompts(
-              snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
-              snapshot?.defaults,
-            )}
+            onBusy={setAttaching}
           />
-        )}
-        {/* Keep the input mounted in the same position while its toolbar expands. */}
-        <View>
-          <View
-            testID="Composer input row"
-            style={{
-              flexDirection: 'row',
-              alignItems: 'flex-end',
-              minHeight: 44,
-            }}
-          >
-            <View
-              style={{
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              <ComposerField
-                focusKey={editing?.message.id ?? starterFocus}
-                key={draft.key}
-                onFocus={focus}
-                onBlur={blur}
-                onSelectionChange={select}
-                placeholder={
-                  editing
-                    ? 'Edit queued message…'
-                    : dictation.isRecording
-                      ? 'Listening…'
-                      : task.archivedAt
-                        ? 'Restore this archived thread to continue'
-                        : task.archived
-                          ? 'Send a message to reopen this thread…'
-                          : firstMessage
-                            ? 'What would you like to work on?'
-                            : task.status === 'running'
-                              ? 'Add a follow-up…'
-                              : 'Ask a follow-up…'
-                }
-                value={draft.text}
-                revision={draft.revision}
-                onChangeText={type}
-                editable={draft.ready && !busy && !dictation.active && !task.archivedAt}
-                showOptions={showOptions}
-                trailingControlCount={2 + Number(hasSideQuestion)}
-              />
-            </View>
-            {showOptions && (
-              // Keep a draft's line width unchanged when the keyboard is dismissed.
-              <View style={{ width: 44, minHeight: 44, flexShrink: 0 }}>
-                {focused && (
-                  <IconButton
-                    label="Dismiss keyboard"
-                    variant="plain"
-                    icon="keyboard"
-                    onPress={() => Keyboard.dismiss()}
-                  />
-                )}
-              </View>
-            )}
-            {/* Stay at the row's trailing edge when the keyboard button disappears on blur. */}
-            {showFollowupActions && sideQuestionAction}
-          </View>
-          <View
-            testID="Composer toolbar"
-            pointerEvents="box-none"
-            style={[
-              {
-                flexDirection: 'row',
-                alignItems: 'center',
-                minHeight: 44,
-              },
-              !showOptions && {
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: 0,
-              },
-            ]}
-          >
-            <IconButton
-              variant="plain"
-              icon="add"
-              label="Add to draft"
-              disabled={
-                busy || dictation.active || !!task.archivedAt || !!task.archived || !!task.example
-              }
-              onPress={() => {
-                Keyboard.dismiss()
-                setDraftTools('menu')
-              }}
-            />
-            <View
-              pointerEvents="box-none"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              {turnModelOpen && agent && (
-                <Sheet title="Agent & model" onClose={() => setTurnModelOpen(false)}>
-                  {snapshot?.fullTurnSettingsSupported ? (
-                    <HarnessSettings
-                      inline
-                      task={task}
-                      onClose={() => setTurnModelOpen(false)}
-                      turn={{
-                        value: turnSettings,
-                        onChange: setTurnSettings,
-                        beforeMessageId: editing?.message.id,
-                      }}
-                    />
-                  ) : (
-                    <TurnModelControls
-                      task={task}
-                      agent={agent}
-                      value={turnSettings}
-                      onChange={setTurnSettings}
-                      disabled={busy || !!task.archived}
-                    />
-                  )}
-                </Sheet>
-              )}
-              {showOptions && !dictation.active && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Agent & model"
-                  accessibilityValue={{
-                    text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}`,
-                  }}
-                  accessibilityState={{
-                    disabled:
-                      busy ||
-                      ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                      !!task.archived,
-                  }}
-                  disabled={
-                    busy ||
-                    ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                    task.archived
-                  }
-                  onPress={() => {
-                    if (dictation.active) dictation.stop()
-                    Keyboard.dismiss()
-                    if (nextTurnControls) setTurnModelOpen(true)
-                    else setSettings(true)
-                  }}
-                  style={({ pressed }) => ({
-                    flex: 1,
-                    minWidth: 44,
-                    minHeight: 44,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 5,
-                    opacity:
-                      pressed ||
-                      busy ||
-                      ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                      task.archived
-                        ? 0.5
-                        : 1,
-                  })}
-                >
-                  {!nextTurnControls &&
-                    (task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
-                      <Icon
-                        name={task.modelSelection === 'auto' ? 'tune' : 'maestro'}
-                        size={15}
-                        color={colors.muted}
-                      />
-                    )}
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.muted,
-                      {
-                        flexShrink: 1,
-                        fontSize: 13,
-                      },
-                    ]}
-                  >
-                    {modelLabel}
-                  </Text>
-                  <Icon name="down" size={10} color={colors.muted} />
-                </Pressable>
-              )}
-              {showOptions &&
-                !dictation.active &&
-                !(task.status === 'running' && hasInput) &&
-                !!meter && (
-                  <Text
-                    accessibilityLabel={meter.label}
-                    style={{
-                      fontSize: 12,
-                      fontVariant: ['tabular-nums'],
-                      color:
-                        meter.level === 'full'
-                          ? colors.error
-                          : meter.level === 'warn'
-                            ? colors.warning
-                            : colors.muted,
-                    }}
-                  >
-                    {meter.short}
-                  </Text>
-                )}
-            </View>
-            <IconButton
-              variant="plain"
-              icon={listening ? 'waveform' : 'microphone'}
-              label={listening ? 'Finish dictation' : 'Dictate message'}
-              color={listening ? colors.accent : undefined}
-              selected={listening}
-              disabled={dictation.isStopping || (!listening && !canDictate)}
-              onPress={
-                listening
-                  ? dictation.stop
-                  : () => {
-                      void dictation.start(selection.current)
+          {focused && !composerHistory.active && (
+            <FileMentions
+              taskId={task.id}
+              text={draft.text}
+              caret={caret}
+              resources={taskResources(
+                turnSettings?.harness
+                  ? {
+                      ...task,
+                      agentId: '',
+                      agentOverrides: undefined,
+                      harness: turnSettings.harness,
                     }
+                  : task,
+                {
+                  agents: snapshot?.workspace.agents ?? [],
+                  repositories: snapshot?.workspace.repositories ?? [],
+                },
+                snapshot?.defaults,
+              )}
+              onChange={draft.update}
+              onSideChat={canAskAside ? (text) => void askAside(text) : undefined}
+              onCommand={
+                !editing && (task.messages.length || task.queue?.length || task.turns?.length)
+                  ? runCommand
+                  : undefined
               }
+              prompts={projectPrompts(
+                snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+                snapshot?.defaults,
+              )}
             />
-            {!showFollowupActions && sideQuestionAction}
-            {!editing && showFollowupActions && (
+          )}
+          {/* Keep the input mounted in the same position while its toolbar expands. */}
+          <ComposerHistoryGesture
+            enabled={canBrowseHistory}
+            browsing={composerHistory.active}
+            begin={composerHistory.begin}
+            older={composerHistory.older}
+            newer={composerHistory.newer}
+          >
+            {composerHistory.active && (
               <View
+                testID="Composer history browser"
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
+                  paddingLeft: 12,
+                  paddingRight: 8,
+                  gap: 8,
                 }}
               >
-                <IconButton
-                  variant="plain"
-                  icon="queue"
-                  label="Queue follow-up"
-                  disabled={!canSend || busy}
-                  onPress={() => send()}
-                />
-                <IconButton
-                  variant="plain"
-                  icon="steer"
-                  label="Steer agent"
-                  disabled={!canSend || busy || !!turnSettings}
-                  onPress={() => send('steer')}
-                />
-                {showFork && (
-                  <IconButton
-                    variant="plain"
-                    icon="changes"
-                    label="Fork"
-                    disabled={!canSend || busy || !!turnSettings}
-                    onPress={fork.start}
-                  />
-                )}
+                <View
+                  accessible
+                  accessibilityRole="adjustable"
+                  accessibilityLabel="Message history"
+                  accessibilityHint="Swipe right for older messages and left for newer messages. Typing or sending uses this text. Cancel restores your draft."
+                  accessibilityValue={{
+                    min: 0,
+                    max: composerHistory.count,
+                    now: (composerHistory.index ?? -1) + 1,
+                    text:
+                      composerHistory.index === -1
+                        ? 'Current draft'
+                        : `Message ${(composerHistory.index ?? 0) + 1} of ${composerHistory.count}, newest first`,
+                  }}
+                  accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+                  onAccessibilityAction={({ nativeEvent }) => {
+                    if (nativeEvent.actionName === 'increment') composerHistory.older()
+                    if (nativeEvent.actionName === 'decrement') composerHistory.newer()
+                  }}
+                  style={{ flex: 1, minWidth: 0, gap: 2 }}
+                >
+                  <Text style={[styles.muted, { fontSize: 12 }]}>
+                    {composerHistory.index === -1
+                      ? 'Current draft'
+                      : `History · ${(composerHistory.index ?? 0) + 1} of ${composerHistory.count}`}
+                  </Text>
+                  <Text style={[styles.muted, { fontSize: 11 }]}>← Newer · Older →</Text>
+                </View>
+                <Action secondary label="Cancel" onPress={composerHistory.cancel} />
               </View>
             )}
-            <IconButton
-              variant="filled"
-              icon={editing ? 'send' : task.status === 'running' ? 'stop' : 'send'}
-              label={editing ? 'Save changes' : task.status === 'running' ? 'Stop' : 'Send'}
-              disabled={
-                machineMoving ||
-                (!editing && task.status === 'running'
-                  ? !connected || stopping
-                  : !canSend || fork.busy)
-              }
-              onPress={!editing && task.status === 'running' ? stop : () => send()}
-            />
-          </View>
-          {draftTools === 'menu' && (
-            <Sheet ref={toolsSheet} title="Add to draft" onClose={() => setDraftTools(undefined)}>
-              <Action
-                label="Attach photos or files"
-                secondary
-                disabled={
-                  (!!editing && !snapshot?.fullTurnSettingsSupported) ||
-                  !connected ||
-                  busy ||
-                  attaching ||
-                  dictation.active ||
-                  !!task.archivedAt
-                }
-                onPress={() => toolsSheet.current?.dismiss(attachmentPicker.pick)}
-              />
-              <Action
-                label="Stashed drafts"
-                secondary
-                disabled={
-                  !stashRuntimeId ||
-                  !!editing ||
-                  busy ||
-                  !draft.ready ||
-                  dictation.active ||
-                  !!task.archivedAt ||
-                  !!task.archived ||
-                  !!task.example
-                }
-                onPress={() => toolsSheet.current?.dismiss(() => setDraftTools('stash'))}
-              />
-              <Action
-                label="Attach thread context"
-                secondary
-                disabled={
-                  !connected ||
-                  !!editing ||
-                  busy ||
-                  !draft.ready ||
-                  attaching ||
-                  !!task.archivedAt ||
-                  !!task.archived ||
-                  !!task.example
-                }
-                onPress={() => toolsSheet.current?.dismiss(() => setDraftTools('context'))}
-              />
-            </Sheet>
-          )}
-          <DraftStash
-            open={draftTools === 'stash'}
-            onOpenChange={(open) => setDraftTools(open ? 'stash' : undefined)}
-            key={JSON.stringify(['stash', stashRuntimeId, task.id])}
-            scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
-            getText={() => latestDraft.current.text}
-            onChange={(value) => draft.update(value)}
-            focus={() => setStarterFocus(randomUUID())}
-            hasAttachments={!!actions.draftAttachments?.length || attaching}
-            disabled={
-              !!editing ||
-              busy ||
-              !draft.ready ||
-              dictation.active ||
-              !!task.archivedAt ||
-              !!task.archived ||
-              !!task.example
-            }
-          />
-          <ThreadContextPicker
-            open={draftTools === 'context'}
-            onOpenChange={(open) => setDraftTools(open ? 'context' : undefined)}
-            key={JSON.stringify(['context', stashRuntimeId, task.id])}
-            taskId={task.id}
-            attachmentBusy={attaching}
-            disabled={
-              !!editing ||
-              busy ||
-              !draft.ready ||
-              !!task.archivedAt ||
-              !!task.archived ||
-              !!task.example
-            }
-            upload={attachmentPicker.uploadContext}
-          />
-        </View>
-        {!!dictationStatus && (
-          <View
-            style={[
-              styles.row,
-              {
-                paddingLeft: 12,
-                paddingRight: 4,
-                gap: 8,
+            <Animated.View
+              layout={transition}
+              testID="Composer input row"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'flex-end',
                 minHeight: 44,
-              },
-            ]}
-          >
-            {dictation.active || dictation.state?.status === 'cleaning' ? (
-              <ActivityIndicator size="small" color={colors.muted} />
-            ) : null}
-            <Text
-              accessibilityLiveRegion="polite"
+              }}
+            >
+              <View
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                <ComposerField
+                  focusKey={editing?.message.id ?? draftFocus}
+                  key={draft.key}
+                  onFocus={focus}
+                  onBlur={blur}
+                  onSelectionChange={select}
+                  placeholder={
+                    editing
+                      ? 'Edit queued message…'
+                      : dictation.isRecording
+                        ? 'Listening…'
+                        : task.archivedAt
+                          ? 'Restore this archived thread to continue'
+                          : firstMessage
+                            ? 'Send a message…'
+                            : task.status === 'running'
+                              ? 'Add a follow-up…'
+                              : 'Ask a follow-up…'
+                  }
+                  value={draft.text}
+                  revision={draft.revision}
+                  onChangeText={type}
+                  editable={
+                    !actions.backgroundSubmitting &&
+                    draft.ready &&
+                    (!busy ||
+                      (submitting &&
+                        !editing &&
+                        !machineMoving &&
+                        !fork.busy &&
+                        !checkoutAction.busy &&
+                        !asideCreating &&
+                        !linkedProjectsAction.busy)) &&
+                    !dictation.active &&
+                    !task.archivedAt
+                  }
+                  showOptions={showOptions}
+                  trailingControlCount={2}
+                />
+              </View>
+              {showOptions && (
+                // Keep a draft's line width unchanged when the keyboard is dismissed.
+                <Animated.View
+                  entering={reveal}
+                  exiting={conceal}
+                  layout={transition}
+                  style={{ width: 44, minHeight: 44, flexShrink: 0 }}
+                >
+                  {focused && (
+                    <Animated.View entering={reveal} exiting={conceal}>
+                      <IconButton
+                        label="Dismiss keyboard"
+                        variant="plain"
+                        icon="keyboard"
+                        onPress={() => Keyboard.dismiss()}
+                      />
+                    </Animated.View>
+                  )}
+                </Animated.View>
+              )}
+              {/* Stay at the row's trailing edge when the keyboard button disappears on blur. */}
+            </Animated.View>
+            <Animated.View
+              layout={transition}
+              testID="Composer toolbar"
+              pointerEvents="box-none"
               style={[
-                styles.muted,
                 {
-                  flexGrow: 1,
-                  flexShrink: 1,
-                  flexBasis: 120,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  minHeight: 44,
+                },
+                !showOptions && {
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                 },
               ]}
             >
-              {dictationStatus}
-            </Text>
-            {dictation.state?.status === 'cleaning' && (
-              <Action secondary label="Keep original" onPress={dictation.keepOriginal} />
-            )}
-            {dictation.state?.status === 'done' && (
-              <Action secondary label="Undo cleanup" onPress={dictation.keepOriginal} />
-            )}
-            {dictation.state?.status === 'failed' && connected && (
-              <Action secondary label="Retry cleanup" onPress={dictation.retry} />
-            )}
-            {dictation.state?.status !== 'cleaning' && !dictation.active && (
+              {Platform.OS === 'ios' ? (
+                <IconButton
+                  icon="add"
+                  label="Add to draft"
+                  color={!showPlanButton && plan ? colors.accent : undefined}
+                  disabled={
+                    busy ||
+                    dictation.active ||
+                    !!task.archivedAt ||
+                    !!task.archived ||
+                    !!task.example
+                  }
+                  onPress={() => {}}
+                  menuActions={draftMenuActions}
+                />
+              ) : (
+                <View ref={toolsTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
+                  {/* Keep the menu trigger in the TextInput responder tree so it retains the keyboard. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Add to draft"
+                    accessibilityState={{
+                      expanded: !!toolsAnchor,
+                      disabled:
+                        busy ||
+                        dictation.active ||
+                        !!task.archivedAt ||
+                        !!task.archived ||
+                        !!task.example,
+                    }}
+                    disabled={
+                      busy ||
+                      dictation.active ||
+                      !!task.archivedAt ||
+                      !!task.archived ||
+                      !!task.example
+                    }
+                    onPress={() => {
+                      setMessageActions(null)
+                      toolsTrigger.current?.measureInWindow((x, y, width, height) =>
+                        setToolsAnchor({ x, y, width, height }),
+                      )
+                    }}
+                    style={({ pressed }) => ({
+                      width: 44,
+                      height: 44,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity:
+                        busy || dictation.active || task.archivedAt || task.archived || task.example
+                          ? 0.4
+                          : pressed
+                            ? 0.6
+                            : 1,
+                    })}
+                  >
+                    <Icon
+                      name="add"
+                      size={20}
+                      color={!showPlanButton && plan ? colors.accent : colors.text}
+                    />
+                  </Pressable>
+                </View>
+              )}
+              <View
+                pointerEvents="box-none"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {turnModelOpen && agent && (
+                  <Sheet title="Agent & model" onClose={() => setTurnModelOpen(false)}>
+                    {snapshot?.fullTurnSettingsSupported ? (
+                      <HarnessSettings
+                        inline
+                        task={task}
+                        onClose={() => setTurnModelOpen(false)}
+                        turn={{
+                          value: turnSettings,
+                          onChange: setTurnSettings,
+                          beforeMessageId: editing?.message.id,
+                        }}
+                      />
+                    ) : (
+                      <TurnModelControls
+                        task={task}
+                        agent={agent}
+                        value={turnSettings}
+                        onChange={setTurnSettings}
+                        disabled={busy || !!task.archivedAt}
+                      />
+                    )}
+                  </Sheet>
+                )}
+                {showOptions && !dictation.active && (
+                  <Animated.View
+                    entering={reveal}
+                    exiting={conceal}
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Agent & model"
+                      accessibilityValue={{
+                        text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}, ${reasoningLabel} ${automaticModel ? 'difficulty' : 'reasoning'}${fastMode ? ', Fast mode' : ''}`,
+                      }}
+                      accessibilityState={{
+                        disabled:
+                          busy ||
+                          ((!!editing || task.status === 'running') && !nextTurnControls) ||
+                          !!task.archivedAt,
+                      }}
+                      disabled={
+                        busy ||
+                        ((!!editing || task.status === 'running') && !nextTurnControls) ||
+                        !!task.archivedAt
+                      }
+                      onPress={() => {
+                        if (dictation.active) dictation.stop()
+                        Keyboard.dismiss()
+                        if (nextTurnControls) setTurnModelOpen(true)
+                        else setSettings(true)
+                      }}
+                      style={({ pressed }) => ({
+                        flex: 1,
+                        minWidth: 44,
+                        minHeight: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 3,
+                        opacity:
+                          pressed ||
+                          busy ||
+                          ((!!editing || task.status === 'running') && !nextTurnControls) ||
+                          task.archivedAt
+                            ? 0.5
+                            : 1,
+                      })}
+                    >
+                      {automaticModel ? (
+                        <Icon
+                          name={task.modelSelection === 'auto' ? 'tune' : 'maestro'}
+                          size={15}
+                          color={colors.muted}
+                        />
+                      ) : (
+                        <>
+                          {composerAgent && (
+                            <HarnessIcon provider={composerAgent.provider} size={15} />
+                          )}
+                          <Text
+                            numberOfLines={1}
+                            style={[styles.muted, { flexShrink: 1, fontSize: 13 }]}
+                          >
+                            {modelLabel}
+                          </Text>
+                        </>
+                      )}
+                      {fastMode && <Icon name="fast" size={12} color={colors.muted} filled />}
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.muted, { fontSize: 11, flexShrink: 0 }]}
+                      >
+                        {reasoningLabel}
+                      </Text>
+                      <Icon name="down" size={10} color={colors.muted} />
+                    </Pressable>
+                  </Animated.View>
+                )}
+                {showOptions && !dictation.active && planSupported && showPlanButton && (
+                  <Animated.View entering={reveal} exiting={conceal}>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityLabel="Plan"
+                      accessibilityHint="Runs the next message read-only and replies with a plan"
+                      accessibilityState={{
+                        checked: plan,
+                        disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
+                      }}
+                      disabled={busy || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
+                      onPress={() => setPlan(!plan)}
+                      style={({ pressed }) => ({
+                        minWidth: 44,
+                        minHeight: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 3,
+                        opacity: pressed || busy || (!plan && !!planModeIssue(agent)) ? 0.5 : 1,
+                      })}
+                    >
+                      <Icon
+                        name="checklist"
+                        size={15}
+                        color={plan ? colors.accent : colors.muted}
+                      />
+                      <Text
+                        style={[
+                          styles.muted,
+                          { fontSize: 12 },
+                          plan && { color: colors.accent, fontWeight: '600' },
+                        ]}
+                      >
+                        Plan
+                      </Text>
+                    </Pressable>
+                  </Animated.View>
+                )}
+                {showOptions &&
+                  !dictation.active &&
+                  !(task.status === 'running' && hasInput) &&
+                  showContextUsage &&
+                  !!meter && (
+                    <Animated.View entering={reveal} exiting={conceal}>
+                      <Text
+                        accessibilityLabel={meter.label}
+                        style={{
+                          fontSize: 12,
+                          fontVariant: ['tabular-nums'],
+                          color:
+                            meter.level === 'full'
+                              ? colors.error
+                              : meter.level === 'warn'
+                                ? colors.warning
+                                : colors.muted,
+                        }}
+                      >
+                        {meter.short}
+                      </Text>
+                    </Animated.View>
+                  )}
+              </View>
               <IconButton
                 variant="plain"
-                icon="close"
-                label="Dismiss dictation status"
-                onPress={dictation.reset}
+                icon={listening ? 'waveform' : 'microphone'}
+                label={listening ? 'Finish dictation' : 'Dictate message'}
+                color={listening ? colors.accent : undefined}
+                selected={listening}
+                disabled={dictation.isStopping || (!listening && !canDictate)}
+                onPress={
+                  listening
+                    ? dictation.stop
+                    : () => {
+                        void dictation.start(selection.current)
+                      }
+                }
               />
-            )}
-          </View>
-        )}
-      </Glass>
+              <View ref={messageTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
+                <IconButton
+                  variant="filled"
+                  destructive={!editing && task.status === 'running' && !hasInput}
+                  icon={
+                    editing
+                      ? 'send'
+                      : actions.backgroundSubmitting
+                        ? 'sendBackground'
+                        : defaultSendMode === 'stage' && hasInput
+                          ? 'queue'
+                          : task.status === 'running'
+                            ? hasInput
+                              ? 'queue'
+                              : 'stop'
+                            : 'send'
+                  }
+                  label={
+                    editing
+                      ? 'Save changes'
+                      : !connected && hasInput
+                        ? 'Send when online'
+                        : defaultSendMode === 'stage' && hasInput
+                          ? 'Add to queue'
+                          : task.status === 'running'
+                            ? hasInput
+                              ? 'Queue follow-up'
+                              : 'Stop'
+                            : 'Send'
+                  }
+                  disabled={
+                    machineMoving ||
+                    (!editing && task.status === 'running' && !hasInput
+                      ? !connected || stopping
+                      : !canSend || fork.busy)
+                  }
+                  onPress={!editing && task.status === 'running' && !hasInput ? stop : () => send()}
+                  menuActions={showMessageMenu ? messageMenuActions : undefined}
+                  onLongPress={
+                    showMessageMenu
+                      ? () => {
+                          setToolsAnchor(null)
+                          messageTrigger.current?.measureInWindow((x, y, width, height) =>
+                            setMessageActions({ x, y, width, height }),
+                          )
+                        }
+                      : undefined
+                  }
+                />
+              </View>
+            </Animated.View>
+            <ActionMenu
+              label="Message actions"
+              anchor={showMessageMenu ? messageActions : null}
+              onClose={() => setMessageActions(null)}
+              actions={messageMenuActions}
+            />
+            <ActionMenu
+              label="Add to draft"
+              anchor={toolsAnchor}
+              onClose={() => setToolsAnchor(null)}
+              align="start"
+              actions={draftMenuActions}
+            />
+            <DraftStash
+              open={draftTools === 'stash'}
+              onOpenChange={(open) => setDraftTools(open ? 'stash' : undefined)}
+              key={JSON.stringify(['stash', stashRuntimeId, task.id])}
+              scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
+              getText={() => latestDraft.current.text}
+              onChange={(value) => draft.update(value)}
+              focus={() => setDraftFocus(randomUUID())}
+              hasAttachments={!!actions.draftAttachments?.length || attaching}
+              disabled={
+                !!editing ||
+                busy ||
+                !draft.ready ||
+                dictation.active ||
+                !!task.archivedAt ||
+                !!task.archived ||
+                !!task.example
+              }
+            />
+            <ThreadContextPicker
+              open={draftTools === 'context'}
+              onOpenChange={(open) => setDraftTools(open ? 'context' : undefined)}
+              key={JSON.stringify(['context', stashRuntimeId, task.id])}
+              taskId={task.id}
+              attachmentBusy={attaching}
+              disabled={
+                !!editing ||
+                busy ||
+                !draft.ready ||
+                !!task.archivedAt ||
+                !!task.archived ||
+                !!task.example
+              }
+              upload={attachmentPicker.uploadContext}
+            />
+          </ComposerHistoryGesture>
+          {!!dictationStatus && (
+            <View
+              style={[
+                styles.row,
+                {
+                  paddingLeft: 12,
+                  paddingRight: 4,
+                  gap: 8,
+                  minHeight: 44,
+                },
+              ]}
+            >
+              {dictation.active || dictation.state?.status === 'cleaning' ? (
+                <ActivityIndicator size="small" color={colors.muted} />
+              ) : null}
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[
+                  styles.muted,
+                  {
+                    flexGrow: 1,
+                    flexShrink: 1,
+                    flexBasis: 120,
+                  },
+                ]}
+              >
+                {dictationStatus}
+              </Text>
+              {dictation.state?.status === 'cleaning' && (
+                <Action secondary label="Keep original" onPress={dictation.keepOriginal} />
+              )}
+              {dictation.state?.status === 'done' && (
+                <Action secondary label="Undo cleanup" onPress={dictation.keepOriginal} />
+              )}
+              {dictation.state?.status === 'failed' && connected && (
+                <Action secondary label="Retry cleanup" onPress={dictation.retry} />
+              )}
+              {dictation.state?.status !== 'cleaning' && !dictation.active && (
+                <IconButton
+                  variant="plain"
+                  icon="close"
+                  label="Dismiss dictation status"
+                  onPress={dictation.reset}
+                />
+              )}
+            </View>
+          )}
+        </Glass>
+      </Animated.View>
       {!!dictation.state?.error && (
         <Text
           accessibilityRole="alert"
@@ -1387,27 +1836,7 @@ export function Composer({
   )
   return renderAbove ? (
     <>
-      {renderAbove(
-        setup,
-        firstMessage && task.status === 'draft' && !hasInput ? (
-          <ThreadStarters
-            disabled={
-              !draft.ready ||
-              busy ||
-              attaching ||
-              dictation.active ||
-              !!task.archivedAt ||
-              !!task.example
-            }
-            onChoose={(prompt) => {
-              if (latestDraft.current.text.trim()) return
-              draft.update(prompt)
-              setStarterFocus(randomUUID())
-            }}
-          />
-        ) : null,
-        showStartModes ? machineSelector : null,
-      )}
+      {renderAbove(setup, showStartModes ? machineSelector : null)}
       {input}
     </>
   ) : (

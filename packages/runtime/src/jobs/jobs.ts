@@ -58,6 +58,7 @@ export class Jobs {
     private activity?: Pick<Activity, 'add'>,
     private generateTitle?: (text: string) => Promise<{ title: string }>,
     git?: Pick<GitService, 'githubAccount'>,
+    private policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {
     if (git)
       this.githubTriggers = new GithubTriggers(
@@ -181,6 +182,23 @@ export class Jobs {
     this.revision++
     return run
   }
+  remove(id: string) {
+    const reservation = this.reserveDeletion([id])
+    try {
+      this.requireIdle(id, undefined, reservation)
+      this.store.transaction(() => {
+        this.store.update((workspace) => ({
+          ...workspace,
+          automations: workspace.automations.filter((flow) => flow.id !== id),
+        }))
+        this.db.prepare('DELETE FROM documents WHERE id=?').run(`webhook:${id}`)
+      })
+      this.next.delete(id)
+      this.scheduleErrors.delete(id)
+    } finally {
+      this.releaseDeletion([id], reservation)
+    }
+  }
   reserveDeletion(ids: readonly string[]) {
     const reservation = Symbol('automation deletion')
     for (const id of ids) {
@@ -220,6 +238,7 @@ export class Jobs {
     return this.start(id, key)
   }
   start(id: string, key?: string, triggerPayload?: unknown) {
+    if (key?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     const flow = this.store.get().automations.find((flow) => flow.id === id)
     if (!flow) throw new HttpError(404, 'Automation not found')
     try {
@@ -264,6 +283,7 @@ export class Jobs {
   retry(id: string) {
     const existing = this.runs.get(id)
     if (!existing) throw new HttpError(404, 'Job not found')
+    if (existing.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     if (this.active.has(id))
       throw new HttpError(409, 'Wait for the current step to stop before retrying')
     if (!['failed', 'cancelled'].includes(existing.status))
@@ -311,6 +331,7 @@ export class Jobs {
     const run = this.runs.get(id)
     if (!run || run.status !== 'waiting' || !run.waitingNodeId)
       throw new HttpError(409, 'Job is not waiting for review')
+    if (allow && run.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     if (!allow) {
       this.finish(id, 'cancelled')
       return

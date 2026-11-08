@@ -24,12 +24,34 @@ import {
   workspacePatchRejection,
   workspacePatchRejected,
 } from './workspace-mutations.js'
-import type { Task } from '../../workspace.js'
+import { taskMessageSchema } from '../../tasks/task-message.js'
+import { taskSchema, type Task } from '../../workspace.js'
 import { savedPendingMessages } from '../../conversation/workflow/pending-message.js'
+import {
+  attachmentUploadSchema,
+  attachmentReplaceSchema,
+  attachmentUploadResultSchema,
+} from '../../shared/attachments.js'
+
+const attachmentUploadPaths = new Set([
+  '/api/attachments/recoverable-upload',
+  '/api/attachments/recoverable-replace',
+])
+const attachmentUpload = (item: { path: string }) => attachmentUploadPaths.has(item.path)
+const attachmentAckPath = '/api/attachments/acknowledge-upload'
+const attachmentAck = (item: { path: string }) => item.path === attachmentAckPath
+const attachmentJournal = (item: { path: string }) => attachmentUpload(item) || attachmentAck(item)
+
+const queueActionSchema = mutableStruct({
+  id: Schema.String,
+  action: Schema.String,
+  messageId: Schema.optional(Schema.String),
+})
 
 const mutations = new Set([
   '/api/threads/metadata',
   '/api/tasks/message',
+  '/api/tasks/queue',
   '/api/scm/pulls/link-thread',
   '/api/tasks/steer',
   '/api/tasks/cancel',
@@ -58,6 +80,9 @@ export const mutationOutboxSchema = mutableArray(
     /** Credential renewal lost the original receipt namespace. Never replay without consent. */
     reviewAfterRenewal: Schema.optional(Schema.Boolean),
     receiptToken: Schema.optional(Schema.String),
+    attachmentReplacement: Schema.optional(Schema.Boolean),
+    /** Keep a new offline thread visible across a crash until its snapshot is cached. */
+    retainUntilCached: Schema.optional(Schema.Boolean),
   }),
 )
 export type MutationOutbox = Schema.Schema.Type<typeof mutationOutboxSchema>
@@ -135,11 +160,19 @@ type State = {
   supported?: boolean
   acknowledgements?: boolean
   workspaceMutations?: boolean
+  queueMutations?: boolean
   pending: MutationOutbox
   /** Presentation handoff only; these commands have already left the durable journal. */
   confirmedMessages: MutationOutbox
+  confirmedTasks: MutationOutbox
+  activeAttachments: Set<string>
   error: string | null
+  /** Lock order: sender → admission → journal. Enqueue uses only the two local locks. */
   lock: Semaphore.Semaphore
+  /** Serializes admission with credential transfer, discard and forget. */
+  admission: Semaphore.Semaphore
+  /** Prevents a slow journal read from overwriting a newer durable update in memory. */
+  journal: Semaphore.Semaphore
   replaced?: boolean
   renewedCredential?: string
   /** Automatic recovery per account credential: one shared attempt and a bounded backoff. */
@@ -183,7 +216,9 @@ const settledFailure = (item: { path: string; method: string }, error: unknown) 
   rejectedPatch(item, error) ||
   (error instanceof RuntimeRequestError &&
     (error.mutationRetired === true ||
-      (['/api/tasks/checklist/clear', '/api/tasks/list-action'].includes(item.path) &&
+      (['/api/tasks/checklist/clear', '/api/tasks/list-action', '/api/tasks/queue'].includes(
+        item.path,
+      ) &&
         error.mutationRejected === true)))
 const operation = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
@@ -209,9 +244,13 @@ export class RuntimeMutations {
         refreshedWorkspaceVersion: 0,
         pending: [],
         confirmedMessages: [],
+        confirmedTasks: [],
+        activeAttachments: new Set(),
         error: null,
         lock: Effect.runSync(Semaphore.make(1)),
         automatic: new Map(),
+        admission: Effect.runSync(Semaphore.make(1)),
+        journal: Effect.runSync(Semaphore.make(1)),
       }
       this.states.set(key, state)
     }
@@ -220,11 +259,305 @@ export class RuntimeMutations {
   status(connection: RuntimeConnection) {
     const state = this.state(connection)
     return {
-      pending: state.pending.length,
+      pending: state.pending.filter(
+        (item) =>
+          !state.activeAttachments.has(item.id) &&
+          !state.confirmedTasks.some((task) => task.id === item.id),
+      ).length,
       error: state.error,
       reviewRequired: state.pending.some((item) => item.reviewAfterRenewal),
-      actions: state.pending.map(savedAction),
+      actions: state.pending
+        .filter(
+          (item) =>
+            !attachmentJournal(item) && !state.confirmedTasks.some((task) => task.id === item.id),
+        )
+        .map(savedAction),
     }
+  }
+  attachmentUploads(connection: RuntimeConnection) {
+    const state = this.state(connection)
+    return state.pending.filter(
+      (item) => attachmentJournal(item) && !state.activeAttachments.has(item.id),
+    )
+  }
+  attachmentPendingEffect(connection: RuntimeConnection, id: string) {
+    const state = this.state(connection)
+    return state.lock.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        yield* this.load(connection, state)
+        return state.pending.some((item) => item.id === id && attachmentJournal(item))
+      }),
+    )
+  }
+  reviewAttachments(connection: RuntimeConnection) {
+    const state = this.state(connection)
+    if (
+      state.pending.some((item) => attachmentJournal(item) && !state.activeAttachments.has(item.id))
+    ) {
+      state.error = 'Saved attachments need review.'
+      this.changed()
+    }
+  }
+  requestAttachmentEffect(connection: RuntimeConnection, value: unknown, replacement: boolean) {
+    return Effect.suspend(() => {
+      let staged = false
+      let completed = false
+      let activeId: string | undefined
+      return Effect.gen({ self: this }, function* () {
+        const capability = yield* createRuntimeClient(connection).requestEffect(
+          '/api/mutations/status',
+          undefined,
+          mutableStruct({
+            version: Schema.Literal(1),
+            attachmentUploads: Schema.optional(Schema.Literals([1, 2])),
+          }),
+          { method: 'GET' },
+        )
+        if (capability.attachmentUploads !== 2)
+          return yield* Effect.fail(
+            new Error('Update this computer before attaching files safely.'),
+          )
+        const input = yield* Effect.try({
+          try: () => decode(replacement ? attachmentReplaceSchema : attachmentUploadSchema, value),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        })
+        activeId = input.id
+        this.state(connection).activeAttachments.add(input.id)
+        yield* this.stageAttachmentEffect(connection, input, replacement)
+        staged = true
+        const result = yield* createRuntimeClient(connection).requestEffect(
+          replacement
+            ? '/api/attachments/recoverable-replace'
+            : '/api/attachments/recoverable-upload',
+          input,
+          attachmentUploadResultSchema,
+        )
+        if (result.attachment.id !== input.id)
+          return yield* Effect.fail(
+            new Error('Upload response identity does not match. The upload was preserved.'),
+          )
+        completed = true
+        return result
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (activeId) this.state(connection).activeAttachments.delete(activeId)
+            if (staged && !completed) {
+              this.state(connection).error = 'Saved attachments need review.'
+              this.changed()
+            }
+          }),
+        ),
+      )
+    })
+  }
+  retryAttachmentAfterReviewEffect(connection: RuntimeConnection, id: string) {
+    const state = this.state(connection)
+    return state.lock.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return yield* Effect.fail(new Error('The computer connection changed.'))
+        yield* this.load(connection, state)
+        const item = state.pending.find((entry) => entry.id === id && attachmentJournal(entry))
+        if (!item) return yield* Effect.fail(new Error('Saved attachment not found.'))
+        if (item.reviewAfterRenewal)
+          return yield* Effect.fail(
+            new Error(
+              'Computer access changed. This upload needs manual review on its original computer.',
+            ),
+          )
+        const input = yield* Effect.try({
+          try: () =>
+            decode(
+              (
+                attachmentAck(item)
+                  ? item.attachmentReplacement
+                  : item.path === '/api/attachments/recoverable-replace'
+              )
+                ? attachmentReplaceSchema
+                : attachmentUploadSchema,
+              item.input,
+            ),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        })
+        if (input.id !== id)
+          return yield* Effect.fail(
+            new Error('Saved attachment identity is invalid. It was preserved.'),
+          )
+        const receipt = yield* createRuntimeClient(connection).requestEffect(
+          '/api/attachments/upload-receipt',
+          { id },
+          mutableStruct({
+            receipt: Schema.NullOr(attachmentUploadResultSchema),
+            available: Schema.Boolean,
+          }),
+        )
+        if (receipt.receipt && !receipt.available)
+          return yield* Effect.fail(
+            new Error(
+              'The committed attachment is no longer available. Its saved upload was preserved.',
+            ),
+          )
+        if (
+          !receipt.receipt &&
+          (attachmentAck(item) || (!input.detached && !input.queuedMessageId))
+        )
+          return yield* Effect.fail(
+            new Error('The upload outcome cannot be safely replayed. It was preserved.'),
+          )
+        const result =
+          receipt.receipt ??
+          (yield* createRuntimeClient(connection).requestEffect(
+            item.path,
+            input,
+            attachmentUploadResultSchema,
+          ))
+        if (result.attachment.id !== id)
+          return yield* Effect.fail(
+            new Error('Upload receipt identity does not match. The upload was preserved.'),
+          )
+        return result
+      }),
+    )
+  }
+  stageAttachmentEffect(connection: RuntimeConnection, value: unknown, replacement: boolean) {
+    const state = this.state(connection)
+    return state.lock.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return yield* Effect.fail(new Error('The computer connection changed.'))
+        const input = yield* Effect.try({
+          try: () => decode(replacement ? attachmentReplaceSchema : attachmentUploadSchema, value),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        })
+        const path = replacement
+          ? '/api/attachments/recoverable-replace'
+          : '/api/attachments/recoverable-upload'
+        yield* this.save(connection, state, (pending) => {
+          const existing = pending.find((item) => item.id === input.id)
+          if (existing) {
+            if (existing.path !== path || JSON.stringify(existing.input) !== JSON.stringify(input))
+              throw new Error('Saved upload identity conflict. The original upload was preserved.')
+            return pending
+          }
+          return [...pending, { id: input.id, path, method: 'POST', input }]
+        })
+      }).pipe(Effect.uninterruptible),
+    )
+  }
+  finishAttachmentEffect(connection: RuntimeConnection, id: string) {
+    const state = this.state(connection)
+    return state.lock.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return yield* Effect.fail(new Error('The computer connection changed.'))
+        yield* this.load(connection, state)
+        const item = state.pending.find((entry) => entry.id === id && attachmentJournal(entry))
+        if (!item) return yield* Effect.fail(new Error('Saved attachment not found.'))
+        if (item.reviewAfterRenewal)
+          return yield* Effect.fail(
+            new Error('Computer access changed. Review this upload on its original connection.'),
+          )
+        if (attachmentAck(item)) {
+          yield* this.sendAttachmentAck(connection, state, id)
+          return
+        }
+        const confirmation = yield* createRuntimeClient(connection).requestEffect(
+          '/api/attachments/upload-handled',
+          { id },
+          mutableStruct({ handled: Schema.Boolean }),
+        )
+        if (!confirmation.handled)
+          return yield* Effect.fail(
+            new Error('Save or recover this attachment before confirming it.'),
+          )
+        yield* this.save(connection, state, (pending) =>
+          pending.map((item) =>
+            item.id === id && attachmentUpload(item)
+              ? {
+                  id,
+                  path: attachmentAckPath,
+                  method: 'POST' as const,
+                  input: item.input,
+                  attachmentReplacement: item.path.endsWith('recoverable-replace'),
+                }
+              : item,
+          ),
+        )
+        yield* this.sendAttachmentAck(connection, state, id)
+        if (!state.pending.length && state.error === 'Saved attachments need review.') {
+          state.error = null
+          this.changed()
+        }
+      }).pipe(Effect.uninterruptible),
+    )
+  }
+  discardAttachmentEffect(connection: RuntimeConnection, id: string) {
+    const state = this.state(connection)
+    return state.lock.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return yield* Effect.fail(new Error('The computer connection changed.'))
+        yield* this.load(connection, state)
+        const item = state.pending.find((entry) => entry.id === id && attachmentJournal(entry))
+        if (!item) return yield* Effect.fail(new Error('Saved attachment not found.'))
+        if (item.reviewAfterRenewal)
+          return yield* Effect.fail(
+            new Error('Computer access changed. Review this upload on its original connection.'),
+          )
+        yield* createRuntimeClient(connection).requestEffect(
+          (
+            attachmentAck(item)
+              ? item.attachmentReplacement
+              : item.path.endsWith('recoverable-replace')
+          )
+            ? '/api/attachments/abandon-replace'
+            : '/api/attachments/abandon-upload',
+          item.input,
+          mutableStruct({ ok: Schema.Literal(true) }),
+        )
+        yield* this.save(connection, state, (pending) =>
+          pending.filter((entry) => entry.id !== id || !attachmentJournal(entry)),
+        )
+        if (!state.pending.length && state.error === 'Saved attachments need review.') {
+          state.error = null
+          this.changed()
+        }
+      }).pipe(Effect.uninterruptible),
+    )
+  }
+  private sendAttachmentAck(connection: RuntimeConnection, state: State, id: string) {
+    return Effect.gen({ self: this }, function* () {
+      const confirmation = yield* createRuntimeClient(connection).requestEffect(
+        '/api/attachments/upload-handled',
+        { id },
+        mutableStruct({ handled: Schema.Boolean }),
+      )
+      if (!confirmation.handled)
+        return yield* Effect.fail(
+          new Error('The attachment destination changed. Its upload was preserved for review.'),
+        )
+      yield* createRuntimeClient(connection).requestEffect(
+        attachmentAckPath,
+        { id },
+        mutableStruct({ ok: Schema.Literal(true) }),
+      )
+      yield* this.save(connection, state, (pending) =>
+        pending.filter((item) => item.id !== id || !attachmentAck(item)),
+      )
+    })
   }
   workspaceRefreshCheckpoint(connection: RuntimeConnection) {
     const state = this.state(connection)
@@ -288,6 +621,14 @@ export class RuntimeMutations {
     })
   }
   private retainMessage(state: State, item: MutationOutbox[number]) {
+    const patch = item.path === '/api/workspace' ? decodeResult(patchSchema, item.input) : undefined
+    if (
+      item.retainUntilCached &&
+      patch?.success &&
+      patch.data.collection === 'tasks' &&
+      patch.data.create
+    )
+      state.confirmedTasks = [...state.confirmedTasks.filter((entry) => entry.id !== item.id), item]
     if (item.path === '/api/tasks/message' || item.path === '/api/tasks/steer')
       state.confirmedMessages = [
         ...state.confirmedMessages.filter((previous) => previous.id !== item.id),
@@ -305,6 +646,7 @@ export class RuntimeMutations {
             version: Schema.Literal(1),
             acknowledgements: Schema.optional(Schema.Boolean),
             workspaceMutations: Schema.optional(Schema.Literal(1)),
+            queueMutations: Schema.optional(Schema.Literal(1)),
           }),
           { method: 'GET' },
         ),
@@ -316,38 +658,204 @@ export class RuntimeMutations {
       }
       state.acknowledgements = result.success.acknowledgements
       state.workspaceMutations = result.success.workspaceMutations === 1
+      state.queueMutations = result.success.queueMutations === 1
       return (state.supported = true)
     })
   }
   private load(connection: RuntimeConnection, state: State) {
-    return Effect.gen({ self: this }, function* () {
-      const value = yield* operation(() => this.storage.read(connection))
-      const pending = yield* Effect.try({
-        try: () => decode(mutationOutboxSchema, value ?? []),
-        catch: (error) =>
-          new Error('Saved actions could not be read. They have been preserved.', { cause: error }),
-      })
-      // This comparison only suppresses notifications; every operation still reads and
-      // uses the freshly decoded durable journal, including other clients' changes.
-      const changed = JSON.stringify(pending) !== JSON.stringify(state.pending)
-      state.pending = pending
-      if (changed) this.changed()
-    })
+    return state.journal.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        const value = yield* operation(() => this.storage.read(connection))
+        const pending = yield* Effect.try({
+          try: () => decode(mutationOutboxSchema, value ?? []),
+          catch: (error) =>
+            new Error('Saved actions could not be read. They have been preserved.', {
+              cause: error,
+            }),
+        })
+        // This comparison only suppresses notifications; every operation still reads and
+        // uses the freshly decoded durable journal, including other clients' changes.
+        const comparable = (items: MutationOutbox) =>
+          items.map((item) => (attachmentJournal(item) ? { ...item, input: null } : item))
+        const changed =
+          JSON.stringify(comparable(pending)) !== JSON.stringify(comparable(state.pending))
+        state.pending = pending
+        if (changed) this.changed()
+      }),
+    )
   }
   private save(
     connection: RuntimeConnection,
     state: State,
     change: (pending: MutationOutbox) => MutationOutbox,
   ) {
-    return operation(() => this.storage.update(connection, change)).pipe(
-      Effect.tap((pending) =>
-        Effect.sync(() => {
-          state.pending = pending
-          this.changed()
-        }),
+    return state.journal.withPermits(1)(
+      operation(() => this.storage.update(connection, change)).pipe(
+        Effect.tap((pending) =>
+          Effect.sync(() => {
+            state.pending = pending
+            this.changed()
+          }),
+        ),
+        Effect.uninterruptible,
       ),
-      Effect.uninterruptible,
     )
+  }
+  /** Local admission never waits for a network-held sender lock. Only durable queue sends
+   * and their task configuration can be deferred; run-specific actions remain foreground. */
+  enqueueEffect<T extends Schema.Codec<unknown, unknown>>(
+    connection: RuntimeConnection,
+    path: string,
+    input: unknown,
+    schema: T,
+    method = 'POST',
+  ) {
+    const state = this.state(connection)
+    return state.admission.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return yield* Effect.fail(new Error('Computer access changed. Try this action again.'))
+        const patch =
+          path === '/api/workspace' && method === 'PATCH'
+            ? decodeResult(patchSchema, input)
+            : undefined
+        const message =
+          path === '/api/tasks/message' && method === 'POST'
+            ? decodeResult(taskMessageSchema, input)
+            : undefined
+        if (
+          !(patch?.success && patch.data.collection === 'tasks') &&
+          !(
+            message?.success &&
+            !!message.data.messageId &&
+            !message.data.sendNow &&
+            !message.data.runId
+          )
+        )
+          return yield* Effect.fail(new Error('This action needs a connection to the computer.'))
+        // Decode the acknowledgement before writing: a mismatched caller must never commit
+        // a command and then report that local admission failed.
+        const result = yield* Effect.try({
+          try: () => decode(schema, patch?.success ? { revision: 0 } : { ok: true, pending: true }),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        })
+        yield* this.save(connection, state, (pending) => {
+          if (pending.some((entry) => entry.blocked || entry.reviewAfterRenewal))
+            throw new Error('Review saved actions before sending another message.')
+          if (message?.success) {
+            const content = (value: typeof message.data) =>
+              JSON.stringify({
+                ...value,
+                // A local title preview can change `before` between admission and a UI retry.
+                initialTitle: value.initialTitle
+                  ? { ...value.initialTitle, before: '' }
+                  : undefined,
+              })
+            const previous = pending.find((entry) => {
+              if (entry.path !== path || entry.method !== method) return false
+              const saved = decodeResult(taskMessageSchema, entry.input)
+              if (
+                !saved.success ||
+                saved.data.id !== message.data.id ||
+                saved.data.messageId !== message.data.messageId
+              )
+                return false
+              if (content(saved.data) !== content(message.data))
+                throw new Error('This saved message already has different content.')
+              return true
+            })
+            if (previous) return pending
+          }
+          if (
+            pending.some(
+              (entry) =>
+                entry.path === path &&
+                entry.method === method &&
+                JSON.stringify(entry.input) === JSON.stringify(input),
+            )
+          )
+            return pending
+          return [
+            ...pending,
+            {
+              id: this.storage.id(),
+              path,
+              method: method === 'PATCH' ? 'PATCH' : 'POST',
+              input,
+              ...(patch?.success && patch.data.create ? { retainUntilCached: true } : {}),
+            },
+          ]
+        })
+        return result
+      }).pipe(Effect.uninterruptible),
+    )
+  }
+  /** Restore presentation without making a network request. */
+  restoreEffect(connection: RuntimeConnection) {
+    return this.load(connection, this.state(connection))
+  }
+  /** Call only after the authoritative snapshot has been durably cached. Until then,
+   * the creation receipt remains replayable and its full task remains recoverable offline. */
+  taskCreationsCachedEffect(connection: RuntimeConnection, tasks: readonly Task[]) {
+    const state = this.state(connection)
+    return state.lock.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        const ids = new Set(
+          state.confirmedTasks
+            .filter((item) => {
+              const patch = decodeResult(patchSchema, item.input)
+              return patch.success && tasks.some((task) => task.id === patch.data.id)
+            })
+            .map((item) => item.id),
+        )
+        if (!ids.size || state.replaced) return
+        yield* this.save(connection, state, (pending) =>
+          pending.filter((item) => !ids.has(item.id)),
+        )
+        state.confirmedTasks = state.confirmedTasks.filter((item) => !ids.has(item.id))
+        for (const id of ids) yield* this.acknowledge(connection, state, id)
+      }),
+    )
+  }
+  /** Pending task creation is presentation only; authoritative snapshots stay untouched. */
+  pendingTasks(connection: RuntimeConnection, tasks: Task[]): Task[] {
+    const state = this.state(connection)
+    let result = tasks
+    for (const item of [...state.confirmedTasks, ...state.confirmedMessages, ...state.pending]) {
+      if (item.path === '/api/tasks/message') {
+        const message = decodeResult(taskMessageSchema, item.input)
+        if (message.success && message.data.initialTitle) {
+          const title = message.data.initialTitle
+          result = result.map((task) =>
+            task.id === message.data.id && task.title === title.before
+              ? { ...task, title: title.after }
+              : task,
+          )
+        }
+        continue
+      }
+      if (item.path !== '/api/workspace') continue
+      const patch = decodeResult(patchSchema, item.input)
+      if (!patch.success || patch.data.collection !== 'tasks') continue
+      const existing = result.find((task) => task.id === patch.data.id)
+      if (existing && !Object.keys(patch.data.changes).length) continue
+      const value = existing ?? patch.data.create
+      if (!value) continue
+      const decoded = decodeResult(taskSchema, {
+        ...value,
+        ...Object.fromEntries(
+          Object.entries(patch.data.changes).map(([key, edit]) => [key, edit.after]),
+        ),
+      })
+      if (!decoded.success) continue
+      result = existing
+        ? result.map((task) => (task.id === decoded.data.id ? decoded.data : task))
+        : [decoded.data, ...result]
+    }
+    return result
   }
   private preserveWorkspaceEffect(
     connection: RuntimeConnection,
@@ -595,21 +1103,46 @@ export class RuntimeMutations {
     item: MutationOutbox[number],
     receiptId = item.id,
   ) {
-    return createRuntimeClient(connection).requestEffect(item.path, item.input, Schema.Unknown, {
-      method: item.method,
-      mutationId: item.id,
-      beforeMutation: (token) => this.bindReceipt(connection, receiptId, token),
-    })
+    const send = createRuntimeClient(connection).requestEffect(
+      item.path,
+      item.input,
+      Schema.Unknown,
+      {
+        method: item.method,
+        mutationId: item.id,
+        beforeMutation: (token) => this.bindReceipt(connection, receiptId, token),
+      },
+    )
+    if (item.path !== '/api/tasks/queue') return send
+    const state = this.state(connection)
+    return this.supports(connection, state).pipe(
+      Effect.flatMap(() =>
+        state.queueMutations
+          ? send
+          : Effect.fail(
+              new RuntimeRequestError({
+                kind: 'response',
+                status: 426,
+                message: 'Update this runtime before recovering saved queue actions.',
+              }),
+            ),
+      ),
+    )
   }
   private acknowledge(connection: RuntimeConnection, state: State, id: string) {
     if (!state.acknowledgements) return Effect.void
-    // Only after durable journal removal. Lost acknowledgements retain the full receipt safely.
-    return createRuntimeClient(connection)
+    // Only after durable journal removal. Receipt compaction must not hold the mutation
+    // queue or add a network round trip to the caller's foreground action. A lost
+    // acknowledgement safely leaves the full receipt on the runtime.
+    const cleanup = createRuntimeClient(connection)
       .requestEffect('/api/mutations/acknowledge', { ids: [id] }, Schema.Unknown)
       .pipe(
         Effect.asVoid,
         Effect.catch(() => Effect.void),
       )
+    return Effect.sync(() => {
+      Effect.runFork(cleanup)
+    })
   }
   private drain(
     connection: RuntimeConnection,
@@ -622,7 +1155,7 @@ export class RuntimeMutations {
     return Effect.gen({ self: this }, function* () {
       if (!state.pending.length) return
       let blockedError: Error | undefined
-      const skipped = new Set<string>()
+      const skipped = new Set(state.confirmedTasks.map((item) => item.id))
       while (state.pending.length) {
         const item = state.pending.find(
           (entry) =>
@@ -631,6 +1164,10 @@ export class RuntimeMutations {
             (!blockedError || entry.path === '/api/workspace'),
         )
         if (!item || item.id === stopBefore) break
+        if (attachmentUpload(item)) {
+          skipped.add(item.id)
+          continue
+        }
         if (item.reviewAfterRenewal) {
           blockedError = new Error(
             'Computer access was renewed. Some saved actions may already have run. Review them before retrying.',
@@ -638,6 +1175,10 @@ export class RuntimeMutations {
           state.error = blockedError.message
           this.changed()
           skipped.add(item.id)
+          continue
+        }
+        if (attachmentAck(item)) {
+          yield* this.sendAttachmentAck(connection, state, item.id)
           continue
         }
         // A saved workspace validation failure can safely be resolved from its receipt,
@@ -678,14 +1219,27 @@ export class RuntimeMutations {
           return yield* Effect.fail(result.failure)
         }
         this.retainMessage(state, item)
+        if (item.retainUntilCached) {
+          skipped.add(item.id)
+          continue
+        }
         yield* this.save(connection, state, (pending) =>
           pending.filter((entry) => entry.id !== item.id),
         )
         yield* this.acknowledge(connection, state, item.id)
       }
       if (blockedError && !allowBlockedCommands) return yield* Effect.fail(blockedError)
-      if (!state.pending.length) {
-        state.error = null
+      if (
+        !state.pending.some(
+          (item) =>
+            !attachmentUpload(item) && !state.confirmedTasks.some((task) => task.id === item.id),
+        )
+      ) {
+        state.error = state.pending.some(
+          (item) => attachmentJournal(item) && !state.activeAttachments.has(item.id),
+        )
+          ? 'Saved attachments need review.'
+          : null
         this.changed()
       }
     })
@@ -798,7 +1352,9 @@ export class RuntimeMutations {
           if (confirmRenewalReplay)
             yield* this.save(connection, state, (pending) =>
               pending.map((item) =>
-                item.reviewAfterRenewal && (!actionId || item.id === actionId)
+                item.reviewAfterRenewal &&
+                (!actionId || item.id === actionId) &&
+                !attachmentJournal(item)
                   ? { ...item, reviewAfterRenewal: undefined, receiptToken: undefined }
                   : item,
               ),
@@ -840,55 +1396,74 @@ export class RuntimeMutations {
   discardEffect(connection: RuntimeConnection, actionId?: string) {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
-      Effect.gen({ self: this }, function* () {
-        if (
-          state.replaced ||
-          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
-        )
-          return yield* Effect.fail(
-            new Error(
-              'Computer connection changed. Review its saved actions before discarding them.',
-            ),
+      state.admission.withPermits(1)(
+        Effect.gen({ self: this }, function* () {
+          if (
+            state.replaced ||
+            (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
           )
-        if (actionId) {
-          yield* this.save(connection, state, (pending) =>
-            pending.filter((item) => item.id !== actionId),
-          )
-          state.confirmedMessages = state.confirmedMessages.filter((item) => item.id !== actionId)
-        } else {
-          yield* operation(() => this.storage.clear(connection))
-          state.pending = []
-          state.confirmedMessages = []
-        }
-        if (!state.pending.length) state.error = null
-        this.changed()
-      }).pipe(Effect.uninterruptible),
+            return yield* Effect.fail(
+              new Error(
+                'Computer connection changed. Review its saved actions before discarding them.',
+              ),
+            )
+          const loaded = yield* Effect.result(this.load(connection, state))
+          if (actionId) {
+            if (loaded._tag === 'Failure') return yield* Effect.fail(loaded.failure)
+            yield* this.save(connection, state, (pending) =>
+              pending.filter((item) => item.id !== actionId || attachmentJournal(item)),
+            )
+            state.confirmedMessages = state.confirmedMessages.filter((item) => item.id !== actionId)
+            state.confirmedTasks = state.confirmedTasks.filter((item) => item.id !== actionId)
+          } else if (loaded._tag === 'Success' && state.pending.some(attachmentJournal))
+            yield* this.save(connection, state, (pending) => pending.filter(attachmentJournal))
+          else {
+            yield* state.journal.withPermits(1)(
+              operation(() => this.storage.clear(connection)).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    state.pending = []
+                  }),
+                ),
+              ),
+            )
+          }
+          if (!actionId) {
+            state.confirmedMessages = []
+            state.confirmedTasks = []
+          }
+          state.error = state.pending.length ? 'Saved attachments need review.' : null
+          this.changed()
+        }).pipe(Effect.uninterruptible),
+      ),
     )
   }
   assertEmptyEffect(connection: RuntimeConnection) {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
-      Effect.gen({ self: this }, function* () {
-        if (
-          state.replaced ||
-          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
-        )
-          return yield* Effect.fail(
-            new Error(
-              'Computer connection changed. Review its saved actions before forgetting it.',
-            ),
+      state.admission.withPermits(1)(
+        Effect.gen({ self: this }, function* () {
+          if (
+            state.replaced ||
+            (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
           )
-        yield* this.load(connection, state)
-        if (state.pending.length) {
-          const error =
-            'This computer has saved actions waiting to sync. Retry or discard them before forgetting it.'
-          if (state.error !== error) {
-            state.error = error
-            this.changed()
+            return yield* Effect.fail(
+              new Error(
+                'Computer connection changed. Review its saved actions before forgetting it.',
+              ),
+            )
+          yield* this.load(connection, state)
+          if (state.pending.length) {
+            const error =
+              'This computer has saved actions waiting to sync. Retry or discard them before forgetting it.'
+            if (state.error !== error) {
+              state.error = error
+              this.changed()
+            }
+            return yield* Effect.fail(new Error(state.error))
           }
-          return yield* Effect.fail(new Error(state.error))
-        }
-      }),
+        }),
+      ),
     )
   }
   /** Preserve the journal before publishing a verified replacement credential. Copying first
@@ -972,20 +1547,27 @@ export class RuntimeMutations {
       this.changed()
     }).pipe(Effect.uninterruptible)
     return source === destination
-      ? source.lock.withPermits(1)(transfer)
-      : states[0]!.lock.withPermits(1)(states[1]!.lock.withPermits(1)(transfer))
+      ? source.lock.withPermits(1)(source.admission.withPermits(1)(transfer))
+      : states[0]!.lock.withPermits(1)(
+          states[1]!.lock.withPermits(1)(
+            states[0]!.admission.withPermits(1)(states[1]!.admission.withPermits(1)(transfer)),
+          ),
+        )
   }
   private discardTransferredSource(connection: RuntimeConnection, state: State) {
-    return operation(() => this.storage.clear(connection)).pipe(
-      Effect.tap(() =>
-        Effect.sync(() => {
-          state.pending = []
-          state.confirmedMessages = []
-          state.error = null
-        }),
+    return state.journal.withPermits(1)(
+      operation(() => this.storage.clear(connection)).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            state.pending = []
+            state.confirmedMessages = []
+            state.confirmedTasks = []
+            state.error = null
+          }),
+        ),
+        // Old credentials are no longer selected. Keep their journal if cleanup is unavailable.
+        Effect.catch(() => Effect.void),
       ),
-      // Old credentials are no longer selected. Keep their journal if cleanup is unavailable.
-      Effect.catch(() => Effect.void),
     )
   }
   requestEffect<T extends Schema.Codec<unknown, unknown>>(
@@ -1014,7 +1596,12 @@ export class RuntimeMutations {
       return this.workspaceRecoveriesEffect(connection).pipe(
         Effect.map((value) => decode(schema, value)),
       )
-    if (!recoverableMutation(path, method))
+    const queueAction =
+      path === '/api/tasks/queue' ? decodeResult(queueActionSchema, input) : undefined
+    // Relative actions, steering and draft restores retain their existing foreground flow.
+    const durableQueueAction =
+      queueAction?.success && ['duplicate', 'move'].includes(queueAction.data.action)
+    if (!recoverableMutation(path, method) || (path === '/api/tasks/queue' && !durableQueueAction))
       return createRuntimeClient(connection).requestEffect(path, input, schema, { method })
     const state = this.state(connection)
     return state.lock
@@ -1026,6 +1613,14 @@ export class RuntimeMutations {
           )
             return yield* Effect.fail(new Error('Computer access changed. Try this action again.'))
           yield* this.load(connection, state)
+          if (path === '/api/tasks/queue') {
+            yield* this.supports(connection, state)
+            // Older hosts cannot receipt queue commands. Keep their foreground controls usable.
+            if (!state.queueMutations && !state.pending.some((entry) => entry.path === path))
+              return yield* createRuntimeClient(connection).requestEffect(path, input, schema, {
+                method,
+              })
+          }
           // Resolve old rejected settings before accepting a new edit, without replaying
           // unrelated commands or discarding conflicts with an uncertain outcome.
           if (
@@ -1042,12 +1637,25 @@ export class RuntimeMutations {
             }
           }
           // A UI retry of the same unresolved command keeps its identity, including after restart.
-          let item = state.pending.find(
-            (entry) =>
-              entry.path === path &&
-              entry.method === method &&
-              JSON.stringify(entry.input) === JSON.stringify(input),
-          )
+          let item = state.pending.find((entry) => {
+            if (entry.path !== path || entry.method !== method) return false
+            if (JSON.stringify(entry.input) === JSON.stringify(input)) return true
+            // A remounted queue row creates a new candidate copy ID. An unresolved duplicate
+            // is a retry of the original intent, so keep its durable copy and receipt IDs.
+            if (
+              path !== '/api/tasks/queue' ||
+              !queueAction?.success ||
+              queueAction.data.action !== 'duplicate'
+            )
+              return false
+            const previous = decodeResult(queueActionSchema, entry.input)
+            return (
+              previous.success &&
+              previous.data.action === 'duplicate' &&
+              previous.data.id === queueAction.data.id &&
+              previous.data.messageId === queueAction.data.messageId
+            )
+          })
           const created = !item
           if (!item) {
             if (state.pending.some((entry) => entry.blocked) && path !== '/api/workspace')
@@ -1133,14 +1741,25 @@ export class RuntimeMutations {
             return yield* Effect.fail(result.failure)
           }
           const value = yield* Effect.try({
-            try: () => decode(schema, result.success),
+            try: () =>
+              decode(
+                schema,
+                path === '/api/tasks/queue' &&
+                  !created &&
+                  typeof result.success === 'object' &&
+                  result.success !== null
+                  ? { ...result.success, recovered: true }
+                  : result.success,
+              ),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           })
           this.retainMessage(state, command)
-          yield* this.save(connection, state, (pending) =>
-            pending.filter((entry) => entry.id !== command.id),
-          )
-          yield* this.acknowledge(connection, state, command.id)
+          if (!command.retainUntilCached) {
+            yield* this.save(connection, state, (pending) =>
+              pending.filter((entry) => entry.id !== command.id),
+            )
+            yield* this.acknowledge(connection, state, command.id)
+          }
           if (!state.pending.some((entry) => entry.blocked)) state.error = null
           this.changed()
           return value

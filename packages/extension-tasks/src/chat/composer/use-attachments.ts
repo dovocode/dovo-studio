@@ -22,6 +22,13 @@ export function useAttachments(
     uploaded: (file: Attachment, replaceId?: string) => void
     remove: (id: string) => void
   },
+  detached?: {
+    key: string
+    files: Attachment[]
+    count?: number
+    uploaded: (file: Attachment) => boolean
+    remove: (id: string) => void
+  },
 ) {
   const { request, snapshot, connected, connection } = useWorkspace()
   const scope = JSON.stringify([
@@ -30,6 +37,7 @@ export function useAttachments(
     connection?.runtimeId,
     task.id,
     editing?.messageId,
+    detached?.key,
   ])
   const currentScope = useRef(scope)
   currentScope.current = scope
@@ -47,20 +55,30 @@ export function useAttachments(
   const [working, setWorking] = useApplicationState(false),
     [error, setError] = useApplicationState(''),
     [pending, setPending] = useApplicationState<number | null>(null)
-  const savedFiles = editing
-    ? editing.files
-    : ((snapshot?.workspace.tasks.find((t) => t.id === task.id) ?? task).draftAttachments ?? [])
+  useEffect(() => {
+    currentScope.current = scope
+    return () => {
+      if (detached && currentScope.current === scope) currentScope.current = 'unmounted'
+    }
+  }, [scope])
+  const savedFiles = detached
+    ? detached.files
+    : editing
+      ? editing.files
+      : ((snapshot?.workspace.tasks.find((t) => t.id === task.id) ?? task).draftAttachments ?? [])
   useEffect(() => {
     if (!connected || (pending !== null && snapshot && snapshot.revision >= pending))
       setPending(null)
   }, [snapshot, connected, pending])
-  const files = editing
-    ? editing.files
-    : draftAttachments(
-        savedFiles,
-        uploads.filter((item) => item.scope === undefined),
-        snapshot?.revision,
-      )
+  const files = detached
+    ? detached.files
+    : editing
+      ? editing.files
+      : draftAttachments(
+          savedFiles,
+          uploads.filter((item) => item.scope === undefined),
+          snapshot?.revision,
+        )
   const previews = new Map(
     uploads.flatMap((item) => (item.url ? [[item.attachment.id, item.url] as const] : [])),
   )
@@ -115,7 +133,10 @@ export function useAttachments(
       const accepted: File[] = []
       const rejected: string[] = []
       for (const original of selected) {
-        if (files.length - (replaceId ? 1 : 0) + accepted.length >= MAX_ATTACHMENTS) {
+        if (
+          (detached?.count ?? files.length) - (replaceId ? 1 : 0) + accepted.length >=
+          MAX_ATTACHMENTS
+        ) {
           rejected.push(`${original.name}: attach up to 5 files per message.`)
           continue
         }
@@ -155,7 +176,7 @@ export function useAttachments(
           attachment,
           url,
           replaces: replaceId,
-          scope: editing?.messageId,
+          scope: detached?.key ?? editing?.messageId,
         })),
       ])
       await Promise.all(
@@ -216,6 +237,7 @@ export function useAttachments(
               {
                 taskId: task.id,
                 queuedMessageId: editing?.messageId,
+                detached: detached ? true : undefined,
                 id: attachment.id,
                 name: file.name,
                 data,
@@ -229,6 +251,13 @@ export function useAttachments(
             if (signal?.aborted) {
               await cancel()
               throw new Error('Attachment cancelled.')
+            }
+            if (
+              detached &&
+              (currentScope.current !== scope || !detached.uploaded(result.attachment))
+            ) {
+              await cancel()
+              throw new Error('The question changed before the file was attached.')
             }
             editing?.uploaded(result.attachment, replaceId)
             setUploads((current) =>
@@ -272,6 +301,22 @@ export function useAttachments(
     }
   }
   const remove = async (id: string) => {
+    if (detached) {
+      if (lock.current) return
+      lock.current = true
+      setWorking(true)
+      setError('')
+      try {
+        await request('/api/attachments/remove', { taskId: task.id, id }, attachmentMutationSchema)
+        if (currentScope.current === scope) detached.remove(id)
+      } catch (error) {
+        setError(String(error))
+      } finally {
+        lock.current = false
+        setWorking(false)
+      }
+      return
+    }
     if (editing) {
       editing.remove(id)
       return

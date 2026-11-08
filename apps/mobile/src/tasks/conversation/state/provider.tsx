@@ -42,9 +42,12 @@ type Conversation = {
   childResultIds: ReadonlySet<string>
   messageSources: ReadonlyMap<string, MessageSource>
   actions: ReturnType<typeof useConversationActions>
-  send: (mode?: 'queue' | 'steer') => void
+  send: (
+    mode?: 'queue' | 'steer' | 'stage' | 'direct',
+    startInBackground?: Parameters<ReturnType<typeof useConversationActions>['submit']>[2],
+  ) => void
   stop: () => void
-  openCheckpoint: (turnId: string, path?: string) => void
+  openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   openTerminal: (terminalId: string) => void
   legacyEvents: ToolEvents
   activityError: string
@@ -61,6 +64,19 @@ export function useConversationSelector<A>(selector: (value: Conversation) => A)
   const atom = useContext(Context)
   if (!atom) throw new Error('Task conversation provider is missing')
   return useAtomValue(atom, selector)
+}
+/** Read the current draft only when the user chooses a template. */
+export function useAppendConversationTemplate() {
+  const atom = useContext(Context)
+  const registry = useContext(RegistryContext)
+  if (!atom) throw new Error('Task conversation provider is missing')
+  return useCallback(
+    (prompt: string) => {
+      const { draft } = registry.get(atom).actions
+      draft.update([draft.text.trimEnd(), prompt].filter(Boolean).join('\n\n'))
+    },
+    [atom, registry],
+  )
 }
 export function useConversationTurn(assistantId: string) {
   return useConversationSelector(
@@ -89,7 +105,7 @@ export function ConversationProvider({
   task: Task
   temporary?: boolean
   visible: boolean
-  openCheckpoint: (turnId: string, path?: string) => void
+  openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   openTerminal: (terminalId: string) => void
   children: ReactNode
 }) {
@@ -128,6 +144,7 @@ export function ConversationProvider({
           old.groupTurn?.id === item.groupTurn?.id &&
           old.groupTurn?.startedAt === item.groupTurn?.startedAt &&
           old.groupTurn?.finishedAt === item.groupTurn?.finishedAt &&
+          old.groupTurn?.providerRetry === item.groupTurn?.providerRetry &&
           old.groupTurn?.status === item.groupTurn?.status
         )
           next.set(id, old)
@@ -258,7 +275,7 @@ export function ConversationProvider({
         .map((part) => part.text)
         .join('\n')
       await actions.run(() =>
-        actions.submit(message.runConfig?.custom?.mode === 'steer' ? 'steer' : 'queue', text),
+        actions.submit(message.runConfig?.custom?.mode === 'steer' ? 'steer' : undefined, text),
       )
     },
     onCancel: async () => {
@@ -270,7 +287,8 @@ export function ConversationProvider({
   const navigation = useRef({ openCheckpoint, openTerminal })
   navigation.current = { openCheckpoint, openTerminal }
   const showCheckpoint = useCallback(
-    (turnId: string, path?: string) => navigation.current.openCheckpoint(turnId, path),
+    (turnId: string, path?: string, checkoutId?: string) =>
+      navigation.current.openCheckpoint(turnId, path, checkoutId),
     [],
   )
   const showTerminal = useCallback(
@@ -307,12 +325,12 @@ export function ConversationProvider({
     collapsedTurns,
     toggleTurn,
     followRequest,
-    send: (mode = 'queue') => {
+    send: (mode, startInBackground) => {
       if (actions.canSend) {
         // Only a local Send/Queue/Steer asks to leave a manually scrolled position.
         // Remote messages and queued turns arriving later must not move the reader.
         setFollowRequest((revision) => revision + 1)
-        void actions.run(() => actions.submit(mode))
+        void actions.run(() => actions.submit(mode, undefined, startInBackground))
       }
     },
     stop: () => runtime.thread.cancelRun(),

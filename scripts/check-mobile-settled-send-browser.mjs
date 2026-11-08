@@ -11,7 +11,7 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
 window.requests=[];window.fail=true;window.finish=null;
-window.request=(path,input)=>path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
+window.request=(path,input,_schema,_method,options)=>window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
 function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'review',archived:true,draft:'',messages:[{id:'previous',role:'user',text:'Earlier request'}],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <><textarea aria-label="Message" value={actions.draft.text} disabled={!!task.archivedAt||actions.busy} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/><button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root,
@@ -47,7 +47,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../../runtime/connection/provider',
       importer: actions,
-      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],call:()=>{},readEffect:window.request,callEffect:window.request});`,
+      contents: `export const useRuntime=()=>({connected:!window.offline,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
     },
     {
       path: '../../../runtime/preferences/app-preferences',
@@ -82,6 +82,19 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByRole('textbox', { name: 'Message' })
   const send = page.getByRole('button', { name: 'Send', exact: true })
+  await input.fill('Unsent history draft')
+  await page.evaluate(() => window.actions.composerHistory.begin())
+  await page.waitForFunction(() => window.actions.composerHistory.active)
+  assert.equal(await input.inputValue(), 'Earlier request')
+  assert.equal(await page.evaluate(() => window.requests.length), 0)
+  await page.evaluate(() => window.actions.composerHistory.cancel())
+  await page.waitForFunction(() => !window.actions.composerHistory.active)
+  assert.equal(await input.inputValue(), 'Unsent history draft')
+  await page.evaluate(() => window.actions.composerHistory.begin())
+  await page.waitForFunction(() => window.actions.composerHistory.active)
+  await input.fill('Edited recalled request')
+  assert.equal(await page.evaluate(() => window.actions.composerHistory.active), false)
+  assert.equal(await input.inputValue(), 'Edited recalled request')
   await input.fill('New work')
   assert.equal(await page.evaluate(() => window.task.archived), true)
   assert.equal(await send.isEnabled(), true)
@@ -290,6 +303,50 @@ try {
   await page.evaluate(() => window.actions.cancelEdit())
   await page.waitForFunction(() => !window.actions.editing)
   assert.equal(await input.inputValue(), 'Draft kept while editing')
+  // Send uses the preview, persists it for retries, and clears it after acceptance.
+  await page.evaluate(() => {
+    window.setTask((task) => ({ ...task, status: 'review' }))
+    window.fail = true
+    window.finish = null
+    window.actions.composerHistory.begin()
+  })
+  await page.waitForFunction(() => window.actions.composerHistory.active)
+  assert.equal(await input.inputValue(), 'Earlier request')
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.text), 'Earlier request')
+  const historyMessageId = await page.evaluate(() => window.requests.at(-1).input.messageId)
+  await page.evaluate(() => {
+    window.finish()
+    window.finish = null
+  })
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), 'Earlier request')
+  assert.equal(await page.evaluate(() => window.actions.composerHistory.active), false)
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.messageId), historyMessageId)
+  await page.evaluate(() => {
+    window.fail = false
+    window.finish()
+    window.finish = null
+  })
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), '')
+  await page.evaluate(() => {
+    window.offline = true
+    window.setTask((task) => ({ ...task }))
+  })
+  await input.fill('Keep this offline message')
+  await page.waitForFunction(() => window.actions.canSend && !window.actions.connected)
+  await send.click()
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), '')
+  assert.equal(await page.evaluate(() => window.requests.at(-1).defer), true)
+  assert.equal(
+    await page.evaluate(() => window.requests.at(-1).input.text),
+    'Keep this offline message',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile settled-thread submission: drafting, rejected send, stable retries, attachment-only input and archived-thread guard passed.',

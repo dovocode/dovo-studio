@@ -15,8 +15,9 @@ const built = await build({
       import {ComposerProject} from '../extension-tasks/src/chat/composer/composer-project';
       const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity});
       const scratch=id=>({...repo(id,'Private folder'),kind:'scratch'});
+      window.projectIcon='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
       const inventory={
-        local:[scratch('scratch'),repo('local','Shared project','github.com/team/project'),repo('other','Other project'),{...repo('invalid','Invalid project'),gitIdentityError:'Invalid identity'}],
+        local:[scratch('scratch'),repo('local','Shared project','github.com/team/project'),{...repo('other','Other project'),iconOverride:window.projectIcon},{...repo('invalid','Invalid project'),gitIdentityError:'Invalid identity'}],
         remote:[scratch('remote-scratch'),repo('remote','Shared project','github.com/team/project'),repo('notes','Remote notes')],
         offline:[scratch('offline-scratch'),repo('offline-project','Offline project')],
         empty:[scratch('empty-scratch')],
@@ -55,8 +56,8 @@ const built = await build({
       setup(builder) {
         const mocks = {
           '@dovo/studio-core': `export * from '../protocol/src/index';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const WorkspaceScope=({profile,children})=><div data-runtime-scope={profile.id}>{children}</div>;`,
-          '@dovo/studio-ui': `export const ComposerWorkspaceBar=({children})=><div role="group" aria-label="Project and checkout">{children}</div>;export {LinkedCheckoutEditor} from '../studio-ui/src/linked-checkouts';export {ChoicePicker} from '../studio-ui/src/choice-picker';export * from '../studio-ui/src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
-          '@dovo/extension-scm/project-transfer': `export const ProjectTransferDialog=({repository,onClose})=><div role="dialog" aria-label="Add to another machine"><output>{repository.id}</output><button onClick={onClose}>Close transfer</button></div>;`,
+          '@dovo/studio-ui': `export {ProjectIcon} from '../studio-ui/src/project-icon';export const ComposerWorkspaceBar=({children})=><div role="group" aria-label="Project and checkout">{children}</div>;export {LinkedCheckoutEditor} from '../studio-ui/src/linked-checkouts';export {ChoicePicker} from '../studio-ui/src/choice-picker';export * from '../studio-ui/src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
+          '@dovo/extension-scm/project-transfer': `export const ProjectTransferDialog=({repository,onClose})=><div role="dialog" aria-label="Add to another computer"><output>{repository.id}</output><button onClick={onClose}>Close transfer</button></div>;`,
           '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=({onClose})=><div role="dialog" aria-label="Add project"><button onClick={onClose}>Cancel adding</button></div>;`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -89,9 +90,9 @@ try {
       'svg{width:16px;height:16px}button{font:14px system-ui} [role=dialog]{max-width:calc(100vw - 24px)}',
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const trigger = page.getByRole('button', { name: 'Task project', exact: true })
+  const trigger = page.getByRole('button', { name: 'Thread project', exact: true })
   const search = page.getByRole('textbox', { name: 'Search projects', exact: true })
-  const server = page.getByRole('button', { name: 'Task server', exact: true })
+  const server = page.getByRole('button', { name: 'Thread server', exact: true })
   const panel = page.getByRole('dialog', { name: 'Choose a project', exact: true })
   const serverPanel = page.getByRole('dialog', { name: 'Choose a server', exact: true })
 
@@ -106,14 +107,36 @@ try {
       .getByRole('button')
       .first()
       .getAttribute('aria-label'),
-    'General',
+    'No Project',
   )
   assert.equal(
     await page.getByRole('button', { name: 'Invalid project', exact: true }).isDisabled(),
     true,
   )
   await search.fill('Other')
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
+  assert.equal(
+    await page.getByRole('button', { name: 'No Project', exact: true }).isVisible(),
+    true,
+  )
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    await search.evaluate(
+      (element, shape) =>
+        element.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'ArrowDown',
+            bubbles: true,
+            cancelable: true,
+            ...shape,
+          }),
+        ),
+      shape,
+    )
+    assert.equal(
+      await search.evaluate((element) => element === document.activeElement),
+      true,
+      'Candidate navigation stays in project search',
+    )
+  }
   await search.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
@@ -124,8 +147,8 @@ try {
   // All projects are visible without choosing a server; matching copies appear once.
   await page.evaluate(() => window.configure({ multiple: true }))
   await server.click()
-  await page.getByRole('button', { name: 'Add to another machine', exact: true }).click()
-  const transfer = page.getByRole('dialog', { name: 'Add to another machine', exact: true })
+  await page.getByRole('button', { name: 'Add to another computer', exact: true }).click()
+  const transfer = page.getByRole('dialog', { name: 'Add to another computer', exact: true })
   await transfer.waitFor()
   assert.equal(await transfer.locator('output').textContent(), 'other')
   assert.equal(await page.getByLabel('Choose a server', { exact: true }).count(), 0)
@@ -134,7 +157,7 @@ try {
 
   await trigger.click()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'No Project', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Remote notes', exact: true }).isVisible(),
     true,
@@ -154,7 +177,10 @@ try {
   assert.equal(await search.inputValue(), '')
   await search.fill('Missing')
   assert.equal(await page.getByRole('status').textContent(), 'No matching projects.')
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
+  assert.equal(
+    await page.getByRole('button', { name: 'No Project', exact: true }).isVisible(),
+    true,
+  )
   await search.fill('')
   await page.getByRole('button', { name: 'Add project on local machine', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
@@ -213,7 +239,7 @@ try {
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'local')
   await trigger.click()
   await search.fill('Nothing matches')
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'scratch')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
@@ -245,9 +271,9 @@ try {
   assert.match(await trigger.textContent(), /Scope \(disabled\)/)
   await trigger.click()
   assert.equal(await page.getByRole('button', { name: 'Scope mode', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), undefined)
-  assert.match(await trigger.textContent(), /General/)
+  assert.match(await trigger.textContent(), /No Project/)
 
   await page.getByRole('button', { name: 'Link projects', exact: true }).click()
   const linking = page.getByRole('dialog', { name: 'Linked projects', exact: true })
@@ -279,7 +305,7 @@ try {
   )
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.configure({ disabled: true }))
-  await page.waitForFunction(() => document.querySelector('[aria-label="Task project"]').disabled)
+  await page.waitForFunction(() => document.querySelector('[aria-label="Thread project"]').disabled)
   assert.equal(await trigger.isDisabled(), true)
   // The start screen reuses selection/transfer logic with a joined Scope/project trigger.
   await page.evaluate(() =>
@@ -292,7 +318,7 @@ try {
       autoEnabled: true,
     }),
   )
-  const generalStart = page.getByRole('button', { name: 'Start in General', exact: true })
+  const generalStart = page.getByRole('button', { name: 'Start without a project', exact: true })
   const scopeStart = page.getByRole('button', { name: 'Start in Scope', exact: true })
   const projectStart = page.getByRole('button', { name: 'Choose project', exact: true })
   await scopeStart.click()
@@ -303,13 +329,24 @@ try {
   await generalStart.click()
   assert.equal(await generalStart.getAttribute('aria-pressed'), 'true')
   await projectStart.click()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Other project', exact: true })
+      .locator('img')
+      .getAttribute('src'),
+    await page.evaluate(() => window.projectIcon),
+  )
   await page.getByRole('button', { name: 'Other project', exact: true }).click()
   const selectedProject = page.getByRole('button', {
     name: 'Selected project: Other project',
     exact: true,
   })
   await selectedProject.waitFor()
-  assert.equal(await selectedProject.textContent(), 'Other project')
+  assert.equal(await selectedProject.locator('span.truncate').textContent(), 'Other project')
+  assert.equal(
+    await selectedProject.locator('img').getAttribute('src'),
+    await page.evaluate(() => window.projectIcon),
+  )
   assert.equal(await scopeStart.count(), 0)
   await selectedProject.click()
   await page.getByRole('button', { name: 'Scope mode', exact: true }).click()

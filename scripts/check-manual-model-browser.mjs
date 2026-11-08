@@ -5,12 +5,14 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
+  '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   // Sharing controls have a separate browser suite; this fixture covers model selection.
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
-  '@dovo/studio-core': `
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
     export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';
@@ -20,9 +22,10 @@ const mocks = {
     export {WorkspaceValueProvider,useWorkspaceSelector,sameWorkspaceFields} from '../studio-core/src/workspace/selector';
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
+    export {useCodexSessionImport} from '../studio-core/src/use-codex-session-import';
     export const WorkspaceScope=({children})=>children;
     export const useStudioHost=()=>window.host;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],followUp:'queue'});
+    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const useResolvedTheme=()=> 'dark';
@@ -45,10 +48,10 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     const Box=({children})=><div>{children}</div>;
     export const ResizablePanel=Box,ResizablePanelGroup=Box,ResizableHandle=()=>null;
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
-    export const DialogContent=Box,DialogTitle=Box,DialogDescription=Box,DialogHeader=Box,ComposerWorkspaceBar=Box;
+    export const DialogContent=Box,DialogTitle=Box,DialogDescription=Box,DialogHeader=Box,DialogFooter=Box,ComposerWorkspaceBar=Box;
     export const ModelSettings=()=>null;
     export const ProjectIcon=()=>null;
-    export {Button} from '../studio-ui/src/components/ui/button';
+    export {SearchField} from '../studio-ui/src/search-field';export {Button} from '../studio-ui/src/components/ui/button';
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
@@ -64,7 +67,8 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className,label})=><div data-sidebar={label} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-header': `export const TaskHeader=({task,onTools})=><header data-thread-header={task.id}>{task.title}<button onClick={onTools}>Toggle tools</button></header>;`,
+  './detail/task-header': `export const TaskHeader=({task})=><header data-thread-header={task.id}>{task.title}</header>;`,
+  './detail/task-tools': `export const TaskTools=({onTools})=><button onClick={onTools}>Toggle tools</button>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
@@ -73,7 +77,6 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
 for (const [path, names] of [
   ['@dovo/extension-scm/pull-detail', ['PullDetail']],
   ['@dovo/extension-scm/projects', ['ProjectsMenu']],
-  ['./detail/task-tools', ['TaskTools']],
   ['./detail/task-agents', ['TaskAgents']],
   ['./detail/native-agent-thread', ['NativeAgentThread']],
   ['./detail/linked-projects', ['LinkedProjects']],
@@ -130,7 +133,7 @@ const built = await build({
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true},{id:'harness:claude',available:true}];
           if(path==='/api/agents/models/cached')return null;
           if(path==='/api/agents/models')return {models:[{id:'default',name:'Default (recommended)',isDefault:true},{id:'opus',name:'Opus 5.5'},{id:'sonnet',name:'Sonnet 5.5'}],reasoning:[]};
-          if(path==='/api/tasks/title')return {title:'New task'};
+          if(path==='/api/tasks/title')return {title:'New thread'};
           if(path==='/api/workspace'){setWorkspace(current=>({...current,tasks:[input.create,...current.tasks]}));return {revision:1};}
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',draft:'',providerLock:'claude',messages:[{id:input.messageId,role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
@@ -200,7 +203,7 @@ try {
       window.invalidRuntime = fixture.invalidRuntime
     }, fixture)
     await page.addScriptTag({ content: built.outputFiles[0].text })
-    const editor = page.getByLabel(fixture.launcher ? 'Task prompt' : 'Message task', {
+    const editor = page.getByLabel(fixture.launcher ? 'Thread prompt' : 'Message thread', {
       exact: true,
     })
     if (fixture.autoProjects) {
@@ -212,7 +215,7 @@ try {
         .getByRole('button', { name: 'Choose agent and model' })
         .filter({ hasText: 'Inherit' })
         .waitFor()
-      await projects.selectOption({ label: 'General' })
+      await projects.selectOption({ label: 'No Project' })
       assert.notEqual(await projects.inputValue(), 'auto-project')
       await projects.selectOption('auto-project')
       await projects.selectOption({ label: 'Project with Sonnet default' })
@@ -227,6 +230,7 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Tune', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Maestro', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'Inherit', exact: true }).click()
+    await page.getByRole('button', { name: 'Close model picker', exact: true }).click()
     await page
       .getByRole('button', { name: 'Choose agent and model' })
       .filter({ hasText: 'Inherit' })
@@ -240,6 +244,12 @@ try {
       if (mode === 'Maestro' && !fixture.launcher && fixture.selectBeforeTyping)
         await page.screenshot({ path: '/tmp/dovo-mode-picker-icons.png' })
       await option.click()
+      assert.equal(
+        await page.locator('[data-model-picker]').count(),
+        1,
+        'Selecting a mode dismissed the model picker',
+      )
+      await page.getByRole('button', { name: 'Close model picker', exact: true }).click()
       assert.equal(
         await page
           .getByRole('button', { name: 'Choose agent and model' })
@@ -258,14 +268,24 @@ try {
         await selectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
         'rgba(0, 0, 0, 0)',
       )
-      assert.match(await selectedMode.getAttribute('class'), /ring-primary/)
+      const unselectedMode = page.getByRole('button', {
+        name: mode === 'Inherit' ? 'Tune' : 'Inherit',
+        exact: true,
+      })
+      assert.equal(await unselectedMode.getAttribute('aria-pressed'), 'false')
+      assert.notEqual(
+        await selectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
+        await unselectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
+        'The selected mode has a distinct surface',
+      )
       await page.keyboard.press('Escape')
       if (mode === 'Tune' || mode === 'Maestro') {
-        const difficulty = page.getByRole('button', { name: 'Difficulty', exact: true })
+        const difficulty = page.getByRole('button', { name: 'Choose agent and model', exact: true })
         assert.match(await difficulty.textContent(), mode === 'Tune' ? /Auto/ : /High/)
         await difficulty.click()
-        await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
+        await page.getByRole('radio', { name: 'High', exact: true }).click()
         assert.match(await difficulty.textContent(), /High/)
+        await page.keyboard.press('Escape')
         assert.match(
           await page.getByRole('button', { name: 'Choose agent and model' }).textContent(),
           new RegExp(mode),
@@ -284,6 +304,7 @@ try {
         .querySelector('button[aria-label="Choose agent and model"]')
         .textContent.includes('Opus 5.5'),
     )
+    await page.keyboard.press('Escape')
     if (fixture.selectBeforeTyping) await editor.fill('Use my chosen Claude model')
     if (!fixture.launcher) await page.waitForFunction(() => window.saved.length === 2)
     if (fixture.selectProject) {
@@ -292,7 +313,7 @@ try {
           .getByRole('combobox', { name: 'Project', exact: true })
           .selectOption({ label: 'Project with Sonnet default' })
       else {
-        await page.getByRole('button', { name: 'Task project' }).click()
+        await page.getByRole('button', { name: 'Thread project' }).click()
         await page.getByRole('button', { name: 'Project with Sonnet default' }).click()
         await page.waitForFunction(() =>
           window.saved.some((task) => task.repositoryId === 'project'),
@@ -301,7 +322,7 @@ try {
       assert.match(await picker.textContent(), /Opus 5.5/)
     }
     if (fixture.launcher)
-      await page.getByRole('button', { name: 'Start task', exact: true }).click()
+      await page.getByRole('button', { name: 'Start thread', exact: true }).click()
     else await editor.press('Enter')
     await page.waitForFunction(() => typeof window.finishSend === 'function')
     assert.equal(
@@ -336,34 +357,20 @@ try {
         window.setEntity(window.saved.find((task) => task.title === 'Existing').id),
       )
       await page.locator('[data-thread-header]').filter({ hasText: 'Existing' }).waitFor()
-      await page.evaluate(() => window.setEntity(window.saved.find((task) => task.harness).id))
-      const watchers = page.getByRole('region', { name: 'Related items and watchers' })
-      await watchers.waitFor()
-      // Task switching remounts the workspace observer; wait for its wide-pane
-      // docked layout rather than inspecting the initial floating preview.
-      await page.waitForFunction(() => {
-        const sidebar = document.querySelector('[data-sidebar="tools sidebar"]')
-        return sidebar && getComputedStyle(sidebar).position !== 'absolute'
+      const threadId = await page.evaluate(() => {
+        const task = window.saved.find((task) => task.harness)
+        window.setEntity(task.id)
+        return task.id
       })
-      assert.ok(
-        await sidebar.evaluate((element) => {
-          const watchers = element.parentElement.querySelector(
-            'section[aria-label="Related items and watchers"]',
-          )
-          return (
-            watchers !== null &&
-            !element.contains(watchers) &&
-            element.getBoundingClientRect().top ===
-              element.parentElement.getBoundingClientRect().top
-          )
-        }),
-        'The tools sidebar must share a row with the conversation containing the watches',
+      await page.waitForFunction(
+        (id) => document.querySelector('[data-thread-header]')?.dataset.threadHeader === id,
+        threadId,
       )
       assert.equal(
-        await watchers.evaluate((element) => getComputedStyle(element).flexWrap),
-        'nowrap',
+        await page.getByRole('region', { name: 'Related items and watchers' }).count(),
+        0,
+        'Watchers belong in Thread info, without a duplicate bar above the chat',
       )
-      assert.ok(await watchers.evaluate((element) => element.scrollWidth > element.clientWidth))
     }
     assert.deepEqual(errors, [])
     await page.close()

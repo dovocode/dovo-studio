@@ -12,6 +12,8 @@ export const mcpServerSchema = superRefine(
     name,
     enabled: Schema.Boolean,
     transport: Schema.Literals(['stdio', 'http']),
+    /** Native MCP 2026-07-28 HTTP server; prefer the negotiated ACP binding. */
+    acpTransport: Schema.optional(Schema.Boolean),
     command: maxValue(Schema.String, 2000).pipe(
       Schema.withDecodingDefaultType(Effect.sync(() => '')),
     ),
@@ -42,6 +44,12 @@ export const mcpServerSchema = superRefine(
     ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ({})))),
   }),
   (server, context) => {
+    if (server.acpTransport && server.transport !== 'http')
+      context.addIssue({
+        code: 'custom',
+        path: ['acpTransport'],
+        message: 'MCP-over-ACP requires an HTTP server supporting MCP 2026-07-28',
+      })
     if (server.transport === 'stdio' && !server.command.trim())
       context.addIssue({
         code: 'custom',

@@ -2,6 +2,8 @@ import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FolderPicker } from './folder-picker'
 import { TaskLauncherPicker } from './task-launcher-controls'
 import { useEffect, useRef } from 'react'
+import Animated, { LinearTransition, ReduceMotion } from 'react-native-reanimated'
+import { IconButton } from '../../ui/controls/icon-button'
 import { router, useLocalSearchParams } from 'expo-router'
 import {
   ActivityIndicator,
@@ -18,6 +20,7 @@ import {
   launcherDefaultAgent,
   type LauncherAgent,
   snapshotSchema,
+  runtimeSnapshotPath,
   type LauncherAttempt,
   type RuntimeSnapshot,
 } from '@dovo/protocol'
@@ -31,9 +34,16 @@ import { useTheme } from '../../ui/theme'
 import { taskHref } from '../../shell/task-route'
 
 export function TaskLauncherScreen() {
-  const { colors, styles } = useTheme()
+  const { colors, styles, reduceMotion } = useTheme()
+  const [focused, setFocused] = useApplicationState(false)
+  const [modelOpen, setModelOpen] = useApplicationState(false)
+  const transition = LinearTransition.duration(220).reduceMotion(
+    reduceMotion ? ReduceMotion.Always : ReduceMotion.System,
+  )
 
-  const { ready, profiles, activeId, readRuntime, refreshRuntime } = useRuntime()
+  const { ready, profiles, overviews, activeId, readRuntime, refreshRuntime } = useRuntime()
+  const cachedOverviews = useRef(overviews)
+  cachedOverviews.current = overviews
   const params = useLocalSearchParams<{ text?: string }>()
   const [runtimeId, setRuntimeId] = useApplicationState(activeId ?? '')
   const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null)
@@ -59,11 +69,30 @@ export function TaskLauncherScreen() {
     if (!ready || attempt.current) return
     const profile = profiles.find((profile) => profile.id === runtimeId)
     let current = true
-    setSnapshot(null)
+    const cached = cachedOverviews.current.find((entry) => entry.profile.id === runtimeId)?.snapshot
+    setSnapshot(cached ?? null)
     setError('')
     if (!profile) return
+    if (cached && retry === 0) {
+      setRepositoryId((id) =>
+        cached.workspace.repositories.some((entry) => entry.id === id)
+          ? id
+          : (cached.workspace.repositories.find((entry) => entry.kind === 'scratch')?.id ??
+            cached.workspace.repositories[0]?.id ??
+            ''),
+      )
+      setLoadedRuntimeId(runtimeId)
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    void readRuntime(profile, '/api/snapshot', undefined, snapshotSchema, 'GET')
+    void readRuntime(
+      profile,
+      runtimeSnapshotPath(profile.connection),
+      undefined,
+      snapshotSchema,
+      'GET',
+    )
       .then(
         (next) => {
           if (!current) return
@@ -77,7 +106,6 @@ export function TaskLauncherScreen() {
                 ''),
           )
           setLoadedRuntimeId(runtimeId)
-          void refreshRuntime(profile).catch((cause: unknown) => setError(String(cause)))
         },
         (cause: unknown) => {
           if (current) setError(cause instanceof Error ? cause.message : String(cause))
@@ -134,13 +162,23 @@ export function TaskLauncherScreen() {
         }
       const current = attempt.current
       if (!current) return
-      await dispatchLauncherTask(current, readRuntime)
+      const messageSetup = snapshot?.messageSetupSupported === true
+      const canDefer = !current.task.autoProject || messageSetup
+      const result = await dispatchLauncherTask(
+        current,
+        (owner, path, input, schema, method) =>
+          readRuntime(owner, path, input, schema, method, {
+            defer: canDefer && (path === '/api/workspace' || path === '/api/tasks/message'),
+          }),
+        { messageSetup },
+      )
       Keyboard.dismiss()
       // Navigation carries the owning computer, so the thread can reconnect without guessing.
       router.replace(taskHref(current.profile.id, current.task.id))
-      void refreshRuntime(current.profile).catch((cause: unknown) =>
-        console.error('Could not refresh the dispatched task:', cause),
-      )
+      if (!result.pending)
+        void refreshRuntime(current.profile).catch((cause: unknown) =>
+          console.error('Could not refresh the dispatched task:', cause),
+        )
       attempt.current = null
       setText('')
     } catch (cause) {
@@ -157,6 +195,33 @@ export function TaskLauncherScreen() {
     else router.replace('/')
   }
   const locked = busy || !!attempt.current
+  const expanded = focused || !!text || modelOpen
+  const sendDisabled =
+    busy ||
+    !!selectionIssue ||
+    (!attempt.current &&
+      (!snapshot ||
+        loading ||
+        !repositoryId ||
+        !selection ||
+        loadedRuntimeId !== runtimeId ||
+        !text.trim()))
+  const agentPicker = selection &&
+    snapshot &&
+    selectedRepository &&
+    loadedRuntimeId === runtimeId && (
+      <RuntimeScope runtimeId={runtimeId}>
+        <TaskLauncherPicker
+          compact
+          onOpenChange={setModelOpen}
+          selection={selection}
+          onChange={setSelection}
+          snapshot={snapshot}
+          repository={selectedRepository}
+          disabled={locked || loading}
+        />
+      </RuntimeScope>
+    )
   return (
     <View style={styles.screen}>
       <ScreenHeader title="Start a task" onBack={back} gestureEnabled={!busy} />
@@ -167,10 +232,21 @@ export function TaskLauncherScreen() {
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { flexGrow: 1, justifyContent: 'center', gap: 12, paddingBottom: 24 },
+          ]}
         >
-          <Text style={styles.muted}>
-            Choose a computer, project, agent and model, then send your idea.
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 20,
+              lineHeight: 26,
+              fontWeight: '500',
+              textAlign: 'center',
+            }}
+          >
+            What would you like to work on?
           </Text>
           {!ready ? (
             <ActivityIndicator color={colors.accent} />
@@ -187,6 +263,7 @@ export function TaskLauncherScreen() {
               <RuntimeScope runtimeId={runtimeId}>
                 <FolderPicker
                   key={runtimeId}
+                  prominent
                   value={repositoryId}
                   autoProject={autoProject}
                   onAuto={
@@ -231,33 +308,80 @@ export function TaskLauncherScreen() {
                 />
               </RuntimeScope>
               {loading && <ActivityIndicator color={colors.accent} />}
-              {selection && snapshot && selectedRepository && loadedRuntimeId === runtimeId && (
-                <RuntimeScope runtimeId={runtimeId}>
-                  <TaskLauncherPicker
-                    selection={selection}
-                    onChange={setSelection}
-                    snapshot={snapshot}
-                    repository={selectedRepository}
-                    disabled={locked || loading}
-                  />
-                </RuntimeScope>
-              )}
               {snapshot && !snapshot.workspace.repositories.length && (
                 <Text style={styles.muted}>
                   Add a project on this computer before starting a task.
                 </Text>
               )}
-              <Field
-                label="Task prompt"
-                placeholder="What would you like to work on?"
-                multiline
-                value={text}
-                onChangeText={setText}
-                editable={!locked}
-                maxLength={120000}
-                autoCapitalize="sentences"
-                style={{ minHeight: 150, textAlignVertical: 'top' }}
-              />
+              <Animated.View
+                layout={transition}
+                style={{
+                  borderRadius: 26,
+                  padding: 3,
+                  borderWidth: 1,
+                  borderColor: focused ? colors.accent : colors.border,
+                  backgroundColor: colors.surface,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Field
+                      label="Task prompt"
+                      hideLabel
+                      placeholder={expanded ? 'What would you like to work on?' : 'Send a message…'}
+                      multiline
+                      value={text}
+                      onChangeText={setText}
+                      onFocus={() => setFocused(true)}
+                      onBlur={() => setFocused(false)}
+                      editable={!locked}
+                      maxLength={120000}
+                      autoCapitalize="sentences"
+                      style={{
+                        minHeight: expanded ? 64 : 44,
+                        maxHeight: 144,
+                        lineHeight: 22,
+                        padding: 11,
+                        borderWidth: 0,
+                        backgroundColor: 'transparent',
+                        textAlignVertical: 'top',
+                      }}
+                    />
+                  </View>
+                  {!expanded && (
+                    <IconButton
+                      variant="filled"
+                      icon="send"
+                      label={
+                        busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'
+                      }
+                      disabled={sendDisabled}
+                      onPress={() => void dispatch()}
+                    />
+                  )}
+                </View>
+                {expanded && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      minHeight: 44,
+                      paddingLeft: 8,
+                    }}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>{agentPicker}</View>
+                    <IconButton
+                      variant="filled"
+                      icon="send"
+                      label={
+                        busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'
+                      }
+                      disabled={sendDisabled}
+                      onPress={() => void dispatch()}
+                    />
+                  </View>
+                )}
+              </Animated.View>
               {!!error && (
                 <Text accessibilityRole="alert" style={styles.error}>
                   {error}
@@ -278,22 +402,6 @@ export function TaskLauncherScreen() {
                   {selectionIssue}
                 </Text>
               )}
-              <Action
-                wide
-                label={busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'}
-                disabled={
-                  busy ||
-                  !!selectionIssue ||
-                  (!attempt.current &&
-                    (!snapshot ||
-                      loading ||
-                      !repositoryId ||
-                      !selection ||
-                      loadedRuntimeId !== runtimeId ||
-                      !text.trim()))
-                }
-                onPress={() => void dispatch()}
-              />
             </>
           )}
         </ScrollView>

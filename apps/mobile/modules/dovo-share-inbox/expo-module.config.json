@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["DovoShareInboxModule"] },
+  "android": { "modules": ["expo.modules.dovoshareinbox.DovoShareInboxModule"] }
+}

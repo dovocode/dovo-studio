@@ -55,12 +55,26 @@ type PullReader = {
   feedback?: (cwd: string, number: number) => ReturnType<PullRequests['detail']>
 }
 export class PullCache {
-  private pending = new Map<string, Fiber.Fiber<unknown, RuntimeFailure>>()
+  private pending = new Map<
+    string,
+    { fiber: Fiber.Fiber<unknown, RuntimeFailure>; forced: boolean }
+  >()
   private executor = ManagedRuntime.make(Layer.empty)
   private invalidated = new Set<string>()
   private missing = new Map<string, { at: number; error: RuntimeFailure }>()
   private failedAt = new Map<string, number>()
   private errors = new Map<string, string>()
+  private detailSequence = 0
+  private acceptedDetails = new Map<string, number>()
+  private acceptDetail(detail: PullDetail, scope: string, number: number, attempt: number) {
+    const key = JSON.stringify([scope, number])
+    if (attempt < (this.acceptedDetails.get(key) ?? 0)) return
+    this.onDetail?.(detail)
+    this.acceptedDetails.delete(key)
+    this.acceptedDetails.set(key, attempt)
+    if (this.acceptedDetails.size > 500)
+      this.acceptedDetails.delete(this.acceptedDetails.keys().next().value!)
+  }
   private stopped = false
   private scopes = new Map<string, string>()
   constructor(
@@ -111,6 +125,7 @@ export class PullCache {
     reconcile?: (fresh: T, cached?: T) => T,
     ttl = 120_000,
     acceptCached?: (value: T) => boolean,
+    live = false,
   ): Effect.Effect<T, RuntimeFailure> {
     return Effect.gen({ self: this }, function* () {
       if (this.stopped && force)
@@ -133,17 +148,22 @@ export class PullCache {
           )
       }
       if (cached && acceptCached && !acceptCached(cached)) cached = undefined
-      const refresh = Effect.suspend(() => {
+      const refresh: Effect.Effect<T, RuntimeFailure> = Effect.suspend(() => {
         if (this.stopped) return Effect.fail(runtimeFailure(new Error('Pull cache is closed')))
         const existing = this.pending.get(key)
-        if (existing)
-          return Fiber.join(existing).pipe(
+        if (existing) {
+          // A manual refresh must not reuse the background snapshot it is replacing.
+          if (force && !existing.forced)
+            return Fiber.await(existing.fiber).pipe(Effect.andThen(refresh))
+          return Fiber.join(existing.fiber).pipe(
             Effect.flatMap((value) => runtimeOperation(() => decode(schema, value))),
           )
+        }
         const worker = Effect.gen({ self: this }, function* () {
           // Register ownership before a synchronous SDK failure can finish this worker.
           yield* Effect.yieldNow
-          const fetched = yield* runtimeOperation(() => retrievalFresh(force, fetch))
+          const started = Date.now()
+          const fetched = yield* runtimeOperation(() => retrievalFresh(force || live, fetch))
           return yield* runtimeOperation(() => {
             const updated = Date.now()
             const value = {
@@ -153,7 +173,7 @@ export class PullCache {
             }
             this.db
               .prepare('INSERT OR REPLACE INTO pull_cache(key,value,updated) VALUES(?,?,?)')
-              .run(key, JSON.stringify(value), updated)
+              .run(key, JSON.stringify(value), started)
             this.db
               .prepare(
                 'DELETE FROM pull_cache WHERE key IN (SELECT key FROM pull_cache ORDER BY updated DESC LIMIT -1 OFFSET 500)',
@@ -195,7 +215,7 @@ export class PullCache {
           Effect.uninterruptible,
         )
         const fiber = this.executor.runFork(worker)
-        this.pending.set(key, fiber)
+        this.pending.set(key, { fiber, forced: force })
         return Fiber.join(fiber)
       })
       const stale = !!cached?.stale || (!!row && Date.now() - row.updated >= ttl)
@@ -211,8 +231,18 @@ export class PullCache {
             }
           : yield* Effect.fail(missing.error)
       if (cached && row && !force) {
-        if (!this.stopped && stale && Date.now() - (this.failedAt.get(key) ?? 0) >= 60000)
-          this.executor.runFork(refresh.pipe(Effect.ignore)) // Failure is retained for the next cached response.
+        const failedAt = this.failedAt.get(key)
+        const canRefresh =
+          !this.stopped && stale && (failedAt === undefined || Date.now() - failedAt >= 60000)
+        if (canRefresh && live)
+          return yield* refresh.pipe(
+            Effect.catch((error) =>
+              this.rejectCachedFallback(error)
+                ? Effect.fail(error)
+                : Effect.succeed({ ...cached, stale: true, refreshError: errorMessage(error) }),
+            ),
+          )
+        if (canRefresh) this.executor.runFork(refresh.pipe(Effect.ignore)) // Failure is retained for the next cached response.
         return {
           ...cached,
           cachedAt: cached.cachedAt ?? new Date(row.updated).toISOString(),
@@ -437,10 +467,12 @@ export class PullCache {
           'This integration reader account or destination changed. Refresh before continuing.',
         )
       this.rememberScope(cwd, scope)
+      let attempt = 0
       return yield* this.readEffect(
         JSON.stringify(['detail', scope, number]),
         pullDetailSchema,
         async () => {
+          attempt = ++this.detailSequence
           const result = await (this.pulls.forDestination?.(scope) ?? this.pulls).detail(
             cwd,
             number,
@@ -451,7 +483,7 @@ export class PullCache {
         force,
         (fresh, cached) => {
           const detail = retainUnavailableSections(fresh, cached)
-          this.onDetail?.(detail)
+          this.acceptDetail(detail, scope, number, attempt)
           return detail
         },
         300_000,
@@ -478,10 +510,12 @@ export class PullCache {
           'This integration reader account or destination changed. Refresh before continuing.',
         )
       this.rememberScope(cwd, scope)
+      let attempt = 0
       return yield* this.readEffect(
         JSON.stringify(['section', scope, number, section]),
         pullDetailSchema,
         async () => {
+          attempt = ++this.detailSequence
           const reader = source?.reader ?? this.pulls.forDestination?.(scope) ?? this.pulls
           if (section === 'stack') {
             const detail = await runClientEffect(
@@ -510,11 +544,16 @@ export class PullCache {
         force,
         (fresh, cached) => {
           const detail = retainUnavailableSections(fresh, cached)
-          if (section === 'changes') this.onDetail?.(detail)
+          if (section === 'changes') this.acceptDetail(detail, scope, number, attempt)
           return detail
         },
-        section === 'changes' ? 300_000 : 60_000,
+        section === 'changes'
+          ? 300_000
+          : section === 'status' || section === 'checks'
+            ? 10_000
+            : 60_000,
         revision ? (detail) => pullRevision(detail) === revision : undefined,
+        section === 'status' || section === 'checks',
       )
     })
   }
@@ -580,11 +619,16 @@ export class PullCache {
       }),
     )
   }
-  invalidate(cwd: string, number?: number) {
+  invalidateAll() {
+    this.invalidate()
+  }
+  invalidate(cwd?: string, number?: number) {
     // Worktree aliases survive a runtime restart, even before this checkout is read again.
     const saved = decode(
       mutableArray(mutableStruct({ scope: Schema.String })),
-      this.db.prepare('SELECT scope FROM pull_cache_aliases WHERE cwd=?').all(cwd),
+      cwd === undefined
+        ? []
+        : this.db.prepare('SELECT scope FROM pull_cache_aliases WHERE cwd=?').all(cwd),
     )
     const scopes = new Set([cwd, ...saved.map((entry) => entry.scope)])
     const matches = (key: string) => {
@@ -597,7 +641,7 @@ export class PullCache {
         )
         return (
           parsed.success &&
-          scopes.has(parsed.data[1]) &&
+          (cwd === undefined || scopes.has(parsed.data[1])) &&
           (parsed.data[0] === 'list' ||
             ((parsed.data[0] === 'section' ||
               parsed.data[0] === 'detail' ||
@@ -646,7 +690,9 @@ export class PullCache {
   disposeEffect() {
     return Effect.gen({ self: this }, function* () {
       this.stopped = true
-      yield* Effect.forEach(this.pending.values(), (fiber) => Fiber.await(fiber), { discard: true })
+      yield* Effect.forEach(this.pending.values(), ({ fiber }) => Fiber.await(fiber), {
+        discard: true,
+      })
       yield* runtimeOperation(() => this.executor.dispose())
     }).pipe(Effect.uninterruptible)
   }

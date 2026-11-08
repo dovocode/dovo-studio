@@ -16,8 +16,8 @@ export function parseWindowColors(value: unknown): WindowColors | undefined {
 /** Before the renderer reports its palette, follow the operating system's scheme. */
 export function defaultWindowColors(dark: boolean): WindowColors {
   return dark
-    ? { background: '#080808', symbol: '#a3a3a3' }
-    : { background: '#ffffff', symbol: '#525252' }
+    ? { background: '#0c0c0e', symbol: '#a1a7b2' }
+    : { background: '#f5f6f8', symbol: '#596371' }
 }
 export function readWindowColors(directory: string): WindowColors | undefined {
   try {

@@ -4,42 +4,49 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode, decodeResult } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
-import { sharedMessage } from './shared-message'
-import { getSharedPayloads, clearSharedPayloads } from 'expo-sharing'
+import {
+  ingestSharedHandoffs,
+  removeInboxEntry,
+  restoreShortcutInbox,
+  SHORTCUT_INBOX_STORAGE,
+} from './shared-inbox'
+import {
+  pendingSharedHandoffs,
+  acknowledgeSharedHandoff,
+  ownSharedFiles,
+  sharedFilesSchema,
+  releaseSharedFiles,
+  cleanupSharedFiles,
+} from './shared-files'
 import { AppState, Linking } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { randomUUID } from 'expo-crypto'
 import { Schema, Effect, Semaphore } from 'effect'
 const item = mutableStruct({
   id: Schema.String,
-  text: maxValue(minValue(Schema.String, 1), 12000),
+  text: maxValue(Schema.String, 12000),
   title: maxValue(Schema.String, 200),
   repositoryId: Schema.String,
   agentId: Schema.String,
   source: Schema.optional(Schema.Literal('share')),
+  files: Schema.optional(sharedFilesSchema),
+  shareError: Schema.optional(Schema.String),
 })
 export type ShortcutInput = Schema.Schema.Type<typeof item>
-const storage = 'dovo.shortcut.inbox'
+const storage = SHORTCUT_INBOX_STORAGE
 // Inbox writes belong to the app, including while React replaces its root.
 const inboxLock = Semaphore.makeUnsafe(1)
-const readInbox = mobileWorkflow(function* () {
-  const value = yield* nativeEffect(() => AsyncStorage.getItem(storage))
-  // One unreadable entry must not block every later shortcut; drop it and keep the rest.
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(value ?? '[]')
-  } catch {
-    parsed = []
-  }
-  const entries = Array.isArray(parsed) ? parsed : []
-  const items = entries.flatMap((entry) => {
-    const result = decodeResult(item, entry)
-    return result.success ? [result.data] : []
-  })
-  if (!Array.isArray(parsed) || items.length !== entries.length)
-    yield* nativeEffect(() => AsyncStorage.setItem(storage, JSON.stringify(items)))
-  return items
-})
+const readInbox = nativeEffect(() =>
+  restoreShortcutInbox({
+    read: (key) => AsyncStorage.getItem(key),
+    write: (key, value) => AsyncStorage.setItem(key, value),
+    decode: (entry) => {
+      const result = decodeResult(item, entry)
+      return result.success ? result.data : undefined
+    },
+    cleanup: cleanupSharedFiles,
+  }),
+)
 export function useShortcuts() {
   const [queue, setQueue] = useApplicationState<ShortcutInput[]>([])
   const [error, setError] = useApplicationState('')
@@ -60,21 +67,18 @@ export function useShortcuts() {
           .withPermits(1)(
             mobileWorkflow(function* () {
               if (stopped) return
-              const text = yield* nativeEffect(() => sharedMessage(getSharedPayloads()))
-              if (!text) return
-              const next = decode(item, {
-                id: randomUUID(),
-                text,
-                title: 'Shared content',
-                repositoryId: '',
-                agentId: '',
-                source: 'share',
-              })
               const saved = yield* readInbox
-              const updated = [...saved, next]
-              yield* nativeEffect(() => AsyncStorage.setItem(storage, JSON.stringify(updated)))
-              // Clear native data only after the editable draft inbox is durable.
-              yield* nativeEffect(() => clearSharedPayloads())
+              const handoffs = yield* nativeEffect(() => pendingSharedHandoffs())
+              const updated = yield* nativeEffect(() =>
+                ingestSharedHandoffs(saved, handoffs, {
+                  ownFiles: ownSharedFiles,
+                  save: async (items) => {
+                    await AsyncStorage.setItem(storage, JSON.stringify(items))
+                    if (!stopped) setQueue(items)
+                  },
+                  acknowledge: acknowledgeSharedHandoff,
+                }),
+              )
               if (!stopped) setError('')
               if (!stopped) setQueue(updated)
             }).pipe(Effect.uninterruptible),
@@ -93,7 +97,10 @@ export function useShortcuts() {
               if (lastUrl === url && Date.now() - lastTime < 1000) return
               const next = decode(item, {
                 id: randomUUID(),
-                text: link.searchParams.get('text') ?? '',
+                text: decode(
+                  maxValue(minValue(Schema.String, 1), 12000),
+                  link.searchParams.get('text') ?? '',
+                ),
                 title: link.searchParams.get('title') ?? 'Shortcut task',
                 repositoryId: link.searchParams.get('repositoryId') ?? '',
                 agentId: link.searchParams.get('agentId') ?? '',
@@ -155,8 +162,13 @@ export function useShortcuts() {
         .withPermits(1)(
           mobileWorkflow(function* () {
             const saved = yield* readInbox
-            const next = saved.filter((item) => item.id !== id)
-            yield* nativeEffect(() => AsyncStorage.setItem(storage, JSON.stringify(next)))
+            const next = yield* nativeEffect(() =>
+              removeInboxEntry(saved, id, {
+                acknowledge: acknowledgeSharedHandoff,
+                save: (items) => AsyncStorage.setItem(storage, JSON.stringify(items)),
+                release: releaseSharedFiles,
+              }),
+            )
             if (mounted.current) setQueue(next)
           }).pipe(Effect.uninterruptible),
         )

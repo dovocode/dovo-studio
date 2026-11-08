@@ -34,11 +34,11 @@ export default function ConversationSettings() {
           />
         </SettingRow>
         <SettingRow
-          label="Follow-ups while a task runs"
+          label="Follow-ups while a thread runs"
           description="Queue sends after the current turn finishes. Steer sends immediately to guide the running turn."
         >
           <SettingsSelect
-            label="Follow-ups while a task runs"
+            label="Follow-ups while a thread runs"
             value={preferences.followUp}
             options={[
               ['queue', 'Queue'],
@@ -50,14 +50,44 @@ export default function ConversationSettings() {
         {(
           [
             [
+              'minimalComposer',
+              'Minimal composer',
+              'Use one line when empty and unfocused. Turn off to always show the full composer.',
+            ],
+            [
+              'showPlanButton',
+              'Show Plan button',
+              'Show a dedicated Plan button. Otherwise, Plan is available in the + menu.',
+            ],
+            [
+              'showSendOptions',
+              'Show send options',
+              'Show alternate actions within the send control. Keyboard shortcuts always remain available.',
+            ],
+            [
               'showSkillsInSlashMenu',
               'Show skills in the / menu',
               'Include skills in the / menu. Skills always appear when you type $.',
             ],
             [
+              'richTextComposer',
+              'Rich text composer',
+              'Format messages as you type. Turn off, or press ⌘/Ctrl+Shift+M, to edit the exact Markdown source.',
+            ],
+            [
+              'showMarkdownSourceToggle',
+              'Show Markdown source toggle',
+              'Show the Markdown source button in the composer toolbar. It is always available in the + menu and with ⌘/Ctrl+Shift+M.',
+            ],
+            [
               'markdownComposerPreview',
               'Formatted composer preview',
               'Show rendered Markdown above the message as you type.',
+            ],
+            [
+              'showContextUsage',
+              'Show context usage',
+              'Show the context ring and percentage in the composer.',
             ],
             [
               'collapseComposerOnScroll',
@@ -70,6 +100,7 @@ export default function ConversationSettings() {
             <Toggle
               label={label}
               checked={preferences[key]}
+              disabled={key === 'collapseComposerOnScroll' && !preferences.minimalComposer}
               onChange={(value) => updateAppPreferences({ [key]: value })}
             />
           </SettingRow>

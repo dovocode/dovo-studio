@@ -1,4 +1,4 @@
-import { McpApps } from './bridge'
+import { McpApps, MCP_SESSION_IDLE_MS } from './bridge'
 import { HttpError } from '../errors'
 import { runtimeIntegration } from '../testing/integration'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -752,4 +752,317 @@ it('keeps shell-named MCP App calls interactive even when a matching project com
     await expect(result).resolves.toMatch(allow ? /^executed$/ : /declined/)
     expect(s.calls()).toBe(before + Number(allow))
   }
+})
+
+it('filters ambient runtime authority and Git routing from configured stdio servers', async () => {
+  const s = await setup()
+  const keys = [
+    'DOVO_OWNER_TOKEN',
+    'META_API_KEY',
+    'meta_api_key',
+    'ELECTRON_RUN_AS_NODE',
+    'GH_REPO',
+    'GH_HOST',
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_COMMON_DIR',
+    'GIT_INDEX_FILE',
+    'GIT_PREFIX',
+  ]
+  try {
+    for (const key of keys) vi.stubEnv(key, 'ambient-secret')
+    vi.stubEnv('DOVO_MCP_TEST_TOKEN', 'mapped-value')
+    const script = `
+      import { Server } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/index.js'))};
+      import { StdioServerTransport } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/stdio.js'))};
+      import { ListToolsRequestSchema } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/types.js'))};
+      const server = new Server({name:'environment-fixture',version:'1'}, {capabilities:{tools:{}}});
+      server.setRequestHandler(ListToolsRequestSchema, async () => ({tools:[{name:'inspect',inputSchema:{type:'object'},description:JSON.stringify(Object.fromEntries(${JSON.stringify([...keys, 'MAPPED', 'LITERAL'])}.map(key => [key,process.env[key] ?? null])))}]}));
+      await server.connect(new StdioServerTransport());
+    `
+    const server = decode(mcpServerSchema, {
+      name: 'isolated',
+      transport: 'stdio',
+      enabled: true,
+      command: process.execPath,
+      args: ['--input-type=module', '-e', script],
+      env: { MAPPED: 'DOVO_MCP_TEST_TOKEN' },
+      envValues: { LITERAL: 'explicit-value' },
+    })
+    s.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      agents: workspace.agents.map((agent) => ({
+        ...agent,
+        resources: { ...agent.resources!, mcpServers: [server] },
+      })),
+    }))
+    const proxy = s.runtime.services.mcpApps.proxies(s.task.id, [server], s.f.directory, 'ask', {
+      port: s.runtime.port,
+      host: '127.0.0.1',
+    })[0]
+    const result = ListToolsResultSchema.parse(
+      await s.runtime.services.mcpApps.proxy(
+        proxy.envValues?.DOVO_MCP_BRIDGE_TOKEN ?? '',
+        'tools/list',
+        {},
+      ),
+    )
+    const environment: unknown = JSON.parse(result.tools[0].description ?? '{}')
+    expect(environment).toEqual({
+      ...Object.fromEntries(keys.map((key) => [key, null])),
+      MAPPED: 'mapped-value',
+      LITERAL: 'explicit-value',
+    })
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
+
+const upstreamSessions = (bridge: McpApps) => [...bridge['resolved'].values()]
+/** Stdio upstreams start a fresh server per connection, so retired sessions can reconnect. */
+async function stdioSetup() {
+  const s = await setup()
+  const script = `
+    import { Server } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/index.js'))};
+    import { StdioServerTransport } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/stdio.js'))};
+    import { ListToolsRequestSchema } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/types.js'))};
+    const server = new Server({name:'reconnect-fixture',version:'1'}, {capabilities:{tools:{}}});
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({tools:[
+      {name:'rows',inputSchema:{type:'object'},annotations:{readOnlyHint:true}},
+      {name:'refresh',inputSchema:{type:'object'},_meta:{ui:{visibility:['app']}}},
+    ]}));
+    await server.connect(new StdioServerTransport());
+  `
+  const server = decode(mcpServerSchema, {
+    name: 'reconnect',
+    transport: 'stdio',
+    enabled: true,
+    command: process.execPath,
+    args: ['--input-type=module', '-e', script],
+  })
+  s.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({
+      ...agent,
+      resources: { ...agent.resources!, mcpServers: [server] },
+    })),
+  }))
+  const token = (taskId: string) =>
+    s.runtime.services.mcpApps.proxies(taskId, [server], s.f.directory, 'ask', {
+      port: s.runtime.port,
+      host: '127.0.0.1',
+    })[0].envValues?.DOVO_MCP_BRIDGE_TOKEN ?? ''
+  const thread = () => {
+    const task = s.runtime.services.tasks.create({
+      title: 'Another app task',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Chart',
+    })
+    return { task, token: token(task.id) }
+  }
+  return { ...s, token: token(s.task.id), thread }
+}
+const ageSessions = (bridge: McpApps, idle = MCP_SESSION_IDLE_MS) => {
+  for (const session of upstreamSessions(bridge)) session.lastUsed = Date.now() - idle
+}
+it.each(['review', 'failed', 'cancelled'] as const)(
+  'retires idle upstream sessions for %s threads after the threshold and reconnects with the same tools',
+  async (status) => {
+    const s = await stdioSetup(),
+      bridge = s.runtime.services.mcpApps
+    const tools = await bridge.proxy(s.token, 'tools/list', {})
+    s.runtime.services.store.updateTask(s.task.id, (task) => ({ ...task, status }))
+    const [first] = upstreamSessions(bridge)
+    ageSessions(bridge, MCP_SESSION_IDLE_MS - 5_000)
+    await bridge.reconcile()
+    expect(upstreamSessions(bridge)).toHaveLength(1)
+    expect(first?.closed).toBe(false)
+    ageSessions(bridge)
+    const close = vi.spyOn(Client.prototype, 'close')
+    await bridge.reconcile()
+    expect(close).toHaveBeenCalledOnce()
+    expect(first?.closed).toBe(true)
+    expect(bridge['sessions'].size).toBe(0)
+    expect(bridge['resolved'].size).toBe(0)
+    expect(await bridge.proxy(s.token, 'tools/list', {})).toEqual(tools)
+    const [replacement] = upstreamSessions(bridge)
+    expect(replacement).toBeDefined()
+    expect(replacement).not.toBe(first)
+    expect(replacement?.busy).toBe(0)
+  },
+)
+it('keeps idle-aged sessions for running threads, busy calls and attached views', async () => {
+  const s = await setup(),
+    bridge = s.runtime.services.mcpApps
+  await bridge.proxy(s.token, 'tools/call', { name: 'chart' })
+  const ref = recentTools(
+    s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
+  ).flatMap((event) => mcpAppReferences(event.payload))[0]!
+  const [session] = upstreamSessions(bridge)
+  if (!session) throw new Error('Missing upstream session')
+  const setStatus = (status: 'running' | 'review') =>
+    s.runtime.services.store.updateTask(s.task.id, (task) => ({ ...task, status }))
+
+  setStatus('running')
+  ageSessions(bridge)
+  await bridge.reconcile()
+  expect(session.closed).toBe(false)
+  expect(Date.now() - session.lastUsed).toBeLessThan(MCP_SESSION_IDLE_MS)
+  setStatus('review')
+
+  let decide: (decision: 'approve') => void = () => {}
+  vi.spyOn(s.runtime.services.approvals, 'request').mockImplementation(
+    () => new Promise((resolve) => (decide = resolve)),
+  )
+  const action = bridge.action(s.task.id, ref.id, 'busy', 'tools/call', { name: 'refresh' })
+  await vi.waitFor(() => expect(session.busy).toBe(1))
+  ageSessions(bridge)
+  await bridge.reconcile()
+  expect(session.closed).toBe(false)
+  decide('approve')
+  await action
+  expect(session.busy).toBe(0)
+
+  const view = bridge.attachView(
+    s.task.id,
+    ref.id,
+    () => {},
+    () => {},
+    () => {},
+  )
+  ageSessions(bridge)
+  await bridge.reconcile()
+  expect(session.closed).toBe(false)
+  view.close()
+  // Idle time restarts when the view closes, not at the last call before it opened.
+  await bridge.reconcile()
+  expect(session.closed).toBe(false)
+  ageSessions(bridge)
+  await bridge.reconcile()
+  expect(session.closed).toBe(true)
+  expect(upstreamSessions(bridge)).toEqual([])
+})
+it('releases feed leases after catalog reads and rejected feed tools', async () => {
+  const s = await setup(),
+    bridge = s.runtime.services.mcpApps,
+    signal = new AbortController().signal
+  expect(await bridge.feedCatalog(s.task.id, signal, () => {})).toEqual({ tools: [] })
+  const [session] = upstreamSessions(bridge)
+  expect(session?.busy).toBe(0)
+  const query = { server: 'fixture', tool: 'chart', arguments: {}, pointer: '', seconds: 60 }
+  await expect(bridge.feedRead(s.task.id, query, undefined, signal, () => {})).rejects.toThrow(
+    'read-only and non-destructive',
+  )
+  let calls = 0
+  await expect(
+    bridge.feedRead(s.task.id, query, undefined, signal, () => {
+      if (++calls > 1) throw new HttpError(401, 'revoked')
+    }),
+  ).rejects.toThrow('revoked')
+  expect(upstreamSessions(bridge)).toEqual([session])
+  expect(session?.busy).toBe(0)
+})
+it('keeps a reserved session for a waiting call instead of retiring it before use', async () => {
+  const s = await stdioSetup(),
+    bridge = s.runtime.services.mcpApps
+  const tools = await bridge.proxy(s.token, 'tools/list', {})
+  const [first] = upstreamSessions(bridge)
+  s.runtime.services.store.updateTask(s.task.id, (task) => ({ ...task, status: 'review' }))
+  ageSessions(bridge)
+  // The call holds the cached reservation, but has not resumed to mark the session busy yet.
+  const leased = bridge.proxy(s.token, 'tools/list', {})
+  await bridge.reconcile()
+  expect(first?.closed).toBe(false)
+  expect(await leased).toEqual(tools)
+  expect(upstreamSessions(bridge)).toEqual([first])
+  expect(first?.busy).toBe(0)
+})
+it('waits for a slow same-key close before reconnecting and never removes the replacement', async () => {
+  const s = await stdioSetup(),
+    bridge = s.runtime.services.mcpApps
+  const tools = await bridge.proxy(s.token, 'tools/list', {})
+  const [first] = upstreamSessions(bridge)
+  s.runtime.services.store.updateTask(s.task.id, (task) => ({ ...task, status: 'review' }))
+  ageSessions(bridge)
+  let finish = () => {}
+  vi.spyOn(Client.prototype, 'close').mockImplementationOnce(
+    () => new Promise<void>((resolve) => (finish = resolve)),
+  )
+  const connect = vi.spyOn(Client.prototype, 'connect')
+  const reconciled = bridge.reconcile()
+  expect(first?.closed).toBe(true)
+  const next = bridge.proxy(s.token, 'tools/list', {})
+  expect(bridge['sessions'].size).toBe(1)
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  expect(connect).not.toHaveBeenCalled()
+  finish()
+  expect(await next).toEqual(tools)
+  await reconciled
+  expect(connect).toHaveBeenCalledOnce()
+  const [replacement] = upstreamSessions(bridge)
+  expect(replacement).not.toBe(first)
+  // A late close callback from the retired client must not evict the replacement.
+  first?.client.onclose?.()
+  expect(upstreamSessions(bridge)).toEqual([replacement])
+  expect(bridge['closing'].size).toBe(0)
+})
+it('reports failed closes, reconnects afterwards and makes disposal await slow closes', async () => {
+  const s = await stdioSetup(),
+    bridge = s.runtime.services.mcpApps
+  const tools = await bridge.proxy(s.token, 'tools/list', {})
+  s.runtime.services.store.updateTask(s.task.id, (task) => ({ ...task, status: 'review' }))
+  ageSessions(bridge)
+  const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const close = vi.spyOn(Client.prototype, 'close')
+  close.mockRejectedValueOnce(new Error('close failed'))
+  await bridge.reconcile()
+  expect(report).toHaveBeenCalledWith('MCP session close failed', 'close failed')
+  expect(upstreamSessions(bridge)).toEqual([])
+  expect(bridge['closing'].size).toBe(0)
+  expect(await bridge.proxy(s.token, 'tools/list', {})).toEqual(tools)
+  let finish = () => {}
+  close.mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)))
+  let disposed = false
+  const disposal = bridge.dispose().then(() => (disposed = true))
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  expect(disposed).toBe(false)
+  expect(bridge['closing'].size).toBe(1)
+  finish()
+  await disposal
+  expect(bridge['closing'].size).toBe(0)
+  expect(upstreamSessions(bridge)).toEqual([])
+  await expect(bridge.proxy(s.token, 'tools/list', {})).rejects.toThrow('credential')
+})
+it('evicts distinct idle sessions for concurrent connects at capacity and protects active ones', async () => {
+  const s = await stdioSetup(),
+    bridge = s.runtime.services.mcpApps
+  bridge['capacity'] = 2
+  const second = s.thread()
+  await bridge.proxy(s.token, 'tools/list', {})
+  await bridge.proxy(second.token, 'tools/list', {})
+  const evicted = upstreamSessions(bridge)
+  const third = s.thread(),
+    fourth = s.thread()
+  const calls = [third, fourth].map((entry) => bridge.proxy(entry.token, 'tools/list', {}))
+  // Both reservations are registered synchronously, each replacing a different idle session.
+  expect(bridge['sessions'].size).toBe(2)
+  expect(evicted.every((session) => session.closed)).toBe(true)
+  await Promise.all(calls)
+  expect(
+    upstreamSessions(bridge)
+      .map((session) => session.taskId)
+      .sort(),
+  ).toEqual([third.task.id, fourth.task.id].sort())
+  for (const entry of [third, fourth])
+    s.runtime.services.store.updateTask(entry.task.id, (task) => ({ ...task, status: 'running' }))
+  await expect(bridge.proxy(s.token, 'tools/list', {})).rejects.toThrow('busy')
+  expect(upstreamSessions(bridge).every((session) => !session.closed)).toBe(true)
+  s.runtime.services.store.updateTask(fourth.task.id, (task) => ({ ...task, status: 'review' }))
+  await bridge.proxy(s.token, 'tools/list', {})
+  expect(
+    upstreamSessions(bridge)
+      .map((session) => session.taskId)
+      .sort(),
+  ).toEqual([s.task.id, third.task.id].sort())
 })

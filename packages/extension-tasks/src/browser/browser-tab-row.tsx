@@ -1,3 +1,5 @@
+import { BrowserTabActivity } from './browser-tab-activity'
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import {
   Home,
   Pencil,
@@ -8,11 +10,18 @@ import {
   AlarmClock,
   ExternalLink,
   ArrowUpRight,
+  Copy,
 } from 'lucide-react'
 import { cn, ContextMenu, IconButton } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useWorkspace } from '@dovo/studio-core'
-import { browserTabCategory, runtimeComputerName } from '@dovo/protocol'
+import {
+  browserTabBadge,
+  browserTabCategory,
+  browserTabKeepsAwake,
+  runtimeComputerName,
+  type BrowserTabState,
+} from '@dovo/protocol'
 import { BrowserFavicon } from './browser-favicon'
 import { useBrowserProfileDetails } from './browser-profile-label'
 import type { DragEventHandler } from 'react'
@@ -33,7 +42,11 @@ export function BrowserTabRow({
   onMove,
   onMenuOpen,
   onKeepAwake,
+  state,
+  onMute,
   reorder,
+  studioId,
+  onError,
 }: {
   tab: BrowserTab
   active: boolean
@@ -49,6 +62,11 @@ export function BrowserTabRow({
   onMove?: (windowId?: number) => void
   onMenuOpen: () => void
   onKeepAwake?: () => void
+  state?: BrowserTabState
+  onMute?: () => void
+  /** Unified Studio reference an agent can be handed for this exact tab. */
+  studioId?: string
+  onError: (message: string) => void
   reorder?: {
     dragging: boolean
     edge?: 'before' | 'after'
@@ -61,6 +79,7 @@ export function BrowserTabRow({
 }) {
   const { runtimes } = useWorkspace()
   const { name: profile, emoji } = useBrowserProfileDetails(tab)
+  const showProfile = tab.profileId !== 'default'
   const words = profile.trim().split(/\s+/)
   const initials = (
     words.length > 1
@@ -77,10 +96,45 @@ export function BrowserTabRow({
       : owner
         ? runtimeComputerName(owner)
         : 'Unavailable computer'
-  const title = tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'
+  const title = state?.title || tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'
+  const badge = state?.badge ?? browserTabBadge(title)
   const category = browserTabCategory(tab)
+  const keepsAwake = category === 'active' && tab.kind === 'web' && browserTabKeepsAwake(tab)
   const menuItem =
     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent data-[disabled]:opacity-50'
+  const identity = (
+    <span
+      className={cn(
+        'studio-browser-tab-profile flex min-w-0 items-center text-muted-foreground',
+        tab.pinned
+          ? 'absolute inset-x-0 bottom-0 justify-center gap-0.5 text-[8px] leading-none'
+          : 'gap-1 text-xs leading-4',
+      )}
+      aria-label={`${computer} · ${profile}`}
+    >
+      <span className="studio-browser-tab-identity" title={computer}>
+        <RuntimeIcon
+          icon={owner?.snapshot?.runtimeIcon}
+          className="size-2 shrink-0"
+          aria-hidden="true"
+        />
+      </span>
+      {(emoji || (tab.pinned && showProfile)) && (
+        <span
+          className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
+          title={`${profile} · ${computer}`}
+        >
+          {emoji ?? initials}
+        </span>
+      )}
+      {!tab.pinned && (
+        <span className="min-w-0 truncate" title={`${computer} · ${profile}`}>
+          {computer}
+          {showProfile && ` · ${profile}`}
+        </span>
+      )}
+    </span>
+  )
   return (
     <ContextMenu.Root
       onOpenChange={(open) => {
@@ -90,13 +144,21 @@ export function BrowserTabRow({
       <ContextMenu.Trigger asChild>
         <div
           data-browser-tab-id={tab.id}
+          data-active={active || undefined}
+          data-pinned={tab.pinned || undefined}
           draggable={!!reorder}
           onDragStart={reorder?.onDragStart}
           onDragOver={reorder?.onDragOver}
           onDrop={reorder?.onDrop}
           onDragEnd={reorder?.onDragEnd}
+          onClick={(event) => {
+            // Action buttons own their clicks; the rest of the tile selects the page.
+            if (event.target instanceof Element && event.target.closest('button')) return
+            onSelect()
+          }}
           className={cn(
-            'group relative flex min-w-0 items-center rounded-lg transition-colors',
+            'studio-browser-tab group relative flex cursor-pointer min-w-0 items-center rounded-lg transition-colors',
+            tab.pinned && 'flex-col',
             reorder?.dragging && 'opacity-40',
             reorder?.edge &&
               (tab.pinned
@@ -142,53 +204,55 @@ export function BrowserTabRow({
             aria-current={active ? 'page' : undefined}
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
-            title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
-            className={`flex min-w-0 flex-1 items-center gap-2 text-left ${tab.pinned ? 'h-16 flex-col justify-center gap-1.5 px-2 text-[11px]' : 'h-9 px-2 text-xs'}`}
+            title={`${title}\n${tab.url}\n${computer} · ${profile}${studioId ? `\nStudio ID: ${studioId}` : ''}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
+            className={`studio-browser-tab-select min-w-0 text-left text-xs ${tab.pinned ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
           >
-            <span className="relative inline-flex shrink-0 items-center">
-              <BrowserFavicon tab={tab} />
-              {tab.keepAwake && (
-                <span
-                  aria-label="Kept awake"
-                  title="Keep awake is on"
-                  className="absolute -right-1 -bottom-1 size-1.5 rounded-full bg-status-success ring-2 ring-sidebar"
-                />
-              )}
-            </span>
             <span
-              className={
-                tab.pinned
-                  ? 'line-clamp-2 min-h-[2.5em] w-full text-center leading-tight break-words'
-                  : 'min-w-0 flex-1 truncate'
-              }
-            >
-              {title}
-            </span>
-            <span
-              className={
-                tab.pinned
-                  ? 'absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-background/80 px-0.5 text-[9px] leading-none text-muted-foreground'
-                  : 'flex shrink-0 items-center gap-0.5 text-[9px] leading-none text-muted-foreground'
-              }
-              aria-label={`${computer} · ${profile}`}
-            >
-              {!tab.pinned && (
-                <RuntimeIcon
-                  icon={tab.kind === 'remote' ? owner?.snapshot?.runtimeIcon : undefined}
-                  className="size-2.5 shrink-0"
-                  aria-hidden="true"
-                />
+              className={cn(
+                'studio-browser-tab-source relative inline-flex shrink-0 justify-center',
+                tab.pinned ? 'h-10 w-8 items-start' : 'size-6 items-center',
               )}
+            >
               <span
-                className={cn('max-w-6 truncate', emoji && 'text-xs')}
-                title={`${profile} · ${computer}`}
+                className={cn(
+                  'studio-browser-tab-favicon relative inline-flex items-center justify-center',
+                  tab.pinned ? 'size-8' : 'size-6',
+                )}
               >
-                {emoji ?? initials}
+                <BrowserFavicon tab={tab} />
+                {badge !== undefined && (
+                  <span
+                    aria-label={badge === 'unread' ? 'Unread activity' : `${badge} unread`}
+                    className={cn(
+                      'studio-browser-tab-badge absolute -right-1 -top-1 rounded-full bg-primary text-primary-foreground ring-2 ring-sidebar',
+                      badge === 'unread'
+                        ? 'size-2'
+                        : 'min-w-3.5 px-1 text-center text-[9px] font-semibold leading-3.5',
+                    )}
+                  >
+                    {badge === 'unread' ? null : badge > 99 ? '99+' : badge}
+                  </span>
+                )}
+                {keepsAwake && (
+                  <span
+                    aria-label="Kept awake"
+                    title="Keep awake is on"
+                    className="absolute -left-1 top-1 size-1.5 rounded-full bg-status-success ring-2 ring-sidebar"
+                  />
+                )}
               </span>
+              {tab.pinned && identity}
             </span>
+            {!tab.pinned && (
+              <>
+                <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
+                {identity}
+              </>
+            )}
           </button>
+          <BrowserTabActivity state={state} title={title} pinned={tab.pinned} onMute={onMute} />
           {!tab.pinned && (
-            <div className="absolute right-0.5 flex items-center gap-0.5 rounded bg-sidebar opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:opacity-100">
+            <div className="studio-browser-tab-actions flex shrink-0 items-center gap-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
               {category === 'active' && (
                 <IconButton
                   type="button"
@@ -203,7 +267,7 @@ export function BrowserTabRow({
               <IconButton
                 type="button"
                 label={`Close tab ${title}`}
-                className="size-6"
+                className="studio-browser-tab-close size-6"
                 disabled={busy}
                 onClick={onClose}
               >
@@ -214,10 +278,28 @@ export function BrowserTabRow({
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+        <ContextMenu.Content className="studio-browser-tab-menu z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
           <ContextMenu.Label className="max-w-64 truncate px-2 py-1.5 text-xs text-muted-foreground">
             {title}
           </ContextMenu.Label>
+          {studioId && (
+            <>
+              <ContextMenu.Label className="max-w-64 truncate px-2 pb-1.5 text-[10px] text-muted-foreground">
+                {studioId}
+              </ContextMenu.Label>
+              <ContextMenu.Item
+                className={menuItem}
+                onSelect={() =>
+                  void copyTextToClipboard(studioId).catch((cause: unknown) =>
+                    onError(String(cause)),
+                  )
+                }
+              >
+                <Copy size={13} />
+                Copy Studio ID (for agents)
+              </ContextMenu.Item>
+            </>
+          )}
           <ContextMenu.Item className={menuItem} disabled={busy} onSelect={onPin}>
             {tab.pinned ? <PinOff size={13} /> : <Pin size={13} />}
             {tab.pinned ? 'Unpin tab' : 'Pin tab'}
@@ -239,7 +321,7 @@ export function BrowserTabRow({
           {onKeepAwake && (
             <ContextMenu.CheckboxItem
               className={menuItem}
-              checked={!!tab.keepAwake}
+              checked={keepsAwake}
               disabled={busy}
               onCheckedChange={onKeepAwake}
             >
@@ -269,7 +351,7 @@ export function BrowserTabRow({
               <ContextMenu.Separator className="my-1 h-px bg-border" />
               <ContextMenu.Item className={menuItem} disabled={busy} onSelect={() => onMove()}>
                 <ExternalLink size={13} />
-                Move to new window
+                {tab.pinned ? 'Detach to new window' : 'Move to new window'}
               </ContextMenu.Item>
               {windows.length > 0 && (
                 <ContextMenu.Sub>
@@ -278,7 +360,7 @@ export function BrowserTabRow({
                     <ArrowUpRight size={13} className="ml-auto" />
                   </ContextMenu.SubTrigger>
                   <ContextMenu.Portal>
-                    <ContextMenu.SubContent className="z-50 min-w-44 rounded-lg border bg-popover p-1 shadow-xl">
+                    <ContextMenu.SubContent className="studio-browser-tab-menu z-50 min-w-44 rounded-lg border bg-popover p-1 shadow-xl">
                       {windows.map((window) => (
                         <ContextMenu.Item
                           key={window.id}

@@ -307,7 +307,12 @@ Desktop and web settings use a grouped sidebar with search (matching words insid
     sound.
   - **Keyboard shortcuts**.
   - **Browser** — preview viewport, browser profiles and separate saved logins. Remote browser
-    profiles stay on their computer.
+    profiles stay on their computer. Enable **Keep signed in across restarts** and save a profile to
+    retain its session cookies. This is off by default; disabling it discards the saved
+    session-cookie copy. Explicit logout, cookie clearing and server-side session expiry still
+    apply. Desktop session cookies require OS credential storage and are saved encrypted. Remote
+    profiles retain them on a clean browser-context close in owner-readable files; an abrupt runtime
+    stop can lose them. Private profiles never retain cookies across restarts.
   - **Updates & about** — version, release channel, update preferences and open-source notices.
 - **Agents**:
   - **Agents** — built-in Codex, Claude Code and other provider profiles, plus custom
@@ -504,7 +509,7 @@ responsibility; domain transformations and graph validation stay outside renderi
 ## Verification
 
 ```sh
-pnpm verify # typecheck, build test prerequisites, tests, lint, and all builds
+pnpm verify # build prerequisites, lint, typecheck and tests
 pnpm check
 pnpm fallow
 # After pnpm build, verify pairing in an isolated desktop profile:
@@ -516,6 +521,8 @@ node scripts/verify-mobile.mjs <simulator-uuid>
 node scripts/verify-mobile-resources.mjs <simulator-uuid>
 node scripts/verify-mobile-pulls.mjs <simulator-uuid>
 node scripts/verify-mobile-devices.mjs <simulator-uuid>
+# On an isolated simulator, verify native queue dragging against a disposable LAN runtime:
+node scripts/verify-mobile-queue.mjs <simulator-uuid>
 node scripts/verify-pair-cli.mjs
 # Optional: exercise pairing via a reachable private DNS hostname.
 DOVO_TEST_RUNTIME_HOST=<private-hostname> node scripts/verify-mobile-pulls.mjs <simulator-uuid>
@@ -985,6 +992,24 @@ device's workspace. Desktop stores credentials with Electron's encrypted storage
 iOS Keychain / Android Keystore through SecureStore. Browser connections remain in the current
 browser's local storage.
 
+On mobile, normal Send and Add to queue save the message on the phone before delivery. Offline
+messages and new threads survive an app restart and send automatically when the app is active and
+their computer becomes reachable. New thread uses the selected computer's cached workspace even
+while disconnected; a never-loaded computer needs an initial connection first. Choosing a cached
+project or computer for a new local draft needs no network request. Start in background opens the
+next draft after the message is safely saved locally; execution starts when the computer receives
+it. Automatic project selection also needs an updated runtime. Uploading files, editing queued
+messages, steering a running agent and Send now require a connection. Failed local storage leaves
+the draft available for retry.
+
+The open computer updates live. Other-computer refresh defaults to every two minutes on Wi-Fi and
+pauses on cellular; choose a different frequency in **Settings → This app → General → Battery &
+background**. Opening the app restores the selected computer first and delays background checks.
+Actions use live updates without downloading another snapshot after every change. With a cached
+workspace, startup and foreground resume let the live stream finish its first connection attempt
+before starting HTTP snapshot fallback. Failed or unsupported streams wake fallback immediately;
+without a cached workspace, the initial HTTP read starts immediately.
+
 The mobile native build permits HTTP to user-selected runtime addresses, including LAN IPs,
 Tailscale DNS names, and NetBird custom domains. Its ATS configuration uses `NSAllowsArbitraryLoads`
 without the narrower keys that override it on current iOS (see
@@ -1039,6 +1064,11 @@ workspace. The `assistant-cloud` package is needed to resolve optional upstream 
 cloud client or cloud persistence is configured. The conversation follows its measured native
 content height through streaming Markdown and keyboard changes. Scrolling up keeps your reading
 position; Latest message or a local send resumes following.
+
+Opening a mobile thread uses its cached history and fetches at most one extra older page after the
+latest reply lays out. Scrolling upward, jumping to a bookmark or restoring an older reading
+position loads more as needed. The phone retains up to 500 recent loaded messages for offline
+reopening; it does not download 500 messages merely to fill that cache.
 
 Run `node scripts/verify-mobile.mjs <simulator UUID> --conversation-only` to verify streaming,
 expandable tool output and checkpoint navigation against the isolated local harness fixture.
@@ -1274,3 +1304,48 @@ current files and unsent drafts. Queued messages remain paused; retry does not u
 automatically resubmit other prompts. Offline and already-running tasks cannot be retried. **Try
 again** in a turn’s menu remains the separate operation that reruns a request from scratch and
 undoes that turn’s edits.
+
+## Project organization and managed runtimes
+
+Project settings now include **Pin project** and **Archive project**. Pinned projects sort first.
+Archived projects stay available in settings for restoration and retain their threads and files, but
+disappear from normal new-thread project choices. Organization follows confirmed repository identity
+across paired computers; a computer can be offline when you change it.
+
+Administrators can optionally deploy a runtime JSON policy for provider, permission, sharing,
+Connect, webhook, client and update controls. Unconfigured runtimes behave as before. See
+[Managed runtime policy](managed-policy.md) for validation commands, deployment paths and supported
+controls. Runtime diagnostics and mobile Settings show the active organization and restrictions.
+HTTP over LAN/VPN and device-token pairing remain supported.
+
+For opt-in runtime/server/desktop startup timings and measured cache experiments, see
+[Startup profiling](startup-profiling.md). Nightly release notes include a short list of user-facing
+highlights followed by the complete changelog.
+
+The desktop/web composer supports rich editing and a **Markdown source** toggle (`Mod+Shift+M`).
+Formatting controls operate on the Markdown draft sent to the agent. Unedited blocks retain their
+original source; unsupported constructs stay editable in source mode. The preferred mode is saved in
+conversation settings. Draft recovery checks that the submitted draft is still current before a late
+send acknowledgement can clear it.
+
+## Import terminal Pi sessions
+
+In project checkout settings, choose **Import Pi session**, preview a session from that project's
+checkout or worktrees, then import it as a thread. Repeating the import opens the existing thread.
+Import requires a stable transcript and refuses a known active terminal Pi process. If activity
+cannot be determined, the preview explains that the copied snapshot may omit recent terminal work.
+
+Dovo copies the transcript into its own private storage before continuing; the terminal's original
+file is left untouched. Continuation requires Pi 1.4 or newer from `@earendil-works/pi-coding-agent`
+(the renamed current distribution). Older `@mariozechner/pi-coding-agent` releases do not provide
+the completion event required by this adapter. Preserve the adjacent
+`<database filename>.pi-sessions` directory when moving or backing up the runtime database; the
+SQLite-only backup does not include these native session files. Dovo's saved transcript history
+remains in SQLite, but native continuation requires its private Pi session file and project
+checkout.
+
+Imported Pi threads start in **Text only** mode. Built-in read, shell, edit and write tools require
+explicit **Full access**, approvals set to **Never**, and no stricter sandbox or read-only linked
+checkout. Extensions, external MCP servers, skills and prompt templates remain disabled. This
+adapter does not support attachments or custom launch arguments. Configure model credentials using
+Pi's own setup; importing or previewing a session does not call a model.

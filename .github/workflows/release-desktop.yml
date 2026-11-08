@@ -182,7 +182,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows builds are temporarily paused.
+          - runner: windows-2025
+            arch: x64
+            unpacked: win-unpacked
           - runner: ubuntu-24.04
             arch: x64
           - runner: ubuntu-24.04-arm
@@ -275,8 +277,7 @@ jobs:
           if-no-files-found: error
           path: release/Dovo-Server-*
   windows-sign:
-    # Temporarily paused alongside the Windows packaging matrix.
-    if: ${{ false }}
+    if: ${{ needs.draft.outputs.build == 'true' }}
     needs: [draft, platform]
     runs-on: windows-2025
     timeout-minutes: 45
@@ -375,7 +376,7 @@ jobs:
             release/latest*.yml
             release/nightly*.yml
   upload:
-    needs: [draft, mac, platform]
+    needs: [draft, mac, platform, windows-sign]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v8
@@ -431,6 +432,8 @@ jobs:
             "$SERVER-${TAG#v}-macos-arm64.tar.gz" \
             "$SERVER-${TAG#v}-linux-x64.tar.gz" \
             "$SERVER-${TAG#v}-linux-arm64.tar.gz" \
+            "$SERVER-${TAG#v}-windows-x64.zip" \
+            "$PREFIX-${TAG#v}-windows-x64.exe" \
             "$PREFIX-${TAG#v}-linux-amd64.deb" \
             "$PREFIX-${TAG#v}-linux-arm64.deb" \
             "$PREFIX-${TAG#v}-linux-x86_64.rpm" \
@@ -439,6 +442,7 @@ jobs:
             "$PREFIX-${TAG#v}-linux-arm64.AppImage" \
             "$FEED-linux.yml" \
             "$FEED-linux-arm64.yml" \
+            "$FEED.yml" \
             "$FEED-mac.yml"; do
             grep -Fx "$pattern" /tmp/dovo-release-assets || { echo "::error::Missing release asset: $pattern"; exit 1; }
           done

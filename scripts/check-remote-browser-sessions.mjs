@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { STUDIO_BROWSER_SCOPE } from '../packages/protocol/dist/index.js'
 import { RemoteBrowsers } from '../packages/runtime/dist/previews/browser.js'
+import { terminateBrowserRenderers } from './ci/browser-crash.mjs'
 const server = createServer((request, response) => {
   response.setHeader('Content-Type', 'text/html')
   if (request.url === '/login') {
@@ -40,14 +41,154 @@ const listener = (id) => (message) => {
   if (message.type === 'frame') frames.set(id, (frames.get(id) ?? 0) + 1)
   if (message.type === 'error') throw new Error(message.message)
 }
-const wait = async (condition) => {
+const wait = async (condition, message = 'Browser state did not arrive') => {
   for (let i = 0; i < 100; i++) {
     if (condition()) return
     await delay(50)
   }
-  throw new Error('Browser state did not arrive')
+  throw new Error(message)
 }
 try {
+  console.log('Remote browsers: checking capture lifecycle')
+  await browsers.open(
+    'capture-lifecycle',
+    'capture-lifecycle',
+    'default',
+    `http://127.0.0.1:${address.port}/capture-lifecycle`,
+  )
+  const captureSession = await browsers.sessions.get('capture-lifecycle')
+  await browsers.input('capture-lifecycle', { type: 'resize', width: 2048, height: 1440 })
+  const screencast = captureSession.page.screencast
+  const start = screencast.start
+  const stop = screencast.stop
+  const captures = []
+  const captureErrors = []
+  const detailSizes = new Set()
+  let stops = 0
+  let deliveredFrames = 0
+  // Observe the production calls and real Chromium frames; keep both real methods running.
+  screencast.start = async (options) => {
+    const capture = { fps: options.fps, quality: options.quality, size: options.size, frames: 0 }
+    await start.call(screencast, {
+      ...options,
+      onFrame: (frame) => {
+        capture.frames++
+        options.onFrame(frame)
+      },
+    })
+    captures.push(capture)
+  }
+  screencast.stop = async () => {
+    await stop.call(screencast)
+    stops++
+  }
+  const captureListener = (message) => {
+    if (message.type === 'frame') {
+      deliveredFrames++
+      if (message.detail) detailSizes.add(`${message.width}x${message.height}`)
+    }
+    if (message.type === 'error') captureErrors.push(message.message)
+  }
+  try {
+    dispose.push(await browsers.attach('capture-lifecycle', captureListener))
+    assert.equal(captures[0]?.fps, 30, 'Attaching starts responsive capture')
+    assert.equal(captures[0].quality, 70)
+    assert.deepEqual(captures[0].size, { width: 1920, height: 1440 })
+    await wait(() => captures[0].frames > 1, 'Attached capture must deliver real live frames')
+    await wait(() => captures.at(-1)?.fps === 15, 'Viewing without input must reduce capture FPS')
+    const idleCapture = captures.at(-1)
+    assert.deepEqual(idleCapture.size, { width: 1280, height: 1280 })
+    assert.ok(stops > 0, 'Changing capture FPS stops the previous real stream')
+    await wait(() => idleCapture.frames > 1, 'Idle capture must continue delivering live frames')
+    await captureSession.page.evaluate(() => (document.body.style.animationPlayState = 'paused'))
+    await wait(
+      () => detailSizes.has('2048x1440'),
+      'Settled motion retains device-resolution detail',
+    )
+    await captureSession.page.evaluate(() => (document.body.style.animationPlayState = 'running'))
+    const idleStarts = captures.length
+    await browsers.input('capture-lifecycle', { type: 'status' })
+    await captureSession.stream
+    assert.equal(captures.length, idleStarts, 'Status queries must not reactivate capture')
+    const rejectedInput = new Error('Capture authorization rejected')
+    await assert.rejects(
+      browsers.input('capture-lifecycle', { type: 'key', key: 'Tab' }, () => {
+        throw rejectedInput
+      }),
+      rejectedInput,
+    )
+    await captureSession.queue
+    await captureSession.stream
+    assert.equal(captures.length, idleStarts, 'Rejected input must not reactivate capture')
+    assert.deepEqual(captureErrors.splice(0), [rejectedInput.message])
+    let authorizations = 0
+    await browsers.input('capture-lifecycle', { type: 'key', key: 'Tab' }, () => {
+      authorizations++
+    })
+    assert.equal(authorizations, 1)
+    await wait(() => captures.at(-1)?.fps === 30, 'Authorized input restores responsive capture')
+    const activeCapture = captures.at(-1)
+    assert.deepEqual(activeCapture.size, { width: 1920, height: 1440 })
+    await wait(() => activeCapture.frames > 1, 'Reactivated capture must deliver live frames')
+    const activeStops = stops
+    await browsers.visibility('capture-lifecycle', captureListener, false)
+    assert.equal(stops, activeStops + 1, 'Hiding stops the real active screencast')
+    const hiddenStarts = captures.length
+    const hiddenFrames = deliveredFrames
+    // Let the original activity deadline pass before another input can replace its timer.
+    await delay(2300)
+    assert.equal(
+      captures.length,
+      hiddenStarts,
+      'The activity deadline must not restart hidden capture',
+    )
+    assert.equal(deliveredFrames, hiddenFrames, 'Hiding must stop frame delivery through idle')
+    await browsers.input('capture-lifecycle', { type: 'key', key: 'Escape' })
+    await browsers.input('capture-lifecycle', { type: 'resize', width: 900, height: 600 })
+    // Cross the real activity deadline: queued input/resize and the idle timer must stay stopped.
+    await delay(2300)
+    assert.equal(
+      captures.length,
+      hiddenStarts,
+      'Input, resize and idle must not restart hidden capture',
+    )
+    assert.equal(deliveredFrames, hiddenFrames, 'Hidden viewers receive no live or detail frames')
+    assert.deepEqual(captureSession.page.viewportSize(), { width: 900, height: 600 })
+    await browsers.visibility('capture-lifecycle', captureListener, true)
+    assert.equal(captures.at(-1)?.fps, 30, 'Showing the viewer starts responsive capture again')
+    assert.deepEqual(captures.at(-1).size, { width: 900, height: 600 })
+    const shownCapture = captures.at(-1)
+    await wait(() => shownCapture.frames > 1, 'Showing the viewer resumes real live frames')
+    const resizeStarts = captures.length
+    await browsers.input('capture-lifecycle', { type: 'resize', width: 800, height: 600 })
+    assert.ok(captures.length > resizeStarts, 'Visible resize restarts the real screencast')
+    assert.equal(captures.at(-1).fps, 30)
+    assert.deepEqual(captures.at(-1).size, { width: 800, height: 600 })
+    const resizedCapture = captures.at(-1)
+    await wait(() => resizedCapture.frames > 1, 'Resizing must retain live capture')
+    // Force the timer to observe a clock just before its deadline. It must
+    // remain armed rather than leave this resized stream active indefinitely.
+    const now = Date.now
+    const deadline = captureSession.captureActiveUntil
+    try {
+      Date.now = () => deadline - 1
+      await delay(2100)
+      assert.equal(captures.at(-1)?.fps, 30)
+    } finally {
+      Date.now = now
+    }
+    await wait(() => captures.at(-1)?.fps === 15, 'Resized capture must become idle again')
+    assert.deepEqual(captures.at(-1).size, { width: 800, height: 600 })
+    const resizedIdleCapture = captures.at(-1)
+    await wait(() => resizedIdleCapture.frames > 1, 'Resized idle capture must remain live')
+    await captureSession.page.evaluate(() => (document.body.style.animationPlayState = 'paused'))
+    await wait(() => detailSizes.has('800x600'), 'Settled resize must retain sharp detail capture')
+    assert.deepEqual(captureErrors, [], 'Capture lifecycle must not emit browser errors')
+  } finally {
+    await browsers.close('capture-lifecycle')
+    screencast.start = start
+    screencast.stop = stop
+  }
   for (const [id, owner] of [
     ['first', 'task'],
     ['second', 'task'],
@@ -59,6 +200,7 @@ try {
     if (id === 'first') firstListener = receive
     await browsers.input(id, { type: 'navigate', url: `http://127.0.0.1:${address.port}/${id}` })
   }
+  console.log('Remote browsers: checking independent tabs and visibility')
   await wait(
     () => states.get('first')?.title === '/first' && states.get('second')?.title === '/second',
   )
@@ -78,6 +220,7 @@ try {
   await browsers.input('other', { type: 'status' })
   await browsers.dispose()
   browsers = new RemoteBrowsers(profileDirectory)
+  console.log('Remote browsers: checking navigation recovery')
   const origin = `http://127.0.0.1:${address.port}`
   const unavailable = createServer()
   unavailable.listen(0, '127.0.0.1')
@@ -122,16 +265,47 @@ try {
     )
     await browsers.close('agent-unavailable')
     const session = await browsers.sessions.get('unavailable')
-    const closed = new Promise((resolve) => session.page.once('close', resolve))
-    await session.cdp.send('Page.crash').catch(() => {})
-    await closed
+    console.log('Remote browsers: checking crash cleanup')
+    const context = session.page.context()
+    // Persistent profiles retain an internal blank tab for session-cookie snapshots.
+    // Compare URLs instead of Page objects: a failed deep equality assertion would
+    // format Playwright's enormous cyclic object graph and exhaust the CI runner.
+    assert.deepEqual(
+      context
+        .pages()
+        .filter((page) => page !== session.page)
+        .map((page) => page.url()),
+      ['about:blank'],
+      'Crash injection owns the profile tab and its internal keeper',
+    )
+    const browser = context.browser()
+    assert.ok(browser, 'The persistent profile must expose its Chromium instance')
+    const browserCdp = await browser.newBrowserCDPSession()
+    const { processInfo } = await browserCdp
+      .send('SystemInfo.getProcessInfo')
+      .finally(() => browserCdp.detach())
+    const signal = AbortSignal.timeout(10000)
+    // Observe both events before injection: production closes the page on a real crash.
+    const crashedAndClosed = Promise.all([
+      once(session.page, 'crash', { signal }),
+      once(session.page, 'close', { signal }),
+    ])
+    // Page.crash can stall inside Chromium's deliberate-crash/reporting path on CI.
+    // SIGKILL exercises actual renderer loss without waiting for a crash report.
+    // This browser belongs to this profile; include spare renderers, never other browsers.
+    console.log('Remote browsers: crash injection process snapshot', processInfo)
+    terminateBrowserRenderers(processInfo)
+    await crashedAndClosed
     assert.equal(browsers.sessions.has('unavailable'), false, 'Crashed sessions are released')
+    console.log('Remote browsers: crashed page closed; reopening its profile')
     await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)
+    console.log('Remote browsers: profile reopened; attaching the recovered viewer')
     dispose.push(
       await browsers.attach('unavailable', (message) => {
         if (message.type === 'state') recoveryStates.push(message)
       }),
     )
+    console.log('Remote browsers: recovered viewer attached; checking status')
     await browsers.input('unavailable', { type: 'status' })
     await browsers.close('unavailable')
   } finally {
@@ -139,6 +313,7 @@ try {
     await new Promise((resolve) => recovered.close(resolve))
   }
   await browsers.open('dialog-recovery', 'recovery', 'default', origin)
+  console.log('Remote browsers: checking dialog reconnect')
   const dialogMessages = []
   const firstDialogViewer = await browsers.attach('dialog-recovery', (message) =>
     dialogMessages.push(message),
@@ -176,6 +351,7 @@ try {
     await browsers.close('dialog-recovery')
   }
   await browsers.open('work-login', 'profiles', 'work', origin + '/login')
+  console.log('Remote browsers: checking profile persistence')
   await browsers.open('work-check', 'profiles', 'work', origin + '/profile-state')
   dispose.push(await browsers.attach('work-check', listener('work-check')))
   await browsers.open('personal-check', 'profiles', 'personal', origin + '/profile-state')
@@ -193,6 +369,7 @@ try {
   await wait(() => states.get('restart-check')?.title === 'profileLogin=work|work')
   await browsers.close('restart-check')
   const privateId = 'private-00000000-0000-4000-8000-000000000002'
+  console.log('Remote browsers: checking private tabs and popups')
   const privateResource = JSON.stringify([STUDIO_BROWSER_SCOPE, 'private-tab', privateId])
   await browsers.open(privateResource, STUDIO_BROWSER_SCOPE, privateId, origin + '/login')
   const privatePage = (await browsers.sessions.get(privateResource)).page
@@ -231,14 +408,21 @@ try {
       if (message.type === 'closed') closedMessage = message
     }),
   )
-  await child.evaluate(() => window.close())
+  const childClosed = once(child, 'close', { signal: AbortSignal.timeout(10000) })
+  // Observe the popup closing, rather than a reply from its destroyed execution context.
+  void child.evaluate(() => window.close()).catch(() => {})
+  await childClosed
   await wait(() => !browsers.sessions.has(childResource))
   assert.equal(closedMessage?.byPage, true)
   assert.equal(parent.isClosed(), false)
   await browsers.close(privateResource)
   console.log(
-    'Real Chromium: unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
+    'Real Chromium: active/idle capture, authorized input, hidden capture, viewport caps, resize/detail frames, unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
   )
+} catch (error) {
+  // Print the assertion before cleanup, which can itself be blocked by a broken browser.
+  console.error('Remote browser session check failed:', error)
+  throw error
 } finally {
   for (const detach of dispose) detach()
   await browsers.dispose()

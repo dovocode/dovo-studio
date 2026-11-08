@@ -188,7 +188,7 @@ export function WorkTaskLinks({
     }
   }
   return (
-    <section aria-label="Linked tasks" className="space-y-3">
+    <section aria-label="Linked threads" className="space-y-3">
       {jiraSourceId && (
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -231,11 +231,11 @@ export function WorkTaskLinks({
           {busy
             ? 'Preparing…'
             : created
-              ? 'Open created task'
+              ? 'Open created thread'
               : error && attemptedRepository.current
-                ? 'Retry task creation'
+                ? 'Retry thread creation'
                 : kind === 'issue'
-                  ? 'Start task from issue'
+                  ? 'Start thread from issue'
                   : 'Investigate run'}
         </Button>
         {!related.length && (
@@ -252,7 +252,7 @@ export function WorkTaskLinks({
       {related.length > 0 && (
         <details className="text-xs">
           <summary className="w-fit cursor-pointer py-1.5 text-muted-foreground hover:text-foreground">
-            {related.length} linked {related.length === 1 ? 'task' : 'tasks'}
+            {related.length} linked {related.length === 1 ? 'thread' : 'threads'}
           </summary>
           <div className="grid gap-1 pt-1">
             {related.map((task) => (
@@ -288,10 +288,10 @@ export function WorkTaskLinks({
       <Dialog open={picking} onOpenChange={(open) => !busy && setPicking(open)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Choose a project for this task</DialogTitle>
+            <DialogTitle>Choose a project for this thread</DialogTitle>
             <DialogDescription>
               The project provides the checkout for your agent. Dovo saves the project link for
-              future tasks; your issue stays in Jira.
+              future threads; your issue stays in Jira.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -302,9 +302,9 @@ export function WorkTaskLinks({
             }}
           >
             {workspace.repositories.length ? (
-              <FormField label="Task project">
+              <FormField label="Thread project">
                 <ChoicePicker
-                  aria-label="Task project"
+                  aria-label="Thread project"
                   value={destination}
                   disabled={busy || !!attemptedRepository.current}
                   onValueChange={setDestination}
@@ -319,7 +319,8 @@ export function WorkTaskLinks({
               </FormField>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Add a project from Tasks to run an agent. You can keep working with this issue here.
+                Add a project from Threads to run an agent. You can keep working with this issue
+                here.
               </p>
             )}
             {error && (
@@ -337,7 +338,7 @@ export function WorkTaskLinks({
                 Cancel
               </Button>
               <Button type="submit" disabled={!destination || busy || disabled || !connected}>
-                {busy ? 'Preparing…' : error ? 'Retry task creation' : 'Create task draft'}
+                {busy ? 'Preparing…' : error ? 'Retry thread creation' : 'Create thread draft'}
               </Button>
             </div>
           </form>

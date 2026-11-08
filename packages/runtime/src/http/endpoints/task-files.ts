@@ -1,8 +1,7 @@
 import { servePDFAsset, pdfPreviewHTML } from './pdf-preview.js'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Nodes } from 'mdast'
-import { open, realpath } from 'node:fs/promises'
-import { constants } from 'node:fs'
+import { realpath } from 'node:fs/promises'
 import { basename, isAbsolute, relative, resolve, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fileTypeFromBuffer } from 'file-type'
@@ -15,7 +14,11 @@ import {
 } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
-import { safeFile, repositoryPath } from '../../scm/repositories/paths.js'
+import { repositoryPath } from '../../scm/repositories/paths.js'
+import {
+  canonicalPreviewFile,
+  openValidatedPreview,
+} from '../../scm/repositories/file-preview-open.js'
 import { newSecret, hashSecret } from '../../auth/devices.js'
 import type { ServerResponse } from 'node:http'
 import { pipeline } from 'node:stream/promises'
@@ -74,12 +77,11 @@ export async function sharedTaskFile(s: Services, taskId: string, path: string) 
   const rel = relative(cwd, full)
   if (isAbsolute(rel) || rel === '..' || rel.startsWith('../') || rel.startsWith('..\\'))
     throw new HttpError(403, 'This file is not shared by the thread')
-  return safeFile(await repositoryPath(cwd), rel)
+  return canonicalPreviewFile(await repositoryPath(cwd), rel)
 }
 async function openSharedFile(s: Services, taskId: string, path: string) {
   try {
-    const target = await sharedTaskFile(s, taskId, path)
-    return { target, handle: await open(target, constants.O_RDONLY | constants.O_NOFOLLOW) }
+    return await openValidatedPreview(() => sharedTaskFile(s, taskId, path))
   } catch (error) {
     if (
       error instanceof Error &&

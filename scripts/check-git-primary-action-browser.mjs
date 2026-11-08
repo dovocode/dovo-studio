@@ -39,13 +39,15 @@ const built = await build({
       setup(builder) {
         const mocks = {
           '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({repositoryOpener:window.client});export const useAppPreferences=()=>({});export const updateAppPreferences=()=>{};export const useRuntimeReleaseCheck=()=>({releases:[]});export const runtimeUpdate=()=>({available:false});`,
+          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(useWorkspace());export const useStudioHost=()=>({repositoryOpener:window.client});export const useAppPreferences=()=>({threadInfoSections:{}});export const updateAppPreferences=()=>{};export const useRuntimeReleaseCheck=()=>({releases:[]});export const runtimeUpdate=()=>({available:false});`,
           '@dovo/studio-ui': `export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export {Button} from '../studio-ui/src/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const cn=(...values)=>values.filter(Boolean).join(' ');export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileTypeIcon=()=>null;export const ProjectIcon=()=>null;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog,DialogTitle=Dialog,DialogDescription=Dialog;`,
           '@dovo/extension-scm/repository-actions': 'export const RepositoryActions=()=>null;',
           './task-waiting-panel': 'export const TaskWaitingPanel=()=>null;',
+          './task-project-popover': 'export const ThreadInfoSettingsSlot=()=>null;',
           './task-branch-menu': 'export const TaskBranchMenu=()=>null;',
           './task-pull-status': 'export const TaskPullStatus=()=>null;',
           './task-project-actions': 'export const TaskProjectActions=()=>null;',
+          '../chat/thread-sharing': 'export const ThreadSharing=()=>null;',
           '../dialogs/task-pull-link-dialog': 'export const TaskPullLinkDialog=()=>null;',
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -79,8 +81,9 @@ try {
   await page.addStyleTag({ content: 'svg{width:16px;height:16px}.hidden{display:none}' })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const action = page.getByRole('button', { name: 'Commit & push', exact: true })
-  await action.waitFor()
-  assert.equal(await action.isDisabled(), true)
+  await page.getByText('Checking Git status…', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
+  await page.getByRole('button', { name: 'Git actions', exact: true }).waitFor()
   const clean = {
     dirty: false,
     canPush: true,
@@ -100,11 +103,11 @@ try {
   await page.evaluate(() => window.rerender())
   await page.waitForFunction(() => window.reads.length === 2)
   assert.equal(await action.isDisabled(), false)
-  assert.equal(await page.getByRole('button', { name: 'Git actions', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Git actions', exact: true }).count(), 1)
   await finish(1, clean)
-  await page.waitForFunction(
-    () => document.querySelector('button[title="No changes to commit or push"]')?.disabled,
-  )
+  await page.getByText('Clean · Synced', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
+  await page.getByRole('button', { name: 'Git actions', exact: true }).waitFor()
   // Overlapping older reads must not overwrite a newer dirty status.
   await page.evaluate(() => window.rerender())
   await page.waitForFunction(() => window.reads.length === 3)
@@ -128,11 +131,13 @@ try {
   assert.equal(await push.isDisabled(), false)
   // A different thread cannot inherit the previous thread's action state.
   await page.evaluate(() => window.switchTask())
-  await action.waitFor()
-  assert.equal(await action.isDisabled(), true)
+  await page.getByText('Checking Git status…', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
+  assert.equal(await push.count(), 0)
   await page.waitForFunction(() => window.reads.length === 6)
   await finish(5, clean)
-  assert.equal(await action.isDisabled(), true)
+  await page.getByText('Clean · Synced', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
   assert.deepEqual(await page.evaluate(() => window.writes), [
     '/api/tasks/commit-message',
     '/api/tasks/commit',

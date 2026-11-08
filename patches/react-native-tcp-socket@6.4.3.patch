@@ -1,0 +1,410 @@
+diff --git a/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java b/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java
+index 75115700..db3ec317 100644
+--- a/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java
++++ b/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java
+@@ -26,6 +26,8 @@ class TcpSocketClient extends TcpSocket {
+     private TcpReceiverTask receiverTask;
+     private Socket socket;
+     private boolean closed = true;
++    private boolean readEnded = false;
++    private boolean writeEnded = false;
+ 
+     TcpSocketClient(TcpEventListener receiverListener, Integer id, Socket socket) {
+         super(id);
+@@ -171,6 +173,28 @@ class TcpSocketClient extends TcpSocket {
+         });
+     }
+ 
++    // The same executor as write() ensures that all submitted bytes precede FIN.
++    public void shutdownWrite() {
++        writeExecutor.execute(() -> {
++            try {
++                synchronized (this) {
++                    if (socket == null || socket.isClosed() || writeEnded) return;
++                    socket.shutdownOutput();
++                    writeEnded = true;
++                    if (readEnded) destroy();
++                }
++            } catch (IOException e) {
++                receiverListener.onError(getId(), e);
++                destroy();
++            }
++        });
++    }
++
++    private synchronized void readFinished() {
++        readEnded = true;
++        if (writeEnded) destroy();
++    }
++
+     public ReadableMap getPeerCertificate() {
+         return SSLCertificateHelper.getCertificateInfo(socket, true);
+     }
+@@ -182,7 +206,7 @@ class TcpSocketClient extends TcpSocket {
+     /**
+      * Shuts down the receiver task, closing the socket.
+      */
+-    public void destroy() {
++    public synchronized void destroy() {
+         try {
+             // close the socket
+             if (socket != null && !socket.isClosed()) {
+@@ -269,6 +293,7 @@ class TcpSocketClient extends TcpSocket {
+                         receiverListener.onData(socketId, Arrays.copyOfRange(buffer, 0, bufferCount));
+                     } else if (bufferCount == -1) {
+                         receiverListener.onEnd(socketId);
++                        clientSocket.readFinished();
+                         break;
+                     }
+                 }
+diff --git a/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java b/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java
+index 121edb47..64e62f2e 100644
+--- a/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java
++++ b/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java
+@@ -146,6 +146,13 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+         });
+     }
+ 
++    @SuppressWarnings("unused")
++    @ReactMethod
++    public void shutdownWrite(final Integer cId) {
++        TcpSocketClient socketClient = getTcpClient(cId);
++        if (socketClient != null) socketClient.shutdownWrite();
++    }
++
+     @SuppressWarnings("unused")
+     @ReactMethod
+     public void destroy(final Integer cId) {
+diff --git a/ios/TcpSocketClient.h b/ios/TcpSocketClient.h
+index ab17fc96..3ade0149 100644
+--- a/ios/TcpSocketClient.h
++++ b/ios/TcpSocketClient.h
+@@ -114,6 +114,7 @@ typedef enum RCTTCPError RCTTCPError;
+  * end client
+  */
+ - (void)end;
++- (void)shutdownWrite;
+ 
+ /**
+  * destroy client
+diff --git a/ios/TcpSocketClient.m b/ios/TcpSocketClient.m
+index 7490ec4b..7a1b23df 100644
+--- a/ios/TcpSocketClient.m
++++ b/ios/TcpSocketClient.m
+@@ -2,6 +2,8 @@
+ #import <arpa/inet.h>
+ #import <netinet/in.h>
+ #import <netinet/tcp.h>
++#import <sys/socket.h>
++#import <errno.h>
+ 
+ #import <React/RCTLog.h>
+ 
+@@ -56,6 +58,11 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
+     BOOL _checkValidity;
+     BOOL _paused;
+     BOOL _connecting;
++    BOOL _allowHalfOpen;
++    BOOL _readEnded;
++    BOOL _shutdownRequested;
++    BOOL _writeEnding;
++    BOOL _writeEnded;
+     ResolvableOption *_resolvableCaCert;
+     NSString *_host;
+     GCDAsyncSocket *_tcpSocket;
+@@ -315,6 +322,8 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
+                                             delegateQueue:[self methodQueue]];
+     [_tcpSocket setUserData:_id];
+ 
++    _allowHalfOpen = [options[@"allowHalfOpen"] boolValue];
++
+     // Get TLS data if present
+     NSDictionary *tlsOptions = options[@"tls"];
+     if (tlsOptions) {
+@@ -422,6 +431,7 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
+     if (msgId) {
+         [_clientDelegate onWrittenData:self msgId:msgId];
+         [self dropPendingSend:tagNum];
++        [self finishWriteShutdown];
+     }
+ }
+ 
+@@ -436,6 +446,41 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
+     [_tcpSocket disconnectAfterWriting];
+ }
+ 
++// Call only once all native write callbacks have fired. The descriptor is accessed
++// on GCDAsyncSocket's queue; completion returns to the delegate queue.
++- (void)finishWriteShutdown {
++    [_lock lock];
++    BOOL ready = _shutdownRequested && !_writeEnding && _pendingSends.count == 0;
++    if (ready) _writeEnding = YES;
++    [_lock unlock];
++    if (!ready) return;
++    [_tcpSocket performBlock:^{
++        int fd = [self->_tcpSocket socketFD];
++        int result = fd < 0 ? -1 : shutdown(fd, SHUT_WR);
++        int errorCode = fd < 0 ? EBADF : errno;
++        dispatch_async([self methodQueue], ^{
++            if (result != 0) {
++                NSError *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errorCode userInfo:nil];
++                [self->_clientDelegate onError:self withError:error];
++                [self->_tcpSocket disconnect];
++            } else {
++                [self->_lock lock];
++                self->_writeEnded = YES;
++                BOOL close = self->_readEnded;
++                [self->_lock unlock];
++                if (close) [self->_tcpSocket disconnect];
++            }
++        });
++    }];
++}
++
++- (void)shutdownWrite {
++    [_lock lock];
++    _shutdownRequested = YES;
++    [_lock unlock];
++    [self finishWriteShutdown];
++}
++
+ - (void)destroy {
+     [_tcpSocket disconnect];
+ }
+@@ -475,6 +520,10 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
+                                         andServer:_id];
+     // Store the socket or the connection will be closed
+     [_clientDelegate addClient:inComing];
++    if (_allowHalfOpen) {
++        inComing->_allowHalfOpen = YES;
++        [newSocket setAutoDisconnectOnClosedReadStream:NO];
++    }
+     if (_tls) {
+         [newSocket startTLS:_tlsSettings];
+     } else {
+@@ -590,15 +639,28 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
+     if (_clientDelegate) {
+         [_clientDelegate onEnd:[sock userData]];
+     }
++    [_lock lock];
++    _readEnded = YES;
++    BOOL close = _writeEnded;
++    [_lock unlock];
++    if (close) [_tcpSocket disconnect];
+ }
+ 
+ - (void)socketDidDisconnect:(GCDAsyncSocket *)sock withError:(NSError *)err {
+     if (!_clientDelegate) {
+         RCTLogWarn(@"socketDidDisconnect with nil clientDelegate for %@",
+                    [sock userData]);
+         return;
+     }
+ 
++    // CocoaAsyncSocket closes on EOF after SHUT_WR because its writability
++    // probe fails; still report the orderly read end before the close event.
++    [_lock lock];
++    BOOL ended = _allowHalfOpen && _writeEnded && !_readEnded &&
++        (!err || err.code == GCDAsyncSocketClosedError);
++    if (ended) _readEnded = YES;
++    [_lock unlock];
++    if (ended) [_clientDelegate onEnd:[sock userData]];
+     [_clientDelegate
+           onClose:[sock userData]
+         withError:(!err || err.code == GCDAsyncSocketClosedError ? nil : err)];
+diff --git a/ios/TcpSockets.m b/ios/TcpSockets.m
+index a5553c66..2d021680 100644
+--- a/ios/TcpSockets.m
++++ b/ios/TcpSockets.m
+@@ -103,6 +103,11 @@ RCT_EXPORT_METHOD(write
+ 
+ RCT_EXPORT_METHOD(end : (nonnull NSNumber *)cId) { [self endClient:cId]; }
+ 
++RCT_EXPORT_METHOD(shutdownWrite : (nonnull NSNumber *)cId) {
++    TcpSocketClient *client = [self findClient:cId];
++    [client shutdownWrite];
++}
++
+ RCT_EXPORT_METHOD(destroy : (nonnull NSNumber *)cId) {
+     [self destroyClient:cId];
+ }
+diff --git a/src/Server.js b/src/Server.js
+index 72218b53..ab653ff3 100644
+--- a/src/Server.js
++++ b/src/Server.js
+@@ -86,7 +86,7 @@ export default class Server extends EventEmitter {
+     listen(options, callback_or_host, callback) {
+         if (this._localAddress !== undefined) throw new Error('ERR_SERVER_ALREADY_LISTEN');
+ 
+-        /** @type {{ port: number; host: string; reuseAddress?: boolean }} */
++        /** @type {{ port: number; host: string; reuseAddress?: boolean; allowHalfOpen?: boolean }} */
+         let listenOptions = { port: 0, host: '0.0.0.0' };
+         /** @type {(() => void) | undefined} */
+         let cb;
+@@ -123,6 +123,8 @@ export default class Server extends EventEmitter {
+             this.listening = true;
+         });
+ 
++        // Configure the native socket before it starts reading accepted connections.
++        listenOptions.allowHalfOpen = this._serverOptions.allowHalfOpen === true;
+         Sockets.listen(this._id, listenOptions);
+         return this;
+     }
+diff --git a/src/Socket.js b/src/Socket.js
+index 9913e5aa..599581b5 100644
+--- a/src/Socket.js
++++ b/src/Socket.js
+@@ -88,15 +88,21 @@ export default class Socket extends EventEmitter {
+         this._readyState = 'open'; // Incorrect, but matches NodeJS behavior
+         /** @type {{ id: number; data: string; }[]} @private */
+         this._pausedDataEvents = [];
++        this._endReceived = false;
++        this._endEmitted = false;
++        this._closeReceived = false;
++        this._nativeClosed = false;
++        this._closeError = false;
+         this.readableHighWaterMark = 16384;
+         this.writableHighWaterMark = 16384;
+         this.writableNeedDrain = false;
+         this.localAddress = undefined;
+         this.localPort = undefined;
+         this.remoteAddress = undefined;
+         this.remotePort = undefined;
+         this.remoteFamily = undefined;
+         this.allowHalfOpen = false;
++        this._writeEnded = false;
+         this._registerEvents();
+     }
+ 
+@@ -296,16 +302,23 @@ export default class Socket extends EventEmitter {
+      * @param {BufferEncoding} [encoding]
+      */
+     end(data, encoding) {
+-        if (data) {
+-            this.write(data, encoding, () => {
+-                NativeModules.TcpSockets.end(this._id);
+-            });
++        if (!this.allowHalfOpen) {
++            if (data) {
++                this.write(data, encoding, () => {
++                    NativeModules.TcpSockets.end(this._id);
++                });
++                return this;
++            }
++            if (this._pending || this._destroyed) return this;
++            this._clearTimeout();
++            NativeModules.TcpSockets.end(this._id);
+             return this;
+         }
+-        if (this._pending || this._destroyed) return this;
+-
++        if (this._pending || this._destroyed || this._writeEnded) return this;
++        if (data) this.write(data, encoding);
++        this._writeEnded = true;
+         this._clearTimeout();
+-        NativeModules.TcpSockets.end(this._id);
++        NativeModules.TcpSockets.shutdownWrite(this._id);
+         return this;
+     }
+ 
+@@ -316,6 +329,15 @@ export default class Socket extends EventEmitter {
+         if (this._destroyed) return this;
+         this._destroyed = true;
+         this._clearTimeout();
++        this._pausedDataEvents = [];
++        this._endReceived = false;
++        if (this._nativeClosed) {
++            if (this._closeReceived) {
++                this._closeReceived = false;
++                this.emit('close', this._closeError);
++            }
++            return this;
++        }
+         NativeModules.TcpSockets.destroy(this._id);
+         return this;
+     }
+@@ -335,7 +357,7 @@ export default class Socket extends EventEmitter {
+      * @return {boolean}
+      */
+     write(buffer, encoding, cb) {
+-        if (this._pending || this._destroyed) throw new Error('Socket is closed.');
++        if (this._pending || this._destroyed || this._writeEnded) throw new Error('Socket is closed.');
+ 
+         const generatedBuffer = this._generateSendBuffer(buffer, encoding);
+         this._writeBufferSize += generatedBuffer.byteLength;
+@@ -403,6 +425,10 @@ export default class Socket extends EventEmitter {
+     async _recoverDataEventsAfterPause() {
+         if (this._resuming) return;
+         this._resuming = true;
++        if (this._paused) {
++            this._resuming = false;
++            return;
++        }
+         while (this._pausedDataEvents.length > 0) {
+             // Concat all buffered events for better performance
+             const buffArray = [];
+@@ -434,14 +460,34 @@ export default class Socket extends EventEmitter {
+             }
+         }
+         this._resuming = false;
+-        NativeModules.TcpSockets.resume(this._id);
++        this._flushTerminalEvents();
++        if (!this._paused && !this._destroyed && !this._nativeClosed && !this._endReceived) {
++            NativeModules.TcpSockets.resume(this._id);
++        }
++    }
++
++    // Native data, EOF and close can all arrive after pause() crossed the bridge.
++    // Deliver EOF and close only after the queued readable bytes have drained.
++    _flushTerminalEvents() {
++        if (this._pausedDataEvents.length > 0) return;
++        if (this._endReceived && !this._endEmitted && !this._paused) {
++            this._endEmitted = true;
++            if (!this.allowHalfOpen && !this._nativeClosed) this.end();
++            this.emit('end');
++        }
++        // An end listener may pause the socket. Close must still follow that end:
++        // no later resume is required or possible once the readable side ended.
++        if (this._closeReceived && (this._endEmitted || (!this._endReceived && !this._paused))) {
++            this._closeReceived = false;
++            this.emit('close', this._closeError);
++        }
+     }
+ 
+     /**
+      * @private
+      */
+     _onDeviceDataEvt = (/** @type {{ id: number; data: string; }} */ evt) => {
+-        if (evt.id !== this._id) return;
++        if (evt.id !== this._id || this._destroyed) return;
+         this._resetTimeout();
+         if (!this._paused) {
+             const bufferData = Buffer.from(evt.data, 'base64');
+@@ -467,15 +513,23 @@ export default class Socket extends EventEmitter {
+         });
+         this._closeListener = this._eventEmitter.addListener('close', (evt) => {
+             if (evt.id !== this._id) return;
++            this._nativeClosed = true;
+             this._setDisconnected();
+-            this.emit('close', evt.error);
++            this._closeError = evt.hadError ?? evt.error ?? false;
++            if (this._destroyed || this._closeError) {
++                // Explicit destruction and errors remain immediate aborts.
++                this._pausedDataEvents = [];
++                this._endReceived = false;
++                this.emit('close', this._closeError);
++                return;
++            }
++            this._closeReceived = true;
++            this._flushTerminalEvents();
+         });
+         this._endListener = this._eventEmitter.addListener('end', (evt) => {
+             if (evt.id !== this._id) return;
+-            if (!this.allowHalfOpen) {
+-                this.end();
+-            }
+-            this.emit('end');
++            this._endReceived = true;
++            this._flushTerminalEvents();
+         });
+         this._connectListener = this._eventEmitter.addListener('connect', (evt) => {
+             if (evt.id !== this._id) return;

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
@@ -371,6 +371,42 @@ it('reviews committed branch changes with local edits and preserves the author w
   )
   await writeFile(join(f.f.directory, 'new.txt'), 'moved\n')
   expect((await f.read()).current).toBe(false)
+})
+
+it('reviews a stacked worktree branch against its recorded base, not the default branch', async () => {
+  const f = await setup()
+  const git = (cwd: string, ...args: string[]) => f.s.git.command(cwd, args)
+  await git(f.f.directory, 'checkout', '--quiet', 'hello.txt')
+  await git(f.f.directory, 'branch', '-M', 'main')
+  await git(f.f.directory, 'checkout', '--quiet', '-b', 'feature/base')
+  await writeFile(join(f.f.directory, 'base.txt'), 'stacked base\n')
+  await git(f.f.directory, 'add', 'base.txt')
+  await git(f.f.directory, 'commit', '-qm', 'Base work')
+  const task = f.s.tasks.create({
+    title: 'Stacked review',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    execution: 'worktree',
+    objective: 'Work on the stack',
+  })
+  f.s.store.updateTask(task.id, (t) => ({ ...t, worktreeFromOrigin: false }))
+  const cwd = await f.s.checkouts.directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  await writeFile(join(cwd, 'task.txt'), 'task work\n')
+  await git(cwd, 'add', 'task.txt')
+  await git(cwd, 'commit', '-qm', 'Task work')
+  await writeFile(join(cwd, 'dirty.txt'), 'local edit\n')
+  await git(f.f.directory, 'checkout', '--quiet', 'main')
+  f.s.store.updateTask(task.id, (t) => ({ ...t, status: 'review', sessionId: 'author-session' }))
+  const start = await f.call('start', { taskId: task.id, requestId: randomUUID(), scope: 'branch' })
+  expect(start.status).toBe(200)
+  const read = async () =>
+    decode(taskReviewReportSchema, await (await f.call('read', { taskId: task.id })).json())
+  await vi.waitFor(async () => expect((await read()).reviews[0].status).toBe('completed'))
+  expect((await read()).reviews[0].files.map((file) => file.path)).toEqual([
+    'dirty.txt',
+    'task.txt',
+  ])
 })
 
 it.each([true, false])(

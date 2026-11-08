@@ -1,3 +1,5 @@
+import { useConfirmation } from '@dovo/studio-core'
+import { Disclosure } from './disclosure'
 import {
   settingsChangeCount,
   settingsChanges,
@@ -65,6 +67,9 @@ export function TaskDefaultSettings(props: {
   const [open, setOpen] = useApplicationState(false)
   const [editing, setEditing] = useApplicationState(false)
   const [saving, setSaving] = useApplicationState(false)
+  const confirm = useConfirmation(
+    JSON.stringify([open, editing, saving, props.scope, props.repository?.id]),
+  )
   if (props.inline) return <TaskDefaultSettingsForm {...props} />
   return (
     <div className="space-y-3">
@@ -72,12 +77,21 @@ export function TaskDefaultSettings(props: {
         variant="outline"
         aria-expanded={open}
         disabled={saving}
-        onClick={() => {
-          if (!open || !editing || window.confirm('Discard unsaved settings changes?'))
+        onClick={async () => {
+          if (
+            !open ||
+            !editing ||
+            (await confirm({
+              title: 'Discard unsaved settings changes?',
+              description: 'Your edits will be lost.',
+              confirmLabel: 'Discard changes',
+              destructive: true,
+            }))
+          )
             setOpen(!open)
         }}
       >
-        {open ? 'Hide task defaults' : 'Task defaults'}
+        {open ? 'Hide thread defaults' : 'Thread defaults'}
       </Button>
       {open && (
         <TaskDefaultSettingsForm {...props} onDirtyChange={setEditing} onSavingChange={setSaving} />
@@ -113,6 +127,7 @@ function TaskDefaultSettingsForm({
   const [saved, setSaved] = useApplicationState(false)
   const [retry, setRetry] = useApplicationState(0)
   const [showSetupCommand, setShowSetupCommand] = useApplicationState(false)
+  const confirm = useConfirmation(JSON.stringify([scope, repository?.id, draft, prompts, busy]))
   const protectDraft = useRef(false)
   useEffect(() => {
     let active = true
@@ -257,8 +272,16 @@ function TaskDefaultSettingsForm({
           <Select
             value={scope}
             disabled={busy}
-            onValueChange={(value) => {
-              if (!dirty || window.confirm('Discard unsaved settings changes?'))
+            onValueChange={async (value) => {
+              if (
+                !dirty ||
+                (await confirm({
+                  title: 'Discard unsaved settings changes?',
+                  description: 'Your edits will be lost.',
+                  confirmLabel: 'Discard changes',
+                  destructive: true,
+                }))
+              )
                 setScope(settingsScopes.find((entry) => entry === value) ?? 'environment')
             }}
           >
@@ -282,8 +305,8 @@ function TaskDefaultSettingsForm({
       )}
       <fieldset disabled={disabled} className="min-w-0 space-y-6">
         <SettingsGroup
-          title="New tasks"
-          description="Applies when you create a task. Existing conversations keep their agent and permissions."
+          title="New threads"
+          description="Applies when you create a thread. Existing conversations keep their agent and permissions."
         >
           {repository && scope === 'project' && runtimes.length > 1 && (
             <SettingRow
@@ -383,7 +406,7 @@ function TaskDefaultSettingsForm({
           </SettingRow>
           <SettingRow
             label="Access mode"
-            description={`Access for new tasks, whichever agent you choose. ${permissionPolicyLabel(defaultPolicy)}`}
+            description={`Access for new threads, whichever agent you choose. ${permissionPolicyLabel(defaultPolicy)}`}
             source={source('permission')}
           >
             <Select
@@ -498,7 +521,7 @@ function TaskDefaultSettingsForm({
             <div className="p-4">
               <ModelSettings
                 layout="settings"
-                agent={{ ...harness, id: 'defaults', name: 'Task defaults' }}
+                agent={{ ...harness, id: 'defaults', name: 'Thread defaults' }}
                 connected={connected}
                 loadModels={loadModels}
                 onChange={(agent) =>
@@ -517,17 +540,14 @@ function TaskDefaultSettingsForm({
                 id="default-agent-instructions"
                 aria-label="Instructions"
                 value={harness.instructions}
-                placeholder="Additional instructions for new tasks…"
+                placeholder="Additional instructions for new threads…"
                 onChange={(event) =>
                   change({ ...draft, harness: { ...harness, instructions: event.target.value } })
                 }
               />
             </div>
             {harness.provider !== 'cursor' && (
-              <details className="p-4">
-                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                  Connection override
-                </summary>
+              <Disclosure title={<> Connection override </>}>
                 <div className="mt-3 space-y-2">
                   <label className="text-xs" htmlFor="default-agent-connection">
                     {harness.provider === 'opencode' ? 'Server URL' : 'Executable (optional)'}
@@ -550,7 +570,7 @@ function TaskDefaultSettingsForm({
                     }
                   />
                 </div>
-              </details>
+              </Disclosure>
             )}
           </SettingsGroup>
         )}
@@ -558,11 +578,11 @@ function TaskDefaultSettingsForm({
           <>
             <SettingsGroup
               title="Workspace & setup"
-              description="How a new task checks out your code and prepares its workspace."
+              description="How a new thread checks out your code and prepares its workspace."
             >
               <SettingRow
                 label="Working directory"
-                description="Use your checkout or give each task an isolated worktree."
+                description="Use your checkout or give each thread an isolated worktree."
                 source={source('execution')}
               >
                 <Select
@@ -588,7 +608,7 @@ function TaskDefaultSettingsForm({
               </SettingRow>
               <SettingRow
                 label="Start from origin"
-                description="Prefer the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a task."
+                description="Prefer the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a thread."
                 source={source('worktreeFromOrigin')}
               >
                 <Toggle
@@ -605,7 +625,7 @@ function TaskDefaultSettingsForm({
             <SettingsGroup
               advanced
               title="Advanced workspace setup"
-              description="Submodules and commands to run before starting a task."
+              description="Submodules and commands to run before starting a thread."
             >
               <SettingRow
                 label="Submodules"
@@ -819,7 +839,7 @@ function TaskDefaultSettingsForm({
         saving={busy}
         disabled={!!policyIssue || disabled}
         saved={saved}
-        description="Changes apply to new tasks. Save to apply."
+        description="Changes apply to new threads."
         onSave={() => void save()}
         onDiscard={() => {
           setDraft(settings?.value.taskDefaults ?? {})
@@ -830,7 +850,7 @@ function TaskDefaultSettingsForm({
         }}
       >
         <Button variant="ghost" size="sm" disabled={disabled} onClick={() => change({})}>
-          Reset task defaults to inherited settings
+          Reset thread defaults to inherited settings
         </Button>
       </SettingsSaveBar>
       {!connected && (
@@ -849,10 +869,16 @@ function TaskDefaultSettingsForm({
           <Button
             variant="ghost"
             disabled={!connected || busy}
-            onClick={() => {
+            onClick={async () => {
               if (
                 dirty &&
-                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+                !(await confirm({
+                  title: 'Reload saved settings?',
+                  description:
+                    'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+                  confirmLabel: 'Discard and reload',
+                  destructive: true,
+                }))
               )
                 return
               protectDraft.current = false

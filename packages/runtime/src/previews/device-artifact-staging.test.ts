@@ -108,12 +108,14 @@ it('never reads external files when a directory ancestor is replaced during copy
   const outside = await fixture()
   await fs.mkdir(join(root, 'Build.app'))
   await fs.writeFile(join(root, 'Build.app', 'first'), 'safe')
-  await fs.writeFile(join(outside, 'second'), 'secret')
+  // A matching name must still be rejected before opening the external target.
+  await fs.writeFile(join(outside, 'first'), 'secret')
   const originalRead = fs.readdir
   let replaced = false
   vi.spyOn(fs, 'readdir').mockImplementation(async (...args) => {
     const result = await originalRead(...args)
-    if (!replaced && String(args[0]).startsWith('/proc/self/fd/')) {
+    const path = String(args[0])
+    if (!replaced && (path.startsWith('/proc/self/fd/') || path === join(root, 'Build.app'))) {
       replaced = true
       await fs.rename(join(root, 'Build.app'), join(root, 'old.app'))
       await fs.symlink(outside, join(root, 'Build.app'))
@@ -121,6 +123,7 @@ it('never reads external files when a directory ancestor is replaced during copy
     return result
   })
   await expect(stageDeviceArtifact('Build.app', root)).rejects.toThrow(/Artifact/)
+  expect(replaced).toBe(true)
 })
 
 it('stages bundles on hosts without Linux descriptor paths', async () => {

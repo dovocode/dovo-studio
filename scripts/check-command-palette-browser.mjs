@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -14,8 +15,8 @@ import {CommandPalette} from '../studio-shell/src/command-palette';
 window.executed=[];
 const definitions=[
   {id:'workspace',title:'Open workspace',aliases:['thread','thread']},
-  {id:'new',title:'New thread',aliases:['new task','new chat','thread']},
-  {id:'switch',title:'Go to task…',aliases:['go to thread','switch thread']},
+  {id:'new',title:'New thread',aliases:['new thread','new chat','thread']},
+  {id:'switch',title:'Go to thread…',aliases:['go to thread','switch thread']},
   {id:'search',title:'Search conversations…',aliases:['search messages','find message','thread']},
   {id:'history',title:'Thread history',aliases:['thread']},
   {id:'terminal',title:'Toggle terminal',aliases:['shell','console']},
@@ -52,10 +53,18 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
-  await page.addStyleTag({
-    content:
-      '[role=dialog]{position:fixed;inset:80px 120px;background:white;padding:20px}[role=listbox]{max-height:300px;overflow:auto}[role=option]{display:block;width:100%;text-align:left}[role=dialog]>div{margin:8px}',
-  })
+  const screenshots = process.env.DOVO_COMMAND_SCREENSHOTS
+  if (screenshots) {
+    await mkdir(screenshots, { recursive: true })
+    const assets = `${root}apps/desktop/dist/assets/`
+    for (const file of await readdir(assets))
+      if (file.endsWith('.css'))
+        await page.addStyleTag({ content: await readFile(assets + file, 'utf8') })
+  } else
+    await page.addStyleTag({
+      content:
+        '[role=dialog]{position:fixed;inset:80px 120px;background:white;padding:20px}[role=listbox]{max-height:300px;overflow:auto}[role=option]{display:block;width:100%;text-align:left}[role=dialog]>div{margin:8px}',
+    })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const opener = page.getByRole('button', { name: 'Open commands', exact: true })
   const input = page.getByRole('combobox', { name: 'Search commands', exact: true })
@@ -64,14 +73,46 @@ try {
   await opener.click()
   await input.waitFor()
   assert.equal(await input.evaluate((element) => element === document.activeElement), true)
+  if (screenshots) {
+    await page.getByRole('dialog').evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished))
+    })
+    await page.screenshot({ path: screenshots + '/commands-desktop.png' })
+    await page.setViewportSize({ width: 320, height: 700 })
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    await page.evaluate(() => {
+      document.documentElement.dataset.themeGlow = '0'
+      document.documentElement.dataset.themeGradients = 'false'
+    })
+    assert.equal(
+      await options.first().evaluate((el) => getComputedStyle(el).backgroundImage),
+      'none',
+    )
+    await page.screenshot({ path: screenshots + '/commands-320-flat.png' })
+    await page.setViewportSize({ width: 900, height: 800 })
+  }
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    const selected = await input.getAttribute('aria-activedescendant')
+    for (const key of ['ArrowDown', 'End', 'Enter'])
+      await input.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...options }),
+          ),
+        { ...shape, key },
+      )
+    assert.equal(await input.getAttribute('aria-activedescendant'), selected)
+    assert.deepEqual(await page.evaluate(() => window.executed), [])
+    assert.equal(await input.isVisible(), true)
+  }
   const declarationOrder = await titles()
   assert.equal(declarationOrder.length, 7)
   await input.fill('  ThReAd  ')
   assert.deepEqual(await titles(), [
     'New thread',
+    'Go to thread…',
     'Thread history',
     'Open workspace',
-    'Go to task…',
     'Search conversations…',
   ])
   assert.equal(await options.filter({ hasText: /^New thread$/ }).count(), 1)
@@ -81,7 +122,7 @@ try {
   await input.press('Home')
   await input.press('ArrowDown')
   assert.equal(
-    await options.filter({ hasText: /^Thread history$/ }).getAttribute('aria-selected'),
+    await options.filter({ hasText: /^Go to thread…$/ }).getAttribute('aria-selected'),
     'true',
   )
   await input.press('ArrowUp')
@@ -90,7 +131,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.executed), ['new'])
   await page.waitForFunction(() => document.activeElement?.matches('.studio-main'))
   await opener.click()
-  await input.fill('  NEW TASK  ')
+  await input.fill('  NEW THREAD  ')
   assert.deepEqual(await titles(), ['New thread'])
   await input.evaluate((element) => {
     element.dispatchEvent(

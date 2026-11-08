@@ -232,9 +232,11 @@ it('delivers a remote final answer once and retains completed results when offli
   const pairing = await pair(source, target)
   const created = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
   const child = decode(childSchema, await created.json())
-  await waitForRuntime(() =>
-    expect(target.s.store.taskSummary(child.threadId).status).toBe('review'),
-  )
+  await waitForRuntime(() => {
+    expect(target.s.store.taskSummary(child.threadId).status).toBe('review')
+    // Review is persisted before the run releases its reservation; results wait for both.
+    expect(threadSnapshot(target.s, child.threadId).phase).toBe('completed')
+  })
   await source.s.threadWatch.tick()
   const queued = source.s.store.taskSummary(source.parent.id).subagentInbox ?? []
   expect(queued).toHaveLength(1)
@@ -266,9 +268,11 @@ it('keeps a child spawned under a replaced profile ID readable with its original
   const input = { ...request, runtimeId: pairing.peer.id }
   const child = decode(childSchema, await (await source.post('spawn', input)).json())
   expect(child.runtimeId).toBe(pairing.peer.id)
-  await waitForRuntime(() =>
-    expect(target.s.store.taskSummary(child.threadId).status).toBe('review'),
-  )
+  await waitForRuntime(() => {
+    expect(target.s.store.taskSummary(child.threadId).status).toBe('review')
+    // Review is persisted before the run releases its reservation; results wait for both.
+    expect(threadSnapshot(target.s, child.threadId).phase).toBe('completed')
+  })
   await source.s.threadWatch.tick()
   expect(source.s.threadWatch.list(source.parent.id)[0].snapshot?.runtimeId).toBe(
     target.s.runtimeId,
@@ -298,9 +302,11 @@ it('permits read-only General coordinators to launch and read strictly read-only
   })
   expect(created.status).toBe(200)
   const child = decode(childSchema, await created.json())
-  await waitForRuntime(() =>
-    expect(target.s.store.taskSummary(child.threadId).status).toBe('review'),
-  )
+  await waitForRuntime(() => {
+    expect(target.s.store.taskSummary(child.threadId).status).toBe('review')
+    // Review is persisted before the run releases its reservation; results wait for both.
+    expect(threadSnapshot(target.s, child.threadId).phase).toBe('completed')
+  })
   expect(
     resolveTaskAgent(target.s.store.taskSummary(child.threadId), target.s.store.get().agents)
       ?.permission,
@@ -609,9 +615,11 @@ it('returns background grandchildren and acknowledges a remote failure without l
   const created = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
   expect(created.status).toBe(200)
   const child = decode(childSchema, await created.json())
-  await waitForRuntime(() =>
-    expect(target.s.store.taskSummary(child.threadId).status).toBe('review'),
-  )
+  await waitForRuntime(() => {
+    expect(target.s.store.taskSummary(child.threadId).status).toBe('review')
+    // Review is persisted before the run releases its reservation; results wait for both.
+    expect(threadSnapshot(target.s, child.threadId).phase).toBe('completed')
+  })
   target.s.store.updateTask(child.threadId, (task) => ({
     ...task,
     status: 'failed',

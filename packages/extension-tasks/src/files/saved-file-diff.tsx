@@ -1,11 +1,13 @@
 import { useEffect, useMemo } from 'react'
-import { getFiletypeFromFileName, parseDiffFromFile } from '@pierre/diffs'
+import { getFiletypeFromFileName } from '@pierre/diffs'
+import type { FileDiffMetadata } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { ChangedFile } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { DiffAmounts } from './presentation'
+import { parseSavedFileDiff } from './saved-file-diff-job'
 
 export function CheckpointDiff({ file }: { file: ChangedFile }) {
   const [ready, setReady] = useApplicationState(false)
@@ -14,28 +16,25 @@ export function CheckpointDiff({ file }: { file: ChangedFile }) {
   const diffs = useDiffOptions()
   const [split, setSplit] = useApplicationState(diffs.defaultSplit)
   const [overflow, setOverflow] = useApplicationState(diffs.options.overflow)
-  const parsed = useMemo(() => {
-    try {
-      // Pierre forwards these options to jsdiff. An aborted comparison throws;
-      // keep complete contents readable rather than blocking on a complex edit.
-      const options = { context: 4, timeout: 1000 }
-      return {
-        diff: parseDiffFromFile(
-          { name: file.path, contents: file.before },
-          { name: file.path, contents: file.after },
-          options,
-        ),
-        error: '',
-      }
-    } catch {
-      return {
-        diff: null,
-        error:
-          'This diff could not be computed within the viewer limit. Complete contents are shown below.',
-      }
-    }
+  const [parsed, setParsed] = useApplicationState<{
+    path: string
+    before: string
+    after: string
+    diff: FileDiffMetadata | null
+    error: boolean
+  } | null>(null)
+  const current =
+    parsed?.path === file.path && parsed.before === file.before && parsed.after === file.after
+      ? parsed
+      : null
+  const diff = current?.diff
+  useEffect(() => {
+    if (file.before === file.after) return
+    const input = { path: file.path, before: file.before, after: file.after }
+    return parseSavedFileDiff(input, (result) =>
+      setParsed({ ...input, diff: result, error: !result }),
+    )
   }, [file.path, file.before, file.after])
-  const diff = parsed.diff
   const stats = useMemo(
     () =>
       diff
@@ -94,10 +93,12 @@ export function CheckpointDiff({ file }: { file: ChangedFile }) {
         className="studio-code min-h-0 min-w-0 flex-1 overflow-auto"
         aria-label="Saved file diff"
       >
-        {error || parsed.error ? (
+        {error || current?.error ? (
           <div className="space-y-3 p-3 text-xs">
             <p role="alert" className="break-words text-destructive">
-              {error ? `Highlighting unavailable. ${error}` : parsed.error}
+              {error
+                ? `Highlighting unavailable. ${error}`
+                : 'This diff could not be computed within the viewer limit. Complete contents are shown below.'}
             </p>
             {error && (
               <Button size="sm" variant="outline" onClick={() => setAttempt((value) => value + 1)}>

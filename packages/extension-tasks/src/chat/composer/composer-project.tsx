@@ -14,7 +14,7 @@ import {
   preferredProjectEntry,
   projectDefaultServer,
 } from '@dovo/protocol'
-import { Button, Input, Popover } from '@dovo/studio-ui'
+import { Button, Input, Popover, ProjectIcon } from '@dovo/studio-ui'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { RepositoryDialog } from '@dovo/extension-scm/repository-dialog'
 import {
@@ -23,8 +23,9 @@ import {
   Folder,
   LoaderCircle,
   Plus,
-  MessageCircle,
+  MessageCircleDashed,
   ScanSearch,
+  Layers,
 } from 'lucide-react'
 import { useRef, useState, type ComponentProps } from 'react'
 import { taskSources, type TaskSource } from '../../list/task-collection'
@@ -210,9 +211,12 @@ export function ComposerProject({
         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
       >
         {group.key === 'scratch' ? (
-          <MessageCircle className="size-4 shrink-0" />
+          <MessageCircleDashed className="size-4 shrink-0" />
         ) : (
-          <Folder className="size-4 shrink-0" />
+          <ProjectIcon
+            repository={preferred?.repository ?? group.entries[0]?.repository}
+            className="size-4 shrink-0"
+          />
         )}
         <span className="min-w-0 flex-1">
           <span className="block truncate">{group.name}</span>
@@ -274,7 +278,14 @@ export function ComposerProject({
         }
       }}
     >
-      <div className={prominent ? 'inline-flex min-w-0 max-w-full items-stretch' : 'contents'}>
+      <div
+        className={
+          prominent
+            ? 'startup-project-selector inline-flex min-w-0 max-w-full items-stretch'
+            : 'contents'
+        }
+        data-selected={projectSelected || undefined}
+      >
         {prominent && autoAvailable && (
           <button
             type="button"
@@ -284,7 +295,7 @@ export function ComposerProject({
             title={
               selectedProject
                 ? 'Choose a different project or Scope'
-                : 'Find the right projects for your task'
+                : 'Find the right projects for your thread'
             }
             onClick={() => {
               if (selectedProject) {
@@ -293,9 +304,14 @@ export function ComposerProject({
                 setOpen(true)
               } else chooseScope()
             }}
-            className={`min-h-11 min-w-20 max-w-52 truncate rounded-l-lg border border-r-0 px-3 text-sm outline-none hover:bg-accent focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+            className={`inline-flex items-center justify-center gap-3 min-h-11 min-w-20 max-w-52 rounded-l-lg border border-r-0 px-3 text-sm outline-none hover:bg-accent focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
           >
-            {startLabel}
+            {selectedProject ? (
+              <ProjectIcon repository={selectedProject} className="size-4 shrink-0" />
+            ) : (
+              <Layers className="size-5 shrink-0 text-primary" aria-hidden="true" />
+            )}
+            <span className="truncate">{startLabel}</span>
           </button>
         )}
         <Popover.Trigger asChild>
@@ -303,7 +319,7 @@ export function ComposerProject({
             type="button"
             variant="ghost"
             disabled={locked}
-            aria-label={prominent ? 'Choose project' : 'Task project'}
+            aria-label={prominent ? 'Choose project' : 'Thread project'}
             className={
               prominent
                 ? `min-h-11 min-w-11 ${autoAvailable ? 'rounded-l-none rounded-r-lg' : 'gap-2 rounded-lg'} border px-3 shadow-none ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`
@@ -311,16 +327,25 @@ export function ComposerProject({
             }
           >
             {prominent && !autoAvailable && (
-              <span className="max-w-48 truncate">{selectedProject?.name ?? 'Choose project'}</span>
+              <>
+                {selectedProject ? (
+                  <ProjectIcon repository={selectedProject} className="size-4 shrink-0" />
+                ) : (
+                  <Folder className="size-4 shrink-0" aria-hidden="true" />
+                )}
+                <span className="max-w-48 truncate">
+                  {selectedProject?.name ?? 'Choose project'}
+                </span>
+              </>
             )}
             {!prominent && (
               <>
                 {task.autoProject ? (
                   <ScanSearch className="size-3.5" />
                 ) : repository?.kind === 'scratch' ? (
-                  <MessageCircle className="size-3.5" />
+                  <MessageCircleDashed className="size-3.5" />
                 ) : (
-                  <Folder className="size-3.5" />
+                  <ProjectIcon repository={repository} className="size-3.5 shrink-0" />
                 )}
                 <span className="max-w-32 truncate">
                   {task.autoProject
@@ -328,7 +353,7 @@ export function ComposerProject({
                       ? 'Scope'
                       : 'Scope (disabled)'
                     : repository?.kind === 'scratch'
-                      ? 'General'
+                      ? 'No Project'
                       : (repository?.name ?? 'Choose project')}
                 </span>
               </>
@@ -360,6 +385,7 @@ export function ComposerProject({
             disabled={locked}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
                 projects.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
@@ -372,6 +398,7 @@ export function ComposerProject({
             role="group"
             aria-label="Projects"
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
               const buttons = Array.from(
                 event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
@@ -459,7 +486,7 @@ export function ComposerProject({
             type="button"
             variant="ghost"
             disabled={locked}
-            aria-label="Task server"
+            aria-label="Thread server"
             className={
               prominent
                 ? 'min-h-11 min-w-0 max-w-56 gap-1.5 rounded-lg border border-border px-3 text-xs font-normal'
@@ -467,7 +494,9 @@ export function ComposerProject({
             }
           >
             <RuntimeIcon icon={current?.snapshot?.runtimeIcon} className="size-3.5" />
-            <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>
+            <span className="max-w-48 truncate" title={current?.name ?? 'This server'}>
+              {current?.name ?? 'This server'}
+            </span>
             <ChevronDown className="size-3" />
           </Button>
         </Popover.Trigger>
@@ -486,7 +515,7 @@ export function ComposerProject({
               {task.autoProject ? (
                 'Select projects automatically on'
               ) : (
-                <>Run {repository?.kind === 'scratch' ? 'General' : repository?.name} on</>
+                <>Run {repository?.kind === 'scratch' ? 'No Project' : repository?.name} on</>
               )}
             </p>
             {sources
@@ -531,7 +560,7 @@ export function ComposerProject({
                   setTransferring(true)
                 }}
               >
-                <Plus className="size-4" /> Add to another machine
+                <Plus className="size-4" /> Add to another computer
               </Button>
             )}
             {feedback}
@@ -550,15 +579,16 @@ export function ComposerProject({
           <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5">
             <button
               type="button"
-              aria-label="Start in General"
+              aria-label="Start without a project"
               aria-pressed={!task.autoProject && repository?.kind === 'scratch'}
               disabled={locked || !scratchRepository}
               onClick={() => {
                 if (current && scratchRepository) void choose(current, scratchRepository)
               }}
-              className={`min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+              className={`startup-no-project inline-flex items-center justify-center gap-1.5 min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
             >
-              General
+              <MessageCircleDashed className="size-4" aria-hidden="true" />
+              Without a project
             </button>
             {projectControl}
           </div>

@@ -17,6 +17,7 @@ const mcp = z.union([
 export const cursorInputSchema = z.object({
   cwd: z.string().min(1),
   sessionId: z.string().optional(),
+  compact: z.boolean().optional(),
   model: z.string(),
   reasoning: z.string(),
   permission: z.enum(['read-only', 'auto', 'full-access']),
@@ -105,7 +106,7 @@ export function cursorOptions(input: CursorInput): AgentOptions {
   }
 }
 
-type CursorAgent = Pick<SDKAgent, 'agentId' | 'send' | typeof Symbol.asyncDispose>
+type CursorAgent = Pick<SDKAgent, 'agentId' | 'send' | 'summarize' | typeof Symbol.asyncDispose>
 type CursorFactory = {
   create(options: AgentOptions): Promise<CursorAgent>
   resume(id: string, options: AgentOptions): Promise<CursorAgent>
@@ -132,6 +133,8 @@ export function cursorSession(emit: (event: CursorEvent) => void, factory: Curso
     async run(input: CursorInput) {
       if (input.sessionId?.startsWith('bc-'))
         throw new Error('Cursor cloud sessions cannot run on a local Dovo runtime')
+      if (input.compact && !input.sessionId)
+        throw new Error('Cursor compaction requires an existing local session')
       const options = cursorOptions(input)
       const agent = input.sessionId
         ? await factory.resume(input.sessionId, options)
@@ -144,44 +147,52 @@ export function cursorSession(emit: (event: CursorEvent) => void, factory: Curso
       try {
         if (cancelled) throw new Error('Cursor run cancelled')
         emit({ type: 'session', id: agent.agentId })
-        active = await agent.send(
-          { text: input.prompt, images: input.images },
-          {
-            model: options.model,
-            mcpServers: options.mcpServers,
-            onStep: ({ step }) => {
-              if (step.type === 'assistantMessage') boundary = true
-            },
-            onDelta: ({ update }) => {
-              if (update.type === 'text-delta' && update.text) {
-                if (boundary && emitted) emit({ type: 'boundary' })
-                boundary = false
-                emitted = true
-                emit({ type: 'text', text: update.text })
-              } else if (update.type === 'thinking-delta')
-                emit({
-                  type: 'event',
-                  name: 'cursor/thinking',
-                  payload: { id: thinkingIndex, text: update.text },
-                })
-              else if (update.type === 'thinking-completed') {
-                emit({
-                  type: 'event',
-                  name: 'cursor/thinking-completed',
-                  payload: { id: thinkingIndex++ },
-                })
-              } else if (update.type === 'summary-completed')
-                emit({ type: 'event', name: 'cursor/summary-completed', payload: {} })
-            },
-          },
-        )
+        let summary: { fallback?: boolean } | undefined
+        active = input.compact
+          ? await agent.summarize()
+          : await agent.send(
+              { text: input.prompt, images: input.images },
+              {
+                model: options.model,
+                mcpServers: options.mcpServers,
+                onStep: ({ step }) => {
+                  if (step.type === 'assistantMessage') boundary = true
+                },
+                onDelta: ({ update }) => {
+                  if (update.type === 'text-delta' && update.text) {
+                    if (boundary && emitted) emit({ type: 'boundary' })
+                    boundary = false
+                    emitted = true
+                    emit({ type: 'text', text: update.text })
+                  } else if (update.type === 'thinking-delta')
+                    emit({
+                      type: 'event',
+                      name: 'cursor/thinking',
+                      payload: { id: thinkingIndex, text: update.text },
+                    })
+                  else if (update.type === 'thinking-completed') {
+                    emit({
+                      type: 'event',
+                      name: 'cursor/thinking-completed',
+                      payload: { id: thinkingIndex++ },
+                    })
+                  } else if (update.type === 'summary-completed')
+                    emit({ type: 'event', name: 'cursor/summary-completed', payload: {} })
+                },
+              },
+            )
         if (cancelled) {
           await active.cancel()
           throw new Error('Cursor run cancelled')
         }
-        emit({ type: 'accepted', steer: typeof active.steer === 'function' })
+        emit({ type: 'accepted', steer: !input.compact && typeof active.steer === 'function' })
         const stream = async () => {
           for await (const message of active!.stream()) {
+            if (message.type === 'summary' && input.compact) {
+              if (message.status === 'error')
+                throw new Error('Cursor compaction failed; conversation unchanged')
+              if (message.status === 'completed') summary = { fallback: message.fallback }
+            }
             if (message.type === 'tool_call' || message.type === 'usage')
               emit({
                 type: 'event',
@@ -198,7 +209,16 @@ export function cursorSession(emit: (event: CursorEvent) => void, factory: Curso
         const [result] = await Promise.all([active.wait(), stream()])
         if (result.status !== 'finished')
           throw new Error(result.error?.message || `Cursor run ${result.status}`)
-        if (!emitted && result.result) emit({ type: 'text', text: result.result })
+        if (input.compact) {
+          if (!summary) throw new Error('Cursor did not report a completed compaction')
+          emit({ type: 'event', name: 'dovo/compaction/completed', payload: summary })
+          emit({
+            type: 'text',
+            text: summary.fallback
+              ? 'Context compacted using a trimmed transcript because Cursor could not generate a summary.'
+              : result.result || 'Context compacted.',
+          })
+        } else if (!emitted && result.result) emit({ type: 'text', text: result.result })
         succeeded = true
       } finally {
         try {

@@ -16,10 +16,12 @@ import {ApplicationStateProvider} from './packages/studio-core/src/runtime/appli
 import {browserReadCache} from './packages/studio-core/src/workspace/read-cache.ts';window.readCacheFor=browserReadCache;
 import {RuntimeProvider,useRuntime,useRuntimeSelector} from './apps/mobile/src/runtime/connection/provider.tsx';
 import {preparePeerConnection} from './apps/mobile/src/runtime/connection/peer-transport.ts';window.prepareAccountPeer=preparePeerConnection;window.accountPeerAddress=peerAddress;
-window.readFails=true;window.writes=[];window.requests=[];window.peerOpens=[];window.peerCloses=0;window.setPeerRelay=(id,relay)=>Effect.runPromise(window.runtime.setPeerRelayEffect(id,relay));window.upgradePeer=(profile,peer)=>Effect.runPromise(window.runtime.upgradeInternetEffect(profile.id,profile.connection,peer));window.connectPeer=()=>{const peer={origin:'https://connect.example',secret:'a'.repeat(64)};preparePeerConnection(peer);return window.runtime.connect({address:peerAddress(peer),token:'private-peer-device-token',peer},'Peer')};
+window.readFails=!location.search.includes('startup');window.holdInactiveCache=!window.readFails;window.inactiveCacheWait=new Promise(resolve=>window.releaseInactiveCache=resolve);window.inactiveCacheStarted=false;window.writes=[];window.requests=[];window.peerOpens=[];window.peerCloses=0;window.setPeerRelay=(id,relay)=>Effect.runPromise(window.runtime.setPeerRelayEffect(id,relay));window.upgradePeer=(profile,peer)=>Effect.runPromise(window.runtime.upgradeInternetEffect(profile.id,profile.connection,peer));window.connectPeer=()=>{const peer={origin:'https://connect.example',secret:'a'.repeat(64)};preparePeerConnection(peer);return window.runtime.connect({address:peerAddress(peer),token:'private-peer-device-token',peer},'Peer')};
 const profiles=['one','two'].map(name=>runtimeProfile({address:'http://'+name+'.lan:8787',token:'test-private-token-at-least-32-characters-'+name},name));
 window.saved=JSON.stringify({version:1,activeId:profiles[0].id,profiles});
-window.servers={};window.patchOffline=false;window.patchCalls=[];
+window.liveStartup=location.search.includes('liveStartup');
+window.cachedStartupSnapshot={revision:1,runtimeInstanceId:'cached-runtime',owner:false,workspaceReconciliationSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]};
+window.servers={};window.messageCalls=[];window.holdMessage=false;window.patchOffline=false;window.patchCalls=[];
 window.fetch=async(url,init={})=>{
   window.requests.push(String(url));const parsed=new URL(url);
   if(window.rejectPeerSnapshot && parsed.host==='127.0.0.1:44555')return Response.json({error:'Peer path unavailable'},{status:503});
@@ -27,6 +29,11 @@ window.fetch=async(url,init={})=>{
   if(parsed.host==='127.0.0.1:44555' && parsed.pathname==='/api/snapshot' && !parsed.searchParams.has('scope'))return Response.json({error:'Full history download exceeds this connection budget'},{status:413});
   if(parsed.pathname==='/api/mutations/status')return Response.json({version:1,workspaceMutations:1});
   if(parsed.pathname==='/api/echo-ok')return Response.json({ok:true});
+  if(parsed.pathname==='/api/tasks/message'){
+    window.messageCalls.push(JSON.parse(init.body));
+    if(window.holdMessage)await new Promise(resolve=>window.releaseMessage=resolve);
+    return Response.json({ok:true});
+  }
   // Route verification identifies whichever computer currently answers this address.
   if(parsed.pathname==='/health')return Response.json({service:'dovo-runtime',runtimeId:window.servers[parsed.host]?.runtimeId});
   // Hold reads on the old LAN route while the same computer moves to a new address.
@@ -40,6 +47,7 @@ window.fetch=async(url,init={})=>{
     server.workspace.repositories[0]={...server.workspace.repositories[0],path:window.patchPath??'/local'};
     return Response.json({revision:server.revision,runtimeInstanceId:server.runtimeInstanceId,reconciled:true});
   }
+  if(window.holdSnapshotReads && parsed.pathname==='/api/snapshot'){return new Promise(resolve=>window.snapshotResponses.push(()=>resolve(Response.json(server))));}
   if(window.holdSnapshotFailure && parsed.pathname==='/api/snapshot' && parsed.host==='one.lan:8787'){
     window.holdSnapshotFailure=false;
     return new Promise(resolve=>{window.failHeldSnapshot=()=>resolve(Response.json({error:'Old HTTP poll failed'},{status:400}));});
@@ -88,7 +96,7 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     },
     {
       path: '@dovo/protocol',
-      contents: `export * from '${root}packages/protocol/src/index.ts';export const retryRuntimeSync=connection=>{(window.syncRetries??=[]).push(connection.address)};export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;return {online:()=>false,refresh:()=>{window.liveRefreshes=(window.liveRefreshes??0)+1},stop:()=>{delete window.streams[connection.address]}}};`,
+      contents: `export * from '${root}packages/protocol/src/index.ts';export const retryRuntimeSync=connection=>{(window.syncRetries??=[]).push(connection.address)};export const runtimeSyncOnline=()=>!!window.streamOnline;export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;callbacks.onStatus?.(window.liveStartup?'connecting':'reconnecting');return {online:()=>!!window.streamOnline,refresh:()=>{window.liveRefreshes=(window.liveRefreshes??0)+1},stop:()=>{delete window.streams[connection.address]}}};`,
     },
     {
       path: '@dovo/client-runtime',
@@ -109,7 +117,7 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     {
       path: './read-cache',
       importer,
-      contents: `export {browserReadCache as mobileReadCache} from '${root}packages/studio-core/src/workspace/read-cache.ts';`,
+      contents: `import {Effect} from 'effect';import {browserReadCache} from '${root}packages/studio-core/src/workspace/read-cache.ts';export const mobileReadCache=connection=>{const cache=browserReadCache(connection);return {...cache,readEffect:(...args)=>{if(args[0]==='snapshot'&&connection.address.includes('one.lan')&&window.liveStartup&&!location.search.includes('emptyCache'))return Effect.succeed({value:{snapshot:window.cachedStartupSnapshot,lastSeen:null,pulls:null}});if(args[0]==='snapshot'&&connection.address.includes('two.lan')&&window.holdInactiveCache){window.inactiveCacheStarted=true;return Effect.promise(()=>window.inactiveCacheWait).pipe(Effect.andThen(cache.readEffect(...args)))}return cache.readEffect(...args)}}};`,
     },
     {
       path: './mutation-storage',
@@ -268,7 +276,13 @@ try {
   // accepted replacement offline when that older HTTP request eventually fails.
   await page.evaluate(() => {
     window.holdSnapshotFailure = true
-    window.networkChanged({ isConnected: true })
+    window.snapshotReadFinished = false
+    void window.runtime
+      .refreshRuntime(window.runtime.profile)
+      .catch(() => {})
+      .finally(() => {
+        window.snapshotReadFinished = true
+      })
   })
   await page.waitForFunction(() => typeof window.failHeldSnapshot === 'function')
   await page.evaluate(() => {
@@ -280,10 +294,9 @@ try {
   await page.waitForFunction(
     () => window.runtime.snapshot?.runtimeInstanceId === 'restarted-runtime',
   )
-  const failuresBefore = await page.evaluate(() => window.pollFailures?.length ?? 0)
   await page.evaluate(() => window.failHeldSnapshot())
-  // Observe the real polling worker finishing its error callback before inspecting state.
-  await page.waitForFunction((before) => window.pollFailures?.length > before, failuresBefore)
+  // Observe the held HTTP read completing before inspecting the newer streamed state.
+  await page.waitForFunction(() => window.snapshotReadFinished)
   assert.deepEqual(
     await page.evaluate(() => {
       const entry = window.runtime.overviews.find((entry) => entry.profile.name === 'one')
@@ -322,9 +335,15 @@ try {
       (entry) => entry.profile.name === 'one' && entry.connected && entry.error === null,
     ),
   )
+  const beforeNetworkWake = await page.evaluate(() => {
+    const before = window.liveRefreshes ?? 0
+    window.networkChanged({ isConnected: false })
+    window.networkChanged({ isConnected: true })
+    return before
+  })
   assert.ok(
-    await page.evaluate(() => window.liveRefreshes > 0),
-    'A network change refreshes the stream',
+    await page.evaluate((before) => window.liveRefreshes > before, beforeNetworkWake),
+    'A real reconnect refreshes the stream',
   )
   // Backgrounding tears down the old stream. A late callback from that stream
   // cannot overwrite the foreground connection, even after the runtime restarts.
@@ -817,9 +836,168 @@ try {
   const renders = await page.evaluate(() => window.renders)
   assert.ok(renders.broad > 3, `broad runtime reader rendered ${renders.broad} times`)
   assert.equal(renders.selected, 1, 'an action selector re-rendered for runtime state changes')
+  const startupContext = await browser.newContext()
+  await startupContext.route('http://mobile-recovery.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const startup = await startupContext.newPage()
+  startup.on('pageerror', (error) => errors.push(error.message))
+  await startup.goto('http://mobile-recovery.lan/?startup')
+  await startup.addScriptTag({ content: built.outputFiles[0].text })
+  await startup.waitForFunction(() => window.runtime?.ready && window.inactiveCacheStarted)
+  assert.equal(await startup.evaluate(() => window.runtime.profile.name), 'one')
+  await startup.evaluate(() => {
+    window.holdInactiveCache = false
+    window.releaseInactiveCache()
+  })
+  await startup.evaluate(() => {
+    window.networkChanged({ isConnected: false })
+    window.appStateChanged('background')
+    window.appStateChanged('active')
+  })
+  await startup.waitForFunction(() => !window.runtime.connected)
+  const offline = await startup.evaluate(async () => {
+    const before = window.requests.length
+    const result = await window.runtime.call(
+      '/api/tasks/message',
+      { id: 'offline-thread', messageId: 'offline-first', text: 'Saved locally' },
+      window.okSchema,
+      undefined,
+      { defer: true },
+    )
+    return {
+      result,
+      requests: window.requests.length - before,
+      pending: window.runtime.mutationStatus(window.runtime.profile).pending,
+    }
+  })
+  assert.deepEqual(offline, { result: { ok: true, pending: true }, requests: 0, pending: 1 })
+  await startup.evaluate(() => {
+    window.streamOnline = true
+    window.holdMessage = true
+    window.networkChanged({ isConnected: true })
+  })
+  await startup.waitForFunction(() => !!window.releaseMessage)
+  const second = await startup.evaluate(async () => {
+    const result = await window.runtime.call(
+      '/api/tasks/message',
+      {
+        id: 'offline-thread',
+        messageId: 'offline-second',
+        text: 'Saved while first response is pending',
+      },
+      window.okSchema,
+      undefined,
+      { defer: true },
+    )
+    return {
+      result,
+      pending: window.runtime.mutationStatus(window.runtime.profile).pending,
+      messages: window.messageCalls.length,
+    }
+  })
+  assert.deepEqual(second, { result: { ok: true, pending: true }, pending: 2, messages: 1 })
+  await startup.evaluate(() => {
+    window.holdMessage = false
+    window.releaseMessage()
+  })
+  await startup.waitForFunction(
+    () => window.runtime.mutationStatus(window.runtime.profile).pending === 0,
+  )
+  assert.deepEqual(
+    await startup.evaluate(() => window.messageCalls.map((item) => item.messageId)),
+    ['offline-first', 'offline-second'],
+  )
+  await startup.evaluate(() => {
+    window.holdSnapshotReads = true
+    window.snapshotResponses = []
+    window.sharedRefresh = Promise.all(
+      Array.from({ length: 3 }, () => window.runtime.refreshRuntime(window.runtime.profile)),
+    )
+  })
+  await startup.waitForFunction(() => window.snapshotResponses.length === 1)
+  assert.equal(await startup.evaluate(() => window.snapshotResponses.length), 1)
+  await startup.evaluate(async () => {
+    window.holdSnapshotReads = false
+    window.snapshotResponses[0]()
+    await window.sharedRefresh
+  })
+  const traffic = await startup.evaluate(async () => {
+    const before = window.requests.filter((url) => url.includes('/api/snapshot')).length
+    const wakesBefore = window.liveRefreshes ?? 0
+    for (let i = 0; i < 20; i++) window.networkChanged({ isConnected: true })
+    if ((window.liveRefreshes ?? 0) !== wakesBefore)
+      throw Error('Repeated native status woke live sync')
+    for (let i = 0; i < 5; i++)
+      await window.runtime.call('/api/echo-ok', undefined, window.okSchema)
+    for (let i = 0; i < 20; i++)
+      window.streams[window.runtime.connection.address].onSnapshot(
+        structuredClone(window.servers['one.lan:8787']),
+      )
+    return window.requests.filter((url) => url.includes('/api/snapshot')).length - before
+  })
+  assert.equal(traffic, 0, 'live mutations and streamed snapshots must not trigger full downloads')
+  // A cached screen is already usable: do not race the live baseline with an HTTP copy.
+  const liveContext = await browser.newContext()
+  await liveContext.route('http://mobile-recovery.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const livePage = await liveContext.newPage()
+  livePage.on('pageerror', (error) => errors.push(error.message))
+  await livePage.goto('http://mobile-recovery.lan/?startup&liveStartup')
+  await livePage.addScriptTag({ content: built.outputFiles[0].text })
+  await livePage.waitForFunction(() => !!window.streams?.['http://one.lan:8787'])
+  const snapshotReads = () =>
+    livePage.evaluate(() => window.requests.filter((url) => url.includes('/api/snapshot')).length)
+  assert.equal(await snapshotReads(), 0, 'cached startup must wait for the live handshake')
+  await livePage.evaluate(() => {
+    window.streamOnline = true
+    const stream = window.streams['http://one.lan:8787']
+    stream.onStatus('live')
+    stream.onSnapshot(window.cachedStartupSnapshot)
+  })
+  await livePage.waitForFunction(() => window.runtime.connected)
+  assert.equal(await snapshotReads(), 0, 'a healthy live baseline needs no HTTP copy')
+  await livePage.evaluate(() => window.appStateChanged('background'))
+  await livePage.waitForFunction(() => !window.streams['http://one.lan:8787'])
+  await livePage.evaluate(() => {
+    window.streamOnline = false
+    window.appStateChanged('active')
+  })
+  await livePage.waitForFunction(() => !!window.streams['http://one.lan:8787'])
+  assert.equal(await snapshotReads(), 0, 'cached resume must also wait for the live handshake')
+  await livePage.evaluate(() => window.streams['http://one.lan:8787'].onStatus('unsupported'))
+  await livePage.waitForFunction(() => window.runtime.connected)
+  assert.equal(await snapshotReads(), 1, 'unsupported streams must wake HTTP fallback immediately')
+  await livePage.evaluate(() => window.appStateChanged('background'))
+  await livePage.waitForFunction(() => !window.streams['http://one.lan:8787'])
+  await livePage.evaluate(() => window.appStateChanged('active'))
+  await livePage.waitForFunction(() => !!window.streams['http://one.lan:8787'])
+  await livePage.evaluate(() => window.streams['http://one.lan:8787'].onStatus('reconnecting'))
+  await livePage.waitForFunction(() => window.runtime.connected)
+  assert.equal(await snapshotReads(), 2, 'failed handshakes must wake HTTP fallback immediately')
+  // No cached screen: start HTTP without waiting for the stream handshake.
+  const emptyContext = await browser.newContext()
+  await emptyContext.route('http://mobile-recovery.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const emptyPage = await emptyContext.newPage()
+  emptyPage.on('pageerror', (error) => errors.push(error.message))
+  await emptyPage.goto('http://mobile-recovery.lan/?startup&liveStartup&emptyCache')
+  await emptyPage.addScriptTag({ content: built.outputFiles[0].text })
+  await emptyPage.waitForFunction(() => window.runtime?.connected)
+  assert.equal(
+    await emptyPage.evaluate(
+      () => window.requests.filter((url) => url.includes('/api/snapshot')).length,
+    ),
+    1,
+    'uncached startup must keep its immediate HTTP baseline',
+  )
+  await liveContext.close()
+  await emptyContext.close()
   assert.deepEqual(errors, [])
   console.log(
-    `Mobile registry recovery: credential-store recovery, stale/current HTTP failures, streamed restarts, network wakeups, peer background/foreground recovery and persistent relay opt-out passed; ${renders.broad} broad renders, ${renders.selected} selector render.`,
+    `Mobile registry recovery: credential-store recovery, stale/current HTTP failures, streamed restarts, network wakeups, peer background/foreground recovery and persistent relay opt-out, offline sends, held-response admission, zero extra live snapshot downloads, cached startup/resume without duplicate baselines and immediate failed/unsupported/uncached HTTP fallback passed; ${renders.broad} broad renders, ${renders.selected} selector render.`,
   )
 } finally {
   await browser.close()

@@ -41,6 +41,10 @@ export function AutomationDetail({
   const actions = useJobActions()
   const [runId, setRunId] = useApplicationState<string | null>(initialRunId ?? null)
   const [surface, setSurface] = useApplicationState<'runs' | 'canvas' | 'triggers'>(initialSurface)
+  const [deleting, setDeleting] = useApplicationState(false)
+  const active = snapshot?.runs.some(
+    (run) => run.automationId === automationId && ['running', 'waiting'].includes(run.status),
+  )
   const [inspectorOpen, setInspectorOpen] = useApplicationState(false)
   const runs = (snapshot?.runs.filter((run) => run.automationId === flow?.id) ?? []).sort(
     (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
@@ -137,13 +141,48 @@ export function AutomationDetail({
                   Validate automation
                 </DropdownMenu.Item>
                 <DropdownMenu.Item className={menuItem} onSelect={drafts}>
-                  Create task drafts
+                  Create thread drafts
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className={cn(menuItem, 'text-destructive data-[disabled]:opacity-50')}
+                  disabled={!connected || actions.busy || active}
+                  onSelect={() => setDeleting(true)}
+                >
+                  Delete automation
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
         )}
       </PageHeader>
+      {flow && (
+        <Dialog open={deleting} onOpenChange={(open) => !actions.busy && setDeleting(open)}>
+          <DialogContent>
+            <DialogTitle>Delete “{flow.name}”?</DialogTitle>
+            <DialogDescription>
+              This removes the automation and its triggers. Existing threads and run history are
+              kept.
+            </DialogDescription>
+            {actions.error && (
+              <p role="alert" className="text-sm text-destructive">
+                {actions.error}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" disabled={actions.busy} onClick={() => setDeleting(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={!connected || actions.busy || active}
+                onClick={() => void actions.remove(flow.id, onBack)}
+              >
+                Delete automation
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
       {flow ? (
         <>
           <JobControls
@@ -257,7 +296,7 @@ export function AutomationDetail({
                             {kind === 'trigger'
                               ? 'Trigger'
                               : kind === 'task'
-                                ? 'Agent task'
+                                ? 'Agent thread'
                                 : 'Review gate'}
                           </DropdownMenu.Item>
                         ))}

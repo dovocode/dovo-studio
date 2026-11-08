@@ -1,0 +1,301 @@
+{
+  "platform": "macOS-27.3-arm64-arm-64bit",
+  "onnxruntime": "1.31.1",
+  "cpuThreads": 4,
+  "correct": 18,
+  "total": 18,
+  "medianMs": 149.13091649941634,
+  "p95Ms": 194.96383299701847,
+  "peakRssBytes": 1035255808,
+  "notes": "10 full-proposal warmups; 3-4 sequential classifiers per proposal; no torch import.",
+  "observations": [
+    {
+      "text": "Use Peregrine to review this refactor",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "peregrine",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "peregrine",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 160.18266600440256
+    },
+    {
+      "text": "Work in Brook Finance with Tourmaline Code 1 on Marina Mac",
+      "expected": {
+        "destination": "thread",
+        "runtime": "marina",
+        "model": "tourmaline",
+        "project": "brook"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "marina",
+        "model": "tourmaline",
+        "project": "brook"
+      },
+      "correct": true,
+      "ms": 180.25108300207648
+    },
+    {
+      "text": "Explain Halite Mini 4 without selecting a different model",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 167.83187499822816
+    },
+    {
+      "text": "Use an unavailable model named Missing Model 700 to explain the logs",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 162.83862500131363
+    },
+    {
+      "text": "Keep my current project and explain the name Dahlia Desktop",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 171.43687500356464
+    },
+    {
+      "text": "Use Amber Pro 8 without a repository to explain this exception",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "amber",
+        "project": "none"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "amber",
+        "project": "none"
+      },
+      "correct": true,
+      "ms": 170.30375000467757
+    },
+    {
+      "text": "Explain why the screenshot mentions Marina Mac without changing computers",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 157.24733300157823
+    },
+    {
+      "text": "Model: Halite Mini 4\nProject: Pebble Web\nComputer: Nomad Laptop\nImprove the splash screen",
+      "expected": {
+        "destination": "thread",
+        "runtime": "nomad",
+        "model": "halite",
+        "project": "pebble"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "nomad",
+        "model": "halite",
+        "project": "pebble"
+      },
+      "correct": true,
+      "ms": 194.25391699769534
+    },
+    {
+      "text": "Open gallery.example.org in Consulting on Marina Mac",
+      "expected": {
+        "destination": "browser",
+        "runtime": "marina",
+        "profile": "consulting"
+      },
+      "actual": {
+        "destination": "browser",
+        "runtime": "marina",
+        "profile": "consulting"
+      },
+      "correct": true,
+      "ms": 130.60266599495662
+    },
+    {
+      "text": "Visit http://100.80.71.3:6192 using Photography",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "photography"
+      },
+      "actual": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "photography"
+      },
+      "correct": true,
+      "ms": 119.55399999715155
+    },
+    {
+      "text": "docs.testhost.dev/start?workspace=large",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      },
+      "actual": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      },
+      "correct": true,
+      "ms": 126.6808750006021
+    },
+    {
+      "text": "Open https://docs.testhost.dev with the Unlisted browser profile",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      },
+      "actual": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      },
+      "correct": true,
+      "ms": 125.86895900312811
+    },
+    {
+      "text": "Use Reading Room on Foundry Server to open library.example.edu",
+      "expected": {
+        "destination": "browser",
+        "runtime": "foundry",
+        "profile": "reading"
+      },
+      "actual": {
+        "destination": "browser",
+        "runtime": "foundry",
+        "profile": "reading"
+      },
+      "correct": true,
+      "ms": 131.05591599742183
+    },
+    {
+      "text": "On Marina Mac: ls -al ./fixtures",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "marina",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "terminal",
+        "runtime": "marina",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 129.64008300332353
+    },
+    {
+      "text": "Computer: Nomad Laptop\nProject: No Project\nCommand: pwd",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "nomad",
+        "project": "none"
+      },
+      "actual": {
+        "destination": "terminal",
+        "runtime": "nomad",
+        "project": "none"
+      },
+      "correct": true,
+      "ms": 119.38341600034619
+    },
+    {
+      "text": "Computer: Foundry Server\nProject: Brook Finance\nCommand: pnpm --version",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "foundry",
+        "project": "brook"
+      },
+      "actual": {
+        "destination": "terminal",
+        "runtime": "foundry",
+        "project": "brook"
+      },
+      "correct": true,
+      "ms": 141.01449999725446
+    },
+    {
+      "text": "claude -p \"explain catalog limits\"",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "terminal",
+        "runtime": "keep",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 137.20829199883156
+    },
+    {
+      "text": "Make my app handle commands like claude -p \"hello\" and addresses like library.example.edu",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "correct": true,
+      "ms": 194.96383299701847
+    }
+  ]
+}

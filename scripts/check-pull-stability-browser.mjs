@@ -7,10 +7,10 @@ import { checkPinRemoval } from './browser/pin-removal.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const uiDir = root + '/packages/studio-ui/src'
 const controls =
-  ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog']
+  ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog', 'tooltip']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
+  `export {Disclosure} from '${uiDir}/disclosure.tsx';export {IconButton} from '${uiDir}/components/icon-button.tsx';export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{preferredHighlighter:'highlights',theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
@@ -18,8 +18,8 @@ const mocks = {
     'export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});',
   '@dovo/studio-core/state': `export * from '${root}/packages/studio-core/src/runtime/application-state.ts';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
-  '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
+  './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
+  '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[]});`,
   '../../connections/source-picker': `export const SourcePicker=()=>null;`,
@@ -28,7 +28,7 @@ const built = await build({
   stdin: {
     loader: 'tsx',
     resolveDir: root,
-    contents: `import {pullFileFingerprint} from '@dovo/protocol';import {Effect} from 'effect';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
+    contents: `import {TooltipProvider} from '@dovo/studio-ui';import {pullFileFingerprint} from '@dovo/protocol';import {Effect} from 'effect';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
 const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
@@ -39,7 +39,7 @@ write:async(key,value)=>cachedReads.set(key,{value:structuredClone(value),cached
 remove:async key=>cachedReads.delete(key),
 readEffect:key=>Effect.sync(()=>{window.cacheReads.push(key);return cachedReads.get(key)??null}),
 writeEffect:(key,value)=>Effect.sync(()=>{cachedReads.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'})})
-};window.detailReads=0;window.sectionReads=[];window.sectionReleases={};window.releaseSection=section=>{window.blockedSections=window.blockedSections.filter(value=>value!==section);for(const release of window.sectionReleases[section]??[])release();};window.store.requestEffect=(_path,input)=>Effect.tryPromise({try:async()=>{window.detailReads++;window.sectionReads.push(input.section);if(window.blockedSections?.includes(input.section))await new Promise(resolve=>(window.sectionReleases[input.section]??=[]).push(resolve));if(input.section===window.failedSection)throw new Error('Checks temporarily unavailable');const value=JSON.parse(JSON.stringify({...window.detail,pull:{...window.detail.pull,changedFiles:window.detail.files.length}}));if(input.section!=='changes')value.files=[];if(input.section!=='checks')value.checks=[];if(input.section!=='discussion')value.comments=[];return value;},catch:error=>error});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
+};window.detailReads=0;window.detailRequests=[];window.sectionReads=[];window.sectionReleases={};window.releaseSection=section=>{window.blockedSections=window.blockedSections.filter(value=>value!==section);for(const release of window.sectionReleases[section]??[])release();};window.store.requestEffect=(_path,input)=>Effect.tryPromise({try:async()=>{window.detailReads++;window.detailRequests.push(input);window.sectionReads.push(input.section);if(window.blockedSections?.includes(input.section))await new Promise(resolve=>(window.sectionReleases[input.section]??=[]).push(resolve));if(input.section===window.failedSection)throw new Error('Checks temporarily unavailable');const value=JSON.parse(JSON.stringify({...window.detail,pull:{...window.detail.pull,changedFiles:window.detail.files.length}}));if(input.section!=='changes')value.files=[];if(input.section!=='checks')value.checks=[];if(input.section!=='discussion')value.comments=[];return value;},catch:error=>error});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider><TooltipProvider>{element}</TooltipProvider></ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.showLinked=task=>rootView.render(<main className="studio dark flex flex-col" style={{height:'100vh'}}><PullDetail key={'linked:'+task.title} repositoryId="repo" number={7} embedded linkedThread={{task,onAsk:text=>window.asked.push(text)}} onBack={()=>{}} onChanged={()=>{}}/></main>);window.asked=[];window.showStandalone=()=>rootView.render(<main className="studio dark flex flex-col" style={{height:'100vh'}}><PullDetail key={'standalone:'+window.renderKey++} repositoryId="repo" number={7} onBack={()=>{}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
 const originalRequest = window.store.request; const marks = new Map();
 window.store.request = async (path, input, ...rest) => {
   if (!path.startsWith('/api/review/')) return originalRequest(path, input, ...rest);
@@ -140,25 +140,33 @@ try {
   await open()
   await detail.getByText('Review workflow description', { exact: true }).waitFor()
   await detail.getByText('Loading stack…', { exact: true }).waitFor()
-  assert.equal(
-    await page.evaluate(
-      () => window.sectionReads.includes('changes') || window.sectionReads.includes('checks'),
-    ),
-    false,
-  )
+  await detail
+    .locator('[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Loading checks…"]')
+    .waitFor()
+  assert.equal(await page.evaluate(() => window.sectionReads.includes('changes')), false)
   assert.equal(
     await page.evaluate(() =>
       window.cacheReads.some((key) => {
         const parts = JSON.parse(key)
-        return parts[1] === 'detail-section' && ['changes', 'checks'].includes(parts[2])
+        return parts[1] === 'detail-section' && parts[2] === 'changes'
       }),
     ),
     false,
-    'Closed PR tabs must not hydrate unused sections from disk',
+    'Closed Changes must not hydrate the diff from disk',
   )
-  await detail.getByRole('tab', { name: 'Changes (2)', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.sectionReads.includes('checks')), true)
+  assert.equal(await detail.getByTestId('PR title').textContent(), 'Improve pull request reviews')
+  await detail.getByRole('button', { name: 'View pull request files', exact: true }).click()
+  assert.equal(
+    await detail
+      .getByRole('tab', { name: 'Changes (2)', exact: true })
+      .getAttribute('aria-selected'),
+    'true',
+  )
+  assert.equal(await detail.getByTestId('PR title').isVisible(), true)
   await detail.getByText('Loading files…', { exact: true }).waitFor()
   await page.evaluate(() => window.releaseSection('changes'))
+  await detail.getByRole('button', { name: /^2 files ·/ }).click()
   await detail.getByRole('navigation', { name: 'Changed files', exact: true }).waitFor()
   assert.equal(
     await page.evaluate(() =>
@@ -209,14 +217,115 @@ try {
   await page.evaluate(() => {
     window.failedSection = undefined
   })
-  await detail.getByRole('button', { name: 'Refresh checks', exact: true }).click()
+  await detail.getByRole('button', { name: 'Refresh check reports', exact: true }).click()
   await detail.getByText('All tests passed', { exact: true }).waitFor()
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).waitFor()
+  await detail
+    .locator(
+      '[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Check reports: 1 check passed"]',
+    )
+    .waitFor()
+  await page.evaluate(() => {
+    window.store.connected = false
+  })
+  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
+  await detail
+    .locator(
+      '[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Check reports: 1 check passed · offline"]',
+    )
+    .waitFor()
+  await page.evaluate(() => {
+    window.store.connected = true
+  })
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await detail
+    .locator(
+      '[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Check reports: 1 check passed"]',
+    )
+    .waitFor()
   await page.evaluate(() => {
     window.releaseSection('stack')
     window.detail.pull.headSha = 'a'.repeat(40)
     window.savedReads.clear()
   })
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
+
+  // Overview and merge readiness share an in-flight report read without requiring Checks.
+  await page.evaluate(() => {
+    window.savedReads.clear()
+    window.detail.capabilities = {
+      actions: ['comment', 'review', 'merge', 'auto-merge'],
+      reviewDecisions: ['comment', 'approve', 'request-changes'],
+      mergeMethods: ['squash'],
+    }
+    window.blockedSections = ['checks']
+    window.showStandalone()
+  })
+  await detail.getByRole('button', { name: 'Merge', exact: true }).waitFor()
+  await detail
+    .locator('[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Loading checks…"]')
+    .waitFor()
+  const beforeMergeChecks = await page.evaluate(
+    () => window.sectionReads.filter((section) => section === 'checks').length,
+  )
+  await detail.getByRole('button', { name: 'Merge', exact: true }).click()
+  const merge = page.getByRole('dialog')
+  await merge.getByText('Status sources', { exact: true }).click()
+  await merge.getByText('Loading checks…', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.sectionReads.filter((section) => section === 'checks').length),
+    beforeMergeChecks,
+    'Opening Merge must reuse the current report read',
+  )
+  assert.equal(await detail.locator('#pr-tab-overview').getAttribute('aria-selected'), 'true')
+  await page.evaluate(() => {
+    window.failedSection = 'checks'
+    window.releaseSection('checks')
+  })
+  await merge.getByText('Check reports unavailable', { exact: true }).waitFor()
+  await merge.getByText('Checks temporarily unavailable', { exact: true }).waitFor()
+  assert.equal(await merge.getByText(/check reports:.*passed/i).count(), 0)
+  await page.evaluate(() => {
+    window.failedSection = undefined
+  })
+  await merge.getByRole('button', { name: 'Retry checks', exact: true }).click()
+  await merge.getByText('1 check passed', { exact: true }).waitFor()
+  await merge.getByRole('button', { name: 'Refresh checks', exact: true }).waitFor()
+  // A pushed revision must not retarget the confirmation or its status reports.
+  await page.evaluate(() => {
+    window.detail.pull.headSha = 'f'.repeat(40)
+  })
+  await page.clock.fastForward(6000)
+  await merge.getByText(/Status for reviewed commit aaaaaaaa is not loaded/).waitFor()
+  await merge.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
+  await merge.getByRole('button', { name: 'Merge pull request', exact: true }).click()
+  await merge.waitFor({ state: 'detached' })
+  const mergeWrite = await page.evaluate(() => window.writes.at(-1).input)
+  assert.equal(mergeWrite.headSha, 'a'.repeat(40))
+  assert.equal(mergeWrite.expectedDestination, 'verified-project-account')
+  // Enabling auto-merge uses the same readiness loading and recovery flow.
+  await page.evaluate(() => {
+    window.savedReads.clear()
+    window.blockedSections = ['checks']
+    window.showStandalone()
+  })
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
+  const autoMerge = page.getByRole('dialog')
+  await autoMerge.getByText('Status sources', { exact: true }).click()
+  await autoMerge.getByText('Loading checks…', { exact: true }).waitFor()
+  await page.evaluate(() => window.releaseSection('checks'))
+  await autoMerge.getByText('1 check passed', { exact: true }).waitFor()
+  await autoMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => {
+    window.detail.pull.headSha = 'a'.repeat(40)
+    window.detail.capabilities.actions = ['comment', 'review']
+    window.detail.capabilities.mergeMethods = []
+    window.savedReads.clear()
+    window.showProbe()
+  })
 
   await page.evaluate(() => {
     window.detail.files = Array.from({ length: 30 }, (_, i) => ({
@@ -254,6 +363,28 @@ try {
     true,
   )
   await bounded(content)
+  await content.evaluate((e) => {
+    e.scrollTop = 5000
+  })
+  await page.waitForTimeout(250)
+  const resizeReads = await page.evaluate(() => window.detailReads)
+  for (const width of [950, 700, 1050, 400, 1440, 650, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.waitForTimeout(100)
+  }
+  await page.waitForTimeout(300)
+  const settledParses = await page.evaluate(() => window.parseCount)
+  await page.waitForTimeout(500)
+  assert.equal(
+    await page.evaluate(() => window.parseCount),
+    settledParses,
+    'PR diffs keep remounting after resizing',
+  )
+  assert.equal(
+    await page.evaluate(() => window.detailReads),
+    resizeReads,
+    'Resizing refetched PR sections',
+  )
   await content.evaluate((e) => {
     e.scrollTop = 5000
   })
@@ -308,7 +439,7 @@ try {
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   assert.equal(await form.inputValue(), 'Keep my feedback')
   await detail.getByRole('tab', { name: 'Changes (30)', exact: true }).click()
-  await detail.getByText('0 of 30 viewed', { exact: true }).waitFor()
+  await detail.getByRole('button', { name: '30 files · 0 viewed', exact: true }).waitFor()
 
   // A push preserves the inline draft and original range, while blocking stale publication.
   await page.evaluate(() => {
@@ -331,6 +462,10 @@ try {
     window.store.connected = false
     window.showProbe()
   })
+  await preservedInlineForm
+    .getByRole('status')
+    .filter({ hasText: 'Offline · your draft is preserved. Connect to submit.' })
+    .waitFor()
   await inline.waitFor()
   assert.equal(await inline.inputValue(), 'Keep my inline feedback across pushes')
   assert.equal(
@@ -340,9 +475,7 @@ try {
     'suggested replacement survives',
   )
   assert.equal(
-    await preservedInlineForm
-      .getByRole('button', { name: 'Start agent task', exact: true })
-      .isDisabled(),
+    await preservedInlineForm.getByRole('button', { name: 'Ask agent…', exact: true }).isDisabled(),
     true,
   )
   await inline.fill('Edited while offline')
@@ -350,6 +483,7 @@ try {
     window.store.connected = true
     window.showProbe()
   })
+  await preservedInlineForm.getByRole('status').waitFor({ state: 'hidden' })
   assert.equal(await inline.inputValue(), 'Edited while offline')
   // Leave the detail and return to the same owner/account/PR.
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
@@ -477,7 +611,7 @@ try {
       tokens.some(
         (element) =>
           element.textContent.trim().split(/\s+/).includes(text) &&
-          getComputedStyle(element).color === 'rgb(124, 201, 255)',
+          getComputedStyle(element).color === 'rgb(137, 189, 227)',
       ),
     )
   })
@@ -504,7 +638,7 @@ try {
         (element) =>
           !element.children.length &&
           element.textContent.trim().split(/\s+/).includes('export') &&
-          getComputedStyle(element).color === 'rgb(124, 201, 255)',
+          getComputedStyle(element).color === 'rgb(137, 189, 227)',
       ).length === 2
     )
   })
@@ -555,6 +689,7 @@ try {
     .getByRole('button', { name: 'Show changes', exact: true })
     .waitFor({ state: 'detached' })
   await generated.locator('diffs-container').waitFor({ state: 'visible' })
+  await detail.getByRole('button', { name: /^120 files ·/ }).click()
   await detail
     .getByRole('navigation', { name: 'Changed files', exact: true })
     .getByRole('button')
@@ -650,14 +785,12 @@ try {
     ]
     window.showAnchored()
   })
-  await page
-    .getByLabel('Changed file breakdown', { exact: true })
-    .filter({ hasText: /All 12Code 11Docs 1/ })
-    .waitFor()
+  await page.getByRole('button', { name: /^12 files ·/ }).click()
+  await page.getByLabel('Changed file breakdown', { exact: true }).waitFor()
   const reviewControls = page.getByLabel('Pinned file review controls', { exact: true })
   await reviewControls.getByText('src/review-5.ts', { exact: true }).waitFor()
   const types = page.getByLabel('Changed file breakdown', { exact: true })
-  await types.getByRole('button', { name: 'Docs 1', exact: true }).click()
+  await types.getByRole('button', { name: 'Filter Docs: 1 files', exact: true }).click()
   assert.equal(
     await page
       .getByRole('region', { name: 'Code changes', exact: true })
@@ -665,7 +798,7 @@ try {
       .count(),
     1,
   )
-  await types.getByRole('button', { name: 'All 12', exact: true }).click()
+  await types.getByRole('button', { name: 'Filter Docs: 1 files', exact: true }).click()
 
   await detail
     .getByRole('navigation', { name: 'Changed files', exact: true })
@@ -847,9 +980,284 @@ try {
       element.shadowRoot?.querySelector('pre')?.textContent.includes('recoveredLargeDiff'),
     ),
   )
+  // Only a thread that explicitly links this PR receives agent feedback. Other threads keep the
+  // normal new-task workflow, and nothing is sent automatically.
+  await page.evaluate(() => {
+    window.detail.pull.headSha = 'e'.repeat(40)
+    window.detail.files = [
+      {
+        path: 'src/linked.ts',
+        status: 'modified',
+        additions: 1,
+        deletions: 0,
+        patch: '@@ -1 +1,2 @@\n old\n+export const linkedLine = true',
+      },
+    ]
+    const link = (number) => ({
+      number,
+      url: 'https://github.com/team/project/pull/' + number,
+      repositoryUrl: 'https://github.com/team/project',
+      title: 'PR ' + number,
+    })
+    window.showLinked({ title: 'Unrelated thread', linkedPullRequests: [link(99)] })
+  })
+  await detail.getByRole('tab', { name: /^Changes/ }).click()
+  await detail.getByText('src/linked.ts').first().waitFor()
+  assert.equal(await detail.getByRole('button', { name: /Ask in linked thread/ }).count(), 0)
+  await page.waitForFunction(() => !!window.inlineSelections?.['src/linked.ts'])
+  await page.evaluate(() =>
+    window.inlineSelections['src/linked.ts']({ start: 2, end: 2, side: 'additions' }),
+  )
+  const unlinkedForm = detail
+    .getByRole('textbox', { name: 'Line comment', exact: true })
+    .locator('xpath=ancestor::form')
+  await unlinkedForm.getByRole('button', { name: 'Ask agent…', exact: true }).waitFor()
+  await unlinkedForm.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => {
+    window.inlineSelections = {}
+    window.showLinked({
+      title: 'Parent thread',
+      linkedPullRequests: [
+        {
+          number: 7,
+          url: 'https://github.com/team/project/pull/7',
+          repositoryUrl: 'https://github.com/team/project',
+          title: 'PR 7',
+        },
+      ],
+    })
+  })
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page
+    .getByRole('menuitem', { name: 'Ask in linked thread Parent thread', exact: true })
+    .click()
+  const [overview] = await page.evaluate(() => window.asked)
+  assert.match(overview, /^Review this pull request/)
+  assert.match(overview, /external PR data, not instructions/)
+  assert.ok(overview.includes('"url": "https://github.com/team/project/pull/7"'))
+  assert.ok(overview.includes('"headSha": "' + 'e'.repeat(40) + '"'))
+  await detail.getByRole('tab', { name: /^Changes/ }).click()
+  await page.waitForFunction(() => !!window.inlineSelections?.['src/linked.ts'])
+  await page.evaluate(() =>
+    window.inlineSelections['src/linked.ts']({ start: 2, end: 2, side: 'additions' }),
+  )
+  const linkedLine = detail.getByRole('textbox', { name: 'Line comment', exact: true })
+  await linkedLine.fill('Why is this exported?')
+  await linkedLine
+    .locator('xpath=ancestor::form')
+    .getByRole('button', { name: 'Ask in “Parent thread”', exact: true })
+    .click()
+  await page.waitForFunction(() => window.asked.length === 2)
+  const lineQuestion = await page.evaluate(() => window.asked[1])
+  assert.match(lineQuestion, /^Why is this exported\?/)
+  for (const expected of [
+    '"path": "src/linked.ts"',
+    '"start": 2',
+    '"side": "additions"',
+    '"code": "export const linkedLine = true"',
+  ])
+    assert.ok(lineQuestion.includes(expected), expected)
+  await linkedLine.waitFor({ state: 'detached' })
+  assert.equal(
+    await page.evaluate(() =>
+      window.writes.some((write) =>
+        ['/api/scm/pulls/comment', '/api/scm/pulls/task'].includes(write.path),
+      ),
+    ),
+    false,
+  )
+  // The standalone PR page asks through an explicit chooser. Only open threads in this project
+  // that link this PR are offered, and a new review task stays the default.
+  await page.evaluate(() => {
+    const link = {
+      number: 7,
+      url: 'https://github.com/team/project/pull/7',
+      repositoryUrl: 'https://github.com/team/project',
+      title: 'PR 7',
+    }
+    const task = (id, title, fields = {}) => ({
+      id,
+      title,
+      repositoryId: 'repo',
+      status: 'review',
+      messages: [],
+      files: [],
+      createdAt: '2026-10-31',
+      linkedPullRequests: [link],
+      ...fields,
+    })
+    window.store.workspace.tasks = [
+      task('linked-parent', 'Linked review thread'),
+      task('other-project', 'Other project thread', { repositoryId: 'elsewhere' }),
+      task('unlinked', 'Unlinked thread', { linkedPullRequests: [] }),
+      task('side', 'Existing side chat', { sideThread: { parentTaskId: 'linked-parent' } }),
+      task('archived', 'Archived thread', { archivedAt: '2026-10-30' }),
+    ]
+    window.store.runtimeRegistry = { activeId: 'mac' }
+    const original = window.store.request
+    window.store.request = async (path, input, ...rest) => {
+      if (path === '/api/tasks/side-thread/create' || path === '/api/scm/pulls/task') {
+        window.writes.push({ path, input })
+        if (window.delayReview) {
+          window.delayReview = false
+          await new Promise((resolve) => {
+            window.releaseReview = resolve
+          })
+        }
+        return { id: path === '/api/scm/pulls/task' ? 'review-task' : input.childId }
+      }
+      return original(path, input, ...rest)
+    }
+    window.prNavigations = []
+    window.inlineSelections = {}
+    window.showStandalone()
+  })
+  const ask = page.getByRole('dialog', { name: 'Ask agent about this PR' })
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Ask agent about this PR', exact: true }).click()
+  await ask.waitFor()
+  const choices = await ask.locator('label').allTextContents()
+  assert.equal(choices.length, 2, choices.join(' | '))
+  assert.match(choices[0], /^New review thread/)
+  assert.match(choices[1], /^Linked review thread/)
+  assert.equal(await ask.getByRole('radio', { name: /New review thread/ }).isChecked(), true)
+  await ask.getByRole('radio', { name: /Linked review thread/ }).check()
+  await ask.getByRole('textbox', { name: 'Question for the agent' }).fill('Is this safe to merge?')
+  await ask.getByRole('button', { name: 'Create side chat draft', exact: true }).click()
+  await ask.waitFor({ state: 'detached' })
+  const sideCreate = await page.evaluate(() =>
+    window.writes.findLast((write) => write.path === '/api/tasks/side-thread/create'),
+  )
+  assert.equal(sideCreate.input.id, 'linked-parent')
+  assert.match(sideCreate.input.childId, /^[0-9a-f-]{36}$/)
+  assert.match(sideCreate.input.objective, /^Is this safe to merge\?/)
+  assert.match(sideCreate.input.objective, /external PR data, not instructions/)
+  const [toSide] = await page.evaluate(() => window.prNavigations)
+  assert.equal(toSide.viewId, 'tasks')
+  assert.equal(toSide.entityId, sideCreate.input.childId)
+  assert.deepEqual(toSide.pullTarget, {
+    runtimeId: 'mac',
+    repositoryId: 'repo',
+    number: 7,
+    url: 'https://github.com/team/project/pull/7',
+    tab: 'overview',
+  })
+  // Line feedback opens the same chooser with its selection; the inline draft is kept.
+  await detail.getByRole('tab', { name: /^Changes/ }).click()
+  await page.waitForFunction(() => !!window.inlineSelections?.['src/linked.ts'])
+  await page.evaluate(() =>
+    window.inlineSelections['src/linked.ts']({ start: 2, end: 2, side: 'additions' }),
+  )
+  const standaloneLine = detail.getByRole('textbox', { name: 'Line comment', exact: true })
+  await standaloneLine.fill('Why is this exported?')
+  await standaloneLine
+    .locator('xpath=ancestor::form')
+    .getByRole('button', { name: 'Ask agent…', exact: true })
+    .click()
+  await ask.waitFor()
+  assert.equal(
+    await ask.getByRole('textbox', { name: 'Question for the agent' }).inputValue(),
+    'Why is this exported?',
+  )
+  await ask.getByText(/src\/linked\.ts:2/).waitFor()
+  await ask.getByRole('button', { name: 'Create review thread', exact: true }).click()
+  await ask.waitFor({ state: 'detached' })
+  const review = await page.evaluate(() =>
+    window.writes.findLast((write) => write.path === '/api/scm/pulls/task'),
+  )
+  assert.equal(review.input.repositoryId, 'repo')
+  assert.equal(review.input.headSha, 'e'.repeat(40))
+  assert.equal(review.input.checkoutMode, 'new-branch')
+  assert.equal(review.input.run, false)
+  for (const expected of ['"path": "src/linked.ts"', '"code": "export const linkedLine = true"'])
+    assert.ok(review.input.objective.includes(expected), expected)
+  const toReview = await page.evaluate(() => window.prNavigations[1])
+  assert.equal(toReview.entityId, 'review-task')
+  assert.equal(toReview.pullTarget.tab, 'changes')
+  assert.equal(await standaloneLine.inputValue(), 'Why is this exported?')
+  assert.doesNotMatch(await detail.innerText(), /showing cached|Last fetched/i)
+  const refreshWith = async (change) => {
+    const before = await page.evaluate(() => window.detailRequests.length)
+    await page.evaluate((change) => {
+      const detail = window.detail
+      if (change.headSha) detail.pull.headSha = change.headSha
+      if (change.destination) detail.destination = change.destination
+      if (change.changedPath)
+        detail.files = detail.files.map((file) =>
+          file.path === change.changedPath
+            ? { ...file, patch: `${file.patch}\n+export const added = true` }
+            : file,
+        )
+      if (change.removedPath)
+        detail.files = detail.files.filter((file) => file.path !== change.removedPath)
+      window.dispatchEvent(new Event('focus'))
+    }, change)
+    await page.waitForFunction((before) => window.detailRequests.length > before, before)
+  }
+  const question = ask.getByRole('textbox', { name: 'Question for the agent' })
+  const latest = ask.getByRole('button', { name: 'Use latest revision', exact: true })
+  const createReview = ask.getByRole('button', { name: 'Create review thread', exact: true })
+  // A newer push of the same PR keeps the question; the revision only changes on request, and a
+  // line selection whose file changed falls back to the whole file.
+  await standaloneLine
+    .locator('xpath=ancestor::form')
+    .getByRole('button', { name: 'Ask agent…', exact: true })
+    .click()
+  await ask.waitFor()
+  await ask.getByText(/src\/linked\.ts:2/).waitFor()
+  await refreshWith({ headSha: 'f'.repeat(40), changedPath: 'src/linked.ts' })
+  await ask.getByText(/This PR was updated to ffffffff/).waitFor()
+  assert.equal(await createReview.isDisabled(), true)
+  assert.equal(await question.inputValue(), 'Why is this exported?')
+  await latest.click()
+  await ask.getByText(/src\/linked\.ts changed in the latest revision/).waitFor()
+  await ask.getByText(/PR #7 · ffffffff · src\/linked\.ts\./).waitFor()
+  assert.equal(await question.inputValue(), 'Why is this exported?')
+  // A selected file that later leaves the PR asks about the whole PR instead.
+  await refreshWith({ headSha: '1'.repeat(40), removedPath: 'src/linked.ts' })
+  await ask.getByText(/This PR was updated to 11111111/).waitFor()
+  await latest.click()
+  await ask.getByText(/src\/linked\.ts is not part of the latest revision/).waitFor()
+  await question.fill('Is the removal intended?')
+  await createReview.click()
+  await ask.waitFor({ state: 'detached' })
+  const wholePull = await page.evaluate(() =>
+    window.writes.findLast((write) => write.path === '/api/scm/pulls/task'),
+  )
+  assert.equal(wholePull.input.headSha, '1'.repeat(40))
+  assert.match(wholePull.input.objective, /^Is the removal intended\?/)
+  assert.ok(!wholePull.input.objective.includes('"selection"'), 'Removed file stayed selected')
+  // A push while creation is in flight cannot navigate to a draft bound to the old revision.
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Ask agent about this PR', exact: true }).click()
+  await ask.waitFor()
+  await question.fill('Keep this question through the push')
+  const navigationsBeforePush = await page.evaluate(() => {
+    window.delayReview = true
+    return window.prNavigations.length
+  })
+  await createReview.click()
+  await page.waitForFunction(() => typeof window.releaseReview === 'function')
+  await refreshWith({ headSha: '2'.repeat(40) })
+  await ask.getByText(/This PR was updated to 22222222/).waitFor()
+  await page.evaluate(() => window.releaseReview())
+  await createReview.waitFor()
+  assert.equal(await page.evaluate(() => window.prNavigations.length), navigationsBeforePush)
+  assert.equal(await question.inputValue(), 'Keep this question through the push')
+  await ask.getByRole('button', { name: 'Cancel', exact: true }).click()
+  // A different account or destination is never adopted silently.
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Ask agent about this PR', exact: true }).click()
+  await ask.waitFor()
+  await refreshWith({ destination: 'another-account' })
+  await ask.getByText('The PR source changed. Close and reopen this review action.').waitFor()
+  assert.equal(await createReview.isDisabled(), true)
+  assert.equal(await latest.count(), 0)
+  assert.equal(await page.evaluate(() => window.detailRequests.at(-1).refresh), true)
+  await ask.getByRole('button', { name: 'Cancel', exact: true }).click()
   assert.deepEqual(errors, [])
   console.log(
-    'Real PR hook, Markdown and diff: lazy parsing in a 120-file PR, attribute collapse/binary handling, direct navigation, bounded layouts, preserved drafts/reviews, wrap preference, and syntax failure fallback/retry passed.',
+    'Standalone PR Ask agent chooser (linked side chat or new review task, opening the task with its PR, recovering a newer push of the same PR on request while keeping the question and checking the selection, and refusing a changed source), linked-thread PR handoff with bounded review context, unlinked new-task fallback, real PR hook, Markdown and diff: lazy parsing in a 120-file PR, attribute collapse/binary handling, direct navigation, bounded layouts, preserved drafts/reviews, wrap preference, and syntax failure fallback/retry passed.',
   )
 } finally {
   await browser.close()

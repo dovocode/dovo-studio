@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 vi.mock('./browser-remote-media.js', () => ({ openRemoteMedia: f.remote }))
 vi.mock('./browser-screen-permission.js', () => ({ prepareScreenRecording: async () => true }))
 import { createBrowserMedia, type MediaTab } from './browser-media'
+import { browserPermissions } from './browser-permissions'
 
 type Listener = (...args: unknown[]) => void
 function page(id: number, url: string) {
@@ -133,6 +134,40 @@ const share = (
   )
   return callback
 }
+
+it('lists only real permission requests from an owned main-frame origin', () => {
+  const { session, call, personal, media } = setup()
+  const origin = 'https://meet.example'
+  const permissions = browserPermissions('work')
+  const answer = vi.fn<(allowed: unknown) => void>()
+  session.check?.(call, 'media', origin, { mediaType: 'video' })
+  session.check?.(call, 'notifications', origin, {})
+  for (const [contents, requestingUrl, isMainFrame] of [
+    [call, origin, false],
+    [call, 'https://evil.example', true],
+    [personal, personal.mainFrame.url, true],
+  ] as const) {
+    session.request?.(contents, 'media', answer, {
+      requestingUrl,
+      isMainFrame,
+      mediaTypes: ['video'],
+    })
+  }
+  expect(permissions.site(origin).requested).toEqual([])
+  session.request?.(call, 'media', answer, {
+    requestingUrl: origin,
+    isMainFrame: true,
+    mediaTypes: ['audio'],
+  })
+  expect(permissions.site(origin).requested).toEqual(['microphone'])
+  media.releaseTab(call as never)
+  session.request?.(call, 'notifications', answer, {
+    requestingUrl: origin,
+    isMainFrame: true,
+  })
+  expect(permissions.site(origin).requested).toEqual(['notifications', 'microphone'])
+  media.releaseTab(call as never)
+})
 
 it('installs the capture preload and handlers once per shared-browser session', async () => {
   const media = createBrowserMedia(host as never)

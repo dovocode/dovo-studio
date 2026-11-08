@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import {
   canChangeTaskCheckout,
   agentTurnSettings,
@@ -141,6 +141,56 @@ it('commits the receipt and queued input together and clears receipts only when 
     expect(store.taskSubmission('task', 'input')).toBeTruthy()
     store.update((w) => ({ ...w, tasks: [] }))
     expect(store.taskSubmission('task', 'input')).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})
+
+it('queues question-answer attachments as message files without consuming the draft', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const file = {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'answer.png',
+      mime: 'image/png',
+      size: 1,
+    }
+    const draftFile = { ...file, id: '22222222-2222-4222-8222-222222222222', name: 'draft.txt' }
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Answer',
+          repositoryId: '',
+          agentId: '',
+          status: 'running',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Unsent draft',
+          draftAttachments: [draftFile],
+          example: false,
+        },
+      ],
+    }))
+    const receipt = { id: 'question', fingerprint: 'answers', attachments: [file] }
+    const queue = new TaskQueue(store)
+    expect(queue.add('task', 'answer:question', 'Answer', [file], receipt)).toBe(true)
+    const restarted = new WorkspaceStore(db)
+    expect(restarted.taskSummary('task')).toMatchObject({
+      draft: 'Unsent draft',
+      draftAttachments: [draftFile],
+      queue: [{ id: 'answer:question', text: 'Answer', attachments: [file] }],
+    })
+    // Delivery retries the same answer with its files instead of reporting a conflict.
+    expect(new TaskQueue(restarted).add('task', 'answer:question', 'Answer', [file], receipt)).toBe(
+      false,
+    )
+    expect(() => new TaskQueue(restarted).add('task', 'answer:question', 'Answer')).toThrow(
+      'different text',
+    )
   } finally {
     db.close()
   }
@@ -334,7 +384,10 @@ it('edits a queued message in place, preserves attachments and order, and reject
     expect(store.task('task').queue?.[0]).toMatchObject({ text: 'Updated', attachments: [file] })
     expect(new WorkspaceStore(db).task('task').queue?.[0]?.text).toBe('Updated')
     expect(() => queue.edit('task', 'first', 'Conflict', 'Original')).toThrow('changed')
+    const historyRead = vi.spyOn(store, 'task')
     expect(queue.accepted('task', 'first', 'Original', [file])).toBe(true)
+    expect(historyRead).not.toHaveBeenCalled()
+    historyRead.mockRestore()
     queue.change('task', 'restore', 'first')
     expect(store.task('task')).toMatchObject({ draft: 'Updated', draftAttachments: [file] })
     expect(() => queue.edit('task', 'first', 'Too late', 'Updated')).toThrow('already started')
@@ -971,7 +1024,7 @@ it('persists pauses through editing and dragging and never skips a paused queue 
   }
 })
 
-it('duplicates adjacent queued input with attachments, settings and pause state without changing drafts', () => {
+it('duplicates adjacent queued input with attachments, settings, review mode and pause state without changing drafts', () => {
   const db = openDatabase(':memory:')
   try {
     const store = new WorkspaceStore(db)
@@ -1029,7 +1082,7 @@ it('duplicates adjacent queued input with attachments, settings and pause state 
       paused: true,
     })
     expect(saved.queue?.[1].createdAt).not.toBe('old')
-    expect(saved.queue?.[1].review).toBeUndefined()
+    expect(saved.queue?.[1].review).toBe(true)
     expect(saved.queue?.[1].subagentResultId).toBeUndefined()
     expect(saved).toMatchObject({
       draft: 'Unrelated draft',
@@ -1074,6 +1127,25 @@ it('rejects duplication of delivering or archived messages, collisions and overf
     }))
     const queue = new TaskQueue(store)
     expect(() => queue.duplicate('task', 'source', 'copy')).toThrow('being delivered')
+    const before = store.task('task')
+    for (const action of [
+      () => queue.edit('task', 'source', 'Edited', 'Input'),
+      () => queue.change('task', 'remove', 'source'),
+      () => queue.change('task', 'restore', 'source'),
+      () =>
+        queue.restore('task', {
+          requestId: 'restore-delivering',
+          messageId: 'source',
+          expectedText: 'Input',
+          expectedTurnSettings: null,
+          expectedDraftTurnSettings: null,
+          expectedAttachmentIds: [],
+        }),
+    ])
+      expect(action).toThrow(expect.objectContaining({ status: 409 }))
+    expect(store.task('task')).toEqual(before)
+    expect(db.prepare('SELECT * FROM queue_restore_receipts').all()).toEqual([])
+
     store.updateTask('task', (t) => ({
       ...t,
       queue: t.queue?.map((m) => ({ ...m, steering: false })),
@@ -1095,9 +1167,9 @@ it('rejects duplication of delivering or archived messages, collisions and overf
         })),
       ],
     }))
-    const before = store.task('task')
+    const full = store.task('task')
     expect(() => queue.duplicate('task', 'source', 'copy')).toThrow('Queue is full')
-    expect(store.task('task')).toEqual(before)
+    expect(store.task('task')).toEqual(full)
     expect(store.taskSubmission('task', 'copy')).toBeUndefined()
   } finally {
     db.close()

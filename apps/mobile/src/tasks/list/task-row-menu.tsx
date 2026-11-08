@@ -9,11 +9,18 @@ export type TaskRowMenuProps = {
   actions: TaskLifecycle
   testID: string
   disabled: boolean
+  contentOffsetY?: number
   onOpen: () => void
   onDetails: () => void
 }
 
-export function TaskRowMenu({ task, testID, disabled, onDetails }: TaskRowMenuProps) {
+export function TaskRowMenu({
+  task,
+  testID,
+  disabled,
+  onDetails,
+  contentOffsetY = 0,
+}: TaskRowMenuProps) {
   const { colors, styles } = useTheme()
 
   return (
@@ -35,7 +42,14 @@ export function TaskRowMenu({ task, testID, disabled, onDetails }: TaskRowMenuPr
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
-      <Text style={[styles.muted, { fontSize: 14 }]}>•••</Text>
+      <Text
+        style={[
+          styles.muted,
+          { fontSize: 14, lineHeight: 20, transform: [{ translateY: contentOffsetY }] },
+        ]}
+      >
+        •••
+      </Text>
     </Pressable>
   )
 }

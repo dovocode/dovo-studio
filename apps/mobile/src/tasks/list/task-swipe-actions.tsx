@@ -125,6 +125,7 @@ export function TaskSwipeActions({
   const rowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translation.value }] }))
   const actionsStyle = useAnimatedStyle(() => ({
     width: Math.max(revealedWidth, -translation.value),
+    opacity: translation.value < -0.5 ? 1 : 0,
   }))
   const primaryStyle = useAnimatedStyle(() => ({
     backgroundColor: armed.value ? colors.accent : colors.elevated,

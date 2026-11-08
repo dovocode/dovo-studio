@@ -1,0 +1,3816 @@
+{
+  "baseRepository": "knowledgator/gliclass-base-v3.0",
+  "baseRevision": "77a70e6cd52e602ed18184ef37d18bdd3741e3d5",
+  "datasetSha256": "7fac673c503152063c26fd195bec7e890e215cd609739c3274c2fe5e17f02680",
+  "benchmarkSha256": "ab4edc619035deba1c8490fa9bf52deb8ab770d0aeffc7c46edff8b24b08ce8a",
+  "seed": 20261105,
+  "epochs": 4,
+  "batchSize": 16,
+  "learningRate": 2e-5,
+  "optimizer": "AdamW",
+  "weightDecay": 0.01,
+  "schedule": "10% linear warmup, linear decay",
+  "gradientNorm": 1.0,
+  "device": "Apple MPS",
+  "machine": "arm64",
+  "macOS": "27.3",
+  "parameters": 186545922,
+  "dtype": "float32",
+  "maxOptions": 16,
+  "maxLength": 384,
+  "trainingSeconds": 332.08435149999787,
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "baselineValidation": {
+    "correct": 808,
+    "total": 1431,
+    "accuracy": 0.5646401118099231,
+    "confusion": {
+      "browser": {
+        "browser": 0,
+        "terminal": 0,
+        "thread": 281
+      },
+      "terminal": {
+        "browser": 8,
+        "terminal": 0,
+        "thread": 255
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 261,
+        "total": 806
+      },
+      "model": {
+        "correct": 121,
+        "total": 145
+      },
+      "profile": {
+        "correct": 136,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 160,
+        "total": 175
+      },
+      "project": {
+        "correct": 130,
+        "total": 160
+      }
+    },
+    "mistakes": [
+      {
+        "input": "bundle exec rake | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "127.0.0.1:6006/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "readlink node_modules/.bin/tsc 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "file logo.png 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "192.168.81.2:4444/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://meridian.ai/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "localhost:6111/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Sandbox, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:100:2"
+      },
+      {
+        "input": "opencode run 'inspect this project'\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://storage.local:6999/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Cypress Docs mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:85:3"
+      },
+      {
+        "input": "Tell me about Juniper 2, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:105:1"
+      },
+      {
+        "input": "open docs.orchid.io/workspace?item=22 in the Support browser profile on Study PC",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Validation Mac a good name for a product?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:85:0"
+      },
+      {
+        "input": "https://docs.harbor.dev/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://monitor.orchid.org/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent http://docs.harbor.dev/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "meridian.ai/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open http://backup.lan:7303/workspace?item=10 in the Review browser profile on Study PC",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Harbor Desktop a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:90:0"
+      },
+      {
+        "input": "meridian.ai/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://127.0.0.1:6006",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args meridian.acme.dev",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://10.91.2.5:8777/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "office.internal:8765",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://100.119.4.8:5678/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "office.internal:8765/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Sandbox, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:120:3"
+      },
+      {
+        "input": "echo 'http://192.168.81.2:4444/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://192.168.81.2:4444/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "ping -c 2 10.12.0.4\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://127.0.0.1:6006/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://monitor.orchid.org",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://[::1]:3039/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open docs.orchid.io/workspace?item=16 in the Sandbox browser profile on Validation Mac",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args https://cypress.app/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open docs.orchid.io/workspace?item=34 in the Review browser profile on Study PC",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://localhost:6111",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://monitor.orchid.org/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "100.119.4.8:5678/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://127.0.0.1:6006",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Home Mini\nProject: Orchid Server\nCommand: git log -15 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "192.168.81.2:4444/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Sandbox, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:65:0"
+      },
+      {
+        "input": "launchctl list",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://office.internal:8765/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "free -m 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "turbo run lint\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://100.119.4.8:5678/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent https://service.willow.app/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "[::1]:3039/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging dig example.edu",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:30:2"
+      },
+      {
+        "input": "http://localhost:6111/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Study PC\nProject: Beacon Dashboard\nCommand: git log -45 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "storage.local:6999/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "traceroute vpn.internal | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "screen -r work 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Validation Mac mentioned in this log?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:75:2"
+      },
+      {
+        "input": "ruff check src 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "codex resume --last 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "shasum -a 256 app.zip",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "service.willow.app/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "kubectl describe service api | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "localhost:6111/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://10.91.2.5:8777/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "100.119.4.8:5678/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "storage.local:6999/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "expo start --lan 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging dirname /tmp/app/main.ts",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://100.119.4.8:5678/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "basename /tmp/app/main.ts | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "monitor.orchid.org",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "git remote get-url origin 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging openssl version",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && custom-deploy preview --force",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && git remote get-url origin",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://meridian.ai/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://meridian.ai/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://monitor.orchid.org/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "APP_ENV=staging git remote get-url origin",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "flutter doctor 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging opencode run 'inspect this project'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://127.0.0.1:6006/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Meridian Chat a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:30:2"
+      },
+      {
+        "input": "Why is Garden Desktop mentioned in this log?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:15:1"
+      },
+      {
+        "input": "take me to localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://localhost:6111/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Orchid Server, without changing anything",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:20:5"
+      },
+      {
+        "input": "APP_ENV=staging docker inspect web",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging md5 archive.tar",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://monitor.orchid.org/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://storage.local:6999/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "dig example.edu | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://192.168.81.2:4444/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "readlink node_modules/.bin/tsc\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Home Mini, without changing anything",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:45:2"
+      },
+      {
+        "input": "http://docs.harbor.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && screen -r work",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "herdr list 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://meridian.ai/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "http://[::1]:3039/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "git reflog -6",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Support, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:15:1"
+      },
+      {
+        "input": "take me to meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "git reflog -6 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && kubectl describe service api",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging basename /tmp/app/main.ts",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Raven Mini mentioned in this log?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:10:3"
+      },
+      {
+        "input": "Why is Ember 3 mentioned in this log?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:120:1"
+      },
+      {
+        "input": "curl --silent https://meridian.ai/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "meridian.ai",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://docs.harbor.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "service.willow.app/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "pnpm why react\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:25:0"
+      },
+      {
+        "input": "docs.harbor.dev/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Study PC a good name for a product?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:115:2"
+      },
+      {
+        "input": "https://[::1]:3039/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "screen -r work | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "launchctl list 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "[::1]:3039/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "10.91.2.5:8777/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "monitor.orchid.org/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "ping -c 2 10.12.0.4 | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'https://service.willow.app/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "localhost:6111/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://storage.local:6999/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && launchctl list",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging shasum -a 256 app.zip",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "dig example.edu",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://storage.local:6999/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Choose No Project for this task",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://10.91.2.5:8777/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent http://monitor.orchid.org/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "docs.harbor.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent http://[::1]:3039/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://localhost:6111/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Muse 1 a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:60:3"
+      },
+      {
+        "input": "http://[::1]:3039/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging nx run frontend:build",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent https://10.91.2.5:8777/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "monitor.orchid.org/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && stat README.md",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && nslookup mail.example.edu",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "poetry run pytest",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Beacon Dashboard mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:10:5"
+      },
+      {
+        "input": "open localhost:7239/workspace?item=28 in the Review browser profile on Garden Desktop",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:85:2"
+      },
+      {
+        "input": "APP_ENV=staging launchctl list",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "storage.local:6999/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Home Mini\nProject: Cypress Docs\nCommand: git log -21 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://192.168.81.2:4444/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://192.168.81.2:4444/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://[::1]:3039/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Garden Desktop\nProject: Orchid Server\nCommand: git log -27 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://storage.local:6999/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging ruff check src",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'https://storage.local:6999/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging ping -c 2 10.12.0.4",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://100.119.4.8:5678/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "basename /tmp/app/main.ts 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "localhost:6111",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://office.internal:8765/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Home Mini\nProject: Saffron Web\nCommand: git log -33 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://10.91.2.5:8777/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Start in my home folder without a project",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "Why is Muse 1 mentioned in this log?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:125:2"
+      },
+      {
+        "input": "https://docs.harbor.dev/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://meridian.ai/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "uptime",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "opencode run 'inspect this project' 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Visit https://cypress.app/help through browser profile Review",
+        "task": "profile",
+        "expected": "profile:validation:6:0",
+        "actual": "default"
+      },
+      {
+        "input": "custom-deploy preview --force 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Start in my home folder without a project",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "https://docs.harbor.dev/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Harbor Desktop a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:35:3"
+      },
+      {
+        "input": "https://[::1]:3039/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Have Fable 5 investigate this crash",
+        "task": "model",
+        "expected": "model:validation:78:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Visit meridian.acme.dev through browser profile Reader",
+        "task": "profile",
+        "expected": "profile:validation:51:0",
+        "actual": "default"
+      },
+      {
+        "input": "openssl version\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "md5 archive.tar 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open localhost:7239/workspace?item=43 in the Reader browser profile on CI Node",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://192.168.81.2:4444/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://[::1]:3039",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://127.0.0.1:6006/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://10.91.2.5:8777/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && pi --continue",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "[::1]:3039",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://docs.harbor.dev/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open docs.orchid.io/workspace?item=13 in the Reader browser profile on Home Mini",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "stat README.md | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Home Mini\nProject: Saffron Web\nCommand: git log -39 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Ember 3 a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:50:4"
+      },
+      {
+        "input": "cd ~/workspace && bundle exec rake",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "claude --resume session_xyz | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "meridian.ai/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://localhost:6111/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "service.willow.app/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging nslookup mail.example.edu",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "monitor.orchid.org/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "127.0.0.1:6006/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging systemctl status nginx",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://storage.local:6999/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://monitor.orchid.org/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://meridian.ai/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://localhost:6111/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && systemctl status nginx",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Graphics Station a good name for a product?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:100:1"
+      },
+      {
+        "input": "Tell me about Fable 5, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:70:0"
+      },
+      {
+        "input": "expo start --lan | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "expo start --lan\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://office.internal:8765/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "screen -r work\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://localhost:6111/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "swift test 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "herdr list\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "shasum -a 256 app.zip | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "office.internal:8765/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://10.91.2.5:8777/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "office.internal:8765/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Cypress Docs mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:125:0"
+      },
+      {
+        "input": "nx run frontend:build",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "100.119.4.8:5678/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Orchid Server a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:70:3"
+      },
+      {
+        "input": "https://10.91.2.5:8777/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://service.willow.app/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "docs.harbor.dev/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://monitor.orchid.org/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && opencode run 'inspect this project'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://office.internal:8765/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "[::1]:3039/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "claude --resume session_xyz 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "10.91.2.5:8777",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "openssl version | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://monitor.orchid.org/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://storage.local:6999/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "herdr list | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "custom-deploy preview --force",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "bundle exec rake\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Home Mini\nProject: Saffron Web\nCommand: git log -30 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Start in my home folder without a project",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging git reflog -6",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://service.willow.app/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent http://office.internal:8765/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "100.119.4.8:5678",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: CI Node\nProject: Orchid Server\nCommand: git log -18 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "10.91.2.5:8777/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://[::1]:3039/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging stat README.md",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && vm_stat",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Home Mini\nProject: Harbor Desktop\nCommand: git log -12 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://office.internal:8765/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://127.0.0.1:6006/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Orchid Server mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:105:0"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "expo start --lan",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && git reflog -6",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "file logo.png\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://[::1]:3039/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "systemctl status nginx 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "openssl version",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open localhost:7239/workspace?item=4 in the Team browser profile on CI Node",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "hostname\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://monitor.orchid.org/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "nslookup mail.example.edu 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://[::1]:3039/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "pi --continue 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "open http://10.91.83.5:6821/workspace?item=40 in the Reader browser profile on Garden Desktop",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://docs.harbor.dev/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "swift test | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "openssl version 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Harbor Desktop a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:45:0"
+      },
+      {
+        "input": "192.168.81.2:4444",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "swift test",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging npx eslint . --fix",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && expo start --lan",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args http://backup.lan:7303",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "screen -r work",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "turbo run lint 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "codex resume --last",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://192.168.81.2:4444",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://10.91.2.5:8777/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari meridian.acme.dev",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && hostname",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "visit http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://docs.harbor.dev/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: CI Node\nProject: Saffron Web\nCommand: git log -24 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging expo start --lan",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "100.119.4.8:5678/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Kestrel Plus a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:100:1"
+      },
+      {
+        "input": "dirname /tmp/app/main.ts\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Choose No Project for this task",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "uptime | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "192.168.81.2:4444/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && turbo run lint",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "visit docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://office.internal:8765",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && free -m",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "turbo run lint",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://192.168.81.2:4444/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://office.internal:8765/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://office.internal:8765/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Garden Desktop, without changing anything",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:5:0"
+      },
+      {
+        "input": "custom-deploy preview --force | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Graphics Station\nProject: Cypress Docs\nCommand: git log -3 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Fable 5 mentioned in this log?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:15:1"
+      },
+      {
+        "input": "cd ~/workspace && pnpm why react",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging hostname",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "herdr list",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "custom-deploy preview --force\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "git remote get-url origin\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://127.0.0.1:6006/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && dig example.edu",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "md5 archive.tar\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "docs.harbor.dev/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Harbor Desktop a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:120:1"
+      },
+      {
+        "input": "Why is Beacon Dashboard mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:15:0"
+      },
+      {
+        "input": "10.91.2.5:8777/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "traceroute vpn.internal 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && readlink node_modules/.bin/tsc",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open localhost:7239/workspace?item=7 in the Sandbox browser profile on CI Node",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari localhost:7239",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://100.119.4.8:5678/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging free -m",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://meridian.ai",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args localhost:7239",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "docs.harbor.dev/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "service.willow.app/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Graphics Station a good name for a product?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:80:4"
+      },
+      {
+        "input": "visit docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "flutter doctor",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'https://localhost:6111/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "dirname /tmp/app/main.ts",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging flutter doctor",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://service.willow.app/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://service.willow.app/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "127.0.0.1:6006/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "ruff check src\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && claude --resume session_xyz",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://10.91.2.5:8777",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "storage.local:6999",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && docker inspect web",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Raven Mini a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:90:2"
+      },
+      {
+        "input": "https://docs.harbor.dev/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "basename /tmp/app/main.ts\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "xcodebuild -list 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging poetry run pytest",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Cypress Docs, without changing anything",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:60:1"
+      },
+      {
+        "input": "open -a Safari http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "ping -c 2 10.12.0.4 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "10.91.2.5:8777/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://meridian.ai/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Support, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:115:0"
+      },
+      {
+        "input": "http://docs.harbor.dev/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://office.internal:8765/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about CI Node, without changing anything",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:30:2"
+      },
+      {
+        "input": "open -a Safari http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "https://192.168.81.2:4444/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && nx run frontend:build",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'https://meridian.ai/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "launchctl list\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "dirname /tmp/app/main.ts | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://service.willow.app/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Study PC a good name for a product?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:50:1"
+      },
+      {
+        "input": "npx eslint . --fix\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "meridian.ai/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Juniper 2, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:5:0"
+      },
+      {
+        "input": "100.119.4.8:5678/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "poetry run pytest | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "docs.harbor.dev/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open localhost:7239/workspace?item=31 in the Demo browser profile on Graphics Station",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "localhost:6111/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://office.internal:8765/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent https://storage.local:6999/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "bundle exec rake 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://localhost:6111/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "127.0.0.1:6006/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "127.0.0.1:6006/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent https://100.119.4.8:5678/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Beacon Dashboard a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:95:0"
+      },
+      {
+        "input": "curl --silent http://127.0.0.1:6006/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Study PC, without changing anything",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:35:3"
+      },
+      {
+        "input": "https://storage.local:6999",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "vm_stat | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "codex resume --last\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging swift test",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "git reflog -6 | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://localhost:6111/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari https://cypress.app/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "take me to docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://10.91.2.5:8777/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Validation Mac\nProject: Saffron Web\nCommand: git log -9 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://127.0.0.1:6006/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://meridian.ai",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Choose No Project for this task",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "Is Graphics Station a good name for a product?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:125:4"
+      },
+      {
+        "input": "visit meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open http://10.91.83.5:6821/workspace?item=37 in the Review browser profile on Validation Mac",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging vm_stat",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://docs.harbor.dev/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'https://100.119.4.8:5678/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "storage.local:6999/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://127.0.0.1:6006/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "nslookup mail.example.edu | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Visit http://10.91.83.5:6821 through browser profile Team",
+        "task": "profile",
+        "expected": "profile:validation:57:2",
+        "actual": "default"
+      },
+      {
+        "input": "xcodebuild -list",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "visit http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "poetry run pytest 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://storage.local:6999/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://service.willow.app/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "systemctl status nginx | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "dig example.edu 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://100.119.4.8:5678/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://192.168.81.2:4444/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "kubectl describe service api\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "monitor.orchid.org/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "service.willow.app",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Meridian Chat mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:100:1"
+      },
+      {
+        "input": "nslookup mail.example.edu\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "shasum -a 256 app.zip 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://storage.local:6999/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about CI Node, without changing anything",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:20:0"
+      },
+      {
+        "input": "stat README.md",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'http://[::1]:3039/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://service.willow.app/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://100.119.4.8:5678",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "hostname",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && uptime",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://10.91.2.5:8777",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging traceroute vpn.internal",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://192.168.81.2:4444/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "localhost:6111/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Ember 3 mentioned in this log?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:20:0"
+      },
+      {
+        "input": "readlink node_modules/.bin/tsc",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging claude --resume session_xyz",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent http://192.168.81.2:4444/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'http://docs.harbor.dev/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && md5 archive.tar",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && openssl version",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && traceroute vpn.internal",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && swift test",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "192.168.81.2:4444/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Beacon Dashboard a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:5:1"
+      },
+      {
+        "input": "office.internal:8765/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args docs.orchid.io",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Study PC a good name for a product?",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:60:0"
+      },
+      {
+        "input": "nx run frontend:build\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://100.119.4.8:5678/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Ember 3 a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:65:2"
+      },
+      {
+        "input": "Why is Kestrel Plus mentioned in this log?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:40:1"
+      },
+      {
+        "input": "docker inspect web 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "systemctl status nginx",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://storage.local:6999/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "systemctl status nginx\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://service.willow.app",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "readlink node_modules/.bin/tsc | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "npx eslint . --fix | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && ping -c 2 10.12.0.4",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'http://127.0.0.1:6006/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "https://127.0.0.1:6006/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging codex resume --last",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && herdr list",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://monitor.orchid.org/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://127.0.0.1:6006/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "[::1]:3039/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Saffron Web mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:115:1"
+      },
+      {
+        "input": "cd ~/workspace && flutter doctor",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Choose No Project for this task",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "Tell me about Beacon Dashboard, without changing anything",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:80:0"
+      },
+      {
+        "input": "https://192.168.81.2:4444/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "visit https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "traceroute vpn.internal",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Graphics Station\nProject: Meridian Chat\nCommand: git log -6 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Kestrel Plus a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:35:0"
+      },
+      {
+        "input": "http://192.168.81.2:4444",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://meridian.ai/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open http://10.91.83.5:6821/workspace?item=25 in the Demo browser profile on Validation Mac",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "turbo run lint | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://monitor.orchid.org/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Juniper 2, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:45:3"
+      },
+      {
+        "input": "flutter doctor\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "visit http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://localhost:6111",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "10.91.2.5:8777/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open http://10.91.83.5:6821/workspace?item=1 in the Team browser profile on Graphics Station",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "192.168.81.2:4444/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open docs.orchid.io/workspace?item=19 in the Team browser profile on Home Mini",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "monitor.orchid.org/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari docs.orchid.io",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://meridian.ai/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://service.willow.app/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://100.119.4.8:5678/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -a Safari docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "visit localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "curl --silent https://localhost:6111/help",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://127.0.0.1:6006/download/tool.tar.gz",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://service.willow.app/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Juniper 2 a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:95:2"
+      },
+      {
+        "input": "Tell me about Study PC, without changing anything",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:70:0"
+      },
+      {
+        "input": "flutter doctor | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging bundle exec rake",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "storage.local:6999/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "visit docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "meridian.ai/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && codex resume --last",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Validation Mac\nProject: Cypress Docs\nCommand: git log -42 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://localhost:6111/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open -n -a Firefox --args https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "uptime\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://100.119.4.8:5678/settings?tab=terminal",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://meridian.ai/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Beacon Dashboard, without changing anything",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:50:1"
+      },
+      {
+        "input": "Is Ember 3 a good name for a product?",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:115:1"
+      },
+      {
+        "input": "xcodebuild -list | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://100.119.4.8:5678",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Computer: Study PC\nProject: Meridian Chat\nCommand: git log -36 --oneline",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://10.91.2.5:8777/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Why is Orchid Server mentioned in this log?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:40:0"
+      },
+      {
+        "input": "https://100.119.4.8:5678/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging uptime",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "service.willow.app/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://monitor.orchid.org",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Visit localhost:7239 through browser profile Sandbox",
+        "task": "profile",
+        "expected": "profile:validation:96:0",
+        "actual": "default"
+      },
+      {
+        "input": "open -a Safari http://backup.lan:7303",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "cd ~/workspace && npx eslint . --fix",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "kubectl describe service api 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'http://office.internal:8765/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://[::1]:3039/#overview",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "pnpm why react | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Saffron Web a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:25:3"
+      },
+      {
+        "input": "basename /tmp/app/main.ts",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "office.internal:8765/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Is Cypress Docs a good name for a product?",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:65:3"
+      },
+      {
+        "input": "http://storage.local:6999",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && basename /tmp/app/main.ts",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "free -m | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "https://service.willow.app",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "bundle exec rake",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging pnpm why react",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'https://10.91.2.5:8777/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && dirname /tmp/app/main.ts",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "docker inspect web | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "pi --continue | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "http://office.internal:8765/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "codex resume --last | tee /tmp/workspace.log",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "uptime 2>&1",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "127.0.0.1:6006",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "https://service.willow.app/docs/getting-started",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "http://localhost:6111/api/v2/check?command=echo%20hi",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "echo 'http://monitor.orchid.org/help'",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:75:0"
+      },
+      {
+        "input": "visit meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:80:0"
+      },
+      {
+        "input": "claude --resume session_xyz",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging screen -r work",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Beacon Dashboard, without changing anything",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:75:2"
+      }
+    ],
+    "loss": 0.9892176444571307
+  },
+  "selection": "Validation accuracy, then validation cross-entropy. No test/benchmark checkpoint selection."
+}

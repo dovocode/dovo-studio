@@ -1,8 +1,34 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { readFile, writeFile, symlink } from 'node:fs/promises'
+import { readFile, writeFile, symlink, chmod, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
+it('normalizes GHE clone path case only on a configured GitHub host', async () => {
+  const f = await fixture()
+  const git = new GitService(undefined, undefined, undefined, undefined, undefined, (identity) =>
+    identity.startsWith('github.internal/') ? 'github' : undefined,
+  )
+  try {
+    await git.command(f.directory, [
+      'remote',
+      'add',
+      'origin',
+      'git@github.internal:Team/Project.git',
+    ])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.internal/team/project')
+    await git.command(f.directory, [
+      'remote',
+      'set-url',
+      'origin',
+      'https://git.internal/Team/Project.git',
+    ])
+    expect(await git.repositoryIdentity(f.directory, true)).toBe('git.internal/Team/Project')
+    git.confirmGithubHost('git.internal')
+    expect(await git.repositoryIdentity(f.directory)).toBe('git.internal/team/project')
+  } finally {
+    await f.cleanup()
+  }
+})
 it('serializes concurrent draft saves through canonical paths across service instances', async () => {
   const f = await fixture()
   try {
@@ -51,6 +77,145 @@ it('reads real diffs and applies edits without overwriting changed disk contents
     await git.stage(f.directory, ['hello.txt'])
     expect(await git.commit(f.directory, 'Verified edit')).toMatch(/^[0-9a-f]{40}$/)
     expect(await git.changes(f.directory)).toEqual([])
+  } finally {
+    await f.cleanup()
+  }
+})
+it('retains index and working tree membership for text, empty, binary and mode-only changes', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    for (const name of ['index-delete.txt', 'working-delete.txt', 'mode.txt', 'net-zero.txt'])
+      await writeFile(join(f.directory, name), 'original\n')
+    await writeFile(join(f.directory, 'binary.dat'), Buffer.from([0, 1, 2]))
+    await git.stage(f.directory, [
+      'index-delete.txt',
+      'working-delete.txt',
+      'mode.txt',
+      'net-zero.txt',
+      'binary.dat',
+    ])
+    await git.commit(f.directory, 'Status fixtures')
+    await git.command(f.directory, ['config', 'core.filemode', 'true'])
+
+    await writeFile(join(f.directory, 'hello.txt'), 'staged\n')
+    await writeFile(join(f.directory, 'net-zero.txt'), 'staged\n')
+    await writeFile(join(f.directory, 'added.txt'), 'added\n')
+    await writeFile(join(f.directory, 'added-deleted.txt'), 'added\n')
+    await writeFile(join(f.directory, 'binary.dat'), Buffer.from([0, 2, 3]))
+    await rm(join(f.directory, 'index-delete.txt'))
+    await git.stage(f.directory, [
+      'hello.txt',
+      'net-zero.txt',
+      'added.txt',
+      'added-deleted.txt',
+      'binary.dat',
+      'index-delete.txt',
+    ])
+    await writeFile(join(f.directory, 'hello.txt'), 'unstaged\n')
+    await writeFile(join(f.directory, 'net-zero.txt'), 'original\n')
+    await rm(join(f.directory, 'working-delete.txt'))
+    await rm(join(f.directory, 'added-deleted.txt'))
+    await chmod(join(f.directory, 'mode.txt'), 0o755)
+    await writeFile(join(f.directory, 'untracked space\nname.txt'), '')
+
+    const files = await git.changes(f.directory)
+    const byPath = new Map(files.map((file) => [file.path, file]))
+    expect(Object.fromEntries(files.map((file) => [file.path, file.gitStatus]))).toEqual({
+      'hello.txt': { index: 'modified', workingTree: 'modified' },
+      'net-zero.txt': { index: 'modified', workingTree: 'modified' },
+      'added.txt': { index: 'added', workingTree: 'unchanged' },
+      'added-deleted.txt': { index: 'added', workingTree: 'deleted' },
+      'index-delete.txt': { index: 'deleted', workingTree: 'unchanged' },
+      'working-delete.txt': { index: 'unchanged', workingTree: 'deleted' },
+      'binary.dat': { index: 'modified', workingTree: 'unchanged' },
+      'mode.txt': { index: 'unchanged', workingTree: 'modified' },
+      'untracked space\nname.txt': { index: 'unchanged', workingTree: 'untracked' },
+    })
+    expect(byPath.get('hello.txt')).toMatchObject({ before: 'original\n', after: 'unstaged\n' })
+    expect(byPath.get('net-zero.txt')).toMatchObject({ before: 'original\n', after: 'original\n' })
+    expect(byPath.get('mode.txt')).toMatchObject({ before: 'original\n', after: 'original\n' })
+    expect(byPath.get('binary.dat')?.preview?.kind).toBe('binary')
+    // Staging remaining changes changes membership even when the working contents stay the same.
+    await git.stage(f.directory, ['hello.txt'])
+    expect(
+      (await git.changes(f.directory)).find((file) => file.path === 'hello.txt')?.gitStatus,
+    ).toEqual({ index: 'modified', workingTree: 'unchanged' })
+  } finally {
+    await f.cleanup()
+  }
+})
+it('unstages literal scoped paths without changing partial working contents or other staged files', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    await writeFile(join(f.directory, 'hello.txt'), 'staged contents\n')
+    await writeFile(join(f.directory, 'a[1].txt'), 'literal\n')
+    await writeFile(join(f.directory, 'a1.txt'), 'other staged\n')
+    await git.stage(f.directory, ['hello.txt', 'a[1].txt', 'a1.txt'])
+    await writeFile(join(f.directory, 'hello.txt'), 'working contents\n')
+    await git.unstage(f.directory, ['hello.txt', 'a[1].txt'])
+    expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('working contents\n')
+    expect(await readFile(join(f.directory, 'a[1].txt'), 'utf8')).toBe('literal\n')
+    expect((await git.command(f.directory, ['diff', '--cached', '--name-only'])).trim()).toBe(
+      'a1.txt',
+    )
+    expect(await git.command(f.directory, ['show', ':hello.txt'])).toBe('original\n')
+    const index = await readFile(join(f.directory, '.git', 'index'))
+    await git.unstage(f.directory, [])
+    expect(await readFile(join(f.directory, '.git', 'index'))).toEqual(index)
+    await expect(git.unstage(f.directory, ['../escape'])).rejects.toThrow('outside the repository')
+    await expect(git.unstage(f.directory, ['.git/config'])).rejects.toThrow('Invalid file path')
+    await symlink('/tmp', join(f.directory, 'outside'))
+    await expect(git.unstage(f.directory, ['outside/escape'])).rejects.toThrow(
+      'Symlink points outside',
+    )
+    expect(await readFile(join(f.directory, '.git', 'index'))).toEqual(index)
+  } finally {
+    await f.cleanup()
+  }
+})
+it('unstages added and deleted paths in an unborn checkout without touching working files', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    await git.command(f.directory, ['checkout', '--orphan', 'unborn-unstage'])
+    await writeFile(join(f.directory, 'hello.txt'), 'new working contents\n')
+    await writeFile(join(f.directory, 'added.txt'), 'keep me\n')
+    await writeFile(join(f.directory, 'missing.txt'), 'staged then removed\n')
+    await git.stage(f.directory, ['hello.txt', 'added.txt', 'missing.txt'])
+    await rm(join(f.directory, 'missing.txt'))
+    await git.unstage(f.directory, ['added.txt', 'missing.txt'])
+    expect(await readFile(join(f.directory, 'added.txt'), 'utf8')).toBe('keep me\n')
+    await expect(readFile(join(f.directory, 'missing.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    expect((await git.command(f.directory, ['ls-files'])).trim()).toBe('hello.txt')
+    expect(await git.command(f.directory, ['show', ':hello.txt'])).toBe('new working contents\n')
+    expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('new working contents\n')
+  } finally {
+    await f.cleanup()
+  }
+})
+it('reports an add/add merge conflict without claiming a staged addition', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    const originalBranch = (await git.command(f.directory, ['branch', '--show-current'])).trim()
+    await git.command(f.directory, ['checkout', '-b', 'status-conflict'])
+    await writeFile(join(f.directory, 'conflict.txt'), 'other branch\n')
+    await git.stage(f.directory, ['conflict.txt'])
+    await git.commit(f.directory, 'Other addition')
+    await git.command(f.directory, ['checkout', originalBranch])
+    await writeFile(join(f.directory, 'conflict.txt'), 'original branch\n')
+    await git.stage(f.directory, ['conflict.txt'])
+    await git.commit(f.directory, 'Original addition')
+    await expect(git.command(f.directory, ['merge', 'status-conflict'])).rejects.toMatchObject({
+      code: 1,
+    })
+    expect(
+      (await git.changes(f.directory)).find((file) => file.path === 'conflict.txt')?.gitStatus,
+    ).toEqual({ index: 'unmerged', workingTree: 'unmerged' })
   } finally {
     await f.cleanup()
   }
@@ -169,7 +334,7 @@ it('bounds identity retention, expires unused paths and coalesces pending reads'
     expect(command).not.toHaveBeenCalled()
     await git.repositoryIdentity('first')
     expect(command).toHaveBeenCalledTimes(2)
-    clock.mockReturnValue(62000)
+    clock.mockReturnValue(302000)
     command.mockClear()
     await git.repositoryIdentity('repository-255')
     expect(command).toHaveBeenCalledTimes(2)
@@ -181,10 +346,157 @@ it('bounds identity retention, expires unused paths and coalesces pending reads'
         }),
     )
     const pending = git.repositoryIdentity('pending')
-    clock.mockReturnValue(130000)
+    clock.mockReturnValue(610000)
     expect(git.repositoryIdentity('pending')).toBe(pending)
     resolve('origin\n')
     expect(await pending).toBe('github.com/owner/repository')
+  } finally {
+    command.mockRestore()
+    clock.mockRestore()
+  }
+})
+it('reuses identity across minute polls while bounding external retarget staleness', async () => {
+  const f = await fixture()
+  const git = new GitService()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  const { exec } = await import('../../process')
+  try {
+    await git.command(f.directory, ['remote', 'add', 'origin', 'https://github.com/owner/first'])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/first')
+    const command = vi.spyOn(git, 'command')
+    try {
+      clock.mockReturnValue(61_001)
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/first')
+      expect(command).not.toHaveBeenCalled()
+      await exec('git', ['remote', 'set-url', 'origin', 'https://github.com/owner/external'], {
+        cwd: f.directory,
+      })
+      clock.mockReturnValue(301_001)
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/external')
+      expect(command).toHaveBeenCalledTimes(2)
+      await git.command(f.directory, [
+        'remote',
+        'set-url',
+        'origin',
+        'https://github.com/owner/local',
+      ])
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/local')
+      await exec('git', ['remote', 'set-url', 'origin', 'https://github.com/owner/explicit'], {
+        cwd: f.directory,
+      })
+      expect(await git.repositoryIdentity(f.directory, true)).toBe('github.com/owner/explicit')
+    } finally {
+      command.mockRestore()
+    }
+  } finally {
+    clock.mockRestore()
+    await f.cleanup()
+  }
+})
+
+it('invalidates identities across shared config writes affecting linked worktrees', async () => {
+  const f = await fixture()
+  const git = new GitService()
+  try {
+    await git.command(f.directory, ['remote', 'add', 'origin', 'https://git-alias/owner/repo'])
+    expect(await git.repositoryIdentity(f.directory)).toBe('git-alias/owner/repo')
+    await git.sharedConfigCommand(f.directory, [
+      'config',
+      'url.https://github.com/.insteadOf',
+      'https://git-alias/',
+    ])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/repo')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it('refreshes conditional remote identities after a branch switch', async () => {
+  const f = await fixture()
+  const git = new GitService()
+  try {
+    await git.command(f.directory, ['remote', 'add', 'origin', 'https://git-alias/owner/base'])
+    const include = join(f.directory, 'branch.gitconfig')
+    await writeFile(
+      include,
+      '[url "https://github.com/owner/conditional"]\n  insteadOf = https://git-alias/owner/base\n',
+    )
+    await git.command(f.directory, ['config', 'includeIf.onbranch:conditional.path', include])
+    expect(await git.repositoryIdentity(f.directory)).toBe('git-alias/owner/base')
+    await git.checkoutCommand(f.directory, ['checkout', '-b', 'conditional'])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/conditional')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it.each(['app', 'external'] as const)(
+  'does not let a pre-write identity read replace the refreshed identity after an %s write',
+  async (writer) => {
+    const f = await fixture()
+    const git = new GitService()
+    const run = git['run']
+    let release!: () => void
+    let captured!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const ready = new Promise<void>((resolve) => {
+      captured = resolve
+    })
+    let hold = true
+    try {
+      await git.command(f.directory, ['remote', 'add', 'origin', 'https://github.com/owner/before'])
+      git['run'] = async (...args) => {
+        const result = await run.apply(git, args)
+        if (args[2][0] === 'remote' && args[2][1] === 'get-url' && hold) {
+          hold = false
+          captured()
+          await held
+        }
+        return result
+      }
+      const before = git.repositoryIdentity(f.directory)
+      await ready
+      const args = ['remote', 'set-url', 'origin', 'https://github.com/owner/after']
+      if (writer === 'app') await git.command(f.directory, args)
+      else {
+        const { exec } = await import('../../process')
+        await exec('git', args, { cwd: f.directory })
+      }
+      expect(await git.repositoryIdentity(f.directory, writer === 'external')).toBe(
+        'github.com/owner/after',
+      )
+      release()
+      expect(await before).toBe('github.com/owner/before')
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/after')
+    } finally {
+      release()
+      git['run'] = run
+      await f.cleanup()
+    }
+  },
+)
+it('retains unavailable identities briefly while allowing explicit recovery immediately', async () => {
+  const git = new GitService()
+  const command = vi.spyOn(git, 'command').mockRejectedValue(new Error('Checkout unavailable'))
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  try {
+    await expect(git.repositoryIdentity('/unavailable')).rejects.toThrow('Checkout unavailable')
+    await expect(git.cachedRepositoryIdentity('/unavailable')).rejects.toThrow(
+      'Checkout unavailable',
+    )
+    await expect(git.repositoryIdentity('/unavailable')).rejects.toThrow('Checkout unavailable')
+    expect(command).toHaveBeenCalledOnce()
+    command.mockImplementation(async (_cwd, args) =>
+      args.length === 1 ? 'origin\n' : 'https://github.com/team/app',
+    )
+    expect(await git.repositoryIdentity('/unavailable', true)).toBe('github.com/team/app')
+    command.mockRejectedValue(new Error('Offline again'))
+    await expect(git.repositoryIdentity('/unavailable', true)).rejects.toThrow('Offline again')
+    clock.mockReturnValue(16001)
+    await expect(git.repositoryIdentity('/unavailable')).rejects.toThrow('Offline again')
+    expect(command).toHaveBeenCalledTimes(5)
   } finally {
     command.mockRestore()
     clock.mockRestore()

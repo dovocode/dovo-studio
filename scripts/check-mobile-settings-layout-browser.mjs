@@ -78,6 +78,7 @@ const modifiers =
     .map((name) => `export const ${name}=value=>({name:'${name}',value});`)
     .join('\n') + `\nexport const shapes={rectangle:()=>({})};`
 const mocks = {
+  '../ui/controls/icon-button': `export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress} style={{width:44,height:44,flexShrink:0}}>{icon==='moveUp'?'↑':'↓'}</button>;`,
   '../../screens/remote-desktop': 'export const MobileRemoteDesktop=()=>null;',
   'react-native': native,
   '@expo/ui/swift-ui': swift,
@@ -86,7 +87,7 @@ const mocks = {
   './icon': `import {iconAssets} from './src/ui/controls/icon-assets';export const Icon=({name,size=20,color})=>{const asset=iconAssets[name];const url=typeof asset==='string'?asset:asset?.default;return <span data-icon={name} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0,color,backgroundColor:color||'currentColor',maskImage:'url('+url+')',maskSize:'contain',maskRepeat:'no-repeat'}}/>};`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
   'expo-router': `export const usePreventRemove=()=>{};export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),replace:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId,setting:window.requestedSetting});`,
-  expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE']})});`,
+  expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE','el-GR']})});`,
   'expo-speech': `export const getAvailableVoicesAsync=async()=>[{identifier:'siri',name:'Siri',language:'en-US',quality:'Enhanced'}];`,
   'expo-constants': `export default {expoConfig:{version:'test'}};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async()=>null,setItem:async(key,value)=>{window.savedPreferences=JSON.parse(value)}};`,
@@ -134,7 +135,7 @@ const built = await build({
       function MotionProbe(){return <output aria-label="Reduced motion">{String(useTheme().reduceMotion)}</output>;}
       import SettingsSection from './src/app/(more)/settings/[section]';
       const computer='Dominic’s development computer with a long name';
-      window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[],tasks:[]}}}]};
+      window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[],tasks:[],agents:[]}}}]};
       window.runtime.overviews.push({...window.runtime.overviews[0],profile:{...window.runtime.overviews[0].profile,id:'other',name:'Build server'},snapshot:{...window.runtime.overviews[0].snapshot,defaults:{scopedSettings:{environment:{},shared:[]}}}});
       window.computerPreferences={};window.computerReads=[];window.computerSaves=[];
       for(const entry of window.runtime.overviews){
@@ -276,7 +277,7 @@ try {
       )
       await page.evaluate(() => window.setHighContrast(false))
       await page.waitForFunction(
-        () => document.querySelector('#app>div').style.backgroundColor === 'rgb(12, 12, 12)',
+        () => document.querySelector('#app>div').style.backgroundColor === 'rgb(16, 16, 18)',
       )
       const argumentsField = page.getByLabel('Shell arguments (one per line)', { exact: true })
       assert.equal(
@@ -313,7 +314,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
+            (mode === 'dark' ? 'rgb(16, 16, 18)' : 'rgb(237, 240, 244)'),
           mode,
         )
         for (const locator of [
@@ -440,10 +441,10 @@ try {
       await page.evaluate(() => window.showSheet(false))
       await page.evaluate(() => window.showScoped(true))
       const sticky = page.getByLabel('Settings target', { exact: true })
-      await sticky.getByText('All projects on all machines', { exact: true }).waitFor()
-      const storage = page.getByText('Shared across paired machines', { exact: true })
+      await sticky.getByText('All projects on all computers', { exact: true }).waitFor()
+      const storage = page.getByText('Shared across paired computers', { exact: true })
       const description = page.getByText(
-        'Defaults for all projects on all machines. More-specific overrides keep their own values.',
+        'Defaults for all projects on all computers. More-specific overrides keep their own values.',
         { exact: true },
       )
       for (const mode of ['dark', 'light']) {
@@ -451,7 +452,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
+            (mode === 'dark' ? 'rgb(16, 16, 18)' : 'rgb(237, 240, 244)'),
           mode,
         )
         assert.equal(await storage.count(), 0)
@@ -467,7 +468,7 @@ try {
           'Machine and project choices remain available with multiple computers',
         )
         assert.equal(
-          await sticky.getByText('Shared across paired machines', { exact: true }).count(),
+          await sticky.getByText('Shared across paired computers', { exact: true }).count(),
           0,
           'Storage details must not enlarge the sticky header',
         )
@@ -501,7 +502,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
+            (mode === 'dark' ? 'rgb(16, 16, 18)' : 'rgb(237, 240, 244)'),
           mode,
         )
         await page.screenshot({
@@ -554,9 +555,62 @@ try {
     await search.fill('')
     await row('Conversation').click()
     await page.getByRole('heading', { name: 'Conversation', exact: true }).waitFor()
+    const minimalComposer = page.getByRole('switch', { name: 'Minimal composer', exact: true })
+    assert.equal(await minimalComposer.getAttribute('aria-checked'), 'true')
+    await minimalComposer.click()
+    assert.equal(await minimalComposer.getAttribute('aria-checked'), 'false')
+    await minimalComposer.click()
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     await row('Conversation').waitFor()
+    await page.evaluate(() => window.navigate('/settings/task-preferences'))
+    await page.getByRole('textbox', { name: 'Morning time', exact: true }).fill('08:30')
+    await page.getByRole('textbox', { name: 'Evening time', exact: true }).fill('20:15')
+    await page.getByRole('switch', { name: 'Later today', exact: true }).click()
+    await page.getByRole('button', { name: 'Move Next week up', exact: true }).click()
+    await page.getByRole('button', { name: 'Save calendar shortcuts', exact: true }).click()
+    await page.waitForFunction(
+      () => window.savedPreferences?.taskSnoozeSchedule?.morningTime === '08:30',
+    )
+    assert.deepEqual(await page.evaluate(() => window.savedPreferences.taskSnoozeSchedule), {
+      morningTime: '08:30',
+      eveningTime: '20:15',
+      weekStartsOn: 1,
+      presets: ['tomorrow-morning', 'next-week', 'tomorrow-evening'],
+    })
+    await page.getByRole('textbox', { name: 'Morning time', exact: true }).fill('25:00')
+    await page.getByRole('button', { name: 'Save calendar shortcuts', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: '24-hour' }).waitFor()
+    assert.equal(
+      await page.evaluate(() => window.savedPreferences.taskSnoozeSchedule.morningTime),
+      '08:30',
+    )
+    await page.getByRole('button', { name: 'Reset calendar shortcuts', exact: true }).click()
+    assert.equal(
+      await page.getByRole('textbox', { name: 'Morning time', exact: true }).inputValue(),
+      '09:00',
+    )
+    const snooze = page.getByRole('textbox', { name: 'Snooze durations', exact: true })
+    await snooze.fill('15m, 90m, 2d')
+    await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+    await page.waitForFunction(
+      () => JSON.stringify(window.savedPreferences?.taskSnoozeMinutes) === '[15,90,2880]',
+    )
+    await snooze.fill('0m')
+    await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: 'different durations' }).waitFor()
+    assert.deepEqual(
+      await page.evaluate(() => window.savedPreferences.taskSnoozeMinutes),
+      [15, 90, 2880],
+    )
+    await page.getByRole('button', { name: 'Reset snooze durations', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        JSON.stringify(window.savedPreferences?.taskSnoozeMinutes) ===
+        '[60,240,1440,2880,4320,10080]',
+    )
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     await search.fill('general memory')
     await row('Memory').waitFor()
     await page.getByText('Agents & tools', { exact: true }).waitFor()
@@ -573,6 +627,7 @@ try {
       ['keep screen awake', 'Conversation', 'conversation'],
       ['merge squash', 'Task & PR preferences', 'task-preferences'],
       ['confirm archive', 'Task & PR preferences', 'task-preferences'],
+      ['snooze durations', 'Task & PR preferences', 'task-preferences'],
       ['push alerts', 'Notifications', 'notifications'],
       ['standalone relay', 'Notifications', 'notifications'],
       ['live activities', 'Notifications', 'notifications'],
@@ -644,6 +699,8 @@ try {
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await search.fill('siri voice')
     await page.getByRole('button', { name: 'Speech & driving', exact: true }).click()
+    await choose('Dictation language', 'Greek')
+    await page.waitForFunction(() => window.savedPreferences?.dictationLanguage === 'el-GR')
     await choose('Voice', 'Siri · Siri · en-US · Enhanced')
     await page.waitForFunction(() => window.savedPreferences?.speechVoice === 'siri')
     await page.getByRole('button', { name: 'Back', exact: true }).click()
@@ -747,7 +804,7 @@ try {
     })
     await search.fill('task behavior')
     await page.getByRole('button', { name: 'Running tasks', exact: true }).click()
-    await page.getByText('Running tasks', { exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'Running tasks', exact: true }).waitFor()
     assert.equal(await page.getByText('Memory', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Pull requests & pipelines', { exact: true }).count(), 0)
     assert.equal(

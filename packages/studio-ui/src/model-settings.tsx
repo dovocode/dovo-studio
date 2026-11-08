@@ -1,3 +1,5 @@
+import { RefreshCw } from 'lucide-react'
+import { Disclosure } from './disclosure'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
@@ -6,6 +8,8 @@ import { useEffect, type ReactNode } from 'react'
 import {
   agentSchema,
   modelPreferenceKey,
+  modelCatalogChoices,
+  modelDisplayName,
   type RuntimeDefaults,
   daybreakChoices,
   modelServiceTiers,
@@ -26,6 +30,7 @@ export function ModelSettings({
   modes = true,
   preferences = {},
   onPreference,
+  preferenceScopeControls,
   layout,
 }: {
   agent: Agent
@@ -34,6 +39,7 @@ export function ModelSettings({
   connected: boolean
   preferences?: RuntimeDefaults['modelPreferences']
   onPreference?: (key: string, change: { favorite?: boolean; disabled?: boolean }) => Promise<void>
+  preferenceScopeControls?: ReactNode
   modes?: boolean
   layout?: 'settings'
 }) {
@@ -85,7 +91,7 @@ export function ModelSettings({
   }, [key, canDiscover, loadModels, refresh])
   const preferenceKey = (model: string) =>
     modelPreferenceKey(agent.provider, model, agent.acpInstallationId)
-  const allModels = catalog?.models ?? []
+  const allModels = modelCatalogChoices(catalog?.models ?? [])
   const models = allModels
       .filter(
         (model) => !preferences[preferenceKey(model.id)]?.disabled || model.id === agent.model,
@@ -109,30 +115,53 @@ export function ModelSettings({
       serviceTier: model === agent.model ? agent.serviceTier : undefined,
       cyberAccessProgram: model === agent.model ? agent.cyberAccessProgram : undefined,
     })
+  const discoveryStatus = loading
+    ? 'Loading provider models…'
+    : !connected
+      ? 'Connect to discover models and reasoning levels.'
+      : agent.provider === 'acp' && !agent.acpInstallationId && !agent.endpoint.trim()
+        ? 'Install or select an ACP agent, or enter a custom command to discover its models.'
+        : !efforts.length
+          ? 'Select a model that advertises reasoning options.'
+          : selected?.description
   return (
     <div className="grid gap-3">
       <FormField label="Model" layout={layout}>
-        <ChoicePicker
-          aria-label="Model"
-          className="h-9 rounded-md border bg-background px-2 text-xs"
-          value={custom ? '__custom__' : agent.model}
-          onValueChange={(selection) => {
-            const value = selection
-            setCustom(value === '__custom__')
-            if (value !== '__custom__') changeModel(value)
-          }}
-        >
-          <option value="">Provider default</option>
-          {agent.model && !selected && (
-            <option value={agent.model}>{agent.model} (saved/custom)</option>
-          )}
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name}
-            </option>
-          ))}
-          <option value="__custom__">Custom model…</option>
-        </ChoicePicker>
+        <div className="relative flex min-w-0 items-center">
+          <ChoicePicker
+            aria-label="Model"
+            className="h-9 w-full rounded-md border bg-background pl-2 pr-12! text-xs"
+            value={custom ? '__custom__' : agent.model}
+            onValueChange={(selection) => {
+              const value = selection
+              setCustom(value === '__custom__')
+              if (value !== '__custom__') changeModel(value)
+            }}
+          >
+            <option value="">Provider default</option>
+            {agent.model && !selected && (
+              <option value={agent.model}>{modelDisplayName(agent.model)} (saved/custom)</option>
+            )}
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
+            ))}
+            <option value="__custom__">Custom model…</option>
+          </ChoicePicker>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-0.5 top-0.5 size-8"
+            aria-label="Refresh models"
+            title="Refresh models"
+            disabled={!connected || loading}
+            onClick={() => setRefresh((value) => value + 1)}
+          >
+            <RefreshCw className={loading ? 'size-3.5 animate-spin' : 'size-3.5'} />
+          </Button>
+        </div>
       </FormField>
       {(custom || (!!agent.model && !selected)) && (
         <Input
@@ -168,6 +197,7 @@ export function ModelSettings({
           ))}
         </ChoicePicker>
       </FormField>
+      {discoveryStatus && <p className="text-xs text-muted-foreground">{discoveryStatus}</p>}
       {modes && agent.provider === 'acp' && catalog?.acp && (
         <ProviderOptions collapsed={layout === 'settings'}>
           {!!catalog.acp.modes.length && (
@@ -231,8 +261,7 @@ export function ModelSettings({
             )
           })}
           {!!catalog.acp.commands.length && (
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Supported commands</summary>
+            <Disclosure title={<> Supported commands </>}>
               <ul className="mt-2 grid gap-1">
                 {catalog.acp.commands.map((command) => (
                   <li key={command.name}>
@@ -242,7 +271,7 @@ export function ModelSettings({
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
         </ProviderOptions>
       )}
@@ -311,65 +340,43 @@ export function ModelSettings({
           </p>
         </ProviderOptions>
       )}
-      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>
-          {loading
-            ? 'Loading provider models…'
-            : !connected
-              ? 'Connect to discover models and reasoning levels.'
-              : agent.provider === 'acp' && !agent.acpInstallationId && !agent.endpoint.trim()
-                ? 'Install or select an ACP agent, or enter a custom command to discover its models.'
-                : !efforts.length
-                  ? 'Select a model that advertises reasoning options.'
-                  : selected?.description}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={!connected || loading}
-          onClick={() => setRefresh((value) => value + 1)}
-        >
-          Refresh models
-        </Button>
-      </div>
       {onPreference && (
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            Model visibility & favorites
-          </summary>
-          <div className="mt-2 max-h-60 overflow-y-auto">
-            {allModels.map((model) => {
-              const key = preferenceKey(model.id)
-              const preference = preferences[key]
-              const save = (change: { favorite?: boolean; disabled?: boolean }) =>
-                void onPreference(key, change).catch((error: unknown) =>
-                  setError(error instanceof Error ? error.message : String(error)),
+        <Disclosure title={<> Model visibility & favorites </>}>
+          <div className="mt-3 grid gap-3">
+            {preferenceScopeControls}
+            <div className="max-h-60 overflow-y-auto">
+              {allModels.map((model) => {
+                const key = preferenceKey(model.id)
+                const preference = preferences[key]
+                const save = (change: { favorite?: boolean; disabled?: boolean }) =>
+                  void onPreference(key, change).catch((error: unknown) =>
+                    setError(error instanceof Error ? error.message : String(error)),
+                  )
+                return (
+                  <div key={model.id} className="flex items-center gap-2 py-1 text-xs">
+                    <span className="min-w-0 flex-1 truncate">{model.name}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-pressed={!!preference?.favorite}
+                      onClick={() => save({ favorite: !preference?.favorite })}
+                    >
+                      {preference?.favorite ? '★' : '☆'} Favorite
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-pressed={!preference?.disabled}
+                      onClick={() => save({ disabled: !preference?.disabled })}
+                    >
+                      {preference?.disabled ? 'Enable' : 'Disable'}
+                    </Button>
+                  </div>
                 )
-              return (
-                <div key={model.id} className="flex items-center gap-2 py-1 text-xs">
-                  <span className="min-w-0 flex-1 truncate">{model.name}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-pressed={!!preference?.favorite}
-                    onClick={() => save({ favorite: !preference?.favorite })}
-                  >
-                    {preference?.favorite ? '★' : '☆'} Favorite
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-pressed={!preference?.disabled}
-                    onClick={() => save({ disabled: !preference?.disabled })}
-                  >
-                    {preference?.disabled ? 'Enable' : 'Disable'}
-                  </Button>
-                </div>
-              )
-            })}
+              })}
+            </div>
           </div>
-        </details>
+        </Disclosure>
       )}
       {error && (
         <p role="alert" className="text-xs text-destructive">
@@ -383,11 +390,8 @@ export function ModelSettings({
 function ProviderOptions({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (!collapsed) return <>{children}</>
   return (
-    <details className="rounded-lg border p-3">
-      <summary className="cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        Advanced provider options
-      </summary>
+    <Disclosure title={<> Advanced provider options </>}>
       <div className="mt-3 grid gap-3">{children}</div>
-    </details>
+    </Disclosure>
   )
 }

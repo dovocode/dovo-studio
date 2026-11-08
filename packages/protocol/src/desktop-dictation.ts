@@ -24,6 +24,7 @@ export const dictationLanguages = [
   ['fr-FR', 'French'],
   ['fr-CA', 'French (Canada)'],
   ['de-DE', 'German'],
+  ['el-GR', 'Greek'],
   ['hi-IN', 'Hindi'],
   ['hu-HU', 'Hungarian'],
   ['it-IT', 'Italian'],

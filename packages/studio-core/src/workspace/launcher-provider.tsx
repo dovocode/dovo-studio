@@ -68,14 +68,14 @@ export function LauncherWorkspaceProvider({
       Effect.suspend(() => {
         const valid = () => !!resolveRuntimeTarget(current.current.profiles, profile)
         if (!valid())
-          return Effect.fail(new Error('This computer connection changed. Reopen quick task.'))
+          return Effect.fail(new Error('This computer connection changed. Reopen quick thread.'))
         return createRuntimeClient(profile.connection)
           .requestEffect(path, input, schema, { method })
           .pipe(
             Effect.flatMap((result) => {
               if (!valid())
                 return Effect.fail(
-                  new Error('This computer connection changed. Reopen quick task.'),
+                  new Error('This computer connection changed. Reopen quick thread.'),
                 )
               if (path === '/api/snapshot') {
                 const decoded = decodeResult(snapshotSchema, result)

@@ -70,11 +70,13 @@ export function createBrowserVisibility(
 ) {
   const sessions = new Map<Electron.Session, string>()
   const reported = new Map<Electron.WebContents, boolean>()
+  let sync: ReturnType<typeof setTimeout> | undefined
   const initial = (event: Electron.IpcMainEvent) => {
     // Every session page must get a reply, including untracked native popups/extensions.
     // A null answer preserves their native lifecycle until adopted as a Studio tab.
     const state = visible(event.sender)
     if (state !== undefined && !reported.has(event.sender)) reported.set(event.sender, state)
+    schedule()
     event.returnValue = state ?? null
   }
   ipcMain.on('browser:visibility-state', initial)
@@ -83,6 +85,7 @@ export function createBrowserVisibility(
     const state = visible(contents)
     if (state === undefined) return
     reported.set(contents, state)
+    schedule()
     contents.send('browser:visibility', state)
     for (const frame of contents.mainFrame.framesInSubtree) {
       if (frame === contents.mainFrame || frame.detached) continue
@@ -91,14 +94,19 @@ export function createBrowserVisibility(
   }
   // macOS can change isVisible (including native occlusion) without a show/hide event.
   // Events and tab commands deliver immediately; this bounds missed native transitions to 250ms.
-  const sync = setInterval(() => {
-    for (const [contents, previous] of reported) {
-      const current = contents.isDestroyed() ? undefined : visible(contents)
-      if (current === undefined) reported.delete(contents)
-      else if (current !== previous) report(contents)
-    }
-  }, 250)
-  sync.unref()
+  const schedule = () => {
+    if (sync || !reported.size) return
+    sync = setTimeout(() => {
+      sync = undefined
+      for (const [contents, previous] of reported) {
+        const current = contents.isDestroyed() ? undefined : visible(contents)
+        if (current === undefined) reported.delete(contents)
+        else if (current !== previous) report(contents)
+      }
+      schedule()
+    }, 250)
+    sync.unref()
+  }
   return {
     attachSession(session: Electron.Session) {
       if (sessions.has(session)) return
@@ -113,7 +121,7 @@ export function createBrowserVisibility(
     },
     report,
     dispose() {
-      clearInterval(sync)
+      clearTimeout(sync)
       reported.clear()
       ipcMain.removeListener('browser:visibility-state', initial)
       for (const [session, id] of sessions) session.unregisterPreloadScript(id)

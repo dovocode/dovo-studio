@@ -1,4 +1,5 @@
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
+import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { decode, fetchRuntimeReleases } from '@dovo/protocol'
 import { fetchGitHubRelease, githubReleaseToken } from '@dovo/protocol/github-release-auth'
 import { app, dialog, Menu, BrowserWindow, shell, type MenuItemConstructorOptions } from 'electron'
@@ -10,6 +11,8 @@ export function registerUpdates(
   directory: string,
   prepareQuit: () => Promise<() => Promise<void>>,
 ) {
+  const policy = ManagedPolicy.load()
+  const managedUpdates = policy.document?.limits?.updates
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   const nightly = app.isPackaged && /-nightly\.\d+$/.test(app.getVersion())
@@ -20,11 +23,13 @@ export function registerUpdates(
       : 'Dovo Studio'
   const savedChannel = readLocalSettingsSection('updates')
   let channel: DesktopUpdateChannel =
-    savedChannel === 'stable' || savedChannel === 'nightly'
-      ? savedChannel
-      : nightly
-        ? 'nightly'
-        : 'stable'
+    managedUpdates?.allowNightly === false
+      ? 'stable'
+      : savedChannel === 'stable' || savedChannel === 'nightly'
+        ? savedChannel
+        : nightly
+          ? 'nightly'
+          : 'stable'
   const configureChannel = () => {
     const feed = channel === 'nightly' ? 'nightly' : 'latest'
     autoUpdater.channel =
@@ -73,12 +78,17 @@ export function registerUpdates(
     }
   }
   const refresh = () => {
+    if (managedUpdates?.mode === 'off') return Promise.resolve(false)
     if (!app.isPackaged || (process.platform === 'linux' && !process.env.APPIMAGE))
       return Promise.resolve(false)
     if (state.status === 'downloading' || state.status === 'restarting')
       return Promise.resolve(true)
     if (checking) return checking
     checking = (async () => {
+      if (managedUpdates?.feedUrl) {
+        autoUpdater.setFeedURL({ provider: 'generic', url: managedUpdates.feedUrl })
+        return autoUpdater.checkForUpdates()
+      }
       // Resolve authenticated release metadata ourselves; keep tokens out of updater logs/downloads.
       // GitHub's prerelease selector also cannot handle architecture-suffixed feeds.
       if (
@@ -107,7 +117,7 @@ export function registerUpdates(
             ...(downloaded ? { progress: 100 } : {}),
             notes,
           })
-          if (!notes) void fetchReleaseNotes(result.updateInfo.version)
+          if (!notes && !managedUpdates?.feedUrl) void fetchReleaseNotes(result.updateInfo.version)
           return true
         }
         publish({ status: 'idle' })
@@ -144,6 +154,8 @@ export function registerUpdates(
       resumeInterrupted?: boolean
     },
   ) => {
+    policy.require('updates')
+    if (remote?.version.includes('-nightly.')) policy.require('nightlyUpdates')
     if (busy) {
       if (remote) throw new Error('A desktop update is already running')
       return
@@ -359,7 +371,11 @@ export function registerUpdates(
     }
   }
   const updateItem: MenuItemConstructorOptions = {
-    label: 'Check for Updates…',
+    label:
+      managedUpdates?.mode === 'off'
+        ? `Updates managed by ${policy.document!.organization}`
+        : 'Check for Updates…',
+    enabled: managedUpdates?.mode !== 'off',
     click: () => {
       void check()
     },
@@ -417,6 +433,8 @@ export function registerUpdates(
   return {
     check,
     setChannel: async (next: unknown) => {
+      policy.require('updates')
+      if (next === 'nightly') policy.require('nightlyUpdates')
       if (next !== 'stable' && next !== 'nightly') throw new Error('Invalid update channel')
       if (next === channel) return
       if (busy || checking || ['downloading', 'downloaded', 'restarting'].includes(state.status))
@@ -436,6 +454,9 @@ export function registerUpdates(
       resumeInterrupted?: boolean,
     ) => check(true, { action, version, resumeInterrupted }),
     installedVersion: app.getVersion(),
-    supported: app.isPackaged && (process.platform !== 'linux' || !!process.env.APPIMAGE),
+    supported:
+      managedUpdates?.mode !== 'off' &&
+      app.isPackaged &&
+      (process.platform !== 'linux' || !!process.env.APPIMAGE),
   }
 }

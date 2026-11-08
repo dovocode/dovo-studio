@@ -1,3 +1,4 @@
+import { projectIcon, projectIconColor, projectIconInitials } from '@dovo/protocol'
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import type { ReactNode } from 'react'
 import {
@@ -7,7 +8,7 @@ import {
   projectDefaultServer,
   type Repository,
 } from '@dovo/protocol'
-import { Pressable, View } from 'react-native'
+import { Image, Pressable, View } from 'react-native'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Sheet } from '../../ui/layout/sheet'
 import { SearchField } from '../../ui/controls/field'
@@ -26,6 +27,7 @@ export function FolderPicker({
   onChange,
   onAdded,
   allowMachineChange = true,
+  allowOffline = false,
   chatOnly = false,
   onMoving,
   stacked = false,
@@ -51,6 +53,8 @@ export function FolderPicker({
   onAdded?: (repository: Repository, runtimeId: string) => void
   chatOnly?: boolean
   allowMachineChange?: boolean
+  /** Only for local draft configuration; remote mutations still need a connection. */
+  allowOffline?: boolean
   onMoving?: (moving: boolean) => void
 }) {
   const { colors, styles } = useTheme()
@@ -64,11 +68,13 @@ export function FolderPicker({
   const [error, setError] = useApplicationState('')
   const selected = repositories.find((repository) => repository.id === value)
   const label = (repository: Repository) =>
-    repository.kind === 'scratch' ? 'General' : repository.name
+    repository.kind === 'scratch' ? 'No Project' : repository.name
   const sources = runtime.overviews.filter(
     (entry) => allowMachineChange || entry.profile.id === runtime.activeId,
   )
   const multipleMachines = sources.length > 1
+  const available = (source: (typeof sources)[number]) =>
+    source.connected || (allowOffline && !!source.snapshot)
   const groups = taskProjectGroups(
     sources.flatMap((source) =>
       (source.profile.id === runtime.activeId
@@ -78,7 +84,7 @@ export function FolderPicker({
         repository,
         source,
         runtimeId: source.profile.id,
-        online: source.connected,
+        online: available(source),
         defaults: source.snapshot?.defaults,
       })),
     ),
@@ -96,12 +102,8 @@ export function FolderPicker({
   )
   const locked = disabled || busy
   const choose = async (repository: Repository, runtimeId: string, preserveAuto = false) => {
-    if (
-      locked ||
-      repository.gitIdentityError ||
-      !sources.find((source) => source.profile.id === runtimeId)?.connected
-    )
-      return
+    const source = sources.find((source) => source.profile.id === runtimeId)
+    if (locked || repository.gitIdentityError || !source || !available(source)) return
     setBusy(true)
     onMoving?.(true)
     setError('')
@@ -148,7 +150,7 @@ export function FolderPicker({
           },
         ]}
       >
-        <Icon name={group.key === 'scratch' ? 'chat' : 'folder'} size={18} />
+        <Icon name={group.key === 'scratch' ? 'noProject' : 'folder'} size={18} />
         <View style={{ flex: 1 }}>
           <Text style={styles.text}>{group.name}</Text>
           {!!identityError && <Text style={styles.error}>{identityError}</Text>}
@@ -194,6 +196,33 @@ export function FolderPicker({
   const projectSelected = autoProject || (!!selected && selected.kind !== 'scratch')
   const selectedProject = !autoProject && selected?.kind !== 'scratch' ? selected : undefined
   const prominentLabel = selectedProject?.name ?? 'Scope'
+  const selectedIcon = projectIcon(selectedProject)
+  const projectMark = selectedProject ? (
+    <View
+      testID="Selected project icon"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        width: 16,
+        height: 16,
+        borderRadius: 4,
+        overflow: 'hidden',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: selectedIcon ? 'transparent' : projectIconColor(selectedProject),
+      }}
+    >
+      {selectedIcon ? (
+        <Image source={{ uri: selectedIcon }} style={{ width: 16, height: 16 }} />
+      ) : (
+        <Text style={{ fontSize: 8, color: '#fff', fontWeight: '700' }}>
+          {projectIconInitials(selectedProject)}
+        </Text>
+      )}
+    </View>
+  ) : (
+    <Icon name="scope" size={15} color={colors.muted} />
+  )
   const scopeDisabled = locked || (!selectedProject && !onAuto)
   const projectLabel = autoProject
     ? onAuto
@@ -204,7 +233,17 @@ export function FolderPicker({
       : 'Choose project'
   const projectControl =
     prominent && onAuto ? (
-      <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          maxWidth: '100%',
+          borderWidth: 1,
+          borderRadius: 10,
+          borderColor: projectSelected ? colors.accent : colors.border,
+          backgroundColor: projectSelected ? colors.selection : 'transparent',
+        }}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
@@ -229,22 +268,29 @@ export function FolderPicker({
               minHeight: 44,
               paddingHorizontal: 10,
               paddingVertical: 8,
-              borderWidth: 1,
+              borderWidth: 0,
               borderRightWidth: 0,
               borderTopLeftRadius: 10,
               borderBottomLeftRadius: 10,
               borderColor: projectSelected ? colors.accent : colors.border,
-              backgroundColor: projectSelected ? colors.selection : colors.surface,
+              backgroundColor: 'transparent',
               opacity: scopeDisabled ? 0.45 : 1,
             },
           ]}
         >
+          {projectMark}
           <Text
             numberOfLines={1}
-            style={{ color: colors.text, fontSize: 14, fontWeight: '500', flexShrink: 1 }}
+            style={{
+              color: projectSelected ? colors.accent : colors.muted,
+              fontSize: 13,
+              fontWeight: projectSelected ? '600' : '500',
+              flexShrink: 1,
+            }}
           >
             {prominentLabel}
           </Text>
+          {projectSelected && <Icon name="check" size={14} color={colors.accent} />}
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -269,11 +315,11 @@ export function FolderPicker({
               minHeight: 44,
               paddingHorizontal: 10,
               paddingVertical: 8,
-              borderWidth: 1,
+              borderWidth: 0,
               borderTopRightRadius: 10,
               borderBottomRightRadius: 10,
               borderColor: projectSelected ? colors.accent : colors.border,
-              backgroundColor: projectSelected ? colors.selection : colors.surface,
+              backgroundColor: 'transparent',
               opacity: locked ? 0.45 : 1,
             },
           ]}
@@ -287,6 +333,7 @@ export function FolderPicker({
         accessibilityLabel={prominent ? 'Choose project' : 'Folder'}
         accessibilityValue={{ text: projectLabel }}
         accessibilityState={{
+          selected: prominent && projectSelected,
           disabled: locked,
           expanded: open && mode === 'projects',
         }}
@@ -303,18 +350,27 @@ export function FolderPicker({
             borderWidth: prominent ? 1 : 0,
             borderColor: projectSelected ? colors.accent : colors.border,
             borderRadius: 12,
-            backgroundColor: colors.surface,
+            backgroundColor: prominent
+              ? projectSelected
+                ? colors.selection
+                : 'transparent'
+              : colors.surface,
             opacity: locked ? 0.45 : 1,
           },
         ]}
       >
-        <Icon
-          name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'chat' : 'folder'}
-          size={18}
-        />
+        {prominent ? (
+          projectMark
+        ) : (
+          <Icon
+            name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'noProject' : 'folder'}
+            size={18}
+          />
+        )}
         <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
           {prominent ? (selectedProject?.name ?? 'Choose project') : projectLabel}
         </Text>
+        {prominent && projectSelected && <Icon name="check" size={14} color={colors.accent} />}
         <Icon name="down" size={14} />
       </Pressable>
     )
@@ -337,10 +393,10 @@ export function FolderPicker({
             padding: prominent ? 8 : 12,
             gap: prominent ? 4 : 6,
             minHeight: 44,
-            borderWidth: prominent ? 1 : 0,
+            borderWidth: 0,
             borderColor: colors.border,
             borderRadius: prominent ? 10 : 12,
-            backgroundColor: colors.surface,
+            backgroundColor: prominent ? 'transparent' : colors.surface,
             opacity: locked ? 0.45 : 1,
           },
         ]}
@@ -348,7 +404,7 @@ export function FolderPicker({
         <RuntimeIcon icon={runtime.snapshot?.runtimeIcon} size={prominent ? 14 : 18} />
         <Text
           numberOfLines={1}
-          style={[styles.text, { flex: 1, fontSize: prominent ? 12 : undefined }]}
+          style={[styles.text, { flex: 1 }, prominent ? { fontSize: 12 } : undefined]}
         >
           {runtimeComputerName(runtime)}
         </Text>
@@ -456,7 +512,7 @@ export function FolderPicker({
               <Text style={styles.muted}>
                 {autoProject
                   ? 'Select projects automatically on'
-                  : `Run ${selected?.kind === 'scratch' ? 'General' : selected?.name} on`}
+                  : `Run ${selected?.kind === 'scratch' ? 'No Project' : selected?.name} on`}
               </Text>
               {sources.map((source) => {
                 const target = (
@@ -471,7 +527,7 @@ export function FolderPicker({
                       : source.profile.id === runtime.activeId && item.id === value,
                 )
                 if (!target) return null
-                const unavailable = !source.connected || !!target.gitIdentityError
+                const unavailable = !available(source) || !!target.gitIdentityError
                 return (
                   <Pressable
                     key={source.profile.id}

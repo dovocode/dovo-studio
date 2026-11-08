@@ -17,6 +17,7 @@ import { startRuntime } from '../../index.js'
 import { exec } from '../../process.js'
 import {
   decode,
+  peerAddress,
   projectTransferInspectionSchema,
   projectTransferSchema,
   projectTransferManifestSchema,
@@ -907,4 +908,94 @@ it('accepts more than 100,000 files through the authenticated transfer route and
       })
     ).status,
   ).toBe(400)
+})
+
+it('reconciles an incomplete receiving session on the first retry after cleanup fails', async () => {
+  const { source, target, input, result } = await setup()
+  vi.spyOn(target.services.projectTransfers, 'batch').mockRejectedValueOnce(
+    new Error('interrupted'),
+  )
+  const discard = vi.spyOn(target.services.projectTransfers, 'discard')
+  discard.mockRejectedValueOnce(new Error('cleanup unavailable'))
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  await result()
+  expect(discard).toHaveBeenCalledTimes(2)
+  expect(target.services.store.get().repositories).toHaveLength(1)
+})
+
+it('uses the requesting device for destination discovery, planning and copy capability', async () => {
+  const { source, target, input, result } = await setup(true)
+  const token = 'other-device-token-at-least-32-characters'
+  const device = source.services.devices.add('Other phone', token)
+  const peer = { origin: 'https://connect.example', secret: 'a'.repeat(64) }
+  source.services.retrievalPeers.register(device, {
+    sessionId: 'other',
+    peers: [
+      {
+        id: target.services.runtimeId,
+        name: 'Internet destination',
+        connection: {
+          address: peerAddress(peer),
+          token: owner,
+          runtimeId: target.services.runtimeId,
+          peer,
+        },
+      },
+    ],
+  })
+  expect(await (await source.post('targets')).json()).toEqual([
+    { id: input.targetId, name: 'Destination', directSupported: true },
+  ])
+  expect(await (await source.post('targets', {}, token)).json()).toEqual([
+    { id: input.targetId, name: 'Internet destination', directSupported: false },
+  ])
+  expect(
+    (await source.post('plan', { repositoryId: input.repositoryId, targetId: input.targetId }))
+      .status,
+  ).toBe(200)
+  expect(
+    (
+      await source.post(
+        'plan',
+        { repositoryId: input.repositoryId, targetId: input.targetId },
+        token,
+      )
+    ).status,
+  ).toBe(409)
+  expect((await source.post('start', { ...input, id: randomUUID() }, token)).status).toBe(409)
+  expect((await source.post('start', input)).status).toBe(200)
+  await result()
+})
+
+it('never replays an uncertain commit when cleanup and status are unavailable', async () => {
+  const { source, target, input, result } = await setup()
+  const original = globalThis.fetch
+  let lost = false,
+    commits = 0
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    if (address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/commit`) {
+      commits++
+      await original(url, init)
+      lost = true
+      throw new Error('commit response lost')
+    }
+    if (lost && address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/status`) {
+      lost = false
+      throw new Error('status unavailable')
+    }
+    return original(url, init)
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  await result()
+  expect(commits).toBe(1)
+  expect(target.services.store.get().repositories).toHaveLength(1)
 })

@@ -3,10 +3,25 @@ import {
   useLayoutEffect,
   useState,
   useSyncExternalStore,
+  type Dispatch,
   type SetStateAction,
 } from 'react'
-import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
+import { updateTask, useWorkspace, type Task, type Workspace } from '@dovo/studio-core'
 import { createComposerDraft } from './composer-draft'
+import { appendHandoff } from '../../detail/side-threads'
+
+/**
+ * Persist a composer draft. A send acknowledgement passes `expected`, so a delayed result
+ * cannot replace a newer draft saved by a remounted composer or another route.
+ */
+export function saveDraft(setWorkspace: Dispatch<SetStateAction<Workspace>>, taskId: string) {
+  return (draft: string, expected?: string) =>
+    setWorkspace((workspace) =>
+      updateTask(workspace, taskId, (current) =>
+        expected !== undefined && current.draft !== expected ? current : { ...current, draft },
+      ),
+    )
+}
 
 /** The parent keys the composer by task; cleanup always writes to that same task. */
 export function useComposerDraft(
@@ -20,23 +35,11 @@ export function useComposerDraft(
     setError(`Could not save the draft. ${String(cause)}`)
   }, [])
   const [savedController] = useState(() =>
-    createComposerDraft(
-      task.draft,
-      (draft) => {
-        setWorkspace((workspace) =>
-          updateTask(workspace, task.id, (current) => ({ ...current, draft })),
-        )
-      },
-      report,
-    ),
+    createComposerDraft(task.draft, saveDraft(setWorkspace, task.id), report),
   )
   const controller = editController ?? savedController
   useLayoutEffect(() => {
-    savedController.rebind((draft) => {
-      setWorkspace((workspace) =>
-        updateTask(workspace, task.id, (current) => ({ ...current, draft })),
-      )
-    })
+    savedController.rebind(saveDraft(setWorkspace, task.id))
   }, [savedController, setWorkspace, task.id])
   const hasText = useSyncExternalStore(
     controller.subscribe,
@@ -85,12 +88,30 @@ export function useComposerDraft(
     },
     [savedController, report],
   )
+  // Handoffs always target the saved draft, even while a queued message is being edited, and
+  // persist immediately on top of any local edits the runtime has not seen yet.
+  const appendOnce = useCallback(
+    (text: string) => {
+      const next = appendHandoff(savedController.text, text)
+      try {
+        if (next !== savedController.text) savedController.update(next)
+        savedController.flush()
+        setError('')
+        return true
+      } catch (cause) {
+        report(cause)
+        return false
+      }
+    },
+    [savedController, report],
+  )
   return {
     controller,
     hasText,
     error,
     update,
     accept,
+    appendOnce,
     flush,
   }
 }

@@ -1,3 +1,4 @@
+import { Icon } from '../../ui/controls/icon'
 import type { ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -9,17 +10,19 @@ export function ThreadStartModes({
   onGeneral,
   project,
   server,
+  home = false,
 }: {
   selected: boolean
   disabled: boolean
   onGeneral: () => void
   project: ReactNode
   server: ReactNode
+  home?: boolean
 }) {
   const { colors } = useTheme()
   return (
     <View
-      accessibilityLabel="Start a thread"
+      accessibilityLabel={home ? 'Start a terminal' : 'Start a thread'}
       style={{
         width: '100%',
         maxWidth: 520,
@@ -42,13 +45,14 @@ export function ThreadStartModes({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Start in General"
-          accessibilityHint="Start without a project"
+          accessibilityLabel={home ? 'Start in home folder' : 'Start without a project'}
+          accessibilityHint={home ? 'Open a shell in your home folder' : 'Start without a project'}
           accessibilityState={{ selected, disabled }}
           disabled={disabled}
           onPress={onGeneral}
           style={{
             flexDirection: 'row',
+            gap: 6,
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: 44,
@@ -58,11 +62,25 @@ export function ThreadStartModes({
             borderRadius: 10,
             borderWidth: 1,
             borderColor: selected ? colors.accent : colors.border,
-            backgroundColor: selected ? colors.selection : colors.surface,
+            backgroundColor: selected ? colors.selection : 'transparent',
             opacity: disabled ? 0.4 : 1,
           }}
         >
-          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '500' }}>General</Text>
+          <Icon
+            name={home ? 'home' : 'noProject'}
+            size={16}
+            color={selected ? colors.accent : colors.muted}
+          />
+          <Text
+            style={{
+              color: selected ? colors.accent : colors.muted,
+              fontSize: 13,
+              fontWeight: selected ? '600' : '500',
+            }}
+          >
+            {home ? 'Home folder' : 'No Project'}
+          </Text>
+          {selected && <Icon name="check" size={14} color={colors.accent} />}
         </Pressable>
         {project}
       </View>

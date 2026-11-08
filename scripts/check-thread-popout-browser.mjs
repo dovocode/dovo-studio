@@ -65,6 +65,8 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
       '@dovo/studio-ui/code-themes': root + 'packages/studio-ui/src/code-themes.ts',
       '@dovo/studio-ui/search-field': root + 'packages/studio-ui/src/search-field.tsx',
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
+      '@dovo/studio-ui/image-viewer': root + 'packages/studio-ui/src/image-viewer.tsx',
+      '@dovo/studio-ui/clipboard': root + 'packages/studio-ui/src/clipboard.ts',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
     },
     nodePaths: [
@@ -96,7 +98,9 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
     {
       path: './activity-bar',
       importer: root + 'packages/studio-shell/src/',
-      contents: 'export const ActivityBar=()=> <nav aria-label="Main navigation"/>;',
+      // Workspace mode visibility is covered by activity-bar.test.ts; this fixture keeps modes visible.
+      contents:
+        'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export const ActivityBar=()=> <nav aria-label="Main navigation"/>;',
     },
     {
       path: './settings-nav',
@@ -173,10 +177,10 @@ try {
   // The thread menu scopes copy inspection to the row's owner, even on another active computer.
   await main.getByRole('button', { name: 'Remote task actions', exact: true }).click()
   await main
-    .getByRole('menuitem', { name: 'Copy worktree to another machine…', exact: true })
+    .getByRole('menuitem', { name: 'Copy worktree to another computer…', exact: true })
     .click()
   await main
-    .getByRole('dialog', { name: 'Copy worktree to another machine', exact: true })
+    .getByRole('dialog', { name: 'Copy worktree to another computer', exact: true })
     .waitFor()
   await main.waitForFunction(
     () => document.querySelector('[aria-label="Source checkout"]')?.value === '/worktrees/feature',
@@ -288,7 +292,12 @@ try {
   assert.equal(
     await main.evaluate(() => window.initialHost === window.host),
     true,
-    'Saved connection changes must preserve the host API and extension catalog',
+    'Saved connection changes must preserve the host API and extension catalog: ' +
+      (await main.evaluate(() =>
+        Object.keys(window.host)
+          .filter((key) => window.host[key] !== window.initialHost[key])
+          .join(', '),
+      )),
   )
   await detached.getByRole('button', { name: 'Task actions', exact: true }).click()
   await detached.getByRole('menuitem', { name: 'Advanced', exact: true }).focus()

@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import {
   settingsChangeCount,
   settingsChanges,
@@ -46,6 +47,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
   const protectDraft = useRef(false)
   protectDraft.current = dirty
   const [retry, setRetry] = useApplicationState(0)
+  const confirm = useConfirmation(JSON.stringify([computerUse, settings, busy]))
   useSettingsDraft(dirty, busy)
   useEffect(() => {
     const generation = ++cuaGeneration.current
@@ -158,6 +160,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               .finally(() => setBusy(false))
           }}
         >
+          {connected && baseline && (
+            <p className="text-[0.8125rem] leading-normal text-foreground/80">
+              Edits apply on this computer after saving.
+            </p>
+          )}
           <fieldset disabled={busy || !connected} className="space-y-5">
             {(computerUse
               ? [{ title: 'Cua Driver', ids: ['cua'] }]
@@ -169,13 +176,23 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                   },
                   {
                     title: 'Agent commands',
-                    ids: ['codex', 'claude', 'vibe', 'hermes', 'copilot', 'grok', 'muse', 'acp'],
+                    ids: [
+                      'codex',
+                      'pi',
+                      'claude',
+                      'vibe',
+                      'hermes',
+                      'copilot',
+                      'grok',
+                      'muse',
+                      'acp',
+                    ],
                   },
                 ]
             ).map((group) => (
               <section key={group.title} className="space-y-3">
                 <h2 className="text-sm font-semibold">{group.title}</h2>
-                <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2">
+                <div className="grid items-start gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2">
                   {commandFields
                     .filter((field) => group.ids.includes(field.id))
                     .map((field) => (
@@ -226,7 +243,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               <SettingsGroup title="Agent access">
                 <SettingRow
                   label="Enable agent computer use on this computer"
-                  description="Writable agents share your desktop and app state. Read-only agents are excluded. Save changes to apply them to new turns."
+                  description="Writable agents share your desktop and app state. Read-only agents are excluded. Applies to new turns."
                 >
                   <Toggle
                     label="Enable agent computer use on this computer"
@@ -330,12 +347,16 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                               variant={action.id === 'history-delete' ? 'destructive' : 'outline'}
                               size="sm"
                               disabled={busy || !connected || cuaActionDisabled(action.id, cua)}
-                              onClick={() => {
+                              onClick={async () => {
                                 if (
                                   action.id === 'history-delete' &&
-                                  !window.confirm(
-                                    'Delete all recorded Computer History and its encryption key on this computer? This cannot be undone.',
-                                  )
+                                  !(await confirm({
+                                    title: 'Delete Computer History?',
+                                    description:
+                                      'All recorded Computer History and its encryption key on this computer will be permanently deleted. This cannot be undone.',
+                                    confirmLabel: 'Delete history',
+                                    destructive: true,
+                                  }))
                                 )
                                   return
                                 runAction(action.id)
@@ -406,7 +427,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             saving={busy}
             disabled={!connected || !baseline}
             saved={saved}
-            description="Changes apply to new processes. Save to apply."
+            description={
+              computerUse
+                ? 'Executable changes apply to new processes; agent access applies to new turns.'
+                : 'Changes apply to new processes.'
+            }
             onSave={() => form.current?.requestSubmit()}
             onDiscard={() => {
               if (baseline) change(baseline)
@@ -431,10 +456,16 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           <Button
             variant="ghost"
             disabled={!connected || busy}
-            onClick={() => {
+            onClick={async () => {
               if (
                 dirty &&
-                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+                !(await confirm({
+                  title: 'Reload saved settings?',
+                  description:
+                    'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+                  confirmLabel: 'Discard and reload',
+                  destructive: true,
+                }))
               )
                 return
               protectDraft.current = false

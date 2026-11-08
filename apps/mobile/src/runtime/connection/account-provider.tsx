@@ -10,6 +10,7 @@ import { ACCOUNT_DIRECTORY_URL, connectServiceOrigin, configureSharingRandom } f
 import * as Crypto from 'expo-crypto'
 import { useMobilePreferences } from '../preferences/app-preferences'
 import { useAccountRecovery } from './use-account-recovery'
+import { useAppActive } from '../state/app-active'
 configureSharingRandom((array) => Crypto.getRandomValues(array))
 async function sharingStorageKey(origin: string, user: string) {
   return (
@@ -48,7 +49,8 @@ const open = (url: string) => Linking.openURL(url)
 
 export function MobileAccountProvider({ children }: { children: ReactNode }) {
   const preferences = useMobilePreferences()
-  const account = useAccount(storage, open, preferences)
+  const foreground = useAppActive()
+  const account = useAccount(storage, open, preferences, foreground)
   const runtime = useRuntime()
   const { syncAccountSession, registryLoaded, overviews } = runtime
   const recovery = useAccountRecovery(

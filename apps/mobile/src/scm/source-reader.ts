@@ -113,27 +113,62 @@ export function useSourceIdentities<T extends ReaderSource>(
   contentIdentity: (source: T) => string,
   sourceInput: (source: T) => SourceInput,
   enabled: boolean,
+  options?: { revision?: number; cacheKey?: (source: T) => string },
 ) {
-  const { readRuntimeEffect } = useRuntime()
+  const { readRuntimeEffect, cacheForRuntime } = useRuntime()
   const [, revise] = useState(0)
   const sourceRef = useRef(sources)
   sourceRef.current = sources
   const identity = JSON.stringify(
     sources.map((source) => [contentIdentity(source), source.connected]),
   )
+  const cacheKeys = JSON.stringify(sources.map((source) => options?.cacheKey?.(source)))
   useEffect(() => {
     let stopped = false
     if (!enabled) return
     const polling = startPolling(
       Effect.forEach(
-        sourceRef.current.filter((source) => source.connected),
-        (source) =>
-          discoverReader(
+        sourceRef.current,
+        (source) => {
+          const key = contentIdentity(source)
+          const cacheKey = options?.cacheKey?.(source)
+          if (!source.connected) {
+            if (!cacheKey || mobileReaders.identity(key)) return Effect.void
+            return cacheForRuntime(source.profile)
+              .readEffect(cacheKey, forgeSourceIdentitySchema)
+              .pipe(
+                Effect.tap((saved) =>
+                  Effect.sync(() => {
+                    // A saved identity constrains offline rows; live reads still verify it again.
+                    if (saved && !stopped && !mobileReaders.identity(key))
+                      mobileReaders.remember(key, saved.value)
+                  }),
+                ),
+                Effect.catch(() =>
+                  Effect.logWarning('Could not read the saved integration identity'),
+                ),
+              )
+          }
+          return discoverReader(
             (path, body, schema, method) =>
               readRuntimeEffect(source.profile, path, body, schema, method),
-            contentIdentity(source),
+            key,
             sourceInput(source),
-          ).pipe(Effect.catch(() => Effect.succeed(undefined))),
+          ).pipe(
+            Effect.tap((identity) =>
+              identity && cacheKey
+                ? cacheForRuntime(source.profile)
+                    .writeEffect(cacheKey, identity)
+                    .pipe(
+                      Effect.catch(() =>
+                        Effect.logWarning('Could not save the verified integration identity'),
+                      ),
+                    )
+                : Effect.void,
+            ),
+            Effect.catch(() => Effect.void),
+          )
+        },
         { concurrency: 3, discard: true },
       ).pipe(
         Effect.tap(() =>
@@ -151,7 +186,7 @@ export function useSourceIdentities<T extends ReaderSource>(
       stopped = true
       void polling.stop()
     }
-  }, [identity, enabled, readRuntimeEffect])
+  }, [identity, enabled, readRuntimeEffect, cacheForRuntime, cacheKeys, options?.revision])
   return sources.map((source) => ({
     ...source,
     readerIdentity: mobileReaders.candidateIdentity(contentIdentity(source)),

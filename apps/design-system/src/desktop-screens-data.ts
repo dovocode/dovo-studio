@@ -6,15 +6,23 @@ import {
   forgePipelineDetailSchema,
   forgeIssuePageSchema,
   forgePipelinePageSchema,
+  pullPageSchema,
 } from '../../../packages/protocol/src'
 const date = '2026-10-21T10:00:00.000Z'
 export const screenPull = decode(pullDetailSchema, {
+  capabilities: {
+    actions: ['comment', 'review', 'edit', 'reviewers', 'merge', 'draft', 'auto-merge', 'close'],
+    reviewDecisions: ['comment', 'approve', 'request-changes'],
+    mergeMethods: ['squash', 'merge', 'rebase'],
+  },
   warnings: [],
   pull: {
     number: 42,
     title: 'Keep Dovo navigation consistent',
     url: 'https://github.com/dovo/studio/pull/42',
     state: 'open',
+    checksState: 'FAILURE',
+    reviewDecision: 'REVIEW_REQUIRED',
     draft: false,
     author: 'preview-author',
     updatedAt: date,
@@ -191,4 +199,65 @@ export const screenIssuePage = decode(forgeIssuePageSchema, {
 export const screenPipelinePage = decode(forgePipelinePageSchema, {
   destination: 'preview-destination',
   items: [screenPipeline.run],
+})
+
+// Deliberately separate from the small default fixtures used by focused interaction checks.
+const denseTitles = [
+  'Reconnect to a paired computer without losing the active thread or its queued messages',
+  'Fix keyboard focus',
+  'Keep project selection stable when a VPN computer reconnects during a long running review',
+  'Show branch tracking status',
+  'Preserve the three line composer draft while switching between project tools and terminal',
+  'Improve empty states',
+  'Display the selected account and project before opening a pull request from another computer',
+  'Refresh stale checks',
+  'Let reviewers compare staged and working files independently before preparing a commit',
+  'Clarify runtime labels',
+  'Keep unsaved agent instructions visible when scrolling through connection and model options',
+  'Trim sidebar spacing',
+  'Restore issue list scroll position after reviewing a discussion with a long project title',
+  'Align action menus',
+]
+export const denseScreenPullPage = decode(pullPageSchema, {
+  destination: 'preview-destination',
+  page: 1,
+  hasMore: false,
+  pulls: denseTitles.map((title, index) => ({
+    ...screenPull.pull,
+    number: 142 - index,
+    title,
+    url: `https://github.com/dovo/studio/pull/${142 - index}`,
+    author: ['dominic', 'sam-chen', 'alex-rivera', 'robin'][index % 4],
+    updatedAt: `2026-10-${String(29 - index).padStart(2, '0')}T${String(9 + (index % 8)).padStart(2, '0')}:24:00.000Z`,
+    head: [
+      'fix/runtime-reconnection-and-queued-thread-continuity',
+      'fix/keyboard-focus',
+      'feature/project-runtime-selection',
+      'chore/branch-status',
+    ][index % 4],
+    base: index === 4 ? 'feature/composer-tools' : 'main',
+    draft: index % 5 === 2,
+    checksState: ['FAILURE', 'SUCCESS', 'PENDING', null][index % 4],
+    reviewDecision: ['CHANGES_REQUESTED', 'APPROVED', 'REVIEW_REQUIRED'][index % 3],
+    viewerReviewRequested: index % 4 === 0,
+    labels: index % 3 === 0 ? ['ui', 'needs-review', 'runtime'] : ['maintenance'],
+    additions: [68, 3, 142, 24][index % 4],
+    deletions: [12, 1, 38, 5][index % 4],
+    commentCount: [8, 0, 3, 12][index % 4],
+  })),
+})
+export const denseScreenIssuePage = decode(forgeIssuePageSchema, {
+  destination: 'preview-destination',
+  items: denseTitles.map((title, index) => ({
+    ...screenIssue.issue,
+    id: String(87 - index),
+    title,
+    url: `https://github.com/dovo/studio/issues/${87 - index}`,
+    state: index % 4 === 2 ? 'closed' : 'open',
+    author: ['dominic', 'sam-chen', 'alex-rivera'][index % 3],
+    assignees: index % 4 === 0 ? [] : [index % 2 === 0 ? 'robin' : 'dominic'],
+    labels: index % 3 === 0 ? ['bug', 'runtime', 'needs-triage'] : ['ui'],
+    updatedAt: `2026-10-${String(29 - index).padStart(2, '0')}T10:24:00.000Z`,
+    revision: `preview-dense-${index}`,
+  })),
 })

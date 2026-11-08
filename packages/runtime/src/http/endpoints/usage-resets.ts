@@ -76,8 +76,16 @@ export const usageResets = (request: IncomingMessage, path: string) =>
         )?.account
     if (!agent || !account)
       throw new HttpError(400, 'No verified provider account. Refresh account limits first.')
+    const generation = s.agents.secretGeneration
+    const resolved = yield* serviceResult(
+      s.agents.secretReferences.resolve(s.agents.configure(agent)),
+    )
+    if (s.agents.secretGeneration !== generation)
+      throw new HttpError(409, 'Secret references changed. Refresh account limits again.')
     if (path === '/api/usage/resets/read') {
-      const read = yield* serviceResult(readResetCredits(agent, account))
+      const read = yield* serviceResult(readResetCredits(resolved, account))
+      if (s.agents.secretGeneration !== generation)
+        throw new HttpError(409, 'Secret references changed. Refresh account limits again.')
       if (read.limits.length)
         s.store.update((workspace) => ({
           ...workspace,
@@ -112,7 +120,7 @@ export const usageResets = (request: IncomingMessage, path: string) =>
     saveAttempt(s.db, account.id, key)
     const result =
       (prior?.key === key ? prior.result : undefined) ??
-      consumeResetCredit(agent, account, input.creditId, key)
+      consumeResetCredit(resolved, account, input.creditId, key)
     byAccount.set(account.id, { key, result, settled: false })
     const cache = byAccount
     const outcome = yield* serviceResult(result).pipe(

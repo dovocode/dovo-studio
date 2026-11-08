@@ -940,6 +940,87 @@ it('accepts the next draft after sending consumed its baseline, but protects com
   }
 })
 
+it('keeps a recorded worktree base runtime-owned and drops it when the draft checkout changes', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const worktreeBase = {
+      branch: 'dovo/new-task-1234',
+      ref: 'refs/heads/feature',
+      commit: 'a'.repeat(40),
+    }
+    const worktreeInitialSnapshot = { tree: 'b'.repeat(40), head: 'c'.repeat(40) }
+    const draft: Task = {
+      id: 'base-draft',
+      title: 'New task',
+      agentId: '',
+      repositoryId: 'repo',
+      status: 'draft',
+      createdAt: '',
+      messages: [],
+      files: [],
+      draft: '',
+      example: false,
+      execution: 'worktree',
+      worktreeBaseBranch: 'refs/heads/feature',
+    }
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: draft.id,
+        changes: {},
+        create: { ...draft, worktreeBase },
+      }),
+    ).toThrow('New tasks must be drafts')
+    // A creation attempt that failed before the worktree existed leaves its base behind.
+    const reset = () =>
+      store.update((w) => ({ ...w, tasks: [{ ...draft, worktreeBase, worktreeInitialSnapshot }] }))
+    reset()
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: draft.id,
+        changes: { worktreeBase: { before: worktreeBase, after: null } },
+      }),
+    ).toThrow('Cannot edit worktreeBase')
+    // Unrelated edits and retried identical selections keep the base for the retry.
+    store.patch({
+      collection: 'tasks',
+      id: draft.id,
+      changes: {
+        title: { before: 'New task', after: 'Renamed' },
+        worktreeBaseBranch: { before: 'refs/heads/feature', after: 'refs/heads/feature' },
+      },
+    })
+    expect(store.task(draft.id)).toMatchObject({ worktreeBase, worktreeInitialSnapshot })
+    const changes: Record<string, { before: unknown; after: unknown }> = {
+      execution: { before: 'worktree', after: 'main' },
+      existingWorktreePath: { before: null, after: '/repo/existing' },
+      repositoryId: { before: 'repo', after: 'other' },
+      worktreeBaseBranch: { before: 'refs/heads/feature', after: 'refs/heads/other' },
+      worktreeFromOrigin: { before: null, after: true },
+      worktreeIncludeChanges: { before: null, after: true },
+    }
+    const after = Object.entries(changes).map(([key, change]) => {
+      reset()
+      store.patch({ collection: 'tasks', id: draft.id, changes: { [key]: change } })
+      const task = store.task(draft.id)
+      return [key, task.worktreeBase, !!task.worktreeInitialSnapshot]
+    })
+    // Base selection changes keep a pending copied-changes snapshot for recovery.
+    expect(after).toEqual([
+      ['execution', undefined, false],
+      ['existingWorktreePath', undefined, false],
+      ['repositoryId', undefined, false],
+      ['worktreeBaseBranch', undefined, true],
+      ['worktreeFromOrigin', undefined, true],
+      ['worktreeIncludeChanges', undefined, true],
+    ])
+  } finally {
+    db.close()
+  }
+})
+
 it('allows draft worktree selection and keeps setup state runtime-owned', () => {
   const db = openDatabase(':memory:')
   try {

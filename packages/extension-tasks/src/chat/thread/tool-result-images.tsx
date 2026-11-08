@@ -1,3 +1,4 @@
+import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { useEffect, useState } from 'react'
 import { EditChatImage } from '../composer/chat-image-edit-context'
 import { useWorkspace } from '@dovo/studio-core'
@@ -94,7 +95,7 @@ function ResultImage({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-5xl">
           <DialogTitle>{label}</DialogTitle>
-          {content}
+          {image ? <ImageViewer src={image} alt={label} className="h-[55dvh] min-h-48" /> : content}
           {image && (
             <EditChatImage
               source={

@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { decode, mutableArray, mutableStruct, type RuntimeDiagnostics } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Services } from '../services.js'
+import { memoryAttribution } from '../diagnostics/memory-attribution.js'
 
 export async function runtimeDiagnostics(
   s: Services,
@@ -92,6 +93,12 @@ export async function runtimeDiagnostics(
     }
   }
   if (backups.failure) warnings.push(`Backup: ${backups.failure.message}`)
+  const memory = await memoryAttribution(s).report()
+  const spike = memory.spikes[0]
+  if (spike && now - Date.parse(spike.at) < 10 * 60_000)
+    warnings.push(
+      `Runtime heap grew ${Math.round(spike.growthBytes / 1024 / 1024)} MB at ${spike.at}. Memory diagnostics list suspected operations.`,
+    )
   return {
     ready,
     checkedAt: new Date(now).toISOString(),
@@ -127,5 +134,6 @@ export async function runtimeDiagnostics(
       })),
     uncertain: { count, actions },
     backups,
+    memory,
   }
 }

@@ -13,10 +13,13 @@ import {
   ThreadStateSynchronization,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
+  recoverableMutation,
+  attachmentUploadResultSchema,
   runtimeSnapshotPath,
   learnRuntimeRoutes,
   retryRuntimeSync,
   startRuntimeSync,
+  runtimeSyncOnline,
   pendingAgentPresets,
   decode,
   saveRuntimePairing,
@@ -93,12 +96,7 @@ import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
 import { Data, Effect, Result, Schema, Semaphore } from 'effect'
 import { mobileReadCache } from './read-cache'
-import {
-  hydrateOfflineOverview,
-  settleMutationEffect,
-  startupReadCache,
-  type StartupReadCache,
-} from './offline-startup'
+import { hydrateOfflineOverview, startupReadCache, type StartupReadCache } from './offline-startup'
 import {
   clientScopeKey,
   startPolling,
@@ -123,6 +121,7 @@ type Call = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Promise<T['Type']>
 type RuntimeRead = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
@@ -130,6 +129,7 @@ type RuntimeRead = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Promise<T['Type']>
 class ConnectionChangedError extends Data.TaggedError('ConnectionChangedError')<{
   readonly message: string
@@ -139,6 +139,7 @@ type CallEffect = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Effect.Effect<T['Type'], Error>
 type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
@@ -146,6 +147,7 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Effect.Effect<T['Type'], Error>
 const RuntimeStateContext = createContext<Atom.Writable<Runtime> | null>(null)
 /** Broad readers keep the context value; selectors subscribe only to the slice they render. */
@@ -199,6 +201,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [storageError, setStorageError] = useApplicationState(''),
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
+  const networkAvailable = useRef(true)
+  const [networkConnected, setNetworkConnected] = useApplicationState(true)
+  const mutationRecoveryWorker = useRef<{
+    refresh: (connection?: RuntimeConnection) => void
+  } | null>(null)
   const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
   const sharedStateSync = useRef<SharedStateSynchronization | null>(null)
   const threadStateSync = useRef<ThreadStateSynchronization | null>(null)
@@ -215,7 +222,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     let disposed = false
     let networkObserved = false
     const updateNetwork = (state: Network.NetworkState) => {
+      networkAvailable.current = state.isConnected !== false
+      setNetworkConnected(networkAvailable.current)
       if (!setPeerConnectionNetwork(state)) return
+      mutationRecoveryWorker.current?.refresh()
       const selected = current.current.profiles.find((item) => item.id === current.current.activeId)
       // Handover invalidates pending negotiation as well as open native sockets.
       // Abort the old sync ticket and reconnect now, rather than refreshing an
@@ -413,11 +423,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             writtenAt: Date.now(),
           })
 
+        yield* mutations.taskCreationsCachedEffect(
+          entry.profile.connection,
+          entry.snapshot.workspace.tasks,
+        )
         const latest = entryRef.current[id]
         if (latest?.snapshot === entry.snapshot && latest.pulls === entry.pulls)
           cacheDirty.current.delete(id)
       }).pipe(Effect.uninterruptible),
-    [cacheFor],
+    [cacheFor, mutations],
   )
   useEffect(() => {
     if (!appActive) return
@@ -541,57 +555,76 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ),
     [storageLock, persistRegistryEffect],
   )
+  const snapshotPending = useRef(
+    new Map<string, { connection: RuntimeConnection; effect: Effect.Effect<void, Error> }>(),
+  )
   const refreshProfileEffect = useCallback(
     (profile: RuntimeProfile) =>
       Effect.suspend(() => {
+        const pending = snapshotPending.current.get(profile.id)
+        if (pending && sameRuntimeConnection(pending.connection, profile.connection))
+          return pending.effect
         const workspaceCheckpoint = mutations.workspaceRefreshCheckpoint(profile.connection)
         const version = (sequence.current.get(profile.id) ?? 0) + 1
         sequence.current.set(profile.id, version)
-        return createRuntimeClient(profile.connection)
-          .requestEffect(runtimeSnapshotPath(profile.connection), undefined, snapshotSchema, {
-            method: 'GET',
-            timeoutMs: 10000,
-          })
-          .pipe(
-            Effect.tap((snapshot) =>
-              Effect.sync(() => {
-                if (
-                  sequence.current.get(profile.id) === version &&
-                  mutations.acceptsWorkspaceSnapshot(profile.connection, snapshot) &&
-                  !(
-                    entryRef.current[profile.id]?.snapshot?.runtimeInstanceId ===
-                      snapshot.runtimeInstanceId &&
-                    (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision
-                  )
-                ) {
-                  mutations.workspaceRefreshed(profile.connection, workspaceCheckpoint, snapshot)
-                  updateEntry(profile, (previous) => ({
-                    ...previous,
-                    snapshot,
-                    connected: true,
-                    lastSeen: new Date().toISOString(),
-                    error: null,
-                    unauthorized: false,
-                  }))
-                }
-              }),
-            ),
-            Effect.tapError((error) =>
-              Effect.sync(() => {
-                if (sequence.current.get(profile.id) === version)
-                  updateEntry(profile, (previous) => ({
-                    ...previous,
-                    connected: false,
-                    error: error.message,
-                    unauthorized: isUnauthorizedRuntimeError(error),
-                  }))
-              }),
-            ),
-            Effect.tap(() =>
-              mutations.recoverEffect(profile.connection).pipe(Effect.catch(() => Effect.void)),
-            ),
-            Effect.asVoid,
-          )
+        const shared = Effect.runSync(
+          Effect.cached(
+            createRuntimeClient(profile.connection)
+              .requestEffect(runtimeSnapshotPath(profile.connection), undefined, snapshotSchema, {
+                method: 'GET',
+                timeoutMs: 10000,
+              })
+              .pipe(
+                Effect.tap((snapshot) =>
+                  Effect.sync(() => {
+                    if (
+                      sequence.current.get(profile.id) === version &&
+                      mutations.acceptsWorkspaceSnapshot(profile.connection, snapshot) &&
+                      !(
+                        entryRef.current[profile.id]?.snapshot?.runtimeInstanceId ===
+                          snapshot.runtimeInstanceId &&
+                        (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision
+                      )
+                    ) {
+                      mutations.workspaceRefreshed(
+                        profile.connection,
+                        workspaceCheckpoint,
+                        snapshot,
+                      )
+                      updateEntry(profile, (previous) => ({
+                        ...previous,
+                        snapshot,
+                        connected: true,
+                        lastSeen: new Date().toISOString(),
+                        error: null,
+                        unauthorized: false,
+                      }))
+                    }
+                  }),
+                ),
+                Effect.tapError((error) =>
+                  Effect.sync(() => {
+                    if (sequence.current.get(profile.id) === version)
+                      updateEntry(profile, (previous) => ({
+                        ...previous,
+                        connected: false,
+                        error: error.message,
+                        unauthorized: isUnauthorizedRuntimeError(error),
+                      }))
+                  }),
+                ),
+                Effect.asVoid,
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    if (snapshotPending.current.get(profile.id)?.effect === shared)
+                      snapshotPending.current.delete(profile.id)
+                  }),
+                ),
+              ),
+          ),
+        )
+        snapshotPending.current.set(profile.id, { connection: profile.connection, effect: shared })
+        return shared
       }),
     [updateEntry, mutations],
   )
@@ -603,14 +636,16 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         Effect.forEach(
           registry.profiles,
           (owner) =>
+            networkAvailable.current &&
             mutations.requiresWorkspaceRefresh(owner.connection) &&
+            !runtimeSyncOnline(owner.connection) &&
             !entryRef.current[owner.id]?.unauthorized
               ? refreshProfileEffect(owner)
               : Effect.void,
           { concurrency: 4, discard: true },
         ),
       ),
-      { interval: 1000, backoff: 10000, onError: () => {} },
+      { interval: 5000, backoff: 60000, onError: () => {} },
     )
     workspaceRefreshWorker.current = worker
     return () => {
@@ -765,7 +800,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     })
   }, [profile, refreshProfileEffect])
   const connectEffect = useCallback(
-    (value: RuntimeConnection, name?: string, proof?: PairingProof, replaceId?: string) => {
+    (
+      value: RuntimeConnection,
+      name?: string,
+      proof?: PairingProof,
+      replaceId?: string,
+      claimAddress?: string,
+    ) => {
       return mobileWorkflow(function* () {
         if (!registryWritable.current)
           return yield* Effect.fail(
@@ -813,7 +854,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             Effect.suspend(() =>
               saveRuntimePairing(
                 current.current,
-                { profile: next, proof },
+                {
+                  profile: next,
+                  proof,
+                  ...(claimAddress ? { claimAddress: new URL(claimAddress).origin } : {}),
+                },
                 persistRegistryEffect,
                 beforeReplace,
               ),
@@ -1179,7 +1224,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   )
   // Bind every caller to the selected host. An async action can never continue on a new host.
   const readEffect = useCallback<CallEffect>(
-    (path, input, schema, method) =>
+    (path, input, schema, method, options) =>
       Effect.suspend(() => {
         if (!profile)
           return Effect.fail(
@@ -1198,18 +1243,26 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           })
         const target = valid()
         if (!target) return Effect.fail(changed())
-        return mutations
-          .requestEffect(target.connection, path, input, schema, method)
-          .pipe(
-            Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
-          )
+        return (
+          options?.defer
+            ? mutations.enqueueEffect(target.connection, path, input, schema, method)
+            : mutations.requestEffect(target.connection, path, input, schema, method)
+        ).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (recoverableMutation(path, method))
+                mutationRecoveryWorker.current?.refresh(target.connection)
+            }),
+          ),
+          Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
+        )
       }),
     [profile, mutations],
   )
   const read = useCallback<Call>((...args) => runClientEffect(readEffect(...args)), [readEffect])
   // Collection operations retain their owner even when the selected computer changes.
   const readRuntimeEffect = useCallback<RuntimeReadEffect>(
-    (owner, path, input, schema, method) =>
+    (owner, path, input, schema, method, options) =>
       Effect.suspend(() => {
         const valid = () => resolveRuntimeTarget(current.current.profiles, owner)
         const changed = () =>
@@ -1218,11 +1271,19 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           })
         const target = valid()
         if (!target) return Effect.fail(changed())
-        return mutations
-          .requestEffect(target.connection, path, input, schema, method)
-          .pipe(
-            Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
-          )
+        return (
+          options?.defer
+            ? mutations.enqueueEffect(target.connection, path, input, schema, method)
+            : mutations.requestEffect(target.connection, path, input, schema, method)
+        ).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (recoverableMutation(path, method))
+                mutationRecoveryWorker.current?.refresh(target.connection)
+            }),
+          ),
+          Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
+        )
       }),
     [mutations],
   )
@@ -1231,19 +1292,46 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [readRuntimeEffect],
   )
   const callEffect = useCallback<CallEffect>(
-    (path, input, schema, method) =>
-      readEffect(path, input, schema, method).pipe(
+    (path, input, schema, method, options) =>
+      readEffect(path, input, schema, method, options).pipe(
         Effect.tap(() =>
-          profile ? settleMutationEffect(profile, refreshProfileEffect) : Effect.void,
+          Effect.sync(() => {
+            if (profile) mutationRecoveryWorker.current?.refresh(profile.connection)
+            // Live snapshots carry committed changes. Legacy/disconnected streams use one
+            // shared fallback read; neither the read nor cache persistence delays the action.
+            if (profile && !options?.defer && !runtimeSyncOnline(profile.connection))
+              void runClientEffect(refreshProfileEffect(profile)).catch(() => undefined)
+          }),
         ),
       ),
     [readEffect, profile, refreshProfileEffect],
   )
   useEffect(() => {
-    if (!ready || !appActive) return
-    for (const profile of registry.profiles)
-      void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
-  }, [ready, appActive, registry.profiles, mutations])
+    if (!ready || recovering || !appActive) return
+    // A computer with a weak connection must not hold up another computer's outbox.
+    const workers = registry.profiles.map((owner) => ({
+      owner,
+      worker: startPolling(mutations.recoverEffect(owner.connection), {
+        enabled: () =>
+          networkAvailable.current &&
+          mutations.status(owner.connection).pending > 0 &&
+          !entryRef.current[owner.id]?.unauthorized,
+        interval: 2000,
+        backoff: 60000,
+        onError: () => {},
+      }),
+    }))
+    mutationRecoveryWorker.current = {
+      refresh: (connection) => {
+        for (const { owner, worker } of workers)
+          if (!connection || sameRuntimeConnection(owner.connection, connection)) worker.refresh()
+      },
+    }
+    return () => {
+      mutationRecoveryWorker.current = null
+      for (const { worker } of workers) void worker.stop()
+    }
+  }, [ready, recovering, appActive, registry.profiles, mutations])
   const call = useCallback<Call>((...args) => runClientEffect(callEffect(...args)), [callEffect])
   useEffect(() => {
     let disposed = false
@@ -1270,22 +1358,34 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       setRegistry(retainRuntimeConnections(current.current, saved))
       setRegistryLoaded(true)
       setStorageError('')
-      yield* Effect.forEach(
-        saved.profiles,
-        (profile) =>
-          mobileWorkflow(function* () {
-            // The selected computer connects in parallel; its live state needs no offline copy.
-            if (entryRef.current[profile.id]?.connected) return
-            const cached = yield* cacheFor(profile).startupSnapshotEffect()
-            if (!cached || disposed) return
-            updateEntry(profile, (entry) => hydrateOfflineOverview(entry, cached.value))
-          }).pipe(
+      const restoreCache = (profile: RuntimeProfile) =>
+        mobileWorkflow(function* () {
+          yield* mutations.restoreEffect(profile.connection).pipe(
             Effect.catch((error) =>
               Effect.sync(() => {
-                if (!disposed) setStorageError(`Could not load the offline cache. ${error.message}`)
+                if (!disposed) setStorageError(`Could not load saved actions. ${error.message}`)
               }),
             ),
+          )
+          mutationRecoveryWorker.current?.refresh(profile.connection)
+          if (entryRef.current[profile.id]?.connected) return
+          const cached = yield* cacheFor(profile).startupSnapshotEffect()
+          if (!cached || disposed) return
+          updateEntry(profile, (entry) => hydrateOfflineOverview(entry, cached.value))
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              if (!disposed) setStorageError(`Could not load the offline cache. ${error.message}`)
+            }),
           ),
+        )
+      const active = saved.profiles.find((profile) => profile.id === saved.activeId)
+      if (active) yield* restoreCache(active)
+      if (disposed) return
+      setReady(true)
+      yield* Effect.forEach(
+        saved.profiles.filter((profile) => profile.id !== active?.id),
+        restoreCache,
         {
           concurrency: 3,
           discard: true,
@@ -1308,9 +1408,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       disposed = true
       void commands.stop()
     }
-  }, [cacheFor, updateEntry, persistRegistryEffect, restoreAttempt])
-  // Pairing recovery and the selected computer's connection need only the saved registry.
-  // Offline caches keep hydrating meanwhile and never replace newer network state.
+  }, [cacheFor, updateEntry, persistRegistryEffect, restoreAttempt, mutations])
   useEffect(() => {
     if (!registryLoaded) return
     const commands = clientTaskScope()
@@ -1340,8 +1438,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     if (!registryLoaded || recovering || !profile || !appActive) return
     let stopped = false
     let wakeFallback = () => {}
+    let connecting = true
     const live = startRuntimeSync(profile.connection, {
+      active: () => networkAvailable.current,
       onWake: () => wakeFallback(),
+      onStatus: (status) => {
+        connecting = status === 'connecting'
+        wakeFallback()
+      },
       onSnapshot: (snapshot) => {
         if (
           stopped ||
@@ -1351,7 +1455,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision)
         )
           return
-        void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
         sequence.current.set(profile.id, (sequence.current.get(profile.id) ?? 0) + 1)
         mutations.workspaceRefreshed(
           profile.connection,
@@ -1368,17 +1471,21 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         }))
       },
     })
+    const needsFallback = () =>
+      networkAvailable.current &&
+      !live.online() &&
+      // A revoked pairing cannot recover by polling; explicit Reconnect still checks it.
+      !entryRef.current[profile.id]?.unauthorized &&
+      // Cached UI is usable during the first handshake. Its existing deadlines/status
+      // changes wake fallback on failure, without downloading two workspace baselines.
+      (!connecting || !entryRef.current[profile.id]?.snapshot)
     const polling = startPolling(
-      Effect.suspend(() =>
-        // A revoked pairing cannot recover by polling; explicit Reconnect still checks it.
-        !live.online() && !entryRef.current[profile.id]?.unauthorized
-          ? refreshProfileEffect(profile)
-          : Effect.void,
-      ),
+      Effect.suspend(() => (needsFallback() ? refreshProfileEffect(profile) : Effect.void)),
       {
-        interval: 1000,
+        enabled: needsFallback,
+        interval: 5000,
         // An unreachable host is not hammered every second; foregrounding still retries at once.
-        backoff: 10000,
+        backoff: 60000,
         // refreshProfileEffect owns error publication and rejects failures superseded
         // by a newer request or streamed snapshot. Do not publish them again here.
         onError: () => {},
@@ -1387,8 +1494,16 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     wakeFallback = polling.refresh
     // Wi-Fi to cellular, a VPN toggle or captive portal: ask the runtime at once instead of
     // waiting for the socket watchdog or the next failed poll.
+    let lastConnected = networkAvailable.current
+    let lastNetworkType: Network.NetworkState['type']
     const network = Network.addNetworkStateListener((state) => {
-      if (state.isConnected) {
+      const changed =
+        (state.isConnected !== undefined && state.isConnected !== lastConnected) ||
+        (state.type !== undefined && state.type !== lastNetworkType)
+      lastConnected = state.isConnected ?? lastConnected
+      lastNetworkType = state.type ?? lastNetworkType
+      if (state.isConnected && changed) {
+        mutationRecoveryWorker.current?.refresh(profile.connection)
         live.refresh()
         polling.refresh()
       }
@@ -1404,7 +1519,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     if (!ready || !appActive || computerRefresh === 'manual') return
     const polling = startPolling(
       Effect.suspend(() => {
-        if (AppState.currentState !== 'active') return Effect.void
+        if (AppState.currentState !== 'active' || !networkAvailable.current) return Effect.void
         if (computerRefresh !== 'reduced') return refreshAllEffect(false)
         // Reduced background activity on a metered link keeps other computers' summaries as
         // they are; the active computer still refreshes through its own connection.
@@ -1421,6 +1536,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }),
       {
         interval: computerRefresh === 'reduced' ? 120000 : 30000,
+        immediate: false,
         onError: (error) => setStorageError(String(error)),
       },
     )
@@ -1480,25 +1596,48 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [entries, mutationVersion, mutations])
   const overviews = useMemo(
     () =>
-      registry.profiles.map((item) =>
-        previewTasks(
-          {
-            ...(sameRuntimeConnection(entries[item.id]?.profile.connection, item.connection)
-              ? entries[item.id]
-              : initialOverview(item)),
-            profile: item,
-            ...(isPeerAddress(item.connection.address) &&
-            !peerConnectionReady(item.connection.address)
-              ? { connected: false }
-              : {}),
-          },
-          previews.filter(
-            (pending) =>
-              !entries[item.id] || !optimisticTaskConfirmed(pending, entries[item.id], previews),
+      registry.profiles
+        .map((item) =>
+          previewTasks(
+            {
+              ...(sameRuntimeConnection(entries[item.id]?.profile.connection, item.connection)
+                ? entries[item.id]
+                : initialOverview(item)),
+              profile: item,
+              ...(!networkConnected ||
+              (isPeerAddress(item.connection.address) &&
+                !peerConnectionReady(item.connection.address))
+                ? { connected: false }
+                : {}),
+            },
+            previews.filter(
+              (pending) =>
+                !entries[item.id] || !optimisticTaskConfirmed(pending, entries[item.id], previews),
+            ),
           ),
-        ),
-      ),
-    [registry.profiles, entries, previews, peerVersion],
+        )
+        .map((entry) => {
+          if (!entry.snapshot) return entry
+          const tasks = mutations.pendingTasks(
+            entry.profile.connection,
+            entry.snapshot.workspace.tasks,
+          )
+          return tasks === entry.snapshot.workspace.tasks
+            ? entry
+            : {
+                ...entry,
+                snapshot: { ...entry.snapshot, workspace: { ...entry.snapshot.workspace, tasks } },
+              }
+        }),
+    [
+      registry.profiles,
+      entries,
+      previews,
+      peerVersion,
+      mutationVersion,
+      mutations,
+      networkConnected,
+    ],
   )
   const [presetSyncError, setPresetSyncError] = useApplicationState('')
   const {
@@ -1671,6 +1810,57 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       runClientEffect(mutations.discardEffect(owner.connection, actionId)),
     [mutations],
   )
+  const attachmentUploads = useCallback(
+    (owner: RuntimeProfile) => mutations.attachmentUploads(owner.connection),
+    [mutations],
+  )
+  const attachmentPendingEffect = useCallback(
+    (owner: RuntimeProfile, id: string) => mutations.attachmentPendingEffect(owner.connection, id),
+    [mutations],
+  )
+  const reviewAttachments = useCallback(
+    (owner: RuntimeProfile) => mutations.reviewAttachments(owner.connection),
+    [mutations],
+  )
+  const requestAttachmentEffect = useCallback(
+    (owner: RuntimeProfile, input: unknown, replacement: boolean) =>
+      Effect.suspend(() => {
+        if (!resolveRuntimeTarget(current.current.profiles, owner))
+          return Effect.fail(new Error('This computer connection changed.'))
+        return mutations
+          .requestAttachmentEffect(owner.connection, input, replacement)
+          .pipe(
+            Effect.tapError(() => Effect.sync(() => mutations.reviewAttachments(owner.connection))),
+          )
+      }),
+    [mutations],
+  )
+  const finishAttachmentEffect = useCallback(
+    (owner: RuntimeProfile, id: string) => mutations.finishAttachmentEffect(owner.connection, id),
+    [mutations],
+  )
+  const recoverAttachment = useCallback(
+    (owner: RuntimeProfile, id: string) =>
+      runClientEffect(
+        mobileWorkflow(function* () {
+          yield* mutations.retryAttachmentAfterReviewEffect(owner.connection, id)
+          yield* readRuntimeEffect(
+            owner,
+            '/api/attachments/recover-to-draft',
+            { id },
+            attachmentUploadResultSchema,
+          )
+          yield* refreshProfileEffect(owner).pipe(Effect.catch(() => Effect.void))
+          yield* mutations.finishAttachmentEffect(owner.connection, id)
+        }),
+      ),
+    [mutations, readRuntimeEffect, refreshProfileEffect],
+  )
+  const discardAttachment = useCallback(
+    (owner: RuntimeProfile, id: string) =>
+      runClientEffect(mutations.discardAttachmentEffect(owner.connection, id)),
+    [mutations],
+  )
   const refreshAllOrRestore = useCallback(async () => {
     if (!registryWritable.current) {
       setRestoreAttempt((attempt) => attempt + 1)
@@ -1692,6 +1882,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ? 'A connection is waiting to finish pairing. Keep the computer online; recovery retries when you return to the app.'
       : '')
   const connected =
+    networkConnected &&
     (active?.connected ?? false) &&
     (!connection || !isPeerAddress(connection.address) || peerConnectionReady(connection.address))
   // Mutation status is read through stable functions; its version still publishes a new value.
@@ -1731,6 +1922,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       mutationStatus,
       retryMutations,
       discardMutations,
+      attachmentUploads,
+      attachmentPendingEffect,
+      requestAttachmentEffect,
+      finishAttachmentEffect,
+      reviewAttachments,
+      recoverAttachment,
+      discardAttachment,
       cacheForRuntime: cacheFor,
       readCache,
       refreshEffect,
@@ -1780,6 +1978,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       mutationStatus,
       retryMutations,
       discardMutations,
+      attachmentUploads,
+      attachmentPendingEffect,
+      requestAttachmentEffect,
+      finishAttachmentEffect,
+      reviewAttachments,
+      recoverAttachment,
+      discardAttachment,
       cacheFor,
       readCache,
       refreshEffect,
@@ -1828,9 +2033,9 @@ export function RuntimeScope({ runtimeId, children }: { runtimeId: string; child
   const profile = entry?.profile
   const { readRuntimeEffect, refreshRuntimeEffect } = runtime
   const readEffect = useCallback<CallEffect>(
-    (path, input, schema, method) =>
+    (path, input, schema, method, options) =>
       profile
-        ? readRuntimeEffect(profile, path, input, schema, method)
+        ? readRuntimeEffect(profile, path, input, schema, method, options)
         : Effect.fail(
             new ConnectionChangedError({
               message: 'This computer is no longer saved',
@@ -1850,10 +2055,13 @@ export function RuntimeScope({ runtimeId, children }: { runtimeId: string; child
   )
   const refresh = useCallback(() => runClientEffect(refreshEffect()), [refreshEffect])
   const callEffect = useCallback<CallEffect>(
-    (path, input, schema, method) =>
-      readEffect(path, input, schema, method).pipe(
+    (path, input, schema, method, options) =>
+      readEffect(path, input, schema, method, options).pipe(
         Effect.tap(() =>
-          profile ? settleMutationEffect(profile, refreshRuntimeEffect) : Effect.void,
+          Effect.sync(() => {
+            if (profile && !options?.defer && !runtimeSyncOnline(profile.connection))
+              void runClientEffect(refreshRuntimeEffect(profile)).catch(() => undefined)
+          }),
         ),
       ),
     [readEffect, profile, refreshRuntimeEffect],

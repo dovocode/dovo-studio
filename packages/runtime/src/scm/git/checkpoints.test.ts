@@ -1,12 +1,104 @@
 import { afterEach, expect, it } from 'vite-plus/test'
-import { chmod, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  mkdir,
+  lstat,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
 import sharp from 'sharp'
+import { safeFile } from '../repositories/paths.js'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
+})
+it('keeps repository-root checkpoint paths from subfolders with diff.relative enabled', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const nested = join(f.directory, 'nested')
+  await mkdir(nested)
+  await writeFile(join(nested, 'inside.txt'), 'before\n')
+  await git.command(f.directory, ['add', '.'])
+  await git.commit(f.directory, 'Add nested file')
+  await git.command(f.directory, ['config', 'diff.relative', 'true'])
+  const before = await git.snapshot(f.directory, 'refs/dovo/checkpoints/relative/before')
+  await writeFile(join(f.directory, 'hello.txt'), 'outside edit\n')
+  await writeFile(join(nested, 'inside.txt'), 'inside edit\n')
+  const after = await git.snapshot(f.directory, 'refs/dovo/checkpoints/relative/after')
+  const changes = await git.checkpointChanges(nested, before, after)
+  expect(changes.files).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'hello.txt', before: 'original\n', after: 'outside edit\n' }),
+      expect.objectContaining({
+        path: 'nested/inside.txt',
+        before: 'before\n',
+        after: 'inside edit\n',
+      }),
+    ]),
+  )
+  expect(changes.files).toHaveLength(2)
+  await git.restoreSnapshot(nested, before, 'refs/dovo/checkpoints/relative/undo')
+  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('original\n')
+  expect(await readFile(join(nested, 'inside.txt'), 'utf8')).toBe('before\n')
+  expect(
+    (await git.checkpointFilePreview(nested, before, after, 'nested/inside.txt')).after,
+  ).toMatchObject({ kind: 'text', text: 'inside edit\n' })
+})
+it('captures same-size edits when the source index considers the file racily clean', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const file = join(f.directory, 'hello.txt')
+  const index = join(f.directory, '.git/index')
+  // Model a filesystem whose timestamps cannot distinguish two rapid writes.
+  const timestamp = new Date('2026-01-01T00:00:00Z')
+  await git.command(f.directory, ['config', 'core.trustctime', 'false'])
+  await writeFile(file, 'child edit\n')
+  await utimes(file, timestamp, timestamp)
+  await git.command(f.directory, ['add', 'hello.txt'])
+  await utimes(index, timestamp, timestamp)
+  const staged = await readFile(index)
+  const indexTime = (await stat(index)).mtimeMs
+  await writeFile(file, 'later edit\n')
+  await utimes(file, timestamp, timestamp)
+
+  const snapshot = await git.snapshot(f.directory, 'refs/dovo/checkpoints/racy/after')
+  expect(await git.command(f.directory, ['show', `${snapshot}:hello.txt`])).toBe('later edit\n')
+  expect(await readFile(index)).toEqual(staged)
+  expect((await stat(index)).mtimeMs).toBe(indexTime)
+})
+it('undoes external and dangling symlink creation without following their targets', async () => {
+  const f = await fixture()
+  const outside = await fixture()
+  cleanups.push(f.cleanup, outside.cleanup)
+  const git = new GitService()
+  const before = await git.snapshot(f.directory, 'refs/dovo/checkpoints/symlinks/before')
+  await symlink(join(outside.directory, 'hello.txt'), join(f.directory, 'external'))
+  await symlink(join(outside.directory, 'missing.txt'), join(f.directory, 'dangling'))
+  const after = await git.snapshot(f.directory, 'refs/dovo/checkpoints/symlinks/after')
+  await git.restoreSnapshot(f.directory, before, 'refs/dovo/checkpoints/symlinks/undo')
+  for (const name of ['external', 'dangling'])
+    await expect(lstat(join(f.directory, name))).rejects.toHaveProperty('code', 'ENOENT')
+  expect(await readFile(join(outside.directory, 'hello.txt'), 'utf8')).toBe('original\n')
+  await git.restoreSnapshot(f.directory, after, 'refs/dovo/checkpoints/symlinks/redo')
+  expect((await lstat(join(f.directory, 'external'))).isSymbolicLink()).toBe(true)
+  expect((await lstat(join(f.directory, 'dangling'))).isSymbolicLink()).toBe(true)
+  await symlink(outside.directory, join(f.directory, 'parent'))
+  await expect(
+    safeFile(f.directory, 'parent/hello.txt', { followFinalSymlink: false }),
+  ).rejects.toThrow('Symlink points outside')
+  await expect(safeFile(f.directory, '.git/config', { followFinalSymlink: false })).rejects.toThrow(
+    'Invalid file path',
+  )
 })
 it('captures each turn against dirty starting contents and preserves HEAD, staging and ignored files', async () => {
   const f = await fixture()

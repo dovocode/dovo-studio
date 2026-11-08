@@ -47,6 +47,36 @@ const detail: PullDetail = {
 }
 
 describe('mobile PR action placement', () => {
+  it('labels lifecycle actions from the current state and never offers immediate merge for drafts', () => {
+    const capabilities = {
+      reviewDecisions: [],
+      mergeMethods: ['squash'] as const,
+      actions: ['draft', 'auto-merge', 'merge'] as const,
+    }
+    const options = pullActionOptions({
+      ...detail,
+      pull: { ...detail.pull, draft: true },
+      capabilities: {
+        ...capabilities,
+        mergeMethods: [...capabilities.mergeMethods],
+        actions: [...capabilities.actions],
+      },
+    })
+    expect(options.secondary).toEqual([{ action: 'draft', label: 'Mark ready for review' }])
+    const enabled = pullActionOptions({
+      ...detail,
+      pull: { ...detail.pull, autoMergeEnabled: true },
+      capabilities: {
+        ...capabilities,
+        mergeMethods: [...capabilities.mergeMethods],
+        actions: ['draft', 'auto-merge'],
+      },
+    })
+    expect(enabled.secondary).toEqual([
+      { action: 'draft', label: 'Convert to draft' },
+      { action: 'auto-merge', label: 'Disable auto-merge' },
+    ])
+  })
   it('keeps Review primary and puts supported secondary actions in one menu', () => {
     const options = pullActionOptions(detail)
     expect(options.primary?.action).toBe('review')

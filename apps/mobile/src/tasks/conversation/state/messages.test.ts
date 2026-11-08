@@ -246,6 +246,42 @@ describe('Dovo conversation adapter', () => {
       },
     ])
   })
+  it('counts checkpoint files once per checkout when omitted paths overlap saved files', () => {
+    const file = { path: 'same.ts', before: '', after: 'changed', viewed: false }
+    const linked = (checkoutId: string) => ({
+      checkoutId,
+      repositoryId: checkoutId,
+      directory: '/checkout',
+      before: 'before',
+      after: 'after',
+      files: [file],
+      omitted: ['same.ts', 'large.bin'],
+    })
+    const result = conversationMessages(
+      {
+        ...task,
+        messages: [{ id: 'a1', role: 'assistant', text: '' }],
+        turns: [
+          {
+            ...turn('t1', 'a1', 'completed'),
+            checkpoint: {
+              before: 'before',
+              after: 'after',
+              files: [file],
+              omitted: ['same.ts', 'large.bin'],
+              linked: [linked('one'), linked('two')],
+            },
+          },
+        ],
+      },
+      [],
+    )
+    expect(result[0].content).toContainEqual({
+      type: 'data',
+      name: 'dovo.checkpoint',
+      data: { turnId: 't1', files: 6, omitted: 2, error: undefined },
+    })
+  })
   it('does not attribute legacy or unknown-turn events to the latest reply', () => {
     const messages = conversationMessages(task, [
       event('other', 'unrelated-turn', 'running'),
@@ -385,6 +421,48 @@ it('keeps completed provider message boundaries in the mobile work timeline', ()
 })
 
 describe('incremental conversation projection', () => {
+  it('invalidates checkpoint counts when linked omitted overlap changes without length changes', () => {
+    const project = createConversationMessages()
+    const firstTask: Task = {
+      ...task,
+      turns: [
+        {
+          ...turn('t1', 'a1', 'completed'),
+          checkpoint: {
+            before: 'before',
+            after: 'after',
+            files: [],
+            omitted: [],
+            linked: [
+              {
+                checkoutId: 'link',
+                repositoryId: 'repo',
+                directory: '/repo',
+                before: 'before',
+                after: 'after',
+                files: [{ path: 'same.ts', before: '', after: 'new', viewed: false }],
+                omitted: ['same.ts'],
+              },
+            ],
+          },
+        },
+        turn('t2', 'a2', 'running'),
+      ],
+    }
+    const first = project(firstTask, [])
+    const next = structuredClone(firstTask)
+    next.turns![0].checkpoint!.linked![0].omitted = ['other.ts']
+    const second = project(next, [])
+    expect(second[1]).not.toBe(first[1])
+    expect(second[0]).toBe(first[0])
+    expect(second[2]).toBe(first[2])
+    expect(second[1].content).toContainEqual({
+      type: 'data',
+      name: 'dovo.checkpoint',
+      data: { turnId: 't1', files: 2, omitted: 0, error: undefined },
+    })
+    expect(second).toEqual(conversationMessages(next, []))
+  })
   it('retains historical entries across fresh snapshots and updates only changed messages', () => {
     const project = createConversationMessages()
     const events = [event('older', 't1', 'completed'), event('latest', 't2', 'running')]

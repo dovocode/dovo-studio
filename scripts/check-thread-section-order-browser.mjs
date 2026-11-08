@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
+  './workspace/context': 'export const useWorkspace=()=>window.store;',
   '@dovo/studio-core': `export * from '${root}packages/studio-core/src/index.ts';export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const useStudioHost=()=>window.host;`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
@@ -16,7 +17,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId="" temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
+    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId={window.selectedId??""} temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
     loader: 'tsx',
     resolveDir: root + 'packages/extension-tasks/',
   },
@@ -78,7 +79,7 @@ try {
       files: [],
       messages: [],
       turns: [],
-      status: 'completed',
+      status: 'done',
     }
     window.source = {
       runtimeId: 'runtime',
@@ -94,7 +95,11 @@ try {
         agents: [],
       },
     }
-    window.host = {}
+    window.host = {
+      navigate: (target) => {
+        window.lastNavigation = target
+      },
+    }
     window.store = {
       request: async () => {
         throw Error('Reordering must not send runtime mutations')
@@ -104,16 +109,43 @@ try {
   })
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const chevron = async (summary, open) => {
+    await page.waitForFunction(
+      ({ element, open }) => {
+        const icon = element.querySelector('.studio-list-section-chevron')
+        if (!icon) return false
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(icon).transform)
+        return (
+          Math.abs(matrix.a - (open ? 1 : 0)) < 0.001 &&
+          Math.abs(matrix.b - (open ? 0 : -1)) < 0.001
+        )
+      },
+      { element: await summary.elementHandle(), open },
+    )
+  }
   const headings = () => page.locator('summary').allTextContents()
   const names = async () => (await headings()).map((text) => text.replace(/\d+$/, '').trim())
   await page.getByText('Active thread', { exact: true }).waitFor()
   assert.deepEqual(await names(), ['Working', 'Waiting'])
-  const bottom = await page.locator('details').last().boundingBox()
-  const sidebar = await page.getByRole('complementary', { name: 'Task sidebar' }).boundingBox()
+  const lastSection = await page.locator('details').last().boundingBox()
+  const activeRow = await page.getByText('Active thread', { exact: true }).boundingBox()
+  // Sections anchor to the inset overview pane, inside the sidebar's outer spacing.
+  const pane = await page.locator('.studio-overview-pane').boundingBox()
   assert.ok(
-    Math.abs(bottom.y + bottom.height - sidebar.y - sidebar.height) < 10,
-    'Collapsed sections align to the bottom of the desktop sidebar',
+    Math.abs(lastSection.y + lastSection.height - pane.y - pane.height) < 10,
+    'Trailing collapsed sections stay at the bottom',
   )
+  const waitingSummary = page.locator('summary').filter({ hasText: 'Waiting' })
+  await waitingSummary.click()
+  await page.getByText('Waiting thread', { exact: true }).waitFor()
+  assert.deepEqual(await names(), ['Working', 'Waiting'], 'Opening a section preserves its order')
+  const firstSection = await page.locator('details').first().boundingBox()
+  assert.ok(
+    firstSection.y - activeRow.y - activeRow.height < 12,
+    'An opened section and the sections preceding it follow the thread list',
+  )
+  await waitingSummary.click()
+  assert.deepEqual(await names(), ['Working', 'Waiting'], 'Closing a section preserves its order')
   const savedCollapse = await page.evaluate(() => window.collapsedSections())
   await page.evaluate(() => {
     window.temporary = {
@@ -127,6 +159,16 @@ try {
     window.render()
   })
   await page.getByText('Working thread', { exact: true }).waitFor()
+  assert.deepEqual(
+    await names(),
+    ['Working', 'Waiting'],
+    'Automatic reveals preserve section order',
+  )
+  const waitingSection = await waitingSummary.locator('..').boundingBox()
+  assert.ok(
+    Math.abs(waitingSection.y + waitingSection.height - pane.y - pane.height) < 10,
+    'Trailing collapsed sections stay at the bottom while an earlier section is open',
+  )
   assert.deepEqual(
     await page.evaluate(() => window.collapsedSections()),
     savedCollapse,
@@ -145,17 +187,49 @@ try {
   assert.deepEqual(await page.evaluate(() => window.collapsedSections()), savedCollapse)
   // Keyboard activation is a user toggle and must persist, just like a pointer click.
   const workingSummary = page.locator('summary').filter({ hasText: 'Working' })
+  await chevron(workingSummary, false)
   await workingSummary.focus()
   await page.keyboard.press('Enter')
   await page.getByText('Working thread', { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.collapsedSections().includes('working')), false)
+  await chevron(workingSummary, true)
+  assert.deepEqual(
+    await names(),
+    ['Working', 'Waiting'],
+    'Keyboard expansion preserves section order',
+  )
   await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.collapsedSections().includes('working'))
+  await chevron(workingSummary, false)
+  // Collapsing the open thread keeps a location cue without changing the user's section choice.
+  await page.evaluate(() => {
+    window.selectedId = JSON.stringify(['runtime', 'working'])
+    window.render()
+  })
+  await workingSummary.getByText('Current', { exact: true }).waitFor()
+  assert.equal(await workingSummary.locator('..').getAttribute('open'), null)
+  await workingSummary.click()
+  await workingSummary.getByText('Current', { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByText('Working thread', { exact: true }).waitFor()
+  await workingSummary.click()
+  await workingSummary.getByText('Current', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.selectedId = ''
+    window.render()
+  })
+  await workingSummary.getByText('Current', { exact: true }).waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   const dialog = page.getByRole('dialog')
+  const resetOrder = dialog.getByRole('button', { name: 'Reset section order', exact: true })
+  assert.equal(await resetOrder.isDisabled(), true, 'Reset is disabled at the default order')
+  assert.match(
+    await dialog.innerText(),
+    /Needs input appears automatically below it and cannot be moved/,
+  )
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+  assert.equal(await resetOrder.isEnabled(), true, 'Reset is available after reordering')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
-  assert.deepEqual(await names(), ['Open', 'Waiting', 'Working'])
+  assert.deepEqual(await names(), ['Waiting', 'Open', 'Working'])
   assert.equal(
     await page
       .locator('details')
@@ -167,6 +241,12 @@ try {
   await page.keyboard.press('Escape')
   await page.locator('summary').filter({ hasText: 'Waiting' }).click()
   await page.getByText('Waiting thread', { exact: true }).waitFor()
+  await chevron(page.locator('summary').filter({ hasText: 'Waiting' }), true)
+  assert.deepEqual(
+    await names(),
+    ['Waiting', 'Open', 'Working'],
+    'Expansion preserves custom order',
+  )
   await page.waitForFunction(() => window.keyboardOrder[0] === 'waiting')
   const savedTasks = await page.evaluate(() => window.source.workspace.tasks)
   await page.evaluate(async () => {
@@ -219,16 +299,35 @@ try {
     'Collapsed sections retain their state across cold starts',
   )
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Move pinned up', exact: true }).waitFor()
-  assert.equal(
-    await dialog.getByRole('button', { name: 'Move pinned up', exact: true }).isDisabled(),
-    true,
-  )
+  const pinnedOrderRow = dialog.getByRole('listitem').filter({ hasText: 'Pinned' })
+  await pinnedOrderRow.getByText('Fixed first', { exact: true }).waitFor()
+  assert.equal(await pinnedOrderRow.getByRole('button').count(), 0)
+  assert.equal(await pinnedOrderRow.locator('svg.lucide-lock-keyhole').count(), 1)
   assert.equal(
     await dialog.getByRole('button', { name: 'Move settled down', exact: true }).isDisabled(),
     true,
   )
-  await dialog.getByRole('button', { name: 'Reset section order', exact: true }).click()
+  const orderBeforeSettings = await page.evaluate(() => window.savedOrder())
+  const collapsedBeforeSettings = await page.evaluate(() => window.collapsedSections())
+  await page.evaluate(() => {
+    window.host.navigate = (target) => {
+      window.lastNavigation = target
+    }
+  })
+  await dialog.getByRole('button', { name: 'Grouping and sorting…', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(await page.evaluate(() => window.lastNavigation), {
+    viewId: 'task-list-settings',
+  })
+  assert.deepEqual(await page.evaluate(() => window.savedOrder()), orderBeforeSettings)
+  assert.deepEqual(await page.evaluate(() => window.collapsedSections()), collapsedBeforeSettings)
+  await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
+  await resetOrder.click()
+  assert.equal(
+    await resetOrder.isDisabled(),
+    true,
+    'Reset becomes disabled after restoring defaults',
+  )
   assert.deepEqual(await page.evaluate(() => window.savedOrder()), [
     'pinned',
     'active',
@@ -237,6 +336,122 @@ try {
     'snoozed',
     'settled',
   ])
+  await page.keyboard.press('Escape')
+  const restart = async () => {
+    const source = await page.evaluate(() => window.source)
+    await page.reload()
+    await page.evaluate((source) => {
+      window.source = source
+      window.host = {}
+      window.store = {}
+    }, source)
+    await page.addStyleTag({ content: css })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+  }
+  await page.evaluate(() => window.groupBy('project'))
+  const projectSummary = page.locator('summary').filter({ hasText: 'Project' })
+  await projectSummary.click()
+  const projectSection = projectSummary.locator('..')
+  const projectId = await projectSection.getAttribute('data-section')
+  assert.equal(await projectSection.evaluate((element) => element.open), false)
+  assert.ok((await page.evaluate(() => window.collapsedSections())).includes(projectId))
+  await restart()
+  await projectSummary.waitFor()
+  assert.equal(
+    await projectSection.evaluate((element) => element.open),
+    false,
+    'Project collapse survives a full restart',
+  )
+  await projectSummary.click()
+  await restart()
+  await projectSummary.waitFor()
+  assert.equal(
+    await projectSection.evaluate((element) => element.open),
+    true,
+    'Project expansion survives a full restart',
+  )
+  await page.evaluate(async () => {
+    window.source.workspace.tasks = window.source.workspace.tasks.map((task) =>
+      task.id === 'active' ? { ...task, pinned: true } : task,
+    )
+    window.groupBy('status')
+    await window.remount()
+  })
+  const pinnedSummary = page.locator('summary').filter({ hasText: 'Pinned' })
+  await pinnedSummary.click()
+  await restart()
+  await pinnedSummary.waitFor()
+  assert.equal(
+    await pinnedSummary.locator('..').evaluate((element) => element.open),
+    false,
+    'Pinned task groups survive a full restart',
+  )
+  await page.evaluate(async () => {
+    window.source.workspace.tasks = window.source.workspace.tasks.map((task) => ({
+      ...task,
+      pinned: false,
+    }))
+    await window.remount()
+  })
+  await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const openSummary = page.locator('summary').filter({ hasText: 'Open' })
+  await openSummary.click()
+  await page.evaluate(async () => {
+    window.source.workspace.tasks = window.source.workspace.tasks.filter(
+      (task) => task.id !== 'waiting',
+    )
+    await window.remount()
+  })
+  await restart()
+  await openSummary.waitFor()
+  assert.equal(
+    await openSummary.locator('..').evaluate((element) => element.open),
+    false,
+    'A collapsed Open group stays collapsed when earlier sections disappear across restart',
+  )
+  await openSummary.click()
+  await page.getByText('Active thread', { exact: true }).waitFor()
+  await page.evaluate(async () => {
+    const base = window.source.workspace.tasks[0]
+    window.source.workspace.tasks = [
+      { ...base, id: 'attention', title: 'Attention thread' },
+      ...['running', 'waiting', 'snoozed', 'settled', 'attention'].map((state) => ({
+        ...base,
+        id: 'pin-' + state,
+        title: 'Pinned ' + state,
+        pinned: true,
+        status: state === 'running' ? 'running' : 'done',
+        waitingForFeedback: state === 'waiting',
+        snoozedUntil: state === 'snoozed' ? new Date(Date.now() + 3600000).toISOString() : null,
+        archived: state === 'settled',
+      })),
+    ]
+    window.source.snapshot = { questions: [{ taskId: 'attention' }, { taskId: 'pin-attention' }] }
+    await window.remount()
+  })
+  for (const grouping of ['status', 'project', 'none']) {
+    await page.evaluate((grouping) => window.groupBy(grouping), grouping)
+    await pinnedSummary.waitFor()
+    if (!(await pinnedSummary.locator('..').evaluate((element) => element.open)))
+      await pinnedSummary.click()
+    assert.equal((await names())[0], 'Pinned')
+    for (const state of ['running', 'waiting', 'snoozed', 'settled', 'attention']) {
+      const row = page.getByRole('button', { name: 'Pinned ' + state, exact: true })
+      assert.equal(await row.count(), 1, 'Pinned rows are never duplicated')
+      assert.equal(
+        await row.locator('xpath=ancestor::details').getAttribute('data-section'),
+        'pinned',
+      )
+    }
+    assert.equal(
+      (await page.evaluate(() => window.keyboardOrder)).filter((id) => id.startsWith('pin-'))
+        .length,
+      5,
+    )
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Thread categories: overview organizer, live reordering, collapse state, keyboard task order, cold-start persistence, hidden/empty sections, boundaries and reset verified.',

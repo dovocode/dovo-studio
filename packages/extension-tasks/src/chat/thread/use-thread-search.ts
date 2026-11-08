@@ -105,8 +105,10 @@ export function useThreadSearch(
   }
   const matches = useMemo(() => {
     const current = searchThread(task.messages, query)
+    const loaded = new Set(task.messages.map((message) => message.id))
     const values = new Map<string, ReturnType<typeof searchThread>[number]>()
-    if (remote?.scope === scope) for (const match of remote.matches) values.set(match.id, match)
+    if (remote?.scope === scope)
+      for (const match of remote.matches) if (!loaded.has(match.id)) values.set(match.id, match)
     for (const match of current) values.set(match.id, match)
     return [...values.values()]
   }, [task.messages, query, remote, scope])

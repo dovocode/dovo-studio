@@ -11,6 +11,7 @@ export const agentDiscoverySchema = agentSchema.mapFields(
     'configDirectory',
     'args',
     'env',
+    'envSecrets',
     'model',
     'acpInstallationId',
     'acpMode',
@@ -113,6 +114,13 @@ export function modelDiscoveryInput(agent: AgentDiscovery): AgentDiscovery {
     configDirectory: agent.configDirectory,
     args: agent.args ?? [],
     env: sorted(agent.env),
+    ...(agent.envSecrets
+      ? {
+          envSecrets: Object.fromEntries(
+            Object.entries(agent.envSecrets).sort(([a], [b]) => a.localeCompare(b)),
+          ),
+        }
+      : {}),
     model: ['acp', 'grok'].includes(agent.provider) ? agent.model : '',
     ...(agent.provider === 'acp'
       ? {

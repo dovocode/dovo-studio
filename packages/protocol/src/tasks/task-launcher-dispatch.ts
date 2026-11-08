@@ -18,7 +18,11 @@ export type LauncherAttempt = {
   created: boolean
 }
 /** Retain the creation and submission IDs across failures, including lost acknowledgements. */
-export async function dispatchLauncherTask(attempt: LauncherAttempt, request: LauncherRequest) {
+export async function dispatchLauncherTask(
+  attempt: LauncherAttempt,
+  request: LauncherRequest,
+  options?: { messageSetup?: boolean },
+) {
   if (!attempt.created) {
     await request(
       attempt.profile,
@@ -29,7 +33,7 @@ export async function dispatchLauncherTask(attempt: LauncherAttempt, request: La
     )
     attempt.created = true
   }
-  if (attempt.task.autoProject) {
+  if (attempt.task.autoProject && !options?.messageSetup) {
     attempt.task = await request(
       attempt.profile,
       '/api/tasks/projects/select',
@@ -37,10 +41,20 @@ export async function dispatchLauncherTask(attempt: LauncherAttempt, request: La
       taskSchema,
     )
   }
-  await request(
+  return request(
     attempt.profile,
     '/api/tasks/message',
-    { id: attempt.task.id, messageId: attempt.messageId, text: attempt.text },
+    {
+      id: attempt.task.id,
+      messageId: attempt.messageId,
+      text: attempt.text,
+      ...(options?.messageSetup
+        ? {
+            initialTitle: { before: attempt.task.title, after: attempt.task.title },
+            ...(attempt.task.autoProject ? { selectProject: true } : {}),
+          }
+        : {}),
+    },
     responses.ok,
   )
 }

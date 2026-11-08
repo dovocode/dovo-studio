@@ -1,6 +1,16 @@
 import { decode } from '../shared/schema.js'
-import { describe, expect, it } from 'vite-plus/test'
-import { compareTasks, taskSortOptions, isSnoozed } from './task-priority'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+import {
+  taskSnoozeMenuChoices,
+  defaultTaskSnoozeSchedule,
+  parseTaskSnoozeSchedule,
+  compareTasks,
+  taskSortOptions,
+  isSnoozed,
+  taskSnoozeChoices,
+  parseTaskSnoozeMinutes,
+  formatTaskSnoozeMinutes,
+} from './task-priority'
 import { taskSchema } from '../workspace'
 const task = (id: string, createdAt: string) =>
   decode(taskSchema, {
@@ -167,4 +177,94 @@ it('preserves numeric, case-insensitive name sorting and activity ties', () => {
       expected,
     )
   }
+})
+
+describe('Configurable snooze durations', () => {
+  it('preserves existing defaults and menu order, including minute-sized durations', () => {
+    expect(taskSnoozeChoices()).toEqual([
+      { hours: 1, label: 'For 1 hour' },
+      { hours: 4, label: 'For 4 hours' },
+      { hours: 24, label: 'For 24 hours' },
+      { hours: 48, label: 'For 2 days' },
+      { hours: 72, label: 'For 3 days' },
+      { hours: 168, label: 'For 7 days' },
+    ])
+    const custom = parseTaskSnoozeMinutes('2d, 15m, 1.5H, 1w')
+    expect(custom).toEqual([2880, 15, 90, 10080])
+    expect(parseTaskSnoozeMinutes(formatTaskSnoozeMinutes(custom))).toEqual(custom)
+    expect(taskSnoozeChoices(custom)[1]).toEqual({ hours: 0.25, label: 'For 15 minutes' })
+  })
+
+  it.each([
+    '',
+    '0m',
+    '-1h',
+    'tomorrow',
+    '1',
+    '1h, 60m',
+    '0.1m',
+    '366d',
+    'Infinityh',
+    '1h,',
+    Array.from({ length: 13 }, (_, i) => `${i + 1}m`).join(','),
+  ])('rejects invalid duration lists: %s', (text) => {
+    expect(() => parseTaskSnoozeMinutes(text)).toThrow(/durations/)
+  })
+})
+
+// Calendar dates must stay local across month/year and daylight-saving boundaries.
+describe('Calendar snoozes', () => {
+  afterEach(() => vi.useRealTimers())
+  it('orders and disables shortcuts and resolves durations when selected', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 11, 31, 10))
+    const choices = taskSnoozeMenuChoices([15], {
+      ...defaultTaskSnoozeSchedule,
+      presets: ['next-week', 'tomorrow-morning'],
+    })
+    expect(choices.map((choice) => choice.id)).toEqual([
+      'next-week',
+      'tomorrow-morning',
+      'duration-0.25',
+    ])
+    expect(choices[1]!.until()).toBe(new Date(2027, 0, 1, 9).toISOString())
+    vi.setSystemTime(new Date(2026, 11, 31, 11))
+    expect(choices[2]!.until()).toBe(new Date(2026, 11, 31, 11, 15).toISOString())
+  })
+  it('uses the next chosen weekday and hides Later today after cutoff', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 2, 18)) // Monday
+    const choices = taskSnoozeMenuChoices([])
+    expect(choices.some((choice) => choice.id === 'later-today')).toBe(false)
+    expect(choices.find((choice) => choice.id === 'next-week')!.until()).toBe(
+      new Date(2026, 10, 9, 9).toISOString(),
+    )
+    expect(choices.find((choice) => choice.id === 'tomorrow-evening')!.until()).toBe(
+      new Date(2026, 10, 3, 18).toISOString(),
+    )
+  })
+  it('uses local calendar days across daylight saving time', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 2, 28, 10))
+    expect(
+      taskSnoozeMenuChoices([])
+        .find((choice) => choice.id === 'tomorrow-morning')!
+        .until(),
+    ).toBe(new Date(2026, 2, 29, 9).toISOString())
+  })
+  it('validates times, weekdays and unique enabled shortcuts, allowing all disabled', () => {
+    expect(parseTaskSnoozeSchedule({ ...defaultTaskSnoozeSchedule, presets: [] })).toMatchObject({
+      presets: [],
+    })
+    for (const invalid of [
+      { morningTime: '25:00' },
+      { eveningTime: '9:00' },
+      { weekStartsOn: 7 },
+      { presets: ['next-week', 'next-week'] },
+      { presets: ['unknown'] },
+    ])
+      expect(() => parseTaskSnoozeSchedule({ ...defaultTaskSnoozeSchedule, ...invalid })).toThrow(
+        'Use 24-hour times',
+      )
+  })
 })

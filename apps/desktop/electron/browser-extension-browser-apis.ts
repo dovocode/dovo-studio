@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { dialog, type BrowserWindow } from 'electron'
 import { createBrowserHistory } from './browser-history.js'
-import { createBrowserDownloads } from './browser-downloads.js'
+import { browserDownloads } from './browser-downloads.js'
 import { createBrowserIdentity } from './browser-identity.js'
 
 type Event = { extension: Pick<Electron.Extension, 'id' | 'name'> }
@@ -99,7 +99,8 @@ export function attachExtensionBrowserAPIs(
       if (allowed({ extension }, permission)) router.sendEvent(extension.id, name, value)
   }
   const history = createBrowserHistory(options.profileId, emit)
-  const downloads = createBrowserDownloads(options.session, options.profileId, emit)
+  const downloads = browserDownloads(options.session, options.profileId)
+  const unsubscribeDownloads = downloads.subscribe(emit)
   const identity = createBrowserIdentity(options.session)
   const handle = (name: string, callback: Handler, permission = name.split('.')[0]!) => {
     router.apiHandler()(
@@ -184,7 +185,7 @@ export function attachExtensionBrowserAPIs(
     dispose() {
       identity.dispose()
       history.dispose()
-      downloads.dispose()
+      unsubscribeDownloads()
     },
   }
 }

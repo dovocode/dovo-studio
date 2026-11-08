@@ -5,6 +5,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
+  DialogFooter,
   IconButton,
 } from '@dovo/studio-ui'
 import { Archive, Trash2 } from 'lucide-react'
@@ -24,6 +25,7 @@ export function DraftStash(props: {
   focus: () => void
   hasAttachments: boolean
   disabled?: boolean
+  showLabel?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<StashedDraft[]>([])
@@ -92,7 +94,9 @@ export function DraftStash(props: {
       <IconButton
         label="Stashed drafts"
         type="button"
-        className="size-7"
+        className={
+          props.showLabel ? 'h-10 w-full justify-start gap-2 px-3 text-sm font-normal' : 'size-7'
+        }
         disabled={props.disabled || !props.scope}
         onClick={() => {
           setOpen(true)
@@ -100,6 +104,7 @@ export function DraftStash(props: {
         }}
       >
         <Archive className="size-3.5" />
+        {props.showLabel && 'Stashed drafts'}
       </IconButton>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -122,12 +127,6 @@ export function DraftStash(props: {
               Remove attachments before stashing or restoring a text draft.
             </p>
           )}
-          <Button
-            disabled={busy || props.disabled || props.hasAttachments || !props.getText().trim()}
-            onClick={() => void save()}
-          >
-            Stash current text
-          </Button>
           <div className="max-h-[50vh] space-y-2 overflow-y-auto">
             {!busy && !entries.length && (
               <p className="text-sm text-muted-foreground">No stashed drafts yet.</p>
@@ -176,6 +175,22 @@ export function DraftStash(props: {
               {error}
             </p>
           )}
+          {!props.hasAttachments && !props.getText().trim() && (
+            <p className="text-xs text-muted-foreground">
+              Write a message in the composer to stash it here.
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+            <Button
+              disabled={busy || props.disabled || props.hasAttachments || !props.getText().trim()}
+              onClick={() => void save()}
+            >
+              Stash current text
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

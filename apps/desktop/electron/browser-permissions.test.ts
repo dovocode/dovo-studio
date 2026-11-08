@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, rm, readdir } from 'node:fs/promises'
+import { mkdtemp, rm, readdir, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 const state = vi.hoisted(() => ({ root: '' }))
@@ -114,4 +114,54 @@ it('persists common API settings by origin and profile with explicit automatic P
   expect(browserPermissions('work').site(origin).permissions['idle-detection']).toBe('allow')
   expect(browserPermissions('personal').site(origin).permissions['idle-detection']).toBe('ask')
   expect(work.site('https://other.example').permissions['idle-detection']).toBe('ask')
+})
+
+it('records actual requests without turning defaults into requested permissions', () => {
+  const origin = 'http://lan.example:3000'
+  const work = browserPermissions('work')
+  expect(work.site(origin).requested).toEqual([])
+  expect(work.site(origin).permissions['screen-wake-lock']).toBe('allow')
+  work.recordRequest(origin, 'microphone', 'clipboard-read')
+  work.recordRequest(origin, 'microphone')
+  expect(browserPermissions('work').site(origin).requested).toEqual([
+    'microphone',
+    'clipboard-read',
+  ])
+  expect(work.site(origin).permissions.microphone).toBe('ask')
+  work.setSite(origin, 'microphone', 'block')
+  work.setSite(origin, 'microphone', 'ask')
+  expect(work.site(origin).requested).toEqual(['microphone', 'clipboard-read'])
+  expect(work.site('https://other.example').requested).toEqual([])
+  expect(browserPermissions('personal').site(origin).requested).toEqual([])
+})
+
+it('keeps existing site choices and legacy grants visible without exposing unused defaults', async () => {
+  const origin = 'https://meet.example'
+  await mkdir(join(state.root, 'browser-permissions'))
+  await writeFile(
+    join(state.root, 'browser-permissions', 'work.json'),
+    JSON.stringify({
+      helpers: [],
+      notifications: { [origin]: false },
+      media: { [origin]: { audio: true, video: false } },
+      sites: { [origin]: { geolocation: 'block' } },
+      devices: { [origin]: ['usb:remembered-device'] },
+    }),
+  )
+  expect(browserPermissions('work').site(origin).requested).toEqual([
+    'notifications',
+    'microphone',
+    'geolocation',
+    'usb',
+  ])
+})
+
+it('forgets private request history on close without writing to disk', async () => {
+  const id = 'private-00000000-0000-4000-8000-000000000002'
+  const origin = 'https://meet.example'
+  browserPermissions(id).recordRequest(origin, 'camera')
+  expect(browserPermissions(id).site(origin).requested).toEqual(['camera'])
+  expect(await readdir(state.root)).toEqual([])
+  forgetPrivateBrowserPermissions(id)
+  expect(browserPermissions(id).site(origin).requested).toEqual([])
 })

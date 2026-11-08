@@ -112,6 +112,72 @@ it('refreshes a discovered project icon without relying on workspace revisions',
   expect(snapshotTag(next)).not.toBe(snapshotTag(first))
 })
 
+it('keeps shared presentation through identity failures and does not migrate a legacy icon after retargeting', async () => {
+  const { runtime, available } = await setup()
+  available.mockResolvedValue(undefined)
+  const s = runtime.services
+  const icon = 'data:image/png;base64,YQ=='
+  const identity = 'github.com/team/app'
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      {
+        id: 'app',
+        name: 'local-clone',
+        path: '/tmp/shared-project',
+        branch: 'main',
+        gitIdentity: identity,
+        iconOverride: icon,
+      },
+    ],
+  }))
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: {
+        environment: {},
+        shared: [
+          {
+            key: `project:${identity}`,
+            updatedAt: 1,
+            changeId: 'reset',
+            value: { projectName: 'Customer Portal', projectIcon: null },
+          },
+        ],
+      },
+    },
+    false,
+  )
+  const cached = vi.spyOn(s.git, 'cachedRepositoryIdentity').mockReturnValue(undefined)
+  cleanup.push(() => cached.mockRestore())
+  const read = () => Effect.runPromise(runtimeSnapshot(s, { id: 'owner', owner: true }))
+  expect((await read()).workspace.repositories[0]).toMatchObject({
+    name: 'Customer Portal',
+    localName: 'local-clone',
+    iconOverride: undefined,
+    gitIdentity: undefined,
+  })
+  cached.mockImplementation(() => Promise.reject(new Error('Unavailable')))
+  expect((await read()).workspace.repositories[0]).toMatchObject({
+    name: 'Customer Portal',
+    iconOverride: undefined,
+    gitIdentityError: expect.any(String),
+  })
+  expect((await read()).workspace.repositories[0].name).toBe('Customer Portal')
+  cached.mockResolvedValue('github.com/team/different')
+  const retargeted = (await read()).workspace.repositories[0]
+  expect(retargeted).toMatchObject({
+    name: 'local-clone',
+    gitIdentity: 'github.com/team/different',
+    iconOverride: undefined,
+  })
+  await read()
+  expect(s.defaults.get().scopedSettings?.shared.map((entry) => entry.key)).toEqual([
+    `project:${identity}`,
+  ])
+  expect(s.store.get().repositories[0].iconOverride).toBeUndefined()
+})
+
 function conversation(): Task {
   return {
     id: 'thread',

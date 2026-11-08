@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core': `
     import {createContext,useContext,useState} from 'react';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
     import {decode,runtimeDefaultsSchema,defaultTaskHarness} from '@dovo/protocol';
     import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
     // This navigation fixture has no active remote desktop sessions.
@@ -19,9 +20,9 @@ const mocks = {
     export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{children}</Host.Provider>;
     export const useStudioHost=()=>useContext(Host);
     export const SettingsTargetProvider=({children})=>children;
-    export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true});
+    export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const updateAppPreferences=()=>{};
-    export const useConfirmSettingsNavigation=()=>()=>window.allowSettings;
+    const confirmSettingsNavigation=()=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : Promise.resolve(window.allowSettings);export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
     export function WorkspaceProvider({children}) {
       const [runtimeId,setRuntimeId]=useState('mac');
       const [defaults,setDefaults]=useState(null);
@@ -38,7 +39,7 @@ const mocks = {
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;
     }
   `,
-  '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
+  '@dovo/studio-ui': `export {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
   // Pair registration has its own browser suite; this fixture tests thread navigation.
   './studio-paired-computers-bridge': 'export const StudioPairedComputersBridge=()=>null;',
   // External-link destinations are covered by check-browser-profile-settings-browser.mjs.
@@ -50,11 +51,13 @@ const mocks = {
   './task-notifications': 'export const useTaskNotifications=open=>{window.notify=open;return {}};',
   './extension-catalog':
     'export const createExtensionCatalog=extensions=>({views:extensions.flatMap(e=>e.views),host:{dispose:async()=>{}}});',
+  // Workspace mode visibility is covered by activity-bar.test.ts; this fixture keeps modes visible.
   './activity-bar':
-    'export const ActivityBar=({views,onSelect})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}</nav>;',
+    'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export const ActivityBar=({views,onSelect,onDetachBrowser})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}{onDetachBrowser&&<button onClick={onDetachBrowser}>Detach browser</button>}</nav>;',
   './settings-nav': 'export const SettingsNav=()=>null;',
   './title-bar': 'export const TitleBar=()=>null;',
-  './command-palette': 'export const CommandPalette=()=>null;',
+  './command-palette':
+    'export const CommandPalette=({open})=>open?<div role="dialog" aria-label="Command palette" tabIndex={0}>Palette</div>:null;',
   './task-launcher': 'export const TaskLauncher=()=>null;',
 }
 const built = await build({
@@ -62,17 +65,19 @@ const built = await build({
     resolveDir: root + 'packages/studio-ui',
     loader: 'tsx',
     contents: `
-      import {useSyncExternalStore} from 'react';import {createRoot} from 'react-dom/client';
+      import {useEffect,useState,useSyncExternalStore} from 'react';import {createRoot} from 'react-dom/client';
       import {Workbench} from '../studio-shell/src/workbench';
+      import {TerminalCloseDialog} from '../extension-tasks/src/terminal/terminal-close-dialog';
       import {useStudioHost,useWorkspace} from '@dovo/studio-core';
       import {useComposerDraft} from '../extension-tasks/src/chat/composer/use-composer-draft';
       window.allowSettings=true;
       function Composer({task}){const {controller,update}=useComposerDraft(task);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={text} onChange={e=>update(e.target.value)}/>;}
-      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output>{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
+      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const [closing,setClosing]=useState(false);const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output><button onClick={()=>setClosing(true)}>Close terminal tab</button>{closing&&<TerminalCloseDialog labels={['Terminal 1']} onCancel={()=>setClosing(false)} onConfirm={()=>setClosing(false)} onRestoreFocus={()=>document.querySelector('[aria-label="Message"]')?.focus()}/ >}{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
       function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
+      function Browser(){const {registerCommand,navigate}=useStudioHost();useEffect(()=>registerCommand({id:'browser.detach',title:'Detach browser',run:()=>{window.detachCalls=(window.detachCalls||0)+1;navigate({viewId:'tasks'})}}),[registerCommand,navigate]);return <p>Embedded browser</p>;}
       function Settings(){return <p>Settings section</p>;}
-      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'settings',title:'Settings',navigationGroup:'settings',order:2,load:async()=>({default:Settings})}]}];
-      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions}/>);window.restart();
+      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
+      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} openBrowserWindow={async()=>{}} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
     `,
   },
   bundle: true,
@@ -116,6 +121,27 @@ try {
       .getByRole('button', { name, exact: true })
       .click()
   await selected('fresh')
+  for (const modifier of ['Control', 'Meta']) {
+    await page.getByRole('button', { name: 'Close terminal tab' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Close terminal?' })
+    await dialog.waitFor()
+    await dialog.getByRole('button', { name: 'Cancel' }).focus()
+    await page.keyboard.press(`${modifier}+/`)
+    await dialog.waitFor()
+    assert.equal(await page.locator('#selected').textContent(), 'fresh')
+    await page.keyboard.press(`${modifier}+k`)
+    assert.equal(await page.getByRole('dialog', { name: 'Command palette' }).count(), 0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+    await page.keyboard.press(`${modifier}+/`)
+    await page.getByText('Shortcuts section', { exact: true }).waitFor()
+    await section('Threads')
+    await selected('fresh')
+  }
+  await page.keyboard.press('Control+k')
+  await page.getByRole('dialog', { name: 'Command palette' }).waitFor()
+  await page.keyboard.press('Control+k')
+  assert.equal(await page.getByRole('dialog', { name: 'Command palette' }).count(), 0)
   const setupBar = page.getByRole('button', { name: 'Set up defaults', exact: true })
   await page.evaluate(() => window.configureDefaults({}))
   await setupBar.waitFor()
@@ -177,9 +203,37 @@ try {
   })
   await section('Threads')
   await page.getByText('Settings section', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.host.goBack()),
+    true,
+    'Canceled Back is handled and must not trigger a caller fallback',
+  )
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.notify({ runtimeId: 'remote', viewId: 'tasks', entityId: 'remote-a' }),
+  )
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  assert.notEqual(
+    await page.evaluate(() => window.finishedSwitchId),
+    'remote',
+    'Canceled notification must not switch computers',
+  )
   await page.evaluate(() => {
     window.allowSettings = true
+    window.holdSettings = true
   })
+  await section('PRs')
+  await page.waitForFunction(() => !!window.finishSettings)
+  await page.evaluate(() => (window.holdSettings = false))
+  await section('Shortcuts')
+  await page.getByText('Shortcuts section', { exact: true }).waitFor()
+  await page.evaluate(() => window.finishSettings(true))
+  await page.getByText('Shortcuts section', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByText('PR section', { exact: true }).count(),
+    0,
+    'An older accepted decision must preserve newer navigation',
+  )
   await section('Threads')
   await selected('mac-a')
   await section('PRs')
@@ -255,6 +309,61 @@ try {
   )
   await page.evaluate(() => window.restart())
   await selected('fresh')
+  await page.evaluate(() => {
+    window.detachedBrowser = true
+  })
+  await section('Browser')
+  await page.waitForFunction(() => window.browserFocusCalls > 0)
+  await selected('fresh')
+  assert.equal(
+    await page.getByText('Embedded browser', { exact: true }).count(),
+    0,
+    'Detached focus preserves the Threads view',
+  )
+  await page.evaluate(() => {
+    window.detachedBrowser = false
+  })
+  await section('Browser')
+  await page.getByText('Embedded browser', { exact: true }).waitFor()
+  await section('Threads')
+  await selected('fresh')
+  await page.evaluate(() => {
+    window.holdBrowserFocus = true
+  })
+  await section('Browser')
+  await page.waitForFunction(() => typeof window.finishBrowserFocus === 'function')
+  await section('PRs')
+  await page.evaluate(() => {
+    window.holdBrowserFocus = false
+    window.finishBrowserFocus()
+  })
+  await page.getByText('PR section', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByText('Embedded browser', { exact: true }).count(),
+    0,
+    'Late browser response preserves newer navigation',
+  )
+  // Detach requests from another section wait for the browser's command to mount.
+  await page.getByRole('button', { name: 'Detach browser', exact: true }).click()
+  await page.waitForFunction(() => window.detachCalls === 1)
+  await selected('fresh')
+  await section('Settings')
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.allowSettings = false
+  })
+  await page.getByRole('button', { name: 'Detach browser', exact: true }).click()
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.allowSettings = true
+  })
+  await section('Browser')
+  await page.getByText('Embedded browser', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.detachCalls),
+    1,
+    'Cancelled navigation must not detach later',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Actual workbench navigation restores thread and real composer drafts across sections, keeps computer selections separate, respects settings cancellation and preserves fresh startup/New thread.',

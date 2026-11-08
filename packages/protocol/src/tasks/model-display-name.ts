@@ -1,6 +1,9 @@
-/** Catalogue names are authoritative; only prettify recognizable raw model identifiers. */
+/** Keep catalogue labels, with compact OpenAI names; IDs are never changed. */
 export function modelDisplayName(id: string, name?: string) {
-  if (name && name !== id) return name
+  if (name && name !== id)
+    return name
+      .replace(/^(?:GPT[- ]?)(?=\d)/i, '')
+      .replace(/^(\d[^ ]*)-(Sol|Astra|Luna)\b/i, '$1 $2')
   const claude = id.replace(
     /(^|\/)claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-\d{8})?$/i,
     (_match, prefix: string, family: string, major: string, minor: string) =>
@@ -9,6 +12,6 @@ export function modelDisplayName(id: string, name?: string) {
   return claude.replace(
     /(^|\/)gpt-(\d[^/]+)/i,
     (_match, prefix: string, suffix: string) =>
-      `${prefix}GPT-${suffix.replace(/(^|-)([a-z])/g, (_match, separator: string, letter: string) => `${separator}${letter.toUpperCase()}`)}`,
+      `${prefix}${suffix.replace(/-([a-z])/g, (_match, letter: string) => ` ${letter.toUpperCase()}`)}`,
   )
 }

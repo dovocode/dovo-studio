@@ -13,6 +13,8 @@ import type {
   RuntimeMutationStatus,
   Task,
   WorkspacePatchResult,
+  MutationOutbox,
+  Attachment,
 } from '@dovo/protocol'
 import type { TaskPreview } from '../state/optimistic-tasks'
 
@@ -21,6 +23,7 @@ type Call = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Promise<T['Type']>
 type RuntimeRead = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
@@ -28,12 +31,14 @@ type RuntimeRead = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Promise<T['Type']>
 type CallEffect = <T extends Schema.Codec<unknown, unknown>>(
   path: string,
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Effect.Effect<T['Type'], Error>
 type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
@@ -41,6 +46,7 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Effect.Effect<T['Type'], Error>
 
 export type Runtime = {
@@ -75,6 +81,7 @@ export type Runtime = {
     name?: string,
     proof?: PairingProof,
     replaceId?: string,
+    claimAddress?: string,
   ) => Effect.Effect<void, Error>
   selectRuntimeEffect: (id: string) => Effect.Effect<void, Error>
   forgetRuntimeEffect: (id: string) => Effect.Effect<void, Error>
@@ -95,6 +102,7 @@ export type Runtime = {
     name?: string,
     proof?: PairingProof,
     replaceId?: string,
+    claimAddress?: string,
   ) => Promise<void>
   selectRuntime: (id: string) => Promise<void>
   forgetRuntime: (id: string) => Promise<void>
@@ -118,6 +126,17 @@ export type Runtime = {
     actionId?: string,
   ) => Promise<void>
   discardMutations: (profile: RuntimeProfile, actionId?: string) => Promise<void>
+  attachmentUploads: (profile: RuntimeProfile) => MutationOutbox
+  attachmentPendingEffect: (profile: RuntimeProfile, id: string) => Effect.Effect<boolean, Error>
+  requestAttachmentEffect: (
+    profile: RuntimeProfile,
+    input: unknown,
+    replacement: boolean,
+  ) => Effect.Effect<{ attachment: Attachment; revision: number }, Error>
+  finishAttachmentEffect: (profile: RuntimeProfile, id: string) => Effect.Effect<void, Error>
+  reviewAttachments: (profile: RuntimeProfile) => void
+  recoverAttachment: (profile: RuntimeProfile, id: string) => Promise<void>
+  discardAttachment: (profile: RuntimeProfile, id: string) => Promise<void>
   read: Call
   readRuntime: RuntimeRead
   cacheForRuntime: (profile: RuntimeProfile) => RuntimeReadCache

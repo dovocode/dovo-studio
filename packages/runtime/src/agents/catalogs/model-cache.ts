@@ -25,7 +25,8 @@ const sorted = (values: Record<string, string> | undefined) =>
 /** Capture the effective launch/account configuration; only its digest can reach SQLite. */
 export function configuredModelCatalogKey(
   input: AgentDiscovery,
-  registry: Pick<AgentRegistry, 'configure' | 'launch'>,
+  registry: Pick<AgentRegistry, 'configure' | 'launch'> &
+    Partial<Pick<AgentRegistry, 'secretGeneration'>>,
   installations: readonly AcpInstallation[] = [],
 ): string {
   const agent = modelDiscoveryInput(registry.configure(input))
@@ -38,6 +39,7 @@ export function configuredModelCatalogKey(
     .update(
       JSON.stringify([
         agent,
+        agent.envSecrets ? (registry.secretGeneration ?? 0) : 0,
         launch ? { command: launch.command, args: launch.args, env: sorted(launch.env) } : null,
         installation
           ? [installation.version, installation.installedAt, !!installation.needsRepair]

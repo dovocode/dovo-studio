@@ -1,6 +1,6 @@
 import { SettingsAnchor } from './settings-search'
 import { Field } from '../ui/controls/field'
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { Platform, Pressable, View, useWindowDimensions } from 'react-native'
 import { Choice, type ChoiceProps } from '../ui/controls/choice'
 import { SearchField } from '../ui/controls/field'
@@ -23,26 +23,22 @@ function SettingsChoiceControl(props: ChoiceProps) {
   const theme = useTheme()
   const { width, fontScale } = useWindowDimensions()
   const insideSheet = useInsideSheet()
+  const [containerWidth, setContainerWidth] = useState<number | null>(null)
   if (!settings) return <Choice {...props} />
   // Searchable choices expand inline in an editor. Give their options the full row width.
-  if (insideSheet && !(Platform.OS === 'ios' && props.items.length > 0 && props.items.length <= 12))
-    return (
-      <MobileThemeContext.Provider
-        value={{ ...theme, colors: { ...theme.colors, accent: theme.colors.muted } }}
-      >
-        <Choice {...props} row={!props.hideLabel} compact={false} />
-      </MobileThemeContext.Provider>
-    )
-  const horizontal = fontScale < 1.5 && width / fontScale >= 360
+  const inlineOptions =
+    insideSheet && !(Platform.OS === 'ios' && props.items.length > 0 && props.items.length <= 12)
+  const horizontal =
+    !inlineOptions && fontScale < 1.5 && (containerWidth ?? width) / fontScale >= 360
   return (
-    <View style={{ backgroundColor: theme.colors.surface, borderRadius: 20, overflow: 'hidden' }}>
+    <View onLayout={({ nativeEvent }) => setContainerWidth(nativeEvent.layout.width)}>
       <View
         style={{
           flexDirection: horizontal ? 'row' : 'column',
           alignItems: horizontal ? 'center' : 'stretch',
           minHeight: 48,
-          paddingHorizontal: 16,
-          paddingVertical: 2,
+          paddingHorizontal: 12,
+          paddingTop: horizontal || props.hideLabel ? 0 : 10,
           gap: 8,
         }}
       >
@@ -63,7 +59,14 @@ function SettingsChoiceControl(props: ChoiceProps) {
               colors: { ...theme.colors, accent: theme.colors.muted, text: theme.colors.muted },
             }}
           >
-            <Choice {...props} row={false} hideLabel compact={false} />
+            <Choice
+              {...props}
+              row={false}
+              hideLabel
+              compact={false}
+              quiet
+              alignValue={horizontal ? 'trailing' : 'leading'}
+            />
           </MobileThemeContext.Provider>
         </View>
       </View>
@@ -82,17 +85,8 @@ export function SettingsField(props: ComponentProps<typeof Field>) {
 
 export function SettingsSearchField(props: ComponentProps<typeof SearchField>) {
   const settings = useInsideSettings()
-  const theme = useTheme()
-  const { colors } = theme
-  if (!settings || theme.highContrast) return <SearchField {...props} />
-  // The existing search control is reused inside a borderless settings surface.
-  return (
-    <MobileThemeContext.Provider
-      value={{ ...theme, colors: { ...colors, border: colors.surface } }}
-    >
-      <SearchField {...props} />
-    </MobileThemeContext.Provider>
-  )
+  if (!settings) return <SearchField {...props} />
+  return <SearchField {...props} style={[{ fontSize: 14 }, props.style]} />
 }
 
 /** Editor actions must remain readable, including save, retry and destructive actions. */
@@ -117,15 +111,15 @@ export function SettingsAction(props: ComponentProps<typeof Action>) {
         justifyContent: 'center',
         paddingHorizontal: props.secondary ? 0 : 16,
         paddingVertical: 8,
-        borderRadius: 16,
+        borderRadius: 10,
         backgroundColor: props.secondary ? 'transparent' : danger ? colors.error : colors.action,
         opacity: props.disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
       <Text
         style={{
-          fontSize: 16,
-          lineHeight: 22,
+          fontSize: 14,
+          lineHeight: 20,
           fontWeight: '600',
           textAlign: props.wide ? 'center' : 'left',
           color: props.secondary

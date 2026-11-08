@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-core': `export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:()=>{}});export const useWorkspace=()=>({activeRuntimeId:'a',runtimes:[],request:async()=>({})});export const WorkspaceRuntimeScope=({runtimeId,children})=><section data-owner={runtimeId}>{children}</section>;export const repositorySourceKey=(a,b)=>JSON.stringify([a,b]);export const formatDateTime=v=>v;`,
-  '@dovo/studio-ui': `import {useState} from 'react';export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];export const useCompactLayout=()=>false;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`,
+  '@dovo/studio-ui': `import {useState} from 'react';export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state';export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];export const useCompactLayout=()=>false;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`,
   './work-sources': `export {workRemoteKey,matchesWorkSource} from '${root}packages/extension-scm/src/work/work-source-identity';export const jiraSourceKey=(a,b)=>JSON.stringify([a,'jira',b]);export const useIssueSources=()=>window.sources;`,
   './use-work-sources': `export const useWorkSources=()=>({sources:window.sources,pages:[{source:window.sources[0],reader:window.reader,items:[window.issue],options:{provider:'github',issues:true,pipelineActions:[]}}],busy:false,refresh:()=>{},more:async()=>{}});`,
   './jira-toolbar': `export const JiraToolbar=()=>null;`,
@@ -51,13 +53,72 @@ const root=createRoot(document.getElementById('app'));window.render=()=>root.ren
     },
   ],
 })
+const server = await createServer({
+  configFile: false,
+  root,
+  plugins: [tailwindcss()],
+  server: { middlewareMode: true },
+  logLevel: 'error',
+})
+let css
+try {
+  css = (await server.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+} finally {
+  await server.close()
+}
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.setContent('<div id="app"></div>')
+  await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const connections = page.getByRole('button', { name: 'Connections', exact: true })
+  await connections.waitFor()
+  assert.equal(await connections.locator('svg.lucide-plug').count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'Sources', exact: true }).count(), 0)
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Filters', exact: true })
+      .locator('svg.lucide-sliders-horizontal')
+      .count(),
+    1,
+    'Connection management and list filters have distinct controls',
+  )
+  const issueState = page
+    .getByRole('button', { name: /Fix issue/ })
+    .locator('.studio-collection-status')
+  await issueState.getByText('Open', { exact: true }).waitFor()
+  const issueStates = page.getByRole('group', { name: 'Issue states', exact: true })
+  assert.deepEqual(await issueStates.getByRole('button').allTextContents(), [
+    'All states',
+    'Open',
+    'Closed',
+  ])
+  const openColor = await issueState.evaluate((node) => getComputedStyle(node).color)
+  assert.equal(await issueState.locator('svg.lucide-circle-dot[aria-hidden="true"]').count(), 1)
+  await page.evaluate(() => {
+    window.issue.state = 'closed'
+    window.render()
+  })
+  await issueState.getByText('Closed', { exact: true }).waitFor()
+  assert.deepEqual(
+    await issueStates.getByRole('button').allTextContents(),
+    ['All states', 'Open', 'Closed'],
+    'Issue state filters retain order when loaded rows change',
+  )
+  assert.equal(await issueState.locator('svg.lucide-circle-check[aria-hidden="true"]').count(), 1)
+  assert.notEqual(
+    await issueState.evaluate((node) => getComputedStyle(node).color),
+    openColor,
+    'Closed issues use a distinct semantic color',
+  )
+  await page.evaluate(() => {
+    window.issue.state = 'open'
+    window.render()
+  })
+  await issueState.getByText('Open', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'New issue', exact: true }).click()
   await page.getByRole('textbox', { name: 'Issue draft' }).fill('Keep offline issue draft')
   await page.evaluate(() => {
@@ -76,6 +137,7 @@ try {
     'Create owner remains pinned through handoff',
   )
   await page.getByRole('button', { name: 'Close form', exact: true }).click()
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
   await page
     .getByRole('combobox', { name: 'Issue source', exact: true })
     .selectOption(JSON.stringify(['a', 'a-repo']))
@@ -100,6 +162,7 @@ try {
     window.mount = 1
     window.render()
   })
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
   assert.equal(
     await page.getByRole('combobox', { name: 'Issue source', exact: true }).inputValue(),
     JSON.stringify(['a', 'a-repo']),

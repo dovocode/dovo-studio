@@ -107,6 +107,7 @@ export default function PullsScreen() {
     setAttention(false)
   }
   const [filters, setFilters] = useApplicationState(false)
+  const [sourceStatus, setSourceStatus] = useApplicationState(false)
   const { pages, sources, busy, connected, more, refresh, chooseSource } = usePulls(
     repositoryId,
     state,
@@ -360,22 +361,33 @@ export default function PullsScreen() {
                 ]}
               />
             </View>
-            {failedPages.map((page) => (
-              <View key={page.sourceKey} style={{ paddingVertical: 8, gap: 4 }}>
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {page.name} · {page.runtimeName}: {page.error}
-                </Text>
-                {!page.readConnected && (
-                  <Text style={styles.muted}>Reconnect this source to retry.</Text>
-                )}
-                <Action
-                  secondary
-                  label={`Retry · ${page.name} · ${page.runtimeName}`}
-                  disabled={busy || !page.readConnected}
-                  onPress={() => void more(page.sourceKey)}
-                />
-              </View>
-            ))}
+            {!!failedPages.length && (
+              <Action
+                secondary
+                label={`Sources · ${failedPages.length} pending`}
+                onPress={() => setSourceStatus(!sourceStatus)}
+              />
+            )}
+            {sourceStatus &&
+              failedPages.map((page) => (
+                <View key={page.sourceKey} style={{ paddingVertical: 8, gap: 4 }}>
+                  <Text accessibilityRole="alert" style={styles.error}>
+                    {page.name} · {page.runtimeName}: {page.error}
+                  </Text>
+                  {!sources.some((source) => source.key === page.sourceKey && source.connected) && (
+                    <Text style={styles.muted}>Reconnect this source to retry.</Text>
+                  )}
+                  <Action
+                    secondary
+                    label={`Retry · ${page.name} · ${page.runtimeName}`}
+                    disabled={
+                      busy ||
+                      !sources.some((source) => source.key === page.sourceKey && source.connected)
+                    }
+                    onPress={refresh}
+                  />
+                </View>
+              ))}
           </View>
         }
         data={pulls}
@@ -447,8 +459,13 @@ export default function PullsScreen() {
                 ? colors.selection
                 : undefined,
               paddingVertical: 12,
-              borderBottomWidth: 0.5,
-              borderBottomColor: colors.border,
+              paddingHorizontal: 10,
+              marginVertical: 3,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: marked.includes(`${p.sourceKey}-${p.number}`)
+                ? colors.accent
+                : 'transparent',
               opacity: pressed ? 0.55 : 1,
             })}
           >
@@ -464,19 +481,10 @@ export default function PullsScreen() {
                 <PullRequestIcon state={p.state} draft={p.draft} size={14} />
                 <Signal signal={pullState(p)} emphasis />
               </View>
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.muted,
-                  {
-                    flex: 1,
-                    minWidth: 0,
-                  },
-                ]}
-              >
+              <Text style={[styles.muted, { flexShrink: 0 }]}>#{p.number}</Text>
+              <Text numberOfLines={1} style={[styles.muted, { flex: 1, minWidth: 0 }]}>
                 {p.repositoryName}
               </Text>
-              <Text style={[styles.muted, { flexShrink: 0 }]}>#{p.number}</Text>
               <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>
             </View>
             <View
@@ -578,10 +586,25 @@ export default function PullsScreen() {
               </View>
             )}
             {!!p.labels.length && (
-              <Text numberOfLines={2} style={styles.muted}>
-                {p.labels.slice(0, 3).join(' · ')}
-                {p.labels.length > 3 ? ` · +${p.labels.length - 3} labels` : ''}
-              </Text>
+              <View accessibilityLabel="Labels" style={[styles.row, { flexWrap: 'wrap', gap: 6 }]}>
+                {p.labels.slice(0, 2).map((label) => (
+                  <View
+                    key={label}
+                    style={{
+                      maxWidth: 160,
+                      borderRadius: 6,
+                      backgroundColor: colors.surface,
+                      paddingHorizontal: 7,
+                      paddingVertical: 3,
+                    }}
+                  >
+                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                      {label}
+                    </Text>
+                  </View>
+                ))}
+                {p.labels.length > 2 && <Text style={styles.muted}>+{p.labels.length - 2}</Text>}
+              </View>
             )}
             {p.state === 'open' && !p.draft && <Signal signal={pullNextStep(p)} />}
           </Pressable>
@@ -599,7 +622,7 @@ export default function PullsScreen() {
               icon="pulls"
               title={
                 unavailable
-                  ? 'Couldn’t load pull requests'
+                  ? 'Waiting for project sources'
                   : filtersActive
                     ? 'No matching pull requests'
                     : connected
@@ -608,9 +631,9 @@ export default function PullsScreen() {
               }
               description={
                 unavailable
-                  ? 'Retry the sources above, or reconnect their computers.'
+                  ? 'Sources refresh automatically. Pull down to check again.'
                   : failedPages.length
-                    ? 'No matches in the available results. Retry the sources above to check the rest.'
+                    ? 'No matches in the available results.'
                     : filtersActive
                       ? 'Try another search or clear your filters.'
                       : connected
@@ -631,6 +654,11 @@ export default function PullsScreen() {
           >
             {pages.map((page) => (
               <View key={page.sourceKey}>
+                {page.paginationNotice && (
+                  <Text style={styles.muted}>
+                    {page.name} · {page.paginationNotice}
+                  </Text>
+                )}
                 {page.hasMore && !page.error && (
                   <Action
                     secondary

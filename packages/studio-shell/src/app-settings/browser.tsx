@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import {
   runtimeComputerName,
   browserLanguageSchema,
@@ -20,7 +21,7 @@ import {
 } from '@dovo/studio-core'
 import type { BrowserProfile } from '@dovo/protocol'
 import { Button, Input, ChoicePicker } from '@dovo/studio-ui'
-import { SettingsPage, SettingsGroup, SettingRow } from './layout'
+import { SettingsPage, SettingsGroup, SettingRow, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
 const profileEmojis = [
   ['💼', 'Work'],
@@ -127,6 +128,8 @@ function ProfileName({
   const [name, setName] = useState(profile.name)
   const [emoji, setEmoji] = useState(profile.emoji ?? '')
   const [language, setLanguage] = useState(profile.language ?? 'en-US')
+  const [doNotTrack, setDoNotTrack] = useState(profile.doNotTrack === true)
+  const [keepSessionCookies, setKeepSessionCookies] = useState(profile.keepSessionCookies === true)
   const [engine, setEngine] = useState<BrowserSearchEngine['engine']>(
     profile.search?.engine ?? 'google',
   )
@@ -151,7 +154,7 @@ function ProfileName({
   return (
     <form
       aria-label={`Browser profile ${profile.name}`}
-      className="flex flex-wrap items-center gap-2"
+      className="studio-browser-profile-fields flex flex-wrap items-center gap-2"
       onSubmit={(event) => {
         event.preventDefault()
         if (validLanguage && validDomains && validSearch)
@@ -162,6 +165,8 @@ function ProfileName({
             linkDomains,
             emoji: emoji || undefined,
             search,
+            keepSessionCookies,
+            doNotTrack,
           })
       }}
     >
@@ -185,14 +190,16 @@ function ProfileName({
           ))}
         </ChoicePicker>
       </label>
-      <Input
-        className="min-w-0 flex-1 basis-36"
-        aria-label={`Name for ${profile.name}`}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        maxLength={100}
-        disabled={disabled}
-      />
+      <label className="flex min-w-0 flex-1 basis-36 flex-col gap-1 text-xs text-muted-foreground">
+        Profile name
+        <Input
+          aria-label={`Name for ${profile.name}`}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={100}
+          disabled={disabled}
+        />
+      </label>
       <label className="flex min-w-0 flex-1 basis-36 flex-col gap-1 text-xs text-muted-foreground">
         Website language
         <Input
@@ -257,6 +264,36 @@ function ProfileName({
           />
         </label>
       )}
+      <label className="flex basis-full items-start gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          aria-label={`Send Do Not Track for ${profile.name}`}
+          checked={doNotTrack}
+          disabled={disabled}
+          onChange={(event) => setDoNotTrack(event.target.checked)}
+        />
+        <span>
+          Send Do Not Track
+          <span className="block">
+            Ask websites not to track your browsing. Websites decide whether to honor this request.
+          </span>
+        </span>
+      </label>
+      <label className="flex basis-full items-start gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          aria-label={`Keep signed in across restarts for ${profile.name}`}
+          checked={keepSessionCookies}
+          disabled={disabled}
+          onChange={(event) => setKeepSessionCookies(event.target.checked)}
+        />
+        <span>
+          Keep signed in across restarts
+          <span className="block">
+            Retain session cookies. Websites can still require you to sign in again.
+          </span>
+        </span>
+      </label>
       <Button
         title={`Save name for ${profile.name}`}
         size="sm"
@@ -270,6 +307,8 @@ function ProfileName({
           (name.trim() === profile.name &&
             emoji === (profile.emoji ?? '') &&
             language === (profile.language ?? 'en-US') &&
+            doNotTrack === (profile.doNotTrack === true) &&
+            keepSessionCookies === (profile.keepSessionCookies === true) &&
             domains === (profile.linkDomains ?? []).join(', ') &&
             unchangedSearch)
         }
@@ -305,6 +344,7 @@ function Profiles({
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const confirm = useConfirmation(JSON.stringify([profiles, disabled, busy]))
   const update = async (next: BrowserProfile[], added = false) => {
     if (busy || disabled) return
     setBusy(true)
@@ -332,18 +372,22 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
+          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.keepSessionCookies}:${profile.doNotTrack}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
           profile={profile}
           routing={routing}
           disabled={disabled || busy}
           onSave={(updated) =>
             void update(profiles.map((item) => (item.id === profile.id ? updated : item)))
           }
-          onRemove={() => {
+          onRemove={async () => {
             if (
-              window.confirm(
-                'Remove this profile from the picker? Its saved website data will remain on this computer.',
-              )
+              await confirm({
+                title: 'Remove browser profile?',
+                description:
+                  'This profile will leave the picker. Its saved website data will remain on this computer.',
+                confirmLabel: 'Remove profile',
+                destructive: true,
+              })
             )
               void update(profiles.filter((item) => item.id !== profile.id))
           }}
@@ -443,7 +487,8 @@ export default function BrowserSettings() {
   return (
     <SettingsPage
       title="Browser"
-      description="Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer."
+      description="Configure previews and browsing profiles. Remote profiles and logins stay on the selected computer."
+      storageInfo={<span>This device · preferences save automatically; profiles use Save</span>}
     >
       <DefaultBrowser />
       <SettingsGroup title="Tab order">
@@ -451,13 +496,10 @@ export default function BrowserSettings() {
           label="Order tabs by activity"
           description="Pinned tabs always keep their manual order. Turn this off to drag other tabs into order."
         >
-          <input
-            type="checkbox"
-            aria-label="Order tabs by activity"
+          <Toggle
+            label="Order tabs by activity"
             checked={preferences.browserSortByActivity}
-            onChange={(event) =>
-              updateAppPreferences({ browserSortByActivity: event.target.checked })
-            }
+            onChange={(checked) => updateAppPreferences({ browserSortByActivity: checked })}
           />
         </SettingRow>
       </SettingsGroup>
@@ -478,7 +520,7 @@ export default function BrowserSettings() {
         </SettingRow>
         <SettingRow
           label="Default viewport"
-          description="Saved on this device. You can change the viewport in each preview."
+          description="You can change the viewport in each preview."
         >
           <SettingsSelect
             label="Default viewport"
@@ -524,7 +566,8 @@ export default function BrowserSettings() {
       {browser && (
         <SettingsGroup
           title="Local browser profiles"
-          description="Used by regular tabs on this desktop. Domain rules also handle links sent from other apps when Dovo is chosen as their browser. Rules preserve private tabs and sign-in popup sessions."
+          saveRequired
+          description="Edit a profile, then choose Save to apply its changes. Used by regular tabs on this desktop. Domain rules also handle links sent from other apps when Dovo is chosen as their browser. Rules preserve private tabs and sign-in popup sessions."
         >
           <div className="space-y-3 p-4">
             <Profiles
@@ -537,6 +580,7 @@ export default function BrowserSettings() {
       )}
       <SettingsGroup
         title="Remote browser profiles"
+        saveRequired={runtime?.connected === true}
         description="Used by remote tabs. Profile names and saved logins stay on the selected computer."
       >
         <div className="space-y-3 p-4">

@@ -37,6 +37,12 @@ it('returns message snippets around the match', () => {
   expect(messageResults([entry('a', 'Auth', long)], 'x')).toEqual([])
 })
 
+it('matches cached history with the runtime word and accent semantics', () => {
+  const entries = [entry('a', 'One', 'Café is open'), entry('b', 'Two', 'A cafe open late')]
+  expect(messageResults(entries, 'open café').map((hit) => hit.entry.key)).toEqual(['a', 'b'])
+  expect(messageResults(entries, '"cafe open"').map((hit) => hit.entry.key)).toEqual(['b'])
+})
+
 it('ranks hits across computers before applying the global cap and keeps identities distinct', () => {
   const old = entry('computer-a:shared', 'Old', 'needle')
   const recent = entry('computer-b:shared', 'Recent', 'needle', {

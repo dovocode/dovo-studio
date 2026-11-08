@@ -1,4 +1,5 @@
 import { useTaskReview } from './use-task-review'
+import { LocalCommitPicker } from './local-commit-picker'
 import { CodeReviewReport, type ReviewTab } from './code-review-report'
 import type { CodeFinding } from '@dovo/protocol'
 import { changedFileFingerprint, createReviewFileLookup, orderReviewFiles } from '@dovo/protocol'
@@ -45,6 +46,7 @@ import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
 type DiffSource =
   | { kind: 'working' | 'branch' | 'latest' }
   | { kind: 'turn' | 'review'; id: string }
+  | { kind: 'commit'; id: string; subject: string }
 function PrimaryReviewPane({
   task,
   onClose,
@@ -61,7 +63,7 @@ function PrimaryReviewPane({
   onReference?: (text: string) => void
 }) {
   const { hideWhitespaceChanges } = useAppPreferences()
-  const { setWorkspace, request, connected, snapshot } = useWorkspace()
+  const { setWorkspace, request, connected, snapshot, activeRuntimeId, connection } = useWorkspace()
   const [selected, setSelected] = useApplicationState(initialFinding?.path ?? '')
   const [focusedFinding, setFocusedFinding] = useApplicationState(initialFinding)
   const [requestedTab, setTab] = useApplicationState<ReviewTab>(initialTab)
@@ -100,6 +102,46 @@ function PrimaryReviewPane({
   const [filesOpen, setFilesOpen] = useApplicationState(false)
   const [refreshBusy, setRefreshBusy] = useApplicationState(false)
   const [source, setSource] = useApplicationState<DiffSource>({ kind: 'working' })
+  const commitSha = source.kind === 'commit' ? source.id : undefined
+  const commitKey = JSON.stringify([
+    activeRuntimeId,
+    connection?.address,
+    connection?.token,
+    task.id,
+    commitSha,
+  ])
+  const [commitResult, setCommitResult] = useApplicationState<{
+    key: string
+    files: ChangedFile[]
+    error: string
+  } | null>(null)
+  const commitDiff = commitResult?.key === commitKey ? commitResult : null
+  const [commitRetry, setCommitRetry] = useApplicationState(0)
+  useEffect(() => {
+    if (!commitSha || !connected) return
+    let active = true
+    setCommitResult(null)
+    void request(
+      '/api/tasks/commits/changes',
+      { id: task.id, sha: commitSha },
+      responses.files,
+    ).then(
+      (result) => {
+        if (active) setCommitResult({ key: commitKey, files: result.files, error: '' })
+      },
+      (error: unknown) => {
+        if (active)
+          setCommitResult({
+            key: commitKey,
+            files: [],
+            error: error instanceof Error ? error.message : String(error),
+          })
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [request, connected, task.id, commitSha, commitKey, commitRetry])
   const [branchRefresh, setBranchRefresh] = useApplicationState(0)
   const [branchDiff, setBranchDiff] = useApplicationState<{
     files: ChangedFile[]
@@ -115,13 +157,15 @@ function PrimaryReviewPane({
         ? turns.find((turn) => turn.id === source.id)
         : undefined
   const sourceFiles =
-    source.kind === 'review'
-      ? (reviewDiff?.files ?? [])
-      : source.kind === 'working'
-        ? task.files
-        : source.kind === 'branch'
-          ? (branchDiff?.files ?? [])
-          : (selectedTurn?.checkpoint?.files ?? [])
+    source.kind === 'commit'
+      ? (commitDiff?.files ?? [])
+      : source.kind === 'review'
+        ? (reviewDiff?.files ?? [])
+        : source.kind === 'working'
+          ? task.files
+          : source.kind === 'branch'
+            ? (branchDiff?.files ?? [])
+            : (selectedTurn?.checkpoint?.files ?? [])
   const visibleFiles = useMemo(
     () =>
       checkpointFiles({
@@ -132,9 +176,12 @@ function PrimaryReviewPane({
             : source.kind === 'branch'
               ? (branchDiff?.omitted ?? [])
               : (selectedTurn?.checkpoint?.omitted ?? []),
-      }).filter((file) => !hideWhitespaceChanges || !whitespaceOnlyFile(file)),
+      }).filter(
+        (file) => file.path === selected || !hideWhitespaceChanges || !whitespaceOnlyFile(file),
+      ),
     [
       hideWhitespaceChanges,
+      selected,
       sourceFiles,
       source.kind,
       branchDiff?.omitted,
@@ -152,12 +199,15 @@ function PrimaryReviewPane({
       kind: 'task',
       taskId: task.id,
       source:
-        source.kind === 'review'
-          ? 'working'
-          : source.kind === 'working' || source.kind === 'branch'
-            ? source.kind
-            : 'turn',
+        source.kind === 'commit'
+          ? 'commit'
+          : source.kind === 'review'
+            ? 'working'
+            : source.kind === 'working' || source.kind === 'branch'
+              ? source.kind
+              : 'turn',
       turnId: selectedTurn?.id,
+      commitSha,
     },
     reviewVersion,
     source.kind !== 'review',
@@ -192,15 +242,24 @@ function PrimaryReviewPane({
     }
   }
   const sourceLabel =
-    source.kind === 'review'
-      ? 'Since last review'
-      : source.kind === 'working'
-        ? 'Working tree'
-        : source.kind === 'branch'
-          ? 'Branch + local edits'
-          : source.kind === 'latest'
-            ? 'Latest turn'
-            : `Turn ${turns.findIndex((turn) => turn.id === (source.kind === 'turn' ? source.id : '')) + 1}`
+    source.kind === 'commit'
+      ? `Commit ${source.id.slice(0, 8)}`
+      : source.kind === 'review'
+        ? 'Since last review'
+        : source.kind === 'working'
+          ? 'Working tree'
+          : source.kind === 'branch'
+            ? 'Branch + local edits'
+            : source.kind === 'latest'
+              ? 'Latest turn'
+              : `Turn ${turns.findIndex((turn) => turn.id === (source.kind === 'turn' ? source.id : '')) + 1}`
+  // Kept out of sourceLabel, which also keys the file rows.
+  const baseLabel =
+    source.kind === 'branch' && branchDiff?.base
+      ? /^[a-f0-9]{40,64}$/.test(branchDiff.base)
+        ? branchDiff.base.slice(0, 8)
+        : branchDiff.base.replace(/^refs\/(heads|remotes)\//, '')
+      : ''
   const refreshBranch = useCallback(async () => {
     try {
       const result = await request(
@@ -290,9 +349,13 @@ function PrimaryReviewPane({
               size="sm"
               className="h-8 gap-1.5 rounded-md bg-muted/50 px-2.5 text-xs font-medium"
               disabled={editing}
-              aria-label={`Diff source: ${sourceLabel}`}
+              aria-label={`Diff source: ${sourceLabel}${baseLabel ? ` since ${baseLabel}` : ''}`}
             >
-              {sourceLabel} <ChevronDown className="size-3.5 text-muted-foreground" />
+              {sourceLabel}
+              {baseLabel && (
+                <span className="max-w-40 truncate text-muted-foreground">since {baseLabel}</span>
+              )}{' '}
+              <ChevronDown className="size-3.5 text-muted-foreground" />
             </Button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
@@ -310,7 +373,7 @@ function PrimaryReviewPane({
               <DropdownMenu.Item
                 className="flex cursor-default items-center rounded px-2 py-2 outline-none focus:bg-accent data-[disabled]:opacity-50"
                 disabled={!connected}
-                title="All changes since the default branch, including local edits"
+                title="All changes since this thread's base branch, including local edits"
                 onSelect={() => chooseSource({ kind: 'branch' })}
               >
                 Branch + local edits{' '}
@@ -359,6 +422,14 @@ function PrimaryReviewPane({
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
+        <LocalCommitPicker
+          taskId={task.id}
+          disabled={editing || !!task.example}
+          onSelect={(commit) => {
+            chooseSource({ kind: 'commit', id: commit.sha, subject: commit.subject })
+            setTab('diff')
+          }}
+        />
         <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
           {files.length} {files.length === 1 ? 'file' : 'files'}
         </span>
@@ -449,6 +520,7 @@ function PrimaryReviewPane({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {filesOpen && (
             <OrganizeReview
+              onOpenFile={chooseFile}
               review={review}
               disabled={editing || !!task.example || source.kind === 'review'}
               onOrganized={() => setRelated(true)}
@@ -481,6 +553,21 @@ function PrimaryReviewPane({
               <DiskActions task={task} file={file} />
             </div>
           )}
+          {source.kind === 'commit' && (
+            <p className="border-b px-3 py-2 text-xs text-muted-foreground">
+              {source.subject} · Read-only changes against the first parent.
+            </p>
+          )}
+          {source.kind === 'commit' && commitDiff?.error && (
+            <div className="border-b px-3 py-2">
+              <p role="alert" className="text-xs text-destructive">
+                {commitDiff.error}
+              </p>
+              <Button size="sm" onClick={() => setCommitRetry((value) => value + 1)}>
+                Retry commit changes
+              </Button>
+            </div>
+          )}
           {(reviewError || branchError) && (
             <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
               {reviewError || branchError}
@@ -502,7 +589,11 @@ function PrimaryReviewPane({
               {file && <ReviewFeedback key={file.path} task={task} file={file} />}
             </div>
           )}
-          {branchLoading && source.kind === 'branch' ? (
+          {source.kind === 'commit' && !commitDiff ? (
+            <p role="status" className="p-4 text-xs text-muted-foreground">
+              Loading commit changes…
+            </p>
+          ) : branchLoading && source.kind === 'branch' ? (
             <p role="status" className="p-4 text-xs text-muted-foreground">
               Loading branch changes…
             </p>
@@ -516,6 +607,7 @@ function PrimaryReviewPane({
                       file={file}
                       taskId={task.id}
                       turnId={selectedTurn?.id}
+                      commitSha={commitSha}
                       working={source.kind === 'working'}
                     />
                   ) : (
@@ -612,7 +704,9 @@ function PrimaryReviewPane({
                     ? 'No branch or local changes since the default branch.'
                     : source.kind === 'review'
                       ? 'No file changes since this review snapshot.'
-                      : 'This turn has no text changes to preview.'
+                      : source.kind === 'commit'
+                        ? 'This commit has no changes against its first parent.'
+                        : 'This turn has no text changes to preview.'
               }
             />
           )}

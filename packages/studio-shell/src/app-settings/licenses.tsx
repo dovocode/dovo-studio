@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useState } from 'react'
 import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
 import aiElements from '../../../studio-ui/licenses/ai-elements.txt?raw'
@@ -32,12 +33,11 @@ export function LicenseSettingsRow() {
             Notices included with Dovo’s adapted components and optional tools.
           </DialogDescription>
           {notices.map(([name, text]) => (
-            <details key={name}>
-              <summary className="cursor-pointer text-sm font-medium">{name}</summary>
+            <Disclosure key={name} title={<>{name}</>}>
               <pre className="mt-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">
                 {text}
               </pre>
-            </details>
+            </Disclosure>
           ))}
         </DialogContent>
       </Dialog>

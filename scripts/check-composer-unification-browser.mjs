@@ -6,12 +6,10 @@ import { chromium } from 'playwright'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshotDirectory = process.env.DOVO_COMPOSER_SCREENSHOTS
-const css = screenshotDirectory
-  ? readdirSync(root + 'apps/desktop/dist/assets')
-      .filter((file) => file.endsWith('.css'))
-      .map((file) => readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'))
-      .join('\n')
-  : ''
+const css = readdirSync(root + 'apps/desktop/dist/assets')
+  .filter((file) => file.endsWith('.css'))
+  .map((file) => readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'))
+  .join('\n')
 if (screenshotDirectory) mkdirSync(screenshotDirectory, { recursive: true })
 
 const mocks = {
@@ -63,7 +61,7 @@ const built = await build({
         if(path==='/api/snapshot'&&window.failNextSnapshot){window.failNextSnapshot=false;throw Error('Computer unavailable')}
         if(path==='/api/snapshot')return window.holdSnapshots?new Promise(resolve=>window.pendingSnapshots.push(()=>resolve(snapshots[profile.id]))):snapshots[profile.id];
         if(path==='/api/agents/models/cached')return null;
-        if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1-Sol',isDefault:true,defaultReasoning:'xhigh',reasoning:[{id:'high',name:'High'},{id:'xhigh',name:'Extra High'}],serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[],codex:{fastModeBlocked:false,daybreakPrograms:[]}};
+        if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1-Sol',isDefault:true,defaultReasoning:'xhigh',reasoning:window.manyEfforts?[{id:'none',name:'None'},{id:'minimal',name:'Minimal'},{id:'low',name:'Low'},{id:'medium',name:'Medium'},{id:'high',name:'High'},{id:'xhigh',name:'Extra High'}]:[{id:'high',name:'High'},{id:'xhigh',name:'Extra High'}],serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[],codex:{fastModeBlocked:false,daybreakPrograms:[]}};
         if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
         if(path==='/api/workspace')return {revision:1};
         if(path==='/api/tasks/message')return new Promise((resolve,reject)=>{window.pendingMessage={resolve,reject}});
@@ -121,12 +119,12 @@ try {
   await page.goto('http://dovo.test/')
   if (css) await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const input = page.getByRole('textbox', { name: 'Task prompt' })
-  const send = page.getByRole('button', { name: 'Start task', exact: true })
+  const input = page.getByRole('textbox', { name: 'Thread prompt' })
+  const send = page.getByRole('button', { name: 'Start thread', exact: true })
   const server = page.getByRole('combobox', { name: 'Server', exact: true })
   const project = page.getByRole('combobox', { name: 'Project', exact: true })
-  const reasoning = page.getByRole('button', { name: 'Reasoning and speed' })
-  const access = page.getByRole('button', { name: 'Configure task permissions' })
+  const reasoning = page.getByRole('button', { name: 'Choose agent and model', exact: true })
+  const access = page.getByRole('button', { name: 'Configure thread permissions' })
   const creationCount = () =>
     page.evaluate(() => window.requests.filter((r) => r.path === '/api/workspace').length)
   await reasoning.waitFor()
@@ -158,7 +156,7 @@ try {
     )
     const form = page.locator('.studio-composer')
     const formBounds = await form.boundingBox()
-    for (const button of [send, reasoning, access]) {
+    for (const button of [send, reasoning]) {
       const bounds = await button.boundingBox()
       assert(
         bounds.x >= formBounds.x && bounds.x + bounds.width <= formBounds.x + formBounds.width + 1,
@@ -177,6 +175,109 @@ try {
   }
 
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+  for (const { width, height } of [
+    { width: 800, height: 670 },
+    { width: 460, height: 670 },
+    { width: 320, height: 670 },
+    { width: 800, height: 390 },
+  ]) {
+    await page.setViewportSize({ width, height })
+    const popup = page.locator('[data-model-picker]')
+    // Radix repositions the popup asynchronously after a viewport resize.
+    await page.waitForFunction(() => {
+      const bounds = document.querySelector('[data-model-picker]')?.getBoundingClientRect()
+      return (
+        bounds &&
+        bounds.x >= 0 &&
+        bounds.right <= innerWidth &&
+        bounds.y >= 0 &&
+        bounds.bottom <= innerHeight
+      )
+    })
+    const bounds = await popup.boundingBox()
+    assert(
+      bounds &&
+        bounds.x >= 0 &&
+        bounds.x + bounds.width <= width &&
+        bounds.width <= 400 &&
+        bounds.y >= 0 &&
+        bounds.y + bounds.height <= height,
+      'Model picker overflowed the viewport',
+    )
+    await popup
+      .getByRole('group', { name: 'Harnesses', exact: true })
+      .getByText('Codex', { exact: true })
+      .waitFor()
+    await popup
+      .getByRole('group', { name: 'Model selection', exact: true })
+      .getByText('Favorites', { exact: true })
+      .waitFor()
+    await popup
+      .getByRole('group', { name: 'Speed and access', exact: true })
+      .getByText('Access', { exact: true })
+      .waitFor()
+    const footer = popup.getByRole('group', { name: 'Speed and access', exact: true })
+    await footer.getByRole('button', { name: 'Daybreak mode', exact: true }).waitFor()
+    const daybreakHelp = footer.getByRole('button', { name: 'About Daybreak', exact: true })
+    await daybreakHelp.focus()
+    await page.keyboard.press('Enter')
+    const daybreakExplanation = page.getByRole('region', { name: 'About Daybreak', exact: true })
+    await daybreakExplanation
+      .getByText(
+        'Optional Codex access program. Automatic uses the provider default; Off disables it. Available programs depend on your account.',
+        {
+          exact: true,
+        },
+      )
+      .waitFor()
+    const helpBounds = await daybreakExplanation.boundingBox()
+    const scrollBounds = await popup.locator(':scope > div').first().boundingBox()
+    assert.ok(
+      helpBounds.y >= scrollBounds.y + scrollBounds.height - 1,
+      'Expanded Daybreak help stays below the scrollable model and effort area',
+    )
+    assert.equal(await daybreakHelp.getAttribute('aria-expanded'), 'true')
+    await page.keyboard.press('Enter')
+    await daybreakExplanation.waitFor({ state: 'hidden' })
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('aria-label') === 'About Daybreak',
+    )
+    await popup.waitFor()
+    const daybreakLabel = await footer.getByText('Daybreak', { exact: true }).boundingBox()
+    const speedLabel = await footer.getByText('Speed', { exact: true }).boundingBox()
+    const accessLabel = await footer.getByText('Access', { exact: true }).boundingBox()
+    assert(
+      Math.abs(daybreakLabel.x - speedLabel.x) <= 1 && Math.abs(speedLabel.x - accessLabel.x) <= 1,
+      'Provider settings use aligned label rows in the pinned footer',
+    )
+    assert(
+      await popup.evaluate((element) => {
+        const bounds = element.getBoundingClientRect()
+        const footer = element
+          .querySelector('[role="group"][aria-label="Speed and access"]')
+          .getBoundingClientRect()
+        return footer.top >= bounds.top && footer.bottom <= bounds.bottom + 1
+      }),
+      'Access footer stays visible inside the constrained picker',
+    )
+    const models = await popup.getByRole('listbox', { name: 'Models', exact: true }).boundingBox()
+    const effort = await popup.locator('[data-model-picker-effort]').boundingBox()
+    assert(effort.y >= models.y + models.height, 'Effort remains below the model list')
+    await page.getByRole('radio', { name: 'High', exact: true }).click({ trial: true })
+    await page
+      .getByRole('button', { name: 'Agent configuration', exact: true })
+      .click({ trial: true })
+    if (screenshotDirectory)
+      await page.screenshot({
+        path:
+          screenshotDirectory +
+          '/model-picker-' +
+          width +
+          (height === 670 ? '' : '-' + height) +
+          '.png',
+      })
+  }
+  await page.setViewportSize({ width: 800, height: 670 })
   await page.getByRole('button', { name: 'Agent configuration', exact: true }).click()
   const configuration = page.getByRole('dialog', { name: 'Agent configuration', exact: true })
   await configuration.waitFor()
@@ -246,16 +347,69 @@ try {
 
   await project.selectOption({ label: 'dovo-studio' })
   await reasoning.click()
-  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
-  await reasoning.click()
-  await page.getByRole('menuitemradio', { name: 'Fast', exact: true }).click()
+  const popup = await page.locator('[data-model-picker]').elementHandle()
+  const searchModels = page.getByRole('combobox', { name: 'Search models', exact: true })
+  await searchModels.focus()
+  await searchModels.press('ArrowRight')
+  assert(
+    await page
+      .getByRole('radio', { name: 'Extra High', exact: true })
+      .evaluate((node) => node === document.activeElement),
+    'Right arrow did not reach the effort section',
+  )
+  await page.keyboard.press('ArrowUp')
+  assert(
+    await page
+      .getByRole('radio', { name: 'High', exact: true })
+      .evaluate((node) => node === document.activeElement),
+    'Effort keyboard navigation skipped a level',
+  )
+  await page.keyboard.press('ArrowLeft')
+  assert(
+    await searchModels.evaluate((node) => node === document.activeElement),
+    'Left arrow did not return to model search',
+  )
+  await page.getByRole('radio', { name: 'High', exact: true }).click()
+  assert(
+    await page
+      .locator('[data-model-picker]')
+      .evaluate((node, original) => node === original, popup),
+    'Changing effort remounted the model picker',
+  )
+  await page.getByRole('button', { name: 'Daybreak mode', exact: true }).click()
+  await page.getByRole('option', { name: 'Off', exact: true }).click()
+  assert.equal(
+    await page.locator('[data-model-picker]').count(),
+    1,
+    'Selecting a provider option dismissed the model picker',
+  )
+  await page.getByRole('radio', { name: 'Fast', exact: true }).click()
+  await page.evaluate(() => (window.manyEfforts = true))
+  await page.getByRole('button', { name: 'Refresh providers and models', exact: true }).click()
+  const manyEfforts = page.getByRole('button', { name: 'Reasoning level', exact: true })
+  await manyEfforts.waitFor()
+  await searchModels.focus()
+  await searchModels.press('ArrowRight')
+  assert(
+    await manyEfforts.evaluate((node) => node === document.activeElement),
+    'Keyboard reaches the compact effort selector',
+  )
+  await manyEfforts.click()
+  await page
+    .getByRole('dialog', { name: 'Reasoning level', exact: true })
+    .getByRole('option', { name: 'High', exact: true })
+    .click()
+  await page.evaluate(() => (window.manyEfforts = false))
+  await page.getByRole('button', { name: 'Refresh providers and models', exact: true }).click()
+  await page.getByRole('radio', { name: 'High', exact: true }).waitFor()
   await access.click()
   await page.locator('[role="menuitemradio"][data-value="workspace-write"]').click()
+  await page.keyboard.press('Escape')
   await input.fill('Keep the same task when retrying')
   await input.press('Enter')
   await page.waitForFunction(() => window.pendingMessage !== null)
   await input.press('Escape')
-  assert.equal(await page.getByRole('dialog', { name: 'Start a task', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('dialog', { name: 'Start a thread', exact: true }).count(), 1)
   assert(await input.isDisabled(), 'In-flight draft was editable')
   assert(await server.isDisabled(), 'In-flight computer selection was editable')
   const creation = await page.evaluate(() =>

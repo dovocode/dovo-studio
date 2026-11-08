@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { Effect } from 'effect'
 import { startRuntime } from '../../index'
+import { HttpError } from '../../errors'
 
 it('validates and applies a drag move in one queue request', async () => {
   const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
@@ -330,8 +331,10 @@ it.each(['move', 'up', 'down', 'remove', 'restore'] as const)(
             ...(action === 'move' ? { beforeMessageId: null } : {}),
           }),
         })
-        expect(response.status).toBe(200)
-        expect(store.taskSummary(task.id).queue?.[0]?.id).toBe('ready')
+        // Reordering an archived queue is refused; removal and restore remain available.
+        const refused = blocked === 'archived' && ['move', 'up', 'down'].includes(action)
+        expect(response.status).toBe(refused ? 409 : 200)
+        expect(store.taskSummary(task.id).queue?.[0]?.id).toBe(refused ? 'held' : 'ready')
         expect(start).toHaveBeenCalledTimes(blocked === 'none' ? 1 : 0)
         expect(store.taskSummary(task.id).queuePaused).toBe(blocked === 'global')
       }
@@ -413,6 +416,328 @@ it('acknowledges a restored queue message after response loss without changing n
     expect((await request({ ...input, restoreRequestId: 'new-operation' })).status).toBe(409)
     expect((await request({ ...input, expectedAttachmentIds: undefined })).status).toBe(400)
     start.mockRestore()
+  } finally {
+    await runtime.close()
+  }
+})
+
+it('rejects reorders against a stale queue order, including a baseline taken before up or down', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({
+      title: 'Stale order',
+      repositoryId: '',
+      agentId: '',
+      objective: '',
+    })
+    store.updateTask(task.id, (current) => ({ ...current, queuePaused: true }))
+    for (const id of ['first', 'second', 'third']) tasks.queue.add(task.id, id, id)
+    const request = (input: Record<string, unknown>, mutationId?: string) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          'Content-Type': 'application/json',
+          ...(mutationId ? { 'x-dovo-mutation-id': mutationId } : {}),
+        },
+        body: JSON.stringify({ id: task.id, ...input }),
+      })
+    const order = () => store.taskSummary(task.id).queue?.map((message) => message.id)
+    const rejected = async (response: Response) => {
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ mutationRejected: true })
+    }
+    const status = await fetch(`http://127.0.0.1:${runtime.port}/api/mutations/status`, {
+      headers: { Authorization: `Bearer ${ownerToken}` },
+    })
+    expect(await status.json()).toMatchObject({ queueMutations: 1 })
+    const initial = ['first', 'second', 'third']
+    expect(
+      (
+        await request({
+          action: 'move',
+          messageId: 'third',
+          beforeMessageId: 'first',
+          expectedMessageIds: initial,
+        })
+      ).status,
+    ).toBe(200)
+    expect(order()).toEqual(['third', 'first', 'second'])
+    // A second drag computed from the same old order must not land against the new order.
+    await rejected(
+      await request({
+        action: 'move',
+        messageId: 'second',
+        beforeMessageId: null,
+        expectedMessageIds: initial,
+      }),
+    )
+    // Relative controls must also honor a supplied stale order.
+    for (const action of ['up', 'down']) {
+      await rejected(await request({ action, messageId: 'second', expectedMessageIds: initial }))
+      expect(order()).toEqual(['third', 'first', 'second'])
+    }
+    // A subset or reordered baseline is not the full current order.
+    await rejected(
+      await request({
+        action: 'move',
+        messageId: 'second',
+        beforeMessageId: null,
+        expectedMessageIds: ['third', 'first'],
+      }),
+    )
+    expect(order()).toEqual(['third', 'first', 'second'])
+    const beforeUp = order()
+    expect((await request({ action: 'up', messageId: 'first' })).status).toBe(200)
+    expect(order()).toEqual(['first', 'third', 'second'])
+    expect((await request({ action: 'down', messageId: 'first' })).status).toBe(200)
+    expect(order()).toEqual(['third', 'first', 'second'])
+    expect((await request({ action: 'down', messageId: 'first' })).status).toBe(200)
+    expect(order()).toEqual(['third', 'second', 'first'])
+    // The same client's drag from before its own up/down presses is stale too.
+    await rejected(
+      await request({
+        action: 'move',
+        messageId: 'third',
+        beforeMessageId: null,
+        expectedMessageIds: beforeUp,
+      }),
+    )
+    expect(order()).toEqual(['third', 'second', 'first'])
+
+    const current = order()
+    const fresh = {
+      action: 'move',
+      messageId: 'first',
+      beforeMessageId: 'third',
+      expectedMessageIds: current,
+    }
+    expect((await request(fresh, 'move-receipt')).status).toBe(200)
+    expect(order()).toEqual(['first', 'third', 'second'])
+    // A lost acknowledgement replays the stored success, not the now-stale order check.
+    expect((await request(fresh, 'move-receipt')).status).toBe(200)
+    expect(order()).toEqual(['first', 'third', 'second'])
+    await rejected(await request(fresh, 'stale-move-receipt'))
+    // The recorded rejection stays a rejection when the journal retries it.
+    await rejected(await request(fresh, 'stale-move-receipt'))
+    expect(order()).toEqual(['first', 'third', 'second'])
+    expect(store.taskSummary(task.id).queuePaused).toBe(true)
+  } finally {
+    await runtime.close()
+  }
+})
+
+it('refuses to reorder or duplicate around a steering message or in an archived thread', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({ title: 'Guards', repositoryId: '', agentId: '', objective: '' })
+    store.updateTask(task.id, (current) => ({ ...current, status: 'running', queuePaused: true }))
+    for (const id of ['steering', 'waiting', 'last']) tasks.queue.add(task.id, id, id)
+    const request = (input: Record<string, unknown>) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id, ...input }),
+      })
+    const attempts = [
+      { action: 'move', messageId: 'last', beforeMessageId: 'steering' },
+      { action: 'move', messageId: 'waiting', beforeMessageId: null },
+      { action: 'up', messageId: 'waiting' },
+      { action: 'down', messageId: 'waiting' },
+      { action: 'down', messageId: 'steering' },
+    ]
+    const before = store.task(task.id).queue
+    store.updateTask(task.id, (current) => ({
+      ...current,
+      queue: current.queue?.map((message) =>
+        message.id === 'steering' ? { ...message, steering: true } : message,
+      ),
+    }))
+    const steeringQueue = store.task(task.id).queue
+    for (const attempt of attempts) {
+      const response = await request(attempt)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ mutationRejected: true })
+    }
+    expect(
+      (await request({ action: 'duplicate', messageId: 'steering', duplicateMessageId: 'copy' }))
+        .status,
+    ).toBe(409)
+    expect(store.task(task.id).queue).toEqual(steeringQueue)
+
+    store.updateTask(task.id, (current) => ({
+      ...current,
+      status: 'review',
+      archived: true,
+      queue: before,
+    }))
+    for (const attempt of [
+      ...attempts,
+      { action: 'duplicate', messageId: 'waiting', duplicateMessageId: 'archived-copy' },
+    ]) {
+      const response = await request(attempt)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ mutationRejected: true })
+    }
+    expect(store.task(task.id).queue).toEqual(before)
+  } finally {
+    await runtime.close()
+  }
+})
+
+it('retries an uncertain duplicate receipt into its own stable copy instead of a second copy', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({ title: 'Copy once', repositoryId: '', agentId: '', objective: '' })
+    store.updateTask(task.id, (current) => ({ ...current, queuePaused: true }))
+    tasks.queue.add(task.id, 'source', 'Original')
+    tasks.queue.add(task.id, 'after', 'After')
+    const request = (input: Record<string, unknown>, mutationId: string) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          'Content-Type': 'application/json',
+          'x-dovo-mutation-id': mutationId,
+        },
+        body: JSON.stringify({ id: task.id, action: 'duplicate', ...input }),
+      })
+    const duplicate = tasks.queue.duplicate.bind(tasks.queue)
+    // The copy commits, then the runtime fails before recording the receipt outcome.
+    vi.spyOn(tasks.queue, 'duplicate').mockImplementationOnce((...input) => {
+      duplicate(...input)
+      throw new Error('Connection lost after commit')
+    })
+    const input = { messageId: 'source', duplicateMessageId: 'copy' }
+    expect((await request(input, 'duplicate-receipt')).status).toBe(500)
+    expect(store.taskSummary(task.id).queue?.map((message) => message.id)).toEqual([
+      'source',
+      'copy',
+      'after',
+    ])
+    expect((await request(input, 'duplicate-receipt')).status).toBe(200)
+    expect((await request(input, 'duplicate-receipt')).status).toBe(200)
+    // A fresh journal entry for the same copy id is also a replay, not another copy.
+    expect((await request(input, 'other-receipt')).status).toBe(200)
+    await expect(
+      request({ ...input, messageId: 'after' }, 'reused-copy-id'),
+    ).resolves.toMatchObject({ status: 409 })
+    expect(store.task(task.id).queue).toMatchObject([
+      { id: 'source', text: 'Original' },
+      { id: 'copy', text: 'Original' },
+      { id: 'after', text: 'After' },
+    ])
+    expect(store.taskSummary(task.id).queuePaused).toBe(true)
+  } finally {
+    vi.restoreAllMocks()
+    await runtime.close()
+  }
+})
+
+it('acknowledges a committed move when starting the newly unblocked queue fails', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { tasks, store } = runtime.services
+    const task = tasks.create({ title: 'Unblock', repositoryId: '', agentId: '', objective: '' })
+    tasks.queue.add(task.id, 'paused', 'Wait')
+    tasks.queue.add(task.id, 'ready', 'Ready')
+    tasks.queue.setPaused(task.id, 'paused', true)
+    store.updateTask(task.id, (current) => ({ ...current, status: 'review' }))
+    const start = vi
+      .spyOn(tasks, 'startEffect')
+      .mockReturnValue(Effect.fail(new HttpError(503, 'Runtime is restarting')))
+    const move = () =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          'Content-Type': 'application/json',
+          'x-dovo-mutation-id': 'unblock-order',
+        },
+        body: JSON.stringify({
+          id: task.id,
+          action: 'move',
+          messageId: 'ready',
+          beforeMessageId: 'paused',
+          expectedMessageIds: ['paused', 'ready'],
+        }),
+      })
+    const response = await move()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, queueMessageIds: ['ready', 'paused'] })
+    expect(store.taskSummary(task.id)).toMatchObject({
+      queuePaused: true,
+      error: 'Queue updated. Could not start: Runtime is restarting',
+    })
+    expect((await move()).status).toBe(200)
+    expect(start).toHaveBeenCalledTimes(1)
+    start.mockRestore()
+  } finally {
+    await runtime.close()
+  }
+})
+
+it('settles saved queue actions for a deleted thread without leaving an uncertain receipt', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    for (const action of ['duplicate', 'move']) {
+      const request = () =>
+        fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${ownerToken}`,
+            'Content-Type': 'application/json',
+            'x-dovo-mutation-id': `deleted-${action}`,
+          },
+          body: JSON.stringify({
+            id: 'deleted-thread',
+            action,
+            messageId: 'source',
+            duplicateMessageId: 'copy',
+            beforeMessageId: null,
+          }),
+        })
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await request()
+        expect(response.status).toBe(404)
+        expect(await response.json()).toMatchObject({ mutationRejected: true })
+      }
+    }
+  } finally {
+    await runtime.close()
+  }
+})
+
+it('keeps review mode when duplicating a review prompt without changing prompt recency', async () => {
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'review-copy-owner-token-at-least-thirty-two-characters',
+    port: 0,
+  })
+  try {
+    const { tasks, store } = runtime.services
+    const task = tasks.create({ title: 'Review', repositoryId: '', agentId: '', objective: '' })
+    store.updateTask(task.id, (current) => ({
+      ...current,
+      lastPromptAt: '2026-01-01T00:00:00.000Z',
+      queuePaused: true,
+    }))
+    tasks.queue.add(task.id, 'review', 'Review the changes', [], undefined, true)
+    tasks.queue.duplicate(task.id, 'review', 'review-copy')
+    expect(store.taskSummary(task.id).queue?.[1]).toMatchObject({
+      id: 'review-copy',
+      review: true,
+      source: { kind: 'user' },
+    })
+    expect(store.taskSummary(task.id).lastPromptAt).toBe('2026-01-01T00:00:00.000Z')
   } finally {
     await runtime.close()
   }

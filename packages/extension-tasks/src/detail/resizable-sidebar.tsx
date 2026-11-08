@@ -88,9 +88,9 @@ export function ResizableSidebar({
           aria-valuemax={maximum}
           aria-valuenow={visibleWidth}
           tabIndex={0}
-          title="Drag to resize; double-click to reset"
+          title="Drag or use arrow keys to resize; double-click to reset"
           className={cn(
-            'absolute inset-y-0 z-40 w-2 cursor-col-resize touch-none select-none outline-none [-webkit-app-region:no-drag] after:absolute after:inset-y-0 after:left-1/2 after:w-px hover:after:bg-primary/60 focus-visible:after:bg-primary',
+            'absolute inset-y-0 z-40 w-2 cursor-col-resize touch-none select-none outline-none [-webkit-app-region:no-drag] before:absolute before:left-1/2 before:top-1/2 before:h-6 before:w-0.5 before:-translate-x-1/2 before:rounded-full before:bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-px hover:after:bg-primary/60 focus-visible:after:bg-primary',
             side === 'left' ? '-right-1' : '-left-1',
           )}
           onPointerDown={(event) => {

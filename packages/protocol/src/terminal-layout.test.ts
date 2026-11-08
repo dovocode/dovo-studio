@@ -27,3 +27,13 @@ it('opens restored and externally created sessions as independent tabs without d
   )
   expect(groups.map((group) => group.sessions)).toEqual([['one', 'two'], ['new']])
 })
+it('inserts a split beside the selected pane and enforces the four-pane limit', () => {
+  let groups = terminalGroups([], ['one'])
+  groups = splitTerminal(groups, 'one', 'two', 'columns')
+  groups = splitTerminal(groups, 'one', 'three', 'columns')
+  expect(groups[0].sessions).toEqual(['one', 'three', 'two'])
+  groups = splitTerminal(groups, 'three', 'four', 'rows')
+  expect(groups[0].sessions).toEqual(['one', 'three', 'four', 'two'])
+  expect(splitTerminal(groups, 'four', 'five', 'rows')).toEqual(groups)
+  expect(splitTerminal(groups, 'one', 'two', 'rows')).toEqual(groups)
+})

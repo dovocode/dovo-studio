@@ -6,6 +6,7 @@ import { chromium } from './browser/harness.mjs'
 
 const require = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
+  '../../ui/controls/icon': `export const Icon=()=>null;`,
   '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';export {providers} from '../studio-core/src/providers';export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '../ui/controls/field': `export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
@@ -17,7 +18,7 @@ const mocks = {
   '../../ui/layout/sheet': `export const Sheet=({children,onClose,title})=><section aria-label={title}>{children}<button onClick={onClose}>Close picker</button></section>;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
   '../ui/controls/icon': `export const Icon=()=>null;`,
-  'react-native': `export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+  'react-native': `export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" role="switch" aria-label={accessibilityLabel} checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const MobileContext=createContext(null);export const useRuntime=()=>useContext(MobileContext);export const useRuntimeSelector=select=>select(useContext(MobileContext));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
@@ -47,7 +48,7 @@ const repository={id:'repo',name:'Repo',path:'/repo',branch:'main'};
 const snapshot={workspace:{agents,repositories:[repository],tasks:[]},defaults:{},acpInstallations:installations};
 window.deferModels=false;window.pendingModels=[];window.modelRequests=[];window.pending=[];window.changes=[];window.mode='desktop';
 function App(){const[host,setHost]=useState('one');const[mode,setMode]=useState('desktop');const[locked,setLocked]=useState(undefined);const[value,setValue]=useState(defaultTaskHarness('codex'));window.host=setHost;window.mode=setMode;window.lock=setLocked;window.value=value;
-const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'',name:'Provider default'},{id:'default',name:'Default (recommended)',isDefault:true},{id:'model',name:input.provider+' model'},...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
+const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'',name:'Provider default'},{id:'default',name:'Default (recommended)',isDefault:true},{id:'model',name:input.provider+' model'},...(input.provider==='codex'?[{id:'gpt-6.1-sol',name:'GPT-6.1 Sol'}]:[]),...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
 const profile={id:host,connection:{address:'http://'+host,token:'token-'+host}};
 const change=async next=>{window.changes.push(next);setValue(next);return true};
 return mode==='desktop'?<Context.Provider value={{request,connected:true,connection:profile.connection,snapshot}}><ComposerModelPicker repositoryId="repo" value={value} agents={agents} disabled={false} lockedProvider={locked} onChange={change} onConfigure={()=>{}} onSelectAgent={async id=>{window.changes.push(id);return true}} onUseHarness={change}/></Context.Provider>:<MobileContext.Provider value={{profile,connected:true,snapshot,readRuntime:(_profile,path,input)=>request(path,input)}}><TaskLauncherControls snapshot={snapshot} repository={repository} selection={{key:'harness:codex',name:'Codex',provider:'codex',model:'',harness:value}} disabled={false} onChange={next=>window.changes.push(next)}/></MobileContext.Provider>};
@@ -93,7 +94,7 @@ try {
   await page.evaluate(() =>
     localStorage.setItem(
       'dovo:model-favorites',
-      'cursor:missing-model\ncodex:favorite-model\ncodex:\ncodex:default',
+      'cursor:missing-model\ncodex:favorite-model\ncodex:gpt-6.1-sol\ncodex:\ncodex:default',
     ),
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
@@ -118,18 +119,40 @@ try {
     'acp:installed',
   ])
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
+  const modelFilter = page.getByRole('button', { name: 'All models', exact: true })
+  const favoriteFilter = page.getByRole('button', { name: 'Favorite models', exact: true })
+  const agentFilter = page.getByRole('button', { name: 'Custom configurations', exact: true })
+  if ((await modelFilter.getAttribute('aria-pressed')) !== 'true')
+    throw new Error('Model browsing has no active filter')
   await page.getByRole('button', { name: 'Installed ACP models', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Vibe models', exact: true }).waitFor()
   await absent(page.getByRole('button', { name: 'Cursor models', exact: true }))
   await absent(page.getByRole('button', { name: 'ACP models', exact: true }))
-  await page.getByRole('button', { name: 'Favorite models', exact: true }).click()
+  await page.getByRole('option', { name: '6.1 Sol', exact: true }).waitFor()
+  if (
+    (await page
+      .getByRole('option', { name: '6.1 Sol', exact: true })
+      .getAttribute('data-value')) !== 'gpt-6.1-sol'
+  )
+    throw new Error('Compact Codex label changed the model ID')
+  await favoriteFilter.click()
+  if (
+    (await favoriteFilter.getAttribute('aria-pressed')) !== 'true' ||
+    (await modelFilter.getAttribute('aria-pressed')) !== 'false'
+  )
+    throw new Error('Favorites did not become the active model filter')
   await page.getByRole('option', { name: 'favorite-model' }).waitFor()
+  await page.getByRole('option', { name: '6.1 Sol', exact: true }).waitFor()
   await absent(page.getByRole('option', { name: 'missing-model' }))
   await absent(page.getByRole('option', { name: 'Provider default' }))
   await absent(page.getByRole('option', { name: 'default', exact: true }))
-  await page.getByRole('button', { name: 'Custom configurations', exact: true }).click()
+  await agentFilter.click()
+  if ((await agentFilter.getAttribute('aria-pressed')) !== 'true')
+    throw new Error('Custom agents did not become the active model filter')
   await page.getByRole('option', { name: 'Custom Codex' }).waitFor()
   await absent(page.getByRole('option', { name: 'Missing Cursor' }))
+  await modelFilter.click()
+  await page.getByRole('option', { name: '6.1 Sol', exact: true }).waitFor()
   await page.evaluate(() => window.host('two'))
   await waitRequests(2)
   await absent(page.getByRole('button', { name: 'Codex models', exact: true }))
@@ -141,6 +164,7 @@ try {
   await page.getByRole('button', { name: 'Claude models', exact: true }).waitFor()
   const codexSignIn = page.getByRole('button', { name: 'Codex requires sign-in' })
   if (!(await codexSignIn.isDisabled())) throw new Error('Signed-out provider is selectable')
+  await page.getByText('Provider setup', { exact: true }).click()
   await page.getByText('codex login', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Refresh providers and models' }).click()
   await waitRequests(4)
@@ -186,13 +210,22 @@ try {
     throw new Error('New-thread picker was expanded before opening')
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   await waitRequests(7)
-  await finish(6, ['harness:claude', 'harness:vibe', 'agent:custom', 'acp:installed'])
+  await finish(6, [
+    'harness:codex',
+    'harness:claude',
+    'harness:vibe',
+    'agent:custom',
+    'acp:installed',
+  ])
   await page.getByRole('button', { name: 'More settings', exact: true }).click()
   if (await page.getByRole('textbox', { name: 'Search harnesses and models' }).count())
     throw new Error('New-thread settings were appended below the picker')
   await page.getByRole('button', { name: 'Back to models', exact: true }).click()
   const harness = (name) => page.getByRole('button', { name, exact: true })
   await harness('Claude models').waitFor()
+  await harness('6.1 Sol').waitFor()
+  if ((await harness('6.1 Sol').innerText()).trim() !== '6.1 Sol')
+    throw new Error('Mobile Codex row repeats the GPT-prefixed ID')
   await absent(harness('Cursor models'))
   await page
     .getByRole('textbox', { name: 'Search harnesses and models', exact: true })
@@ -242,10 +275,30 @@ try {
   await page.evaluate(() => {
     window.deferModels = false
   })
+  const modelSearch = page.getByRole('combobox', { name: 'Search models', exact: true })
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    const selected = await modelSearch.getAttribute('aria-activedescendant')
+    const changes = await page.evaluate(() => window.changes.length)
+    for (const key of ['ArrowDown', 'Enter'])
+      await modelSearch.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...options }),
+          ),
+        { ...shape, key },
+      )
+    if (
+      (await modelSearch.getAttribute('aria-activedescendant')) !== selected ||
+      (await page.evaluate(() => window.changes.length)) !== changes
+    )
+      throw new Error('IME changed model selection')
+  }
   await page.getByRole('combobox', { name: 'Search models', exact: true }).fill('gpt-6.1-terra')
   await page.getByRole('option', { name: 'Use custom model “gpt-6.1-terra”' }).click()
   if (await page.evaluate(() => window.value.model !== 'gpt-6.1-terra'))
     throw new Error('Custom Terra model ID was not preserved')
+  await page.getByRole('combobox', { name: 'Search models', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Close model picker', exact: true }).click()
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await page.evaluate(() => {
     window.terraAvailable = true
@@ -253,7 +306,7 @@ try {
   await page.getByRole('button', { name: 'Refresh providers and models', exact: true }).click()
   await waitRequests(10)
   await finish(9, ['harness:codex', 'harness:claude'])
-  await page.getByRole('option', { name: 'GPT-6.1 Terra' }).waitFor()
+  await page.getByRole('option', { name: '6.1 Terra', exact: true }).waitFor()
   if (!(await page.evaluate(() => window.modelRequests.at(-1).input.refresh)))
     throw new Error('Picker refresh did not bypass the cached model list')
   if (errors.length) throw new Error(errors.join('\n'))

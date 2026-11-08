@@ -21,6 +21,16 @@ Shared Browser sessions are separate from the thread's right-side preview. Profi
 reused across both surfaces, but their login cookies are isolated; signing in on one does not sign
 you in on the other.
 
+With **Studio Tools → Browsers** enabled on a tab's computer, agents can list and operate live
+workspace tabs through `studio_browsers` (remote tabs and desktop-local tabs alike; private tabs are
+always excluded). A bot badge marks tabs agents can reach, and lights up on desktop tabs while an
+agent is connected to one. Right-click a tab and choose **Copy Studio ID (for agents)** to copy its
+unified reference (`studio:<computer>:browser:<id>`); paste it into any thread to point an agent at
+that exact tab. Threads have the matching **Copy → Studio ID (for agents)**. Desktop tabs are
+reachable only while open in the desktop Browser workspace, over the same page-scoped CDP host used
+for thread previews; CSS and `text=` selectors are supported there, and no console logs are
+captured.
+
 The address bar searches Google for words, uses HTTPS for bare public domains and HTTP for local
 addresses such as `localhost:3000`. Explicit HTTP addresses stay HTTP. Local tabs reach services on
 the desktop computer; paired-runtime tabs resolve localhost against that runtime's host. HTTP over
@@ -48,15 +58,23 @@ be on another connected computer. Existing draft text is retained, conflicts are
 thread opens for you to review and send the draft. Empty selections produce feedback.
 
 On desktop, use the tab-list **+** menu → **New browser window** for another window with its own
-tabs. The action requires the desktop window bridge. Browser opened from a pop-out thread uses a
-separate session identity and does not overwrite the main window's tabs.
+tabs, or **Detach browser** to move the current workspace, including pinned and sleeping tabs, to a
+separate window. Native pages keep their document, navigation history, sign-in and live media.
+Closing an extra Browser window returns its remaining tabs to the main window, preserving pinning,
+profiles, order and selection. If the main window has reached its 100-tab limit, the extra window
+stays open and reports the problem. These actions require the desktop window bridge. Browser opened
+from a pop-out thread uses a separate session identity and does not overwrite the main window's
+tabs.
 
 Tabs, active tab, recent order, computer, profile and recently closed tabs are isolated per window.
-Main-window tabs persist in localStorage. Extra windows use sessionStorage: their tabs survive a
-reload, not app quit. Bookmarks and visit history use a shared localStorage library across windows.
-Inactive restored remote tabs are not launched until selected. Remote sessions depend on the owning
-computer being available and paired. Each remote runtime currently allows eight concurrent browser
-sessions; saved inactive tabs do not reserve those sessions.
+Main-window tabs persist in localStorage. Extra windows use sessionStorage for reloads. On window
+close, app quit or update installation, their remaining tabs return to the main window and wait for
+its save acknowledgment before shutdown. They reopen in the main window on the next launch, rather
+than recreating detached windows. Private tabs remain session-only. Bookmarks and visit history use
+a shared localStorage library across windows. Inactive restored remote tabs are not launched until
+selected. Remote sessions depend on the owning computer being available and paired. Each remote
+runtime currently allows eight concurrent browser sessions; saved inactive tabs do not reserve those
+sessions.
 
 Failed remote navigation retains the session and attempted address so Reload can retry when the
 server returns. Crashed remote sessions are released for reconnect. Reconnecting viewers receive any
@@ -106,6 +124,15 @@ persists with the tab and restores background pages when that Browser workspace 
 the tab still closes the page. PiP and active call media are protected independently of this
 setting. Keep awake does not keep the computer powered on after Studio exits or the operating system
 sleeps.
+
+Teams, Outlook (Microsoft 365 and personal), Gmail, Slack, Discord, WhatsApp Web and Google Chat
+stay awake by default in the desktop browser. This includes Teams and Outlook's `cloud.microsoft`
+hosts, Slack's `app.slack.com` and workspace subdomains, and Discord's stable, PTB and Canary web
+clients. External sign-in pages and other sites keep normal background throttling. Turning **Keep
+awake** off is a persisted per-tab override. Other ordinary inactive pages retain the existing cache
+limit of four pages per window and expire after five minutes. Settling or snoozing a local tab
+releases its page promptly, while active media and PiP defer release until activity ends. Private
+tabs are throttled but retain their in-memory page and sign-in data until explicitly closed.
 
 Links opened as temporary previews retain the original opener beneath them. **Expand preview** and
 **Contract preview** change the same live preview's size. Clicking the visible opener dismisses the
@@ -231,10 +258,14 @@ exclusion, the selection bound, exact clipboard text, source-preserving thread d
 conflicts, tab ownership/profiles, recent ordering, persistence, lazy restoration, search, library
 filtering/reopening, shortcuts, page drafts and native opened-link status handling. It also checks
 that **New browser window** calls the desktop bridge once and native session keys include the window
-and tab. Direct BrowserPane checks bypass the experimental gate. A separate case in this same script
-renders the real BrowserView: default-off mounts no pane or host calls, enabling mounts the pane,
-and disabling unmounts it and hides its native session. Native window creation has separate tests.
-Additional cases flood background opened links to the 100-tab cap and verify pop-out thread
+and tab. It also covers communication-app defaults, a persisted opt-out, explicit sleep and complete
+workspace detach/return adoption. `node apps/desktop/scripts/check-browser-page-tools-native.mjs`
+verifies that real Electron window close returns the same live page, including an unsent draft,
+alongside pinned, sleeping and remote tab metadata; explicit sleep destroys the idle page. Direct
+BrowserPane checks bypass the experimental gate. A separate case in this same script renders the
+real BrowserView: default-off mounts no pane or host calls, enabling mounts the pane, and disabling
+unmounts it and hides its native session. Native window creation has separate tests. Additional
+cases flood background opened links to the 100-tab cap and verify pop-out thread
 native/session-storage isolation from main-window tabs. Native `createdTabs`/`closedTabs` cases
 verify adoption without opening a duplicate view, retained profiles and session-only extension URLs.
 Thread cases cover stale cross-computer links, owner activation, profile retention and real composer

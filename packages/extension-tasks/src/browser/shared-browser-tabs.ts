@@ -182,10 +182,6 @@ export function reorderBrowserTabs(
   return next
 }
 
-export function visitBrowserTab(tabs: BrowserTab[], id: string, now = Date.now()) {
-  const visitedAt = Math.max(now, ...tabs.map((tab) => (tab.visitedAt ?? 0) + 1))
-  return tabs.map((tab) => (tab.id === id ? { ...tab, visitedAt } : tab))
-}
 export function browserQuote(selection: { text: string; url: string; title: string }) {
   const source = `${selection.title || 'Browser selection'}\n${selection.url}`
   if (selection.text === '') return source
@@ -197,15 +193,21 @@ export function browserQuote(selection: { text: string; url: string; title: stri
 }
 
 /** Resolve address-bar input without upgrading explicitly supplied HTTP addresses. */
-export function browserAddress(input: string, search?: BrowserSearchEngine): string {
+export function browserAddressIntent(
+  input: string,
+  search?: BrowserSearchEngine,
+): {
+  kind: 'navigate' | 'search'
+  url: string
+} {
   const value = input.trim()
-  if (!value) return ''
-  const checked = (url: URL) => {
+  if (!value) return { kind: 'navigate', url: '' }
+  const checked = (url: URL, kind: 'navigate' | 'search' = 'navigate') => {
     if (url.username || url.password)
       throw new Error('Use an HTTP or HTTPS address without credentials.')
     if (url.href.length > 4096)
       throw new Error('Browser addresses must be at most 4096 characters.')
-    return url.href
+    return { kind, url: url.href }
   }
   if (value.length > 4096) throw new Error('Browser addresses must be at most 4096 characters.')
   const explicit = /^([a-z][a-z\d+.-]*):/i.exec(value)
@@ -213,33 +215,56 @@ export function browserAddress(input: string, search?: BrowserSearchEngine): str
     /^[^\s/:]+:\d+(?:[/?#]|$)/.test(value) &&
     !/^(?:javascript|data|file|vbscript|blob|about|ftp|intent|mailto|chrome|devtools):/i.test(value)
   if (explicit && !hostPort) {
-    if (!/^https?:$/i.test(explicit[0]))
+    if (/^https?:$/i.test(explicit[0])) {
+      let url: URL
+      try {
+        url = new URL(value)
+      } catch {
+        throw new Error('Enter a valid website address.')
+      }
+      return checked(url)
+    }
+    if (
+      /^(?:javascript|data|file|vbscript|blob|about|ftp|intent|mailto|chrome|devtools):/i.test(
+        value,
+      ) ||
+      value.includes('://') ||
+      value.includes('@')
+    )
       throw new Error('Only HTTP and HTTPS addresses are supported.')
-    return checked(new URL(value))
+    // Search operators and prose such as "error: connection refused" are not URL schemes.
+    return checked(new URL(browserSearchUrl(value, search)), 'search')
   }
-  const host = value.split(/[/?#]/, 1)[0] ?? ''
+  const bare = value.startsWith('//') ? value.slice(2) : value
+  const host = bare.split(/[/?#]/, 1)[0] ?? ''
+  // Whitespace in a path/query is valid, but prose containing a dot is still a search.
   const address =
-    !/\s/.test(value) &&
-    (host === 'localhost' ||
-      host.startsWith('localhost:') ||
+    !/\s/.test(host) &&
+    (/^localhost(?::\d+)?$/i.test(host) ||
       host.startsWith('[') ||
       hostPort ||
-      host.includes('.'))
+      /^(?:[^\s./:]+\.)+[\p{L}][\p{L}\p{N}-]+\.?(?::\d+)?$/u.test(host) ||
+      /^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$/.test(host))
   if (address) {
+    const hostname = host.replace(/:\d+$/, '')
     const local =
-      /^(?:localhost|[^.]+\.local|[^.]+\.lan)(?::|$)/i.test(host) ||
-      /^\d{1,3}(?:\.\d{1,3}){3}(?::|$)/.test(host) ||
+      /^(?:localhost|.*\.(?:localhost|local|lan|internal|test))\.?$/i.test(hostname) ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
       host.startsWith('[') ||
       hostPort
     let url: URL | undefined
     try {
-      url = new URL(`${local ? 'http' : 'https'}://${value}`)
+      url = new URL(`${local ? 'http' : 'https'}://${bare}`)
     } catch {
       /* Search malformed host input. */
     }
     if (url) return checked(url)
   }
-  return checked(new URL(browserSearchUrl(value, search)))
+  return checked(new URL(browserSearchUrl(value, search)), 'search')
+}
+
+export function browserAddress(input: string, search?: BrowserSearchEngine): string {
+  return browserAddressIntent(input, search).url
 }
 
 export function browserPageKey(tab: BrowserTab): string {

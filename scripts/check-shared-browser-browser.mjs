@@ -13,10 +13,28 @@ if(m.type==='fixture-favicon'){favicon=m.favicon;state()}
 if(m.type==='snapshot')window.parent.postMessage({channel:'dovo-browser',type:'snapshot',id:m.id,image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='},'*');
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
+if(m.type==='visibility')window.parent.postMessage({channel:'fixture',visibility:m.visible},'*');
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
+    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane,restoredSharedBrowserTabs,sharedBrowserWindowId} from './src/browser/browser-pane.tsx';window.browserWorkspaceTabs={restored:restoredSharedBrowserTabs,windowId:sharedBrowserWindowId};import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useCallback,useState} from 'react';
+// Mirrors the unified workspace: an owner holds the authoritative tab list for a pane that may be hidden.
+import UnifiedWorkspace from './src/unified/workspace-view';
+function ControlledBrowser(){
+  const [tabs,setTabs]=useState(()=>window.browserWorkspaceTabs.restored(window.fixtureControlledWindowId));
+  window.controlledTabs=tabs;window.setControlledTabs=setTabs;
+  const onSetTabs=useCallback(action=>{window.ownerWrites=(window.ownerWrites||0)+1;setTabs(previous=>typeof action==='function'?action(previous??[]):action)},[]);
+  // Like the unified workspace, the pane stays mounted and laid out; visible:false alone hides it.
+  return <div className="flex min-h-0 flex-1 flex-col"><BrowserPane taskId="studio:browser" shared workspaceControl={{...window.fixtureWorkspaceControl,tabs,onSetTabs,visible:!window.fixtureBackground}}/></div>
+}import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';
+function Fixture(){
+  const [collapsed,setCollapsed]=useState(false);window.collapseBrowserSidebar=setCollapsed;
+  const content=window.fixtureUnified ? <UnifiedWorkspace/> : window.fixtureControlled ? <ControlledBrowser/> : window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
+  if(!window.fixtureHeader)return <>{window.fixtureActivityBar&&<ActivityBar views={[{id:'browser',title:'Browser',icon:'browser'}]} activeId="browser" onSelect={()=>{}} onDetachBrowser={()=>window.studioCommands.get('browser.detach')?.run()}/>} {content}</>;
+  const titleProps={platform:'darwin',online:1,devices:1,onDevices:()=>{},onSearch:()=>{}};
+  return <SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar {...titleProps}/>}><div className="studio" data-platform="darwin"><HeaderFallback>{window.fixtureDetached?<header className="studio-titlebar" data-platform="darwin"><span className="studio-titlebar-brand">Browser</span><HeaderMainSlot/></header>:<TitleBar {...titleProps} section="Browser"/>}</HeaderFallback><div className="flex min-h-0 flex-1 flex-col">{content}</div></div></SidebarHeaderLayout>
+}
+window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -31,6 +49,29 @@ const built = await build({
     {
       name: 'fixture',
       setup(builder) {
+        // Keep UnifiedWorkspace, BrowserPane and Effect state real. Isolate unrelated thread,
+        // terminal and composer surfaces so this checks the actual controlled-tab integration.
+        const unifiedBoundaries = {
+          '../view': 'export default function Thread(){return <div>Thread surface</div>}',
+          '../list/task-row-actions':
+            'export const useTaskActionStore=()=>({});export const taskActionClient=()=>({patch:async()=>{}})',
+          '../terminal/terminal-workspace': `import {useWorkspace} from '@dovo/studio-core';export const useWorkspaceComputers=()=>[...useWorkspace().runtimes];export const NewWorkspaceTerminalDialog=()=>null;export const WorkspaceTerminalSurface=()=>null;export const terminalContext=()=>''`,
+          './workspace-input':
+            'export const WorkspaceInput=()=> <textarea aria-label="Workspace draft"/>',
+          './workspace-resource-menu': 'export const WorkspaceResourceMenu=()=>null',
+          './workspace-rows':
+            'export const WorkspacePageRow=({title,onSelect})=><button onClick={onSelect}>{title}</button>;export const WorkspaceThreadRow=WorkspacePageRow;export const WorkspaceTerminalRow=WorkspacePageRow',
+        }
+        builder.onResolve({ filter: /.*/ }, ({ path, importer }) =>
+          importer.endsWith('/unified/workspace-view.tsx') && path in unifiedBoundaries
+            ? { path, namespace: 'fixture-unified-boundary' }
+            : undefined,
+        )
+        builder.onLoad({ filter: /.*/, namespace: 'fixture-unified-boundary' }, ({ path }) => ({
+          contents: unifiedBoundaries[path],
+          loader: 'tsx',
+          resolveDir: root + 'packages/extension-tasks',
+        }))
         builder.onResolve({ filter: /^\.\.\/detail\/task-conversation$/ }, () => ({
           path: 'conversation',
           namespace: 'fixture-conversation',
@@ -44,8 +85,9 @@ const built = await build({
         builder.onResolve(
           { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
           ({ path }) => ({
-            path: path.endsWith('/state') ? path : '@dovo/studio-core',
-            namespace: 'fixture',
+            ...(path.endsWith('/state')
+              ? { path: root + 'packages/studio-core/src/runtime/application-state.ts' }
+              : { path: '@dovo/studio-core', namespace: 'fixture' }),
           }),
         )
         builder.onResolve(
@@ -58,9 +100,8 @@ const built = await build({
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           loader: 'js',
           resolveDir: root + 'packages/extension-tasks',
-          contents: path.endsWith('/state')
-            ? `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const current=useRef(value);current.current=value;const set=next=>{current.current=typeof next==='function'?next(current.current):next;setValue(current.current)};return [value,set,current]}`
-            : path === './screenshot-attachment'
+          contents:
+            path === './screenshot-attachment'
               ? 'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async()=>{}});'
               : path === './device-list'
                 ? 'export const DeviceList=()=>null;'
@@ -71,6 +112,7 @@ import {createContext,createElement,useContext,useState,useSyncExternalStore} fr
 import {resolveSettingsTarget,decode,browserCommandSchema} from '@dovo/protocol';
 import {Effect} from 'effect';
 export * from '@dovo/protocol';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
@@ -79,15 +121,15 @@ export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget}
 export const useCachedTask=task=>({task,loaded:true,error:""});export const formatDateTime=()=>"";export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-work',name:'LAN Work'},{id:'remote-personal',name:'LAN Personal'}],mac:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}]};
-window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
+window.browserInputs=[];window.browserViewports=[];window.remoteVisibility=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport);if(event.data.visibility!==undefined)window.remoteVisibility.push(event.data.visibility)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
 const task={id:'target',title:'Destination thread',repositoryId:'repo',agentId:'',status:'draft',draft:'Existing draft',createdAt:'2026-10-25T00:00:00Z',messages:[],files:[],example:false};
-const snapshot={runtimeHost:'LAN runtime',workspace:{tasks:[task],repositories:[{id:'repo',name:'Project'}],agents:[]}};
+const snapshot={runtimeHost:'LAN runtime',terminals:[],workspace:{tasks:[task],repositories:[{id:'repo',name:'Project'}],agents:[]}};
 const otherProfile={id:'mac',name:'Mac Studio',connection:{address:'http://mac.local',token:'paired-mac-token-at-least-20-characters'}};
 const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...task,id:'remote-target',title:'Mac thread',draft:'Remote draft'}]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
@@ -109,13 +151,15 @@ export const useSettingsTarget=()=>{
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
 const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
-export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+window.studioCommands=new Map();const registerCommand=command=>{window.studioCommands.set(command.id,command);return ()=>window.studioCommands.delete(command.id)};
+const HostContext=createContext(null);export const StudioHostProvider=({api,children})=>createElement(HostContext.Provider,{value:api},children);
+export const useStudioHost=()=>useContext(HostContext)||({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
 export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
 export const defaultAppPreferences={browserSidebarWidth:224,toolsSidebarWidth:440};export const readAppPreferences=()=>({browserViewport:'fill',browserSidebarWidth:224,toolsSidebarWidth:440});
-window.preferences=[];export const updateAppPreferences=change=>{window.preferences.push(change);appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};const polls=new Set();window.pollBrowser=async()=>{for(const poll of [...polls])await Effect.runPromise(poll)};export const startPolling=poll=>{polls.add(poll);return {stop:async()=>{polls.delete(poll)}}};
+window.preferences=[];export const updateAppPreferences=change=>{window.preferences.push(change);appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};const polls=new Set();window.pollBrowser=async()=>{for(const poll of [...polls])await Effect.runPromise(poll)};export const startPolling=poll=>{polls.add(poll);return {refresh:()=>{void Effect.runPromise(poll)},stop:async()=>{polls.delete(poll)}}};
 `,
         }))
       },
@@ -123,8 +167,1087 @@ window.preferences=[];export const updateAppPreferences=change=>{window.preferen
   ],
 })
 
+async function captureBrowserSidebar(browser) {
+  const preview = await browser.newPage({
+    viewport: { width: 1200, height: 760 },
+    reducedMotion: 'reduce',
+  })
+  await preview.route('http://localhost/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<html class="dark"><body style="margin:0"><div id="app" style="height:760px"></div></body></html>',
+    }),
+  )
+  await preview.goto('http://localhost/')
+  await preview.evaluate(() => {
+    const icon = (color, path) =>
+      'data:image/svg+xml;base64,' +
+      btoa(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="' +
+          color +
+          '"/><path d="' +
+          path +
+          '" fill="none" stroke="white" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+      )
+    const pages = [
+      ['Mail', '#3b79b8', 'M5 7h14v10H5z M5 7l7 6 7-6'],
+      ['Design', '#7257bf', 'M7 5h5v14H7z M12 5h5v5h-5 M12 10h5v5h-5'],
+      ['Code', '#303b4a', 'M9 7l-5 5 5 5 M15 7l5 5-5 5'],
+      ['Calendar', '#b35e52', 'M5 7h14v12H5z M8 5v4 M16 5v4 M5 11h14'],
+      ['Notes', '#af8d3a', 'M7 5h10v14H7z M10 9h4 M10 12h4 M10 15h3'],
+      ['Issues', '#4a569d', 'M7 6l11 11 M5 10l9 9 M11 5l8 8'],
+      ['Project start · Dovo', '#277caa', 'M6 7h9v7H6z M10 14v3h8v-6h-3'],
+      ['Browser sidebar review', '#7257bf', 'M5 6h14v12H5z M9 6v12 M12 10h4 M12 14h3'],
+      ['React documentation', '#357a8a', 'M5 8l14 8 M5 16l14-8 M12 4v16'],
+      ['Local development', '#3c7a66', 'M5 6h14v12H5z M8 10l3 2-3 2 M13 15h3'],
+      ['Team notes', '#af8d3a', 'M7 5h10v14H7z M10 9h4 M10 12h4 M10 15h3'],
+      ['Read later', '#487f9f', 'M7 5h10v15l-5-4-5 4z'],
+      ['Release notes', '#4d755e', 'M5 6h14v12H5z M8 10h8 M8 14h5'],
+    ]
+    const tabs = pages.map(([title, color, path], index) => ({
+      id: 'design-' + index,
+      title,
+      url: 'https://example.test/' + index,
+      kind: 'web',
+      profileId: 'default',
+      pinned: index < 6,
+      favicon: icon(color, path),
+      ...(index === 11 ? { snoozedUntil: Date.now() + 86400000 } : {}),
+      ...(index === 12 ? { settledAt: Date.now() } : {}),
+    }))
+    localStorage.setItem(
+      'dovo.shared-browser-tabs.v1',
+      JSON.stringify({ tabs, active: 'design-6' }),
+    )
+  })
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await preview.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await preview.addScriptTag({ content: built.outputFiles[0].text })
+  // Neutralize the native-frame fixture for design screenshots.
+  await preview.addStyleTag({
+    content: 'img[aria-hidden][src^="data:image/png"] { filter: grayscale(1) brightness(0.12); }',
+  })
+  const sidebar = preview.getByRole('complementary', { name: 'Recent browser tabs' })
+  await sidebar.locator('[data-browser-tab-id="design-6"]').waitFor()
+  const resize = preview.getByRole('separator', { name: 'Resize Browser tabs' })
+  await resize.focus()
+  await resize.press('ArrowRight')
+  await resize.press('ArrowRight')
+  await preview.mouse.click(1000, 700)
+  mkdirSync(root + 'work/browser-sidebar', { recursive: true })
+  await sidebar.screenshot({ path: root + 'work/browser-sidebar/tabs.png' })
+  await sidebar.getByRole('button', { name: /^Mail Local/ }).click()
+  await preview.mouse.move(1000, 700)
+  await sidebar.screenshot({ path: root + 'work/browser-sidebar/pinned-selected.png' })
+  await sidebar.locator('summary').filter({ hasText: 'Snoozed tabs' }).click()
+  await sidebar.locator('summary').filter({ hasText: 'Settled tabs' }).click()
+  await preview.mouse.move(1000, 700)
+  await sidebar.screenshot({ path: root + 'work/browser-sidebar/groups.png' })
+  assert.equal(await sidebar.getByRole('button', { name: 'History', exact: true }).count(), 0)
+  await preview.getByRole('button', { name: 'Browser options', exact: true }).click()
+  const settings = preview.getByRole('dialog', { name: 'Browser settings', exact: true })
+  await settings.screenshot({ path: root + 'work/browser-sidebar/settings.png' })
+  await settings.getByRole('button', { name: 'History', exact: true }).click()
+  const history = preview.getByRole('dialog', { name: 'History', exact: true })
+  await history.waitFor()
+  assert.equal(await settings.count(), 0, 'Opening History closes Browser settings')
+  assert.equal(
+    await history.evaluate((node) => node.contains(document.activeElement)),
+    true,
+    'Focus moves from Browser settings into History',
+  )
+  await history.screenshot({ path: root + 'work/browser-sidebar/history.png' })
+  await preview.keyboard.press('Escape')
+  await resize.focus()
+  for (let step = 0; step < 6; step++) await resize.press('ArrowLeft')
+  await preview.mouse.click(1000, 700)
+  await sidebar.screenshot({ path: root + 'work/browser-sidebar/narrow.png' })
+  await sidebar.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await preview.mouse.move(1000, 700)
+  await preview.screenshot({
+    path: root + 'work/browser-sidebar/new-tab-menu.png',
+    clip: { x: 0, y: 0, width: 450, height: 500 },
+  })
+  await preview.close()
+}
+
 const browser = await chromium.launch({ headless: true })
+async function checkAddressSelection() {
+  const cases = [
+    ['Tab', 'click', undefined],
+    ['Bookmark', 'click', undefined],
+    ['History', 'click', undefined],
+    ['Bookmark', 'keyboard', undefined],
+    ['Bookmark', 'click', 'Control'],
+    ['History', 'click', 'Meta'],
+    ['Bookmark', 'keyboard', 'Control'],
+    ['History', 'keyboard', 'Meta'],
+    ['Address', 'click', undefined],
+    ['Address', 'keyboard', 'Control'],
+    ['Search', 'keyboard', undefined],
+    ['Search', 'keyboard', 'Meta'],
+    ['AddressSearch', 'click', undefined],
+  ]
+  for (const [source, method, modifier] of cases) {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    try {
+      await page.route('http://localhost/**', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: '<html class="dark"><body><div id="app" style="height:800px"></div></body></html>',
+        }),
+      )
+      await page.goto('http://localhost/')
+      await page.evaluate((source) => {
+        const current = {
+          id: 'current',
+          url: 'http://current.test/',
+          title: 'Current',
+          kind: 'web',
+          profileId: 'default',
+          runtimeId: 'runtime',
+        }
+        const target = {
+          id: 'target',
+          url: 'http://destination.test/',
+          title: 'Destination',
+          kind: 'remote',
+          profileId: 'remote-work',
+          runtimeId: 'mac',
+        }
+        localStorage.setItem(
+          'dovo.shared-browser-tabs.v1',
+          JSON.stringify({
+            active: current.id,
+            tabs: source === 'Tab' ? [current, target] : [current],
+          }),
+        )
+        localStorage.setItem(
+          'dovo.shared-browser-library.v1',
+          JSON.stringify({
+            bookmarks: source === 'Bookmark' ? [target] : [],
+            visits: source === 'History' ? [target] : [],
+          }),
+        )
+      }, source)
+      await page.addScriptTag({ content: built.outputFiles[0].text })
+      const input = page.getByLabel('Preview URL', { exact: true })
+      await input.focus()
+      const query = source === 'Search' ? 'what is node.js' : 'destination.test'
+      const targetURL =
+        source === 'Search' || source === 'AddressSearch'
+          ? 'https://www.google.com/search?q=' + encodeURIComponent(query)
+          : 'http://destination.test/'
+      await input.fill(query)
+      const option =
+        source === 'Address' || source === 'Search'
+          ? page.getByRole('listbox').getByRole('option', { selected: true })
+          : source === 'AddressSearch'
+            ? page.getByRole('option').filter({ hasText: 'Search Google for' })
+            : page.getByRole('option', { name: /^Destination http/ })
+      await option.waitFor()
+      const before = await page.evaluate(() =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
+      )
+      if (method === 'click') await option.click({ modifiers: modifier ? [modifier] : [] })
+      else {
+        if (source !== 'Address' && source !== 'Search') await input.press('ArrowDown')
+        await input.press(modifier ? modifier + '+Enter' : 'Enter')
+      }
+      await page
+        .waitForFunction(
+          ({ count, modifier, targetURL }) => {
+            const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+            const tab = state.tabs.find((tab) => tab.id === state.active)
+            return state.tabs.length === count + (modifier ? 1 : 0) && tab.url === targetURL
+          },
+          { count: before.tabs.length, modifier, targetURL },
+          { timeout: 5000 },
+        )
+        .catch(async (error) => {
+          console.log(
+            await page.evaluate(() => localStorage.getItem('dovo.shared-browser-tabs.v1')),
+          )
+          throw error
+        })
+      const after = await page.evaluate(() =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
+      )
+      const active = after.tabs.find((tab) => tab.id === after.active)
+      assert.equal(
+        after.active === before.active,
+        !modifier,
+        `${source} ${method} ${modifier || 'plain'} selection destination`,
+      )
+      assert.equal(active.kind, 'web', 'Address selection keeps current browser kind')
+      assert.equal(active.profileId, 'default', 'Address selection keeps current browser profile')
+      assert.equal(active.runtimeId, 'runtime', 'Address selection keeps current browser runtime')
+      if (modifier) {
+        const original = before.tabs.find((tab) => tab.id === before.active)
+        const retained = after.tabs.find((tab) => tab.id === before.active)
+        for (const key of ['url', 'title', 'kind', 'profileId', 'runtimeId'])
+          assert.equal(retained[key], original[key], `Modifier selection preserves original ${key}`)
+      }
+    } finally {
+      await page.close()
+    }
+  }
+}
+async function checkUnifiedBrowserControl() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<div id="app" style="height:800px"></div>',
+      }),
+    )
+    await page.goto('http://localhost/unified-browser')
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'existing',
+          tabs: [
+            {
+              id: 'existing',
+              url: 'http://lan.local:3000/',
+              title: 'Existing page',
+              kind: 'web',
+              runtimeId: 'runtime',
+              profileId: 'default',
+            },
+          ],
+        }),
+      )
+      window.controlSelections = []
+      window.fixtureWorkspaceControl = {
+        newTabRequest: 'first',
+        onActivityChange: (states) => {
+          window.controlActivity = states
+          window.activityReports = (window.activityReports ?? 0) + 1
+        },
+        onSelect: (id) => window.controlSelections.push(id),
+        onTabsChange: (tabs, active) => {
+          window.controlTabs = tabs
+          window.controlActive = active
+        },
+      }
+    })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.waitForFunction(
+      () =>
+        window.controlSelections.length === 1 &&
+        window.controlTabs.some((tab) => tab.id === window.controlSelections[0]) &&
+        window.controlActive === window.controlSelections[0],
+    )
+    assert.equal(
+      await page.getByRole('complementary', { name: 'Recent browser tabs' }).count(),
+      0,
+      'Mixed workspace supplies the page list',
+    )
+    await page.evaluate(() => window.renderBrowser())
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      1,
+      'A render does not repeat the new-page request',
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.newTabRequest = 'second'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(
+      () =>
+        window.controlSelections.length === 2 &&
+        window.controlActive === window.controlSelections[1],
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = 'existing'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlActive === 'existing')
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      2,
+      'External page focus does not echo a selection back to the parent',
+    )
+    await page.evaluate(async () => {
+      window.tabActivityStates = [
+        {
+          key: 'studio:browser:main:existing',
+          url: 'http://lan.local:3000/',
+          title: 'Existing page',
+          audible: true,
+        },
+      ]
+      await window.pollBrowser()
+    })
+    await page.waitForFunction(() => window.controlActivity?.existing?.audible === true)
+    const activityReports = await page.evaluate(() => window.activityReports)
+    await page.evaluate(async () => {
+      window.tabActivityStates = window.tabActivityStates.map((state) => ({ ...state }))
+      await window.pollBrowser()
+    })
+    assert.equal(
+      await page.evaluate(() => window.activityReports),
+      activityReports,
+      'Unchanged native polls do not rerender the unified workspace',
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.lifecycleRequest = {
+        requestId: 'unified-mute',
+        tabId: 'existing',
+        action: 'toggle-mute',
+      }
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlActivity?.existing?.muted === true)
+    assert.equal(
+      await page.evaluate(() => window.controlActive),
+      'existing',
+      'Unified mute preserves the active tab',
+    )
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      2,
+      'Unified mute does not select a tab',
+    )
+  } finally {
+    await page.close()
+  }
+}
+async function checkRealUnifiedBrowserIntegration() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<div id="app" style="height:800px"></div>',
+      }),
+    )
+    await page.goto('http://localhost/real-unified-browser')
+    await page.evaluate(() => {
+      window.fixtureUnified = true
+      window.fixtureHeader = true
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'existing',
+          tabs: [
+            {
+              id: 'existing',
+              url: 'http://lan.local:3000/',
+              title: 'Existing page',
+              kind: 'web',
+              runtimeId: 'previous-computer',
+              profileId: 'default',
+            },
+          ],
+        }),
+      )
+    })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.evaluate(() => window.setCleanup({ unifiedWorkspaceEnabled: true }))
+    const workspace = page.getByRole('region', { name: 'Unified workspace' })
+    await workspace.waitFor()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs[0].runtimeId ===
+        'runtime',
+    )
+    await workspace.getByRole('button', { name: 'Existing page', exact: true }).first().click()
+    await page.waitForFunction(() =>
+      window.calls.some((call) => call.action === 'show' && call.tabId === 'existing'),
+    )
+    await workspace.getByRole('button', { name: 'New browser', exact: true }).first().click()
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 2,
+    )
+    await workspace.getByRole('button', { name: 'Workspace home', exact: true }).click()
+    await workspace.getByRole('button', { name: 'Existing page', exact: true }).first().click()
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'existing',
+    )
+    // React's passive effects and external-store subscriptions must settle after selection.
+    const syncCount = () =>
+      page.evaluate(() => window.calls.filter((call) => call.action === 'sync-tabs').length)
+    const before = await syncCount()
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    assert.equal(
+      await syncCount(),
+      before,
+      'Controlled tabs stop publishing once selection has settled',
+    )
+    assert.deepEqual(
+      errors,
+      [],
+      'Real UnifiedWorkspace + BrowserPane renders without update-depth failures',
+    )
+  } finally {
+    await page.close()
+  }
+}
+async function openControlledBrowser(seed, flags = {}) {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:800px"></div>' }),
+  )
+  await page.goto('http://localhost/controlled-browser')
+  await page.evaluate(
+    ({ seed, flags }) => {
+      Object.assign(window, flags)
+      if (seed) localStorage.setItem('dovo.shared-browser-tabs.v1', JSON.stringify(seed))
+      window.fixtureControlled = true
+      window.controlSelections = []
+      window.controlErrors = []
+      window.handledRequests = []
+      window.fixtureWorkspaceControl = {
+        onSelect: (id) => window.controlSelections.push(id),
+        onError: (message) => window.controlErrors.push(message),
+        onLifecycleHandled: (id) => window.handledRequests.push(id),
+        onTabsChange: (tabs, active) => {
+          window.controlActive = active
+        },
+      }
+    },
+    { seed, flags },
+  )
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  return { page, errors }
+}
+async function checkControlledBrowserTabs() {
+  // Without saved tabs the owner starts empty; the pane hands its own list over once.
+  {
+    const { page, errors } = await openControlledBrowser()
+    try {
+      await page.waitForFunction(() => window.controlledTabs?.length === 1)
+      assert.ok(
+        await page.evaluate(() => window.ownerWrites >= 1),
+        'Pane hydrates the owner through onSetTabs',
+      )
+      await page.waitForFunction(
+        () =>
+          JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1') ?? 'null')?.tabs[0]?.id ===
+          window.controlledTabs[0].id,
+      )
+      assert.deepEqual(errors, [])
+    } finally {
+      await page.close()
+    }
+  }
+  const privateProfile = 'private-0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e'
+  const tab = (id, extra = {}) => ({
+    id,
+    url: `http://lan.local:3000/${id}`,
+    title: `Page ${id}`,
+    kind: 'web',
+    runtimeId: 'runtime',
+    profileId: 'default',
+    ...extra,
+  })
+  const closedTab = tab('closed-one')
+  const { page, errors } = await openControlledBrowser({
+    active: 'alpha',
+    tabs: [tab('alpha'), tab('beta')],
+    closed: [closedTab],
+  })
+  const saved = () =>
+    page.evaluate(() => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')))
+  try {
+    await page.waitForFunction(() => window.controlActive === 'alpha')
+    assert.deepEqual(
+      await page.evaluate(() => window.controlledTabs.map((tab) => tab.id)),
+      ['alpha', 'beta'],
+      'Owner restores the same saved tabs the pane would',
+    )
+    // Owner-side lifecycle edits reach the visible pane without changing its selection.
+    const home = page.getByRole('button', { name: 'Return to tab home' })
+    assert.equal(await home.count(), 0)
+    await page.evaluate(() =>
+      window.setControlledTabs((tabs) =>
+        tabs.map((tab) =>
+          tab.id === 'alpha'
+            ? { ...tab, pinned: true, homeUrl: tab.url }
+            : { ...tab, settledAt: Date.now() },
+        ),
+      ),
+    )
+    await home.waitFor({ state: 'visible' })
+    await page.waitForFunction(() => {
+      const sync = window.calls.findLast((call) => call.action === 'sync-tabs')
+      return (
+        sync?.tabs.find((entry) => entry.tab.id === 'alpha')?.tab.pinned === true &&
+        sync.tabs.find((entry) => entry.tab.id === 'beta')?.tab.settledAt !== undefined
+      )
+    })
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+      return state.tabs[0].pinned === true && state.tabs[1].settledAt !== undefined
+    })
+    assert.deepEqual(
+      await page.evaluate(() => [window.controlSelections, window.controlActive]),
+      [[], 'alpha'],
+      'Owner lifecycle edits never steal focus',
+    )
+    // Pane-side edits are written to the owner, not to a private pane copy.
+    const address = page.getByLabel('Preview URL', { exact: true })
+    const writesBefore = await page.evaluate(() => window.ownerWrites ?? 0)
+    await address.fill('http://lan.local:3000/alpha-next')
+    await address.press('Enter')
+    await page.waitForFunction(
+      () =>
+        window.controlledTabs.find((tab) => tab.id === 'alpha')?.url ===
+        'http://lan.local:3000/alpha-next',
+    )
+    assert.ok(
+      (await page.evaluate(() => window.ownerWrites)) > writesBefore,
+      'Pane writes through onSetTabs',
+    )
+
+    // A hidden pane stays mounted and persists the owner's changes itself.
+    await page.evaluate(() => {
+      window.fixtureBackground = true
+      window.renderBrowser()
+    })
+    await page.getByLabel('Preview URL', { exact: true }).waitFor({ state: 'detached' })
+    const snoozedUntil = await page.evaluate((privateProfile) => {
+      const until = Date.now() + 3600000
+      window.setControlledTabs((tabs) => [
+        ...tabs.map((tab) =>
+          tab.id === 'beta' ? { ...tab, settledAt: undefined, snoozedUntil: until } : tab,
+        ),
+        {
+          id: 'secret',
+          url: 'http://lan.local:3000/secret',
+          title: 'Private page',
+          kind: 'web',
+          runtimeId: 'runtime',
+          profileId: privateProfile,
+          pinned: true,
+        },
+      ])
+      return until
+    }, privateProfile)
+    await page.waitForFunction(
+      (until) =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+          (tab) => tab.id === 'beta',
+        )?.snoozedUntil === until,
+      snoozedUntil,
+    )
+    let state = await saved()
+    assert.deepEqual(
+      state.tabs.map((tab) => tab.id),
+      ['alpha', 'beta'],
+      'Private pages are never stored',
+    )
+    assert.equal(state.tabs[1].settledAt, undefined, 'Snoozing clears the saved settle time')
+    assert.equal(state.active, 'alpha', 'Hidden saves keep the pane selection')
+    assert.deepEqual(
+      state.closed.map((tab) => tab.id),
+      ['closed-one'],
+      'Hidden saves keep recently closed pages',
+    )
+    assert.ok(!JSON.stringify(state).includes(privateProfile), 'No private data reaches storage')
+    await page.waitForFunction(() => {
+      const sync = window.calls.findLast((call) => call.action === 'sync-tabs')
+      return sync?.persisted === true && sync.tabs.length === 3
+    })
+    assert.deepEqual(
+      await page.evaluate(() => window.browserWorkspaceTabs.restored().map((tab) => tab.id)),
+      ['alpha', 'beta', 'secret'],
+      'The in-session copy keeps private pages for this renderer only',
+    )
+    assert.deepEqual(
+      await page.evaluate(() => [window.controlSelections, window.controlActive]),
+      [[], 'alpha'],
+      'Hidden owner changes do not change selection',
+    )
+    // With only private pages left, stale saved pages are replaced by the empty fallback.
+    await page.evaluate(() =>
+      window.setControlledTabs((tabs) => tabs.filter((tab) => tab.id === 'secret')),
+    )
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs[0].id === 'empty',
+    )
+    state = await saved()
+    assert.deepEqual(
+      state.tabs.map((tab) => [tab.id, tab.url, tab.profileId]),
+      [['empty', '', 'default']],
+      'A private-only list saves the empty fallback',
+    )
+    assert.equal(state.active, 'empty')
+    assert.ok(
+      !JSON.stringify(state).includes(privateProfile),
+      'The fallback stores no private browsing data',
+    )
+    // Owners resolve the same storage window as the pane; pop-outs get a stable session UUID.
+    const windows = await page.evaluate(() => {
+      const { windowId } = window.browserWorkspaceTabs
+      const popout = windowId({ threadWindow: true })
+      return {
+        popout,
+        stable: windowId({ threadWindow: true }) === popout,
+        explicit: windowId({ browserWindowId: 'explicit', threadWindow: true }),
+        main: windowId({}),
+      }
+    })
+    assert.match(windows.popout, /^[0-9a-f-]{36}$/i, 'Pop-out windows get a session UUID')
+    assert.ok(windows.stable, 'Pop-out window identity is stable for the renderer')
+    assert.equal(windows.explicit, 'explicit', 'An explicit browser window ID wins')
+    assert.equal(windows.main, undefined, 'The main window keeps the main storage key')
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+async function checkBackgroundBrowserService() {
+  const old = Date.now() - 3600000
+  const tab = (id, extra = {}) => ({
+    id,
+    url: `http://lan.local:3000/${id}`,
+    title: `Page ${id}`,
+    kind: 'web',
+    runtimeId: 'runtime',
+    profileId: 'default',
+    ...extra,
+  })
+  const { page, errors } = await openControlledBrowser(
+    { active: 'alpha', tabs: [tab('alpha'), tab('beta'), tab('gamma', { lastActiveAt: old })] },
+    { fixtureBackground: false },
+  )
+  const tabOf = (id) =>
+    page.evaluate((id) => window.controlledTabs.find((tab) => tab.id === id), id)
+  const request = (change) =>
+    page.evaluate((change) => {
+      const requestId = crypto.randomUUID()
+      window.fixtureWorkspaceControl.lifecycleRequest = { requestId, ...change }
+      window.renderBrowser()
+      return requestId
+    }, change)
+  const handled = (requestId) =>
+    page.waitForFunction((id) => window.handledRequests.includes(id), requestId)
+  const control = (change) =>
+    page.evaluate((change) => {
+      Object.assign(window, change)
+      window.renderBrowser()
+    }, change)
+  const nativeShown = (id) =>
+    page.evaluate(
+      (key) => window.calls.some((call) => call.key === key && call.action === 'show'),
+      `studio:browser:main:${id}`,
+    )
+  try {
+    await page.waitForFunction(() => window.controlActive === 'alpha')
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (call) => call.action === 'show' && call.key === 'studio:browser:main:alpha',
+      ),
+    )
+    assert.ok(
+      await page.evaluate(() => window.studioCommands.has('browser.detach')),
+      'A visible pane registers its commands',
+    )
+    // A visible pane shows its own errors; the owner only hears about hidden failures.
+    await handled(await request({ tabId: 'beta', action: 'snooze', until: Date.now() - 1000 }))
+    await page.getByText('Choose a future time for this tab.').waitFor()
+    assert.deepEqual(await page.evaluate(() => window.controlErrors), [])
+    // Unknown pages are acknowledged without changing anything.
+    await handled(await request({ tabId: 'missing', action: 'settle' }))
+    // A visible selected page settles through the pane's own path: the next page is selected.
+    await handled(await request({ tabId: 'alpha', action: 'settle' }))
+    await page.waitForFunction(() => window.controlActive === 'beta')
+    assert.ok((await tabOf('alpha')).settledAt > 0, 'Settle request stores settle time')
+    assert.deepEqual(
+      await page.evaluate(() => window.controlSelections),
+      ['beta'],
+      'A visible pane moves the owner to the next active page',
+    )
+    // Choosing the settled page again wakes it.
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = 'alpha'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlActive === 'alpha')
+    assert.equal((await tabOf('alpha')).settledAt, undefined, 'Selecting a settled page wakes it')
+    // A selected page settled by metadata alone also wakes when chosen again.
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = undefined
+      window.renderBrowser()
+      window.setControlledTabs((tabs) =>
+        tabs.map((tab) => (tab.id === 'alpha' ? { ...tab, settledAt: Date.now() } : tab)),
+      )
+    })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'alpha').settledAt > 0,
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = 'alpha'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'alpha').settledAt === undefined,
+    )
+    assert.equal(await page.evaluate(() => window.controlActive), 'alpha')
+
+    // Background: mounted but not visible. Presentation is released; services keep running.
+    const selections = (await page.evaluate(() => window.controlSelections)).length
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = undefined
+    })
+    await control({ fixtureBackground: true })
+    await page.waitForFunction(() => {
+      const last = window.calls.findLast(
+        (call) => call.key === 'studio:browser:main:alpha' && /^(show|hide)$/.test(call.action),
+      )
+      return last?.action === 'hide'
+    })
+    assert.equal(
+      await page.getByLabel('Preview URL', { exact: true }).count(),
+      0,
+      'A background pane releases the shared header',
+    )
+    assert.equal(
+      await page.evaluate(() => window.studioCommands.has('browser.detach')),
+      false,
+      'A background pane releases its commands',
+    )
+    const tabCount = await page.evaluate(() => window.controlledTabs.length)
+    await page.keyboard.press('Control+t')
+    await page.waitForTimeout(200)
+    assert.equal(
+      await page.evaluate(() => window.controlledTabs.length),
+      tabCount,
+      'A background pane ignores browser shortcuts',
+    )
+    // Find and native menu actions belong to the visible workspace item, not the background pane.
+    const findClaimed = await page.evaluate(() => {
+      const outside = document.createElement('button')
+      document.body.append(outside)
+      const event = new KeyboardEvent('keydown', {
+        key: 'f',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      outside.dispatchEvent(event)
+      outside.remove()
+      return event.defaultPrevented
+    })
+    assert.equal(findClaimed, false, 'A background pane leaves Ctrl+F to the visible item')
+    await page.evaluate(() =>
+      window.contextAction({ action: 'find', key: 'studio:browser:main:alpha' }),
+    )
+    await page.waitForTimeout(200)
+    assert.equal(
+      await page.getByPlaceholder('Find on page').count(),
+      0,
+      'A background pane ignores native find actions',
+    )
+    // Automatic settling and native sync continue while the pane is not shown.
+    const syncsBefore = await page.evaluate(
+      () => window.calls.filter((call) => call.action === 'sync-tabs').length,
+    )
+    await page.evaluate(() => window.setCleanup({ browserAutoSettleMinutes: 30 }))
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'gamma').settledAt > 0,
+    )
+    await page.waitForFunction((before) => {
+      const syncs = window.calls.filter((call) => call.action === 'sync-tabs')
+      return (
+        syncs.length > before &&
+        syncs.at(-1).tabs.find((entry) => entry.tab.id === 'gamma')?.tab.settledAt > 0
+      )
+    }, syncsBefore)
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+          (tab) => tab.id === 'gamma',
+        )?.settledAt > 0,
+    )
+    // Hidden failures reach the owner, every time, even with an identical message.
+    for (let attempt = 0; attempt < 2; attempt++)
+      await handled(await request({ tabId: 'beta', action: 'snooze', until: Date.now() - 1000 }))
+    assert.deepEqual(
+      await page.evaluate(() => window.controlErrors),
+      ['Choose a future time for this tab.', 'Choose a future time for this tab.'],
+      'Hidden lifecycle errors are reported to the owner',
+    )
+    // Lifecycle and native focus changes in the background never pull the owner to the browser.
+    await request({ tabId: 'alpha', action: 'snooze', until: Date.now() + 3600000 })
+    await page.waitForFunction(() => window.controlActive === 'beta')
+    assert.ok((await tabOf('alpha')).snoozedUntil > Date.now(), 'Hidden snooze is stored')
+    await page.evaluate(() => {
+      window.focusedTabKey = 'studio:browser:main:gamma'
+    })
+    await page.evaluate(() => window.pollBrowser())
+    await page.waitForFunction(() => window.controlActive === 'gamma')
+    assert.equal(
+      (await page.evaluate(() => window.controlSelections)).length,
+      selections,
+      'Background lifecycle and native focus changes do not steal focus',
+    )
+    assert.equal(await nativeShown('gamma'), false, 'A background page is never shown')
+    await request({ tabId: 'alpha', action: 'wake' })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'alpha').snoozedUntil === undefined,
+    )
+    await request({ tabId: 'beta', action: 'pin' })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'beta').pinned === true,
+    )
+    // Revealing the pane restores presentation for the page it followed.
+    await control({ fixtureBackground: false })
+    await page.getByLabel('Preview URL', { exact: true }).waitFor({ state: 'visible' })
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (call) => call.action === 'show' && call.key === 'studio:browser:main:gamma',
+      ),
+    )
+    assert.ok(await page.evaluate(() => window.studioCommands.has('browser.detach')))
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+async function checkBackgroundRemoteBrowser() {
+  const { page, errors } = await openControlledBrowser({
+    active: 'remote-one',
+    tabs: [
+      {
+        id: 'remote-one',
+        url: 'http://lan.local:3000/remote',
+        title: 'Remote page',
+        kind: 'remote',
+        runtimeId: 'runtime',
+        profileId: 'default',
+      },
+    ],
+  })
+  const visibility = () => page.evaluate(() => window.remoteVisibility.at(-1))
+  try {
+    await page.waitForFunction(() => window.remoteVisibility.at(-1) === true)
+    await page.evaluate(() => {
+      window.fixtureBackground = true
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.remoteVisibility.at(-1) === false)
+    assert.equal(await visibility(), false, 'A background pane pauses the remote stream')
+    // Lifecycle work still runs against the paused remote page.
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.lifecycleRequest = {
+        requestId: 'remote-pin',
+        tabId: 'remote-one',
+        action: 'pin',
+      }
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlledTabs[0].pinned === true)
+    assert.equal(await visibility(), false, 'Lifecycle work does not resume the stream')
+    await page.evaluate(() => {
+      window.fixtureBackground = false
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.remoteVisibility.at(-1) === true)
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+async function checkAwakeDefaultsAndDetaching() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<html class="dark"><body><div id="app" style="height:800px"></div></body></html>',
+      }),
+    )
+    await page.goto('http://localhost/awake-defaults')
+    await page.evaluate(() => {
+      const base = { kind: 'web', profileId: 'default', runtimeId: 'runtime' }
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'other',
+          tabs: [
+            {
+              ...base,
+              id: 'teams',
+              title: 'Teams',
+              url: 'https://teams.microsoft.com/v2/',
+              pinned: true,
+            },
+            { ...base, id: 'outlook', title: 'Outlook', url: 'https://outlook.office.com/mail/' },
+            { ...base, id: 'gmail', title: 'Gmail', url: 'https://mail.google.com/mail/u/0/' },
+            { ...base, id: 'other', title: 'Other app', url: 'http://localhost/other' },
+          ],
+        }),
+      )
+    })
+    const load = async () => {
+      await page.evaluate(() => {
+        window.testMainDraft = true
+      })
+      for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+        file.endsWith('.css'),
+      ))
+        await page.addStyleTag({
+          content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+        })
+      await page.addScriptTag({ content: built.outputFiles[0].text })
+    }
+    await load()
+    const row = (id) => page.locator('[data-browser-tab-id="' + id + '"]')
+    for (const id of ['teams', 'outlook', 'gmail'])
+      await row(id).getByLabel('Kept awake', { exact: true }).waitFor()
+    assert.equal(await row('other').getByLabel('Kept awake', { exact: true }).count(), 0)
+    await row('teams').click({ button: 'right' })
+    const awake = page.getByRole('menuitemcheckbox', { name: 'Keep awake', exact: true })
+    assert.equal(await awake.getAttribute('aria-checked'), 'true')
+    await awake.click()
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (c) => c.action === 'keep-awake' && c.key.endsWith(':teams') && c.enabled === false,
+      ),
+    )
+    await page.reload()
+    await load()
+    await row('teams').waitFor()
+    assert.equal(
+      await row('teams').getByLabel('Kept awake', { exact: true }).count(),
+      0,
+      'Opt-out survives reload',
+    )
+    await row('gmail').getByLabel('Kept awake', { exact: true }).waitFor()
+    await row('outlook').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Settle tab', exact: true }).click()
+    await page.waitForFunction(() =>
+      window.calls.some((c) => c.action === 'sleep' && c.key.endsWith(':outlook')),
+    )
+    await row('gmail').getByRole('button').first().click()
+    await page
+      .getByRole('complementary', { name: 'Recent browser tabs' })
+      .getByRole('button', { name: 'New browser tab', exact: true })
+      .click()
+    assert.equal(
+      await page.getByRole('menuitem', { name: 'Detach browser', exact: true }).count(),
+      0,
+    )
+    await page.keyboard.press('Escape')
+    await page.evaluate(() => {
+      window.fixtureActivityBar = true
+      window.unmountOnDetach = true
+      window.renderBrowser()
+    })
+    await page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('button', { name: 'Browser', exact: true })
+      .click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Detach browser', exact: true }).click()
+    await page.getByText('Studio threads', { exact: true }).waitFor()
+    await page.waitForFunction(() => window.calls.some((c) => c.action === 'detach-tabs'))
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 1,
+    )
+    const detached = await page.evaluate(() =>
+      window.calls.findLast((c) => c.action === 'detach-tabs'),
+    )
+    assert.ok(
+      await page.evaluate(() => window.calls.some((c) => c.navigate?.viewId === 'tasks')),
+      'Detaching returns the main window to Threads',
+    )
+    assert.equal(detached.tabs.length, 4)
+    assert.equal(detached.activeId, 'gmail')
+    assert.equal(detached.tabs.find((item) => item.tab.id === 'teams').tab.pinned, true)
+    assert.equal(detached.tabs.find((item) => item.tab.id === 'teams').tab.keepAwake, false)
+    assert.ok(detached.tabs.find((item) => item.tab.id === 'outlook').tab.settledAt)
+    await page.evaluate(() => {
+      const detach = window.calls.findIndex((c) => c.action === 'detach-tabs')
+      const navigate = window.calls.findIndex(
+        (c, index) => index > detach && c.navigate?.viewId === 'tasks',
+      )
+      window.sourceSavedBeforeNavigation = window.calls
+        .slice(detach + 1, navigate)
+        .some(
+          (c) => c.action === 'sync-tabs' && c.persisted && c.tabs.every((item) => !item.tab.url),
+        )
+      window.fixtureNavigatedAway = false
+      window.unmountOnDetach = false
+      window.renderBrowser()
+    })
+    assert.equal(
+      await page.evaluate(() => window.sourceSavedBeforeNavigation),
+      true,
+      'Source sync completes before Browser unmounts',
+    )
+    await page.getByRole('complementary', { name: 'Recent browser tabs' }).waitFor()
+    assert.equal(await row('teams').count(), 0, 'Remounting does not resurrect detached tabs')
+    await page.evaluate(() => {
+      const detached = window.calls.findLast((c) => c.action === 'detach-tabs')
+      window.movedTabs.push(...detached.tabs)
+      window.focusedTabKey = detached.tabs.find((item) => item.tab.id === detached.activeId).key
+      // The fixture has no interval timer: only the native handoff signal can adopt these tabs.
+      window.focusBrowserWorkspace()
+    })
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+      return state.tabs.length === 4 && state.active === 'gmail'
+    })
+    const returned = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
+    )
+    assert.deepEqual(
+      returned.tabs.map((tab) => tab.id),
+      detached.tabs.map((item) => item.tab.id),
+      'Return replaces the empty placeholder and preserves order',
+    )
+    assert.equal(returned.tabs.find((tab) => tab.id === 'teams').pinned, true)
+    assert.equal(returned.tabs.find((tab) => tab.id === 'teams').keepAwake, false)
+    assert.ok(returned.tabs.find((tab) => tab.id === 'outlook').settledAt)
+    await page.waitForFunction(() => {
+      const sync = window.calls.findLast((call) => call.action === 'sync-tabs')
+      return sync?.persisted === true && sync.tabs.length === 4
+    })
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+if (process.argv.includes('--unified-integration-only')) {
+  try {
+    await checkRealUnifiedBrowserIntegration()
+    console.log('Real UnifiedWorkspace + BrowserPane + Effect state integration passed.')
+  } finally {
+    await browser.close()
+  }
+  process.exit(0)
+}
 try {
+  await checkRealUnifiedBrowserIntegration()
+  await checkControlledBrowserTabs()
+  await checkBackgroundBrowserService()
+  await checkBackgroundRemoteBrowser()
+  await checkUnifiedBrowserControl()
+  await checkAwakeDefaultsAndDetaching()
+  await checkAddressSelection()
+  await captureBrowserSidebar(browser)
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -150,7 +1273,7 @@ try {
   const recent = page.getByRole('complementary', { name: 'Recent browser tabs' })
   const preview = page.getByRole('region', { name: 'Link preview', exact: true })
   if (!(await recent.isVisible())) throw new Error('Missing vertical tab list')
-  const url = page.getByRole('textbox', { name: 'Preview URL' })
+  const url = page.getByLabel('Preview URL', { exact: true })
   await url.fill('http://localhost:3000')
   await url.press('Enter')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
@@ -174,6 +1297,308 @@ try {
         action,
       action,
     )
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const tab = {
+        id: 'one',
+        url: 'https://example.test',
+        title: 'Example',
+        profileId: 'default',
+        kind: 'web',
+      }
+      const privateTab = {
+        ...tab,
+        id: 'secret',
+        profileId: 'private-00000000-0000-4000-8000-000000000009',
+        url: 'https://secret.test',
+      }
+      const other = { ...tab, id: 'other-profile', profileId: 'work' }
+      const saved = { ...tab, id: 'saved', url: 'https://saved.test' }
+      return {
+        normal: window
+          .addressSuggestions('', [tab, privateTab, other], [tab, saved], [saved], 'default')
+          .map((s) => [s.tab.id, s.source]),
+        private: window
+          .addressSuggestions(
+            '',
+            [tab, privateTab],
+            [saved],
+            [saved],
+            'private-00000000-0000-4000-8000-000000000009',
+          )
+          .map((s) => s.tab.id),
+        search: window.addressSuggestions('saved', [], [saved], [], 'default').map((s) => s.source),
+      }
+    }),
+    {
+      normal: [
+        ['one', 'Tab'],
+        ['other-profile', 'Tab'],
+        ['saved', 'Bookmark'],
+      ],
+      private: ['secret'],
+      search: ['Bookmark'],
+    },
+  )
+  // Native page utilities remain reachable from chrome and keyboard.
+  await page.keyboard.press('Control+=')
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'zoom' && call.direction === 'in'),
+  )
+  await page.keyboard.press('Control+0')
+  await page.keyboard.press('Control+p')
+  await page.waitForFunction(() => window.calls.some((call) => call.action === 'print'))
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Reset zoom', exact: true }).innerText(),
+    '125%',
+  )
+  await page.getByText('Tab & page actions', { exact: true }).click()
+  await page.getByRole('button', { name: 'Save as PDF…', exact: true }).click()
+  await page.waitForFunction(() => window.calls.some((call) => call.action === 'save-pdf'))
+  await page.getByText('Tab & page actions', { exact: true }).click()
+  mkdirSync(root + 'work/browser-page-tools', { recursive: true })
+  await page
+    .getByRole('dialog', { name: 'Browser settings', exact: true })
+    .evaluate((node) => (node.scrollTop = 0))
+  // The fixture uses a red native frame to detect occlusion; keep design captures neutral.
+  const captureStyle = await page.addStyleTag({
+    content: 'img[aria-hidden][src^="data:image/png"] { filter: grayscale(1) brightness(0.12); }',
+  })
+  await page.screenshot({ path: root + 'work/browser-page-tools/browser-settings.png' })
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 800 })
+    const settings = page.getByRole('dialog', { name: 'Browser settings', exact: true })
+    await page.waitForFunction(() => {
+      const rect = document
+        .querySelector('[aria-label="Browser settings"]')
+        ?.getBoundingClientRect()
+      return rect && rect.x >= 0 && rect.right <= innerWidth
+    })
+    const bounds = await settings.boundingBox()
+    assert.ok(
+      bounds && bounds.x >= 0 && bounds.x + bounds.width <= width,
+      'Browser settings fit narrow windows',
+    )
+    assert.equal(
+      await settings.evaluate((node) => node.scrollWidth > node.clientWidth),
+      false,
+      'Browser settings have no horizontal overflow',
+    )
+    await settings.getByRole('button', { name: 'Print…', exact: true }).scrollIntoViewIfNeeded()
+    await settings.evaluate((node) => (node.scrollTop = 0))
+    await page.screenshot({
+      path: root + 'work/browser-page-tools/browser-settings-' + width + '.png',
+    })
+  }
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await captureStyle.evaluate((node) => node.remove())
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => {
+    window.fixtureDownloads = [
+      {
+        id: 1,
+        url: 'https://example.test/file.zip',
+        filename: '/Downloads/file.zip',
+        state: 'in_progress',
+        paused: false,
+        canResume: true,
+        bytesReceived: 1024,
+        totalBytes: 4096,
+        exists: false,
+      },
+      {
+        id: 2,
+        url: 'https://example.test/done.pdf',
+        filename: '/Downloads/done.pdf',
+        state: 'complete',
+        paused: false,
+        canResume: false,
+        bytesReceived: 4096,
+        totalBytes: 4096,
+        exists: true,
+      },
+      {
+        id: 3,
+        url: 'https://example.test/failed.zip',
+        filename: '/Downloads/failed.zip',
+        state: 'interrupted',
+        paused: false,
+        canResume: false,
+        bytesReceived: 0,
+        totalBytes: 4096,
+        exists: false,
+      },
+    ]
+  })
+  await page.getByRole('button', { name: 'Downloads', exact: true }).click()
+  const downloadsDialog = page.getByRole('dialog', { name: 'Downloads', exact: true })
+  await downloadsDialog.waitFor()
+  await page.evaluate(() => window.pollBrowser())
+  await downloadsDialog.getByText('file.zip', { exact: true }).waitFor()
+  await page.screenshot({ path: root + 'work/browser-page-tools/downloads.png' })
+  for (const name of [
+    'Pause',
+    'Cancel',
+    'Open',
+    'Show in folder',
+    'Retry',
+    'Open Downloads folder',
+  ]) {
+    await downloadsDialog.getByRole('button', { name, exact: true }).click()
+    const operation = {
+      Pause: 'pause',
+      Cancel: 'cancel',
+      Open: 'open',
+      'Show in folder': 'reveal',
+      Retry: 'retry',
+      'Open Downloads folder': 'folder',
+    }[name]
+    await page.waitForFunction(
+      (operation) =>
+        window.calls.some((call) => call.action === 'downloads' && call.operation === operation),
+      operation,
+    )
+  }
+  await page.keyboard.press('Escape')
+  await url.focus()
+  await url.fill('localhost')
+  const suggestions = page.getByRole('listbox', { name: 'Address suggestions' })
+  await suggestions.waitFor()
+  await nativeAction('hide')
+  await page.setViewportSize({ width: 480, height: 800 })
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Address suggestions"]').getBoundingClientRect().width >
+      150,
+  )
+  const suggestionBounds = await suggestions.boundingBox()
+  assert.ok(
+    suggestionBounds.x >= 0 && suggestionBounds.x + suggestionBounds.width <= 480,
+    'Address suggestions fit a narrow browser',
+  )
+  await page.screenshot({ path: root + 'work/browser-page-tools/address-suggestions.png' })
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await page.keyboard.press('ArrowDown')
+  assert.equal(await suggestions.getByRole('option', { selected: true }).count(), 1)
+  const tabCountBeforeSuggestion = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length,
+  )
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length,
+    ),
+    tabCountBeforeSuggestion,
+    'Choosing an address navigates without duplicating the tab',
+  )
+  await url.focus()
+  await url.fill('no-such-suggestion-xyz')
+  await suggestions
+    .getByRole('option', { selected: true })
+    .filter({ hasText: 'Search with Google' })
+    .waitFor()
+  await url.fill('example.com/my notes')
+  await suggestions
+    .getByRole('option', { selected: true })
+    .filter({ hasText: 'Go to website' })
+    .waitFor()
+  await suggestions
+    .getByRole('option')
+    .filter({ hasText: 'https://example.com/my%20notes' })
+    .waitFor()
+  await suggestions.getByRole('option').filter({ hasText: 'Search Google for' }).click()
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) =>
+        call.action === 'show' &&
+        call.url === 'https://www.google.com/search?q=example.com%2Fmy%20notes',
+    ),
+  )
+  await url.fill('http://localhost:3000/')
+  await url.press('Enter')
+  await page.keyboard.press('Escape')
+  await url.blur()
+  // The find bar owns keyboard focus without hiding/replacing the native page.
+  await page.keyboard.press('Control+f')
+  const findField = page.getByRole('textbox', { name: 'Find on page', exact: true })
+  await findField.waitFor()
+  await findField.fill('world')
+  await page
+    .getByRole('search', { name: 'Find on page' })
+    .getByRole('status')
+    .filter({ hasText: '1/3' })
+    .waitFor()
+  mkdirSync(root + 'work/browser-page-tools', { recursive: true })
+  await page.screenshot({ path: root + 'work/browser-page-tools/find.png' })
+  await page.setViewportSize({ width: 390, height: 800 })
+  assert.equal(
+    await page
+      .getByRole('search', { name: 'Find on page' })
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+    true,
+    'Find controls wrap without horizontal overflow',
+  )
+  await page.screenshot({ path: root + 'work/browser-page-tools/find-narrow.png' })
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await page.getByRole('button', { name: 'Use regular expression', exact: true }).click()
+  await page.getByRole('button', { name: 'Match case', exact: true }).click()
+  await findField.fill('world|page')
+  await findField.press('Enter')
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (c) =>
+        c.action === 'find' &&
+        c.text === 'world|page' &&
+        c.regex &&
+        c.matchCase &&
+        c.direction === 'next',
+    ),
+  )
+  await findField.press('Shift+Enter')
+  await page.waitForFunction(() =>
+    window.calls.some((c) => c.action === 'find' && c.direction === 'previous'),
+  )
+  await findField.fill('[')
+  await page
+    .getByRole('alert')
+    .filter({ hasText: /regular expression/ })
+    .waitFor()
+  await findField.fill('world')
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Find on page"] [role="alert"]'),
+  )
+  await page.keyboard.press('Control+f')
+  assert.equal(
+    await findField.evaluate(
+      (node) =>
+        document.activeElement === node &&
+        node.selectionStart === 0 &&
+        node.selectionEnd === node.value.length,
+    ),
+    true,
+  )
+  await page.keyboard.press('Escape')
+  await findField.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => window.calls.some((c) => c.action === 'stop-find' && c.focus))
+  await page.evaluate(
+    (key) => window.contextAction({ key, action: 'find', text: '', url: '', title: '' }),
+    `studio:browser:main:${initialTabId}`,
+  )
+  await findField.waitFor()
+  await page.evaluate(
+    (key) => window.contextAction({ key, action: 'close-find', text: '', url: '', title: '' }),
+    `studio:browser:main:${initialTabId}`,
+  )
+  await findField.waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('button', { name: 'Find on page', exact: true }).click()
+  await findField.waitFor()
+  assert.equal(await findField.evaluate((node) => document.activeElement === node), true)
+  await page.getByRole('button', { name: 'Close find', exact: true }).click()
+  await findField.waitFor({ state: 'detached' })
+  await nativeAction('show')
   assert.equal(
     await page.getByRole('button', { name: 'Picture-in-Picture', exact: true }).count(),
     0,
@@ -266,6 +1691,7 @@ try {
   await page.keyboard.press('Escape')
   await page.mouse.move(1190, 790)
   await url.focus()
+  await page.keyboard.press('Escape')
   await nativeAction('show')
   await page.evaluate(() => {
     window.holdCapture = false
@@ -357,6 +1783,8 @@ try {
     const settings = page.getByRole('dialog', { name: 'Browser settings', exact: true })
     if (!(await settings.isVisible()))
       await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+    const more = settings.locator('details.studio-browser-more-actions')
+    if ((await more.getAttribute('open')) === null) await more.locator(':scope > summary').click()
     await settings.getByRole('button', { name, exact: true }).click()
   }
   await pageAction('Copy selection')
@@ -469,9 +1897,7 @@ try {
     opensBeforeReselect,
     'Reselecting the current tab does not reopen its session',
   )
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('remote-work')
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Switch browser profile' }).selectOption('remote-work')
   await page.waitForFunction(() =>
     window.calls.some(
       (call) =>
@@ -671,8 +2097,8 @@ try {
     await recent
       .locator('button[aria-current], button[title]')
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('title'))),
-    rowOrder.toReversed(),
-    'Activity sorting puts the selected tab first',
+    rowOrder,
+    'Activity sorting preserves order on selection',
   )
   await page.reload()
   await loadStyles()
@@ -843,9 +2269,7 @@ try {
     await window.pollBrowser()
   })
   // Simulate the native status queue consumed by production BrowserPane.
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('local-work')
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Switch browser profile' }).selectOption('local-work')
   await page.waitForFunction(() =>
     window.calls.some((call) => call.action === 'show' && call.profileId === 'local-work'),
   )
@@ -855,6 +2279,13 @@ try {
     'Changing profiles loads the current redirected URL',
   )
   const sourceBeforeOpen = await selected()
+  assert.equal(
+    await page
+      .locator(`[data-browser-tab-id="${sourceBeforeOpen.id}"] .studio-browser-tab-profile`)
+      .textContent(),
+    'This computer · Local Work',
+    'Regular tabs show readable names for nondefault profiles',
+  )
   await page.evaluate(async () => {
     window.openedLinks.push('http://localhost:3000/new-window')
     await window.pollBrowser()
@@ -1209,7 +2640,8 @@ try {
     true,
     'Search history persists',
   )
-  await recent.getByRole('button', { name: 'History', exact: true }).click()
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('button', { name: 'History', exact: true }).click()
   const historyDialog = page.getByRole('dialog', { name: 'History', exact: true })
   assert.equal(await historyDialog.getByRole('region', { name: 'Bookmarks' }).count(), 0)
   await historyDialog.getByRole('button', { name: 'Clear history', exact: true }).click()
@@ -1232,7 +2664,8 @@ try {
   await page.setViewportSize({ width: 1200, height: 800 })
   const closedSource = (await persisted()).closed[0]
   await page.keyboard.press('Escape')
-  await recent.getByRole('button', { name: 'History', exact: true }).click()
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('button', { name: 'History', exact: true }).click()
   await historyDialog.getByRole('button', { name: 'Reopen last closed tab', exact: true }).click()
   const libraryReopened = await selected()
   for (const key of ['url', 'kind', 'runtimeId', 'profileId'])
@@ -1274,6 +2707,10 @@ try {
     window.calls.some(
       (call) => call.action === 'show' && call.url === 'http://localhost:3000/private-secret',
     ),
+  )
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Switch browser profile' }).isDisabled(),
+    true,
   )
   const privateShow = await page.evaluate(() =>
     window.calls.findLast(
@@ -1442,7 +2879,7 @@ try {
     .getByRole('complementary', { name: 'Recent browser tabs' })
     .waitFor({ state: 'visible' })
   assert.equal(await gateHeading.count(), 0, 'Enabling preference mounts BrowserPane')
-  const gateUrl = gatePage.getByRole('textbox', { name: 'Preview URL' })
+  const gateUrl = gatePage.getByLabel('Preview URL', { exact: true })
   await gateUrl.fill('http://localhost:3000/gated-page')
   await gateUrl.press('Enter')
   await gatePage.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
@@ -1491,7 +2928,7 @@ try {
     window.fixtureThreadWindow = true
   }, mainSeed)
   await threadPage.addScriptTag({ content: built.outputFiles[0].text })
-  const threadUrl = threadPage.getByRole('textbox', { name: 'Preview URL' })
+  const threadUrl = threadPage.getByLabel('Preview URL', { exact: true })
   await threadUrl.waitFor({ state: 'visible' })
   assert.equal(await threadUrl.inputValue(), '', 'Pop-out does not restore main tabs')
   await threadUrl.fill('http://localhost:3000/thread-only')
@@ -1597,6 +3034,8 @@ try {
   })
   await libraryPage.addScriptTag({ content: built.outputFiles[0].text })
   for (const view of ['Bookmarks', 'History']) {
+    if (view === 'History')
+      await libraryPage.getByRole('button', { name: 'Browser options', exact: true }).click()
     await libraryPage.getByRole('button', { name: view, exact: true }).click()
     const sourceLibrary = libraryPage.getByRole('dialog', { name: view, exact: true })
     const sourceSearch = sourceLibrary.getByRole('textbox', {
@@ -1797,6 +3236,7 @@ try {
   const lifecycleMenu = () =>
     lifecycle.getByRole('button', { name: 'Browser options', exact: true })
   await lifecycleMenu().click()
+  await lifecycle.getByText('Tab & page actions', { exact: true }).click()
   await lifecycle.getByRole('button', { name: 'Settle tab', exact: true }).click()
   await lifecycle.keyboard.press('Escape')
   await lifecycle.waitForFunction(
@@ -1805,7 +3245,36 @@ try {
         (t) => t.id === 'current',
       )?.settledAt,
   )
-  await lifecycle.locator('summary').filter({ hasText: 'Settled tabs' }).click()
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await lifecycle.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await lifecycle.emulateMedia({ reducedMotion: 'reduce' })
+  const settledSummary = lifecycle.locator('summary').filter({ hasText: 'Settled tabs' })
+  const tabChevron = async (open) => {
+    await lifecycle.waitForFunction(
+      ({ element, open }) => {
+        const icon = element.querySelector('.studio-list-section-chevron')
+        if (!icon) return false
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(icon).transform)
+        return (
+          Math.abs(matrix.a - (open ? 1 : 0)) < 0.001 &&
+          Math.abs(matrix.b - (open ? 0 : -1)) < 0.001
+        )
+      },
+      { element: await settledSummary.elementHandle(), open },
+    )
+  }
+  await tabChevron(false)
+  await settledSummary.focus()
+  await lifecycle.keyboard.press('Enter')
+  await tabChevron(true)
+  await lifecycle.keyboard.press('Space')
+  await tabChevron(false)
+  await settledSummary.click()
+  await tabChevron(true)
   await lifecycle
     .getByRole('button', { name: /Current/ })
     .first()
@@ -1815,6 +3284,7 @@ try {
     return s.active === 'current' && !s.tabs.find((t) => t.id === 'current').settledAt
   })
   await lifecycleMenu().click()
+  await lifecycle.getByText('Tab & page actions', { exact: true }).click()
   await lifecycle.locator('summary').filter({ hasText: 'Snooze tab' }).click()
   await lifecycle.getByRole('button', { name: 'Snooze for 1 hour', exact: true }).click()
   await lifecycle.keyboard.press('Escape')
@@ -1858,8 +3328,8 @@ try {
   await custom.getByRole('button', { name: /Destination thread/ }).click()
   assert.equal(await custom.getByTestId('tab-conversation').getAttribute('data-runtime'), 'runtime')
   await custom.getByRole('button', { name: 'Close tab thread panel' }).click()
-  await custom.getByRole('textbox', { name: 'Preview URL' }).fill('http://example.test/page')
-  await custom.getByRole('textbox', { name: 'Preview URL' }).press('Enter')
+  await custom.getByLabel('Preview URL', { exact: true }).fill('http://example.test/page')
+  await custom.getByLabel('Preview URL', { exact: true }).press('Enter')
   await custom.getByRole('button', { name: 'Customize website', exact: true }).click()
   await custom.getByRole('textbox', { name: 'Website JavaScript' }).fill('if (')
   await custom.getByRole('button', { name: 'Save and reload', exact: true }).click()
@@ -2122,15 +3592,33 @@ try {
   assert.ok(pinBounds[3].y > pinBounds[0].y, 'Exactly three pins share a row')
   assert.equal(
     await pins.first().getByText('Website 0', { exact: true }).count(),
-    1,
-    'Pins show a favicon and a readable title',
+    0,
+    'Pinned tabs hide their visible title',
   )
+  assert.ok((await pins.first().getAttribute('title')).startsWith('Website 0\n'))
   assert.equal(
     await compactSidebar.getByRole('button', { name: /^Return .* to home$/ }).count(),
     0,
     'Home stays in the URL bar, not the pinned-tab panel',
   )
   await pins.first().getByLabel('This computer · Local Default').waitFor()
+  assert.equal(
+    await pins.first().getByLabel('This computer · Local Default').textContent(),
+    '',
+    'Default pins retain machine identity without cryptic profile initials',
+  )
+  assert.equal(
+    await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
+    'LW',
+    'Nondefault pins retain compact profile identity',
+  )
+  assert.equal(
+    await compactSidebar
+      .locator('[data-browser-tab-id="compact-4"] .studio-browser-tab-profile')
+      .textContent(),
+    'This computer',
+    'Default regular tabs show readable machine identity without redundant profile initials',
+  )
   await controlsPage.evaluate(() =>
     window.setCleanup({
       browserProfiles: [
@@ -2149,6 +3637,150 @@ try {
     '🏠',
     'Each pin uses its own profile emoji',
   )
+  const pinnedGeometry = () =>
+    compactSidebar.locator('[data-browser-tab-id][data-pinned]').evaluateAll((tiles) =>
+      tiles.map((tile) => {
+        const { x, y, width, height } = tile.getBoundingClientRect()
+        const favicon = tile.querySelector('.studio-browser-tab-favicon').getBoundingClientRect()
+        return { x, y, width, height, faviconX: favicon.x, faviconY: favicon.y }
+      }),
+    )
+  const idlePinGeometry = await pinnedGeometry()
+  assert.ok(
+    idlePinGeometry.every((tile) => tile.height === 64),
+    'Pins keep a compact fixed height',
+  )
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = [
+      {
+        key: 'studio:browser:main:compact-0',
+        url: 'https://example.test/0',
+        title: 'Website 0',
+        badge: 7,
+        audible: true,
+        muted: false,
+        camera: true,
+        microphone: true,
+        screenSharing: true,
+      },
+      {
+        key: 'studio:browser:main:compact-4',
+        url: 'https://example.test/4',
+        title: 'Website 4',
+        agent: true,
+        audible: true,
+        muted: false,
+        camera: true,
+        microphone: true,
+        screenSharing: true,
+      },
+    ]
+    await window.pollBrowser()
+  })
+  await pins.first().getByLabel('7 unread', { exact: true }).waitFor()
+  const firstTile = compactSidebar.locator('[data-browser-tab-id="compact-0"]')
+  await firstTile.getByRole('img', { name: 'Camera on in Website 0', exact: true }).waitFor()
+  await firstTile.getByRole('img', { name: 'Microphone on in Website 0', exact: true }).waitFor()
+  await firstTile.getByRole('img', { name: 'Screen sharing in Website 0', exact: true }).waitFor()
+  await compactSidebar
+    .locator('[data-browser-tab-id="compact-4"]')
+    .getByRole('img', { name: 'An agent is connected to Website 4', exact: true })
+    .waitFor()
+  assert.deepEqual(
+    await pinnedGeometry(),
+    idlePinGeometry,
+    'Media activity does not resize pins, move favicons, or shift adjacent rows',
+  )
+  assert.equal(await compactSidebar.locator('[aria-label*="available to agents"]').count(), 0)
+  const faviconBounds = await pins.first().locator('img').boundingBox()
+  const identityBounds = await pins
+    .first()
+    .getByLabel('This computer · Local Default')
+    .boundingBox()
+  assert.ok(
+    identityBounds.y >= faviconBounds.y + faviconBounds.height,
+    'Device/profile badges sit below the favicon without overlapping it',
+  )
+  assert.equal(faviconBounds.width, 24, 'Pinned favicons keep the compact tab icon size')
+  assert.equal(identityBounds.height, 10, 'Identity badges remain small')
+  const selectedBeforeMute = await controlsPage.evaluate(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+  )
+  await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).click()
+  await firstTile.getByRole('button', { name: 'Unmute tab Website 0', exact: true }).waitFor()
+  assert.equal(
+    await controlsPage.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+    ),
+    selectedBeforeMute,
+    'Mute never selects the sounding tab',
+  )
+  await firstTile.getByRole('button', { name: 'Unmute tab Website 0', exact: true }).click()
+  await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
+  const tileBounds = await firstTile.boundingBox()
+  const activityBounds = await firstTile.getByLabel('Tab activity', { exact: true }).boundingBox()
+  assert.ok(activityBounds.height === 28, 'Pinned activity uses a compact fixed two-row strip')
+  assert.ok(
+    activityBounds.y >= identityBounds.y + identityBounds.height,
+    'Pinned activity sits below the icon and its identity badges',
+  )
+  assert.ok(
+    activityBounds.x >= tileBounds.x &&
+      activityBounds.x + activityBounds.width <= tileBounds.x + tileBounds.width,
+    'All activity controls fit inside a pinned tile',
+  )
+  const regularTab = compactSidebar.locator('[data-browser-tab-id="compact-4"]')
+  const regularTitle = await regularTab.locator('.studio-browser-tab-title').boundingBox()
+  const regularIdentity = await regularTab.locator('.studio-browser-tab-profile').boundingBox()
+  const regularFavicon = await regularTab.locator('.studio-browser-tab-favicon').boundingBox()
+  assert.ok(
+    regularIdentity.y >= regularTitle.y + regularTitle.height &&
+      Math.abs(regularIdentity.x - regularTitle.x) < 1,
+    'Regular tab identity badges sit below and align with the title',
+  )
+  assert.equal(regularFavicon.width, 24, 'Regular and pinned tabs use consistent favicon sizes')
+  assert.equal(
+    await regularTab.locator('.studio-browser-tab-source .studio-browser-tab-profile').count(),
+    0,
+    'Only pinned tabs overlay identity badges on the icon',
+  )
+  const regularActivity = await regularTab.getByLabel('Tab activity', { exact: true }).boundingBox()
+  assert.ok(
+    regularActivity.x >= regularIdentity.x + regularIdentity.width &&
+      Math.abs(
+        regularActivity.y +
+          regularActivity.height / 2 -
+          (regularIdentity.y + regularIdentity.height / 2),
+      ) < 1,
+    'Regular tab activity shares one row with the identity badges below the title',
+  )
+  assert.equal(
+    await regularTab.locator('button button').count(),
+    0,
+    'Mute remains a separate control',
+  )
+  await firstTile.getByRole('img', { name: 'Camera on in Website 0', exact: true }).click()
+  await controlsPage.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'compact-0',
+  )
+  await regularTab.getByRole('img', { name: 'Microphone on in Website 4', exact: true }).click()
+  await controlsPage.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'compact-4',
+  )
+  await firstTile.click({ position: { x: 3, y: 3 } })
+  await controlsPage.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'compact-0',
+  )
+  await regularTab.getByRole('button', { name: 'Settle tab Website 4', exact: true }).click()
+  assert.equal(
+    await controlsPage.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+    ),
+    'compact-0',
+    'Settle never selects another tab',
+  )
+  // Restore the selection used by the remaining page-permission checks.
+  await regularTab.locator('[data-browser-tab-select]').dispatchEvent('click')
   await pins.first().hover()
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-refined.png' })
   const awakeIcon = await pins.first().getByLabel('Kept awake').boundingBox()
@@ -2172,7 +3804,69 @@ try {
     narrowPins[2].y > narrowPins[0].y,
     'Narrow sidebars wrap pins before their contents are squeezed',
   )
+  const narrowActiveGeometry = await pinnedGeometry()
+  const narrowMic = await firstTile.locator('[data-browser-activity="microphone"]').boundingBox()
+  await controlsPage.evaluate(async () => {
+    window.savedActivityStates = window.tabActivityStates
+    window.tabActivityStates = window.tabActivityStates.map((state) => ({
+      ...state,
+      audible: false,
+      muted: false,
+      camera: false,
+      screenSharing: false,
+      agent: false,
+    }))
+    await window.pollBrowser()
+  })
+  await firstTile
+    .getByRole('button', { name: 'Mute tab Website 0', exact: true })
+    .waitFor({ state: 'hidden' })
+  assert.deepEqual(
+    await pinnedGeometry(),
+    narrowActiveGeometry,
+    'Partial activity keeps narrow pins stable',
+  )
+  assert.deepEqual(
+    await firstTile.locator('[data-browser-activity="microphone"]').boundingBox(),
+    narrowMic,
+    'Microphone stays in its own slot when other signals stop',
+  )
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = []
+    await window.pollBrowser()
+  })
+  await firstTile.getByLabel('Tab activity', { exact: true }).waitFor({ state: 'hidden' })
+  assert.deepEqual(
+    await pinnedGeometry(),
+    narrowActiveGeometry,
+    'Idle narrow pins retain their space',
+  )
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = window.savedActivityStates
+    await window.pollBrowser()
+  })
+  await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-narrow.png' })
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = []
+    window.setNativePage('studio:browser:main:compact-4', {
+      profileId: 'default',
+      url: 'https://example.test/4',
+      title: 'Website 4',
+      back: false,
+      forward: false,
+    })
+    await window.pollBrowser()
+  })
+  await firstTile.getByLabel('Tab activity', { exact: true }).waitFor({ state: 'detached' })
+  await compactSidebar
+    .getByRole('img', { name: /An agent is connected/ })
+    .waitFor({ state: 'detached' })
+  assert.equal(
+    await pins.first().getByLabel('7 unread', { exact: true }).count(),
+    0,
+    'Resolved activity clears its pill and device indicators',
+  )
   for (let step = 0; step < 6; step++) await separator.press('ArrowRight')
   await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 244)
   const currentRow = compactSidebar.getByRole('button', { name: /^Website 4 Local/ })
@@ -2190,6 +3884,44 @@ try {
   )
   await compactSidebar.getByRole('button', { name: 'Settle tab Website 4', exact: true }).waitFor()
   await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
+  const permissionList = controlsPage.getByLabel('Website permissions', { exact: true })
+  await controlsPage.getByRole('combobox', { name: 'Automatic PiP permission' }).waitFor()
+  assert.equal(
+    await permissionList.getByRole('combobox').count(),
+    1,
+    'A site without requests shows only Automatic PiP, including with default-allowed permissions',
+  )
+  await permissionList.locator('[aria-busy="false"]').waitFor()
+  await permissionList.getByRole('heading').click()
+  await controlsPage.mouse.move(1150, 700)
+  const permissionCaptureStyle = await controlsPage.addStyleTag({
+    content: 'img[aria-hidden][src^="data:image/png"] { filter: grayscale(1) brightness(0.12); }',
+  })
+  await controlsPage.screenshot({ path: root + 'work/shared-browser/site-permissions-fresh.png' })
+  await controlsPage.keyboard.press('Escape')
+  await controlsPage.evaluate(() =>
+    window.setSiteRequests('default', 'https://example.test', [
+      'notifications',
+      'microphone',
+      'camera',
+      'idle-detection',
+      'clipboard-read',
+    ]),
+  )
+  await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
+  await controlsPage.getByRole('combobox', { name: 'Microphone permission' }).waitFor()
+  assert.equal(await permissionList.getByRole('combobox').count(), 6)
+  assert.equal(
+    await controlsPage.getByRole('combobox', { name: 'USB devices permission' }).count(),
+    0,
+  )
+  await permissionList.locator('[aria-busy="false"]').waitFor()
+  await permissionList.getByRole('heading').click()
+  await controlsPage.mouse.move(1150, 700)
+  await controlsPage.screenshot({
+    path: root + 'work/shared-browser/site-permissions-requested.png',
+  })
+  await permissionCaptureStyle.evaluate((node) => node.remove())
   await controlsPage.getByRole('combobox', { name: 'Microphone permission' }).selectOption('allow')
   await controlsPage.waitForFunction(() =>
     window.calls.some(
@@ -2213,7 +3945,7 @@ try {
     ),
   )
   await controlsPage
-    .getByRole('combobox', { name: 'Automatic call PiP permission' })
+    .getByRole('combobox', { name: 'Automatic PiP permission' })
     .selectOption('allow')
   await controlsPage
     .getByRole('combobox', { name: 'Read clipboard permission' })
@@ -2235,9 +3967,7 @@ try {
     'block',
   )
   assert.equal(
-    await controlsPage
-      .getByRole('combobox', { name: 'Automatic call PiP permission' })
-      .inputValue(),
+    await controlsPage.getByRole('combobox', { name: 'Automatic PiP permission' }).inputValue(),
     'allow',
   )
   assert.equal(
@@ -2282,6 +4012,17 @@ try {
     false,
     'Moving retains the native page',
   )
+  await compactSidebar.getByRole('button', { name: /^Website 2 Local/ }).click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Detach to new window', exact: true }).click()
+  await controlsPage.waitForFunction(() => window.transferredTab?.tab.id === 'compact-2')
+  assert.equal(await controlsPage.evaluate(() => window.transferredTab.tab.pinned), true)
+  assert.equal(await controlsPage.evaluate(() => window.transferredTab.targetWindowId), undefined)
+  await controlsPage.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
+        (tab) => tab.id === 'compact-2',
+      ),
+  )
   await compactSidebar.getByRole('button', { name: /^Website 1 Local/ }).click({ button: 'right' })
   await controlsPage.getByRole('menuitem', { name: 'Move to another window', exact: false }).hover()
   await controlsPage.getByRole('menuitem', { name: 'Other browser window', exact: true }).click()
@@ -2325,9 +4066,9 @@ try {
   await compactSidebar.getByRole('button', { name: 'New browser tab', exact: true }).click()
   await controlsPage.getByRole('menuitem', { name: 'Mac Studio', exact: true }).click()
   await controlsPage
-    .getByRole('textbox', { name: 'Preview URL' })
+    .getByLabel('Preview URL', { exact: true })
     .fill('http://localhost:3000/remote-icon')
-  await controlsPage.getByRole('textbox', { name: 'Preview URL' }).press('Enter')
+  await controlsPage.getByLabel('Preview URL', { exact: true }).press('Enter')
   await controlsPage.getByRole('button', { name: /^Page .*Remote · Mac Studio/ }).waitFor()
   const icon = await compactSidebar
     .getByLabel('Pinned browser tabs')
@@ -2357,6 +4098,18 @@ try {
     await remoteIconRow.locator('img').count(),
     0,
     'A definitive missing icon clears the remote favicon',
+  )
+  await firstTile.locator('[data-browser-tab-select]').click()
+  await remoteIconRow
+    .locator('..')
+    .getByRole('button', { name: /^Close tab / })
+    .click()
+  assert.equal(
+    await controlsPage.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+    ),
+    'compact-0',
+    'Close never selects another tab',
   )
   await controlsPage.close()
 
@@ -2418,7 +4171,7 @@ try {
     'Selecting a pin must not reorder it',
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.equal(await row('normal-b').getAttribute('draggable'), 'true')
   await row('normal-c').dragTo(row('normal-a'), { targetPosition: { x: 30, y: 3 } })
@@ -2436,12 +4189,19 @@ try {
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.map((tab) => tab.id),
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).check()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).check()
   await orderPage.keyboard.press('Escape')
   await row('normal-b').getByRole('button').first().click()
-  assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows selection')
+  assert.equal((await visibleOrder())[2], 'normal-a', 'Activity mode ignores selection')
+  await orderPage.getByLabel('Preview URL', { exact: true }).fill('http://navigation.lan/new')
+  await orderPage.keyboard.press('Enter')
+  await orderPage.waitForFunction(
+    () =>
+      document.querySelectorAll('[data-browser-tab-id]')[2]?.dataset.browserTabId === 'normal-b',
+  )
+  assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows navigation')
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.deepEqual(await visibleOrder(), savedOrder, 'Returning to manual mode restores its order')
   await loadOrderPage()
@@ -2472,7 +4232,9 @@ try {
   const beforeViewport = await orderPage.evaluate(() => window.calls.length)
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
   await orderPage.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('phone')
-  await orderPage.keyboard.press('Escape')
+  await orderPage
+    .getByRole('combobox', { name: 'Viewport', exact: true })
+    .waitFor({ state: 'hidden' })
   await orderPage.waitForFunction(
     (start) => window.calls.slice(start).some((call) => call.action === 'show' && call.viewport),
     beforeViewport,
@@ -2485,6 +4247,21 @@ try {
     false,
     'Viewport reconfiguration must not leave the page',
   )
+  const portrait = await orderPage.evaluate(
+    () => window.calls.findLast((call) => call.action === 'show').viewport,
+  )
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('button', { name: 'Rotate', exact: true }).click()
+  await orderPage.waitForFunction(({ width, height }) => {
+    const last = window.calls.findLast((call) => call.action === 'show')
+    return last?.viewport?.width === height && last?.viewport?.height === width
+  }, portrait)
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('fill')
+  await orderPage.waitForFunction(() => {
+    const last = window.calls.findLast((call) => ['show', 'hide'].includes(call.action))
+    return last?.action === 'show' && !last.viewport
+  })
   const beforeLeave = await orderPage.evaluate(() => window.calls.length)
   await orderPage.evaluate(() => {
     window.fixtureNavigatedAway = true
@@ -2496,9 +4273,88 @@ try {
   )
   await orderPage.close()
 
+  for (const detached of [false, true]) {
+    const headerPage = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    headerPage.on('pageerror', (error) => errors.push(error.message))
+    await headerPage.route('http://browser-header.test/', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<html class="dark"><body style="margin:0"><div id="app"></div></body></html>',
+      }),
+    )
+    await headerPage.goto('http://browser-header.test/')
+    for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+      file.endsWith('.css'),
+    ))
+      await headerPage.addStyleTag({
+        content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+      })
+    await headerPage.evaluate((detached) => {
+      window.fixtureHeader = true
+      window.fixtureDetached = detached
+    }, detached)
+    await headerPage.addScriptTag({ content: built.outputFiles[0].text })
+    for (const collapsed of [false, true, false]) {
+      await headerPage.evaluate((collapsed) => window.collapseBrowserSidebar(collapsed), collapsed)
+      await headerPage.waitForFunction(
+        ({ detached, collapsed }) =>
+          document.querySelector('.studio-header-layout')?.dataset.inlineHeader ===
+          String(!detached && !collapsed),
+        { detached, collapsed },
+      )
+      for (const width of [1600, 1280, 1100, 1024]) {
+        await headerPage.setViewportSize({ width, height: 800 })
+        await headerPage.waitForFunction(
+          () => document.querySelector('.studio-header-layout')?.dataset.compact === 'false',
+        )
+        const toolbar = headerPage.getByRole('form', { name: 'Browser navigation' })
+        await toolbar.waitFor()
+        await headerPage.waitForFunction(
+          () =>
+            document.querySelector('[aria-label="Browser navigation"]').getBoundingClientRect().y <
+            10,
+        )
+        assert.equal(
+          await toolbar.count(),
+          1,
+          'One live toolbar across header and sidebar handoffs',
+        )
+        const address = headerPage.getByRole('combobox', { name: 'Preview URL', exact: true })
+        const box = await address.boundingBox()
+        assert.ok(
+          box.width >= 48,
+          'Address remains editable in the desktop header: ' +
+            JSON.stringify({ width, collapsed, detached, box }),
+        )
+        const geometry = await toolbar.evaluate((form) => ({
+          height: form.getBoundingClientRect().height,
+          right: form.getBoundingClientRect().right,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        }))
+        assert.equal(geometry.height, 52, 'Toolbar shares the application header height')
+        assert.ok(
+          geometry.right <= width + 1 && !geometry.overflow,
+          'Header stays within the window',
+        )
+        await address.fill('http://header.lan/test')
+        await address.press('Enter')
+        await headerPage.waitForFunction(() =>
+          window.calls.some(
+            (call) => call.action === 'show' && call.url === 'http://header.lan/test',
+          ),
+        )
+      }
+    }
+    await headerPage.setViewportSize({ width: 1280, height: 800 })
+    await headerPage.screenshot({
+      path: '/tmp/dovo-browser-header-' + (detached ? 'detached' : 'main') + '.png',
+    })
+    await headerPage.close()
+  }
+
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Shared browser tabs, local/remote ownership and profiles, saved pages, private/pinned tabs, temporary link previews, native/remote promotion without page replacement, nested/deferred navigation, bounded cleanup, shortcuts, drafts, feature gate and pop-out isolation passed.',
+    'Shared browser page utilities (zoom, downloads, print/PDF and private-safe address suggestions), local/remote ownership and profiles, saved pages, private/pinned tabs, temporary link previews, native/remote promotion without page replacement, nested/deferred navigation, bounded cleanup, shortcuts, drafts, feature gate and pop-out isolation passed.',
   )
 } finally {
   await browser.close()

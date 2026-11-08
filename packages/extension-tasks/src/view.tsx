@@ -1,7 +1,6 @@
 import type { WorkspaceControls } from './chat/composer/composer-workspace'
 import type { SelectRemoteProject } from './chat/composer/composer-project'
 import type { CodeFinding } from '@dovo/protocol'
-import { TaskWaitingPanel } from './detail/task-waiting-panel'
 import { fileStats } from './files/presentation'
 import { randomUUID, checkpointFileCount } from '@dovo/protocol'
 import { forgePullTarget, pullRepositoryIdentity } from '@dovo/protocol'
@@ -25,7 +24,7 @@ import { LinkedProjects } from './detail/linked-projects'
 import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { X, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Maximize2, Minimize2, Bot, FolderSymlink, FileDiff } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
   createTask,
@@ -80,13 +79,38 @@ import { StartupDraft } from './task-creation/startup-draft'
 import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
 import { SideQuestion } from './chat/thread/side-question'
 import { ReplicatedThread } from './detail/replicated-thread'
+import {
+  BringBackButton,
+  DiscardSideDraft,
+  SideThreadAttentionBadge,
+  SideThreadAttentionBanner,
+  SideThreadBar,
+  SideThreadProvenance,
+  SideThreadsPanel,
+  focusSideThreadAttention,
+  useSideThreadAttention,
+} from './chat/thread/side-threads-panel'
+import {
+  forgetSideChatBeside,
+  handoffApplied,
+  recordHandoff,
+  recordSideChatBeside,
+  sideChatBeside,
+  sideThreadOf,
+  unusedSideDraft,
+  type SideThreadHandoff,
+} from './detail/side-threads'
+import { ReviewSideThreadChangesButton } from './detail/side-thread-changes'
+import { sideThreadAttention, type SideThreadAttention } from '@dovo/protocol'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 export default function TasksView({
   entityId,
   threadParent,
   nativeAgentKey,
   navigationKey,
-}: StudioViewProps) {
+  pullTarget,
+  embedded = false,
+}: StudioViewProps & { embedded?: boolean }) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -106,6 +130,9 @@ export default function TasksView({
   )
   const preferences = useAppPreferences()
   const host = useStudioHost()
+  // Unified can replace its host object when palette registration rerenders the shell.
+  // Subscriptions depend on the registry function, not unrelated navigation context.
+  const { registerCommand } = host
   const localTasks = useMemo(
     () => workspace.tasks.filter((task) => !task.example),
     [workspace.tasks],
@@ -132,7 +159,8 @@ export default function TasksView({
   const task = storedTask ?? (usingStartupDraft ? startupDraft?.task : undefined)
   const hasDiff =
     !!task &&
-    (task.files.length > 0 ||
+    (workspace.repositories.some((repo) => repo.id === task.repositoryId && !repo.kind) ||
+      task.files.length > 0 ||
       !!task.linkedCheckouts?.length ||
       task.historyTotals?.hasChanges ||
       (task.turns ?? []).some(
@@ -144,8 +172,6 @@ export default function TasksView({
   }, [entityId, storedTask?.id, deselected])
   const compact = useCompactLayout()
   const [viewerExpanded, setViewerExpanded] = useState(false)
-  const [viewerDocked, setViewerDocked] = useState(false)
-  const workspacePane = useRef<HTMLDivElement | null>(null)
   const editingFile = useRef(false)
   const setFileEditing = useCallback((value: boolean) => {
     editingFile.current = value
@@ -170,19 +196,69 @@ export default function TasksView({
       .map((id) => watchRuntimeTask(connection, id))
     return () => stops.forEach((stop) => stop())
   }, [store.connection, deselected, selectedId, entityId, splitId])
+  // A side chat shown beside its parent returns with that parent, and only with it. Other
+  // side-by-side threads keep their usual behavior.
+  const runtimeIdentity = snapshot?.runtimeId
+  const besideScope = (parentId: string) => taskCollectionKey(activeRuntimeId, parentId)
+  const pairedChild =
+    !compact && task ? sideChatBeside(besideScope(task.id), runtimeIdentity) : undefined
+  const restorableChild = localTasks.some(
+    (item) =>
+      item.id === pairedChild && !item.archivedAt && sideThreadOf(item)?.parentTaskId === task?.id,
+  )
+    ? pairedChild!
+    : ''
+  // Restores once per parent selection; a side chat opened explicitly with the parent wins.
+  const restoredFor = useRef('')
+  useEffect(() => {
+    if (compact || !task) return
+    const parentKey = besideScope(task.id)
+    if (restoredFor.current === parentKey) return
+    const shown = localTasks.find((item) => item.id === splitId)
+    const link = shown && sideThreadOf(shown)
+    if (link?.parentTaskId === task.id) {
+      restoredFor.current = parentKey
+      return
+    }
+    if (restorableChild) {
+      restoredFor.current = parentKey
+      setSplitId(restorableChild)
+      return
+    }
+    // A side chat paired with another parent does not follow the selection.
+    if (link) setSplitId('')
+    // Wait for a paired side chat that has not loaded yet.
+    if (!pairedChild) restoredFor.current = parentKey
+  }, [task?.id, restorableChild, compact, activeRuntimeId])
+  useEffect(() => {
+    if (task && splitSummary && sideThreadOf(splitSummary)?.parentTaskId === task.id)
+      recordSideChatBeside(besideScope(task.id), runtimeIdentity, splitSummary.id)
+  }, [task?.id, splitSummary?.id, runtimeIdentity, activeRuntimeId])
+  /** Closing, or explicitly replacing, a side-by-side side chat ends its pairing. */
+  const closeSplit = (next = '') => {
+    if (task && splitSummary && sideThreadOf(splitSummary)?.parentTaskId === task.id)
+      forgetSideChatBeside(besideScope(task.id))
+    setSplitId(next)
+  }
   const [listOpen, setListOpen] = useApplicationState(false)
-  const [sidebar, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const [sidebarPreference, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const sidebar = !embedded && sidebarPreference
   const navigationSidebar = useNavigationSidebar()
   useEffect(() => {
-    if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
+    if (!embedded && compact && navigationSidebar?.setCollapsed)
+      setListOpen(!navigationSidebar.collapsed)
   }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
-  const [selectedSideChats, setSelectedSideChats] = useState<Record<string, string>>({})
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
     threadKey: string
     id: string
     text: string
+    replaceKey?: string
   } | null>(null)
+  // Side chat results wait for their parent's composer, which appends each receipt once.
+  const [handoffs, setHandoffs] = useState<
+    { threadKey: string; id: string; text: string; once: true }[]
+  >([])
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
   const [artifactSelection, setArtifactSelection] = useState<{
@@ -221,21 +297,19 @@ export default function TasksView({
   useEffect(() => {
     if (!nativeAgentKey) setNativeThread(undefined)
   }, [entityId, navigationKey, nativeAgentKey])
+  const [fileReveal, setFileReveal] = useState<{
+    threadKey: string
+    path: string
+    line: number
+    checkoutId?: string
+    requestId: string
+  }>()
   const surface = threadSurfaces[threadKey] ?? 'chat'
   const [browserPlacements, setBrowserPlacements] = useState<Record<string, PreviewPlacement>>({})
   const browserPlacement = browserPlacements[threadKey] ?? 'inline'
   const browserDetached = surface === 'browser' && browserPlacement !== 'inline'
   const toolsExpanded = surface !== 'chat' && surface !== 'terminal'
   const fileViewer = surface === 'files' || surface === 'changes'
-  useEffect(() => {
-    const element = workspacePane.current
-    if (!element) return
-    const observer = new ResizeObserver(([entry]) =>
-      setViewerDocked(entry.contentRect.width >= 1050),
-    )
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [task?.id])
   const repository = workspace.repositories.find((item) => item.id === task?.repositoryId)
   const refreshChanges = useCallback(async () => {
     if (!task || task.replica || repository?.kind || editingFile.current) return
@@ -342,6 +416,26 @@ export default function TasksView({
       }
     >
   >({})
+  // A PR handoff opens its task with that PR beside the full chat, once per navigation.
+  const openedPullTarget = useRef('')
+  useEffect(() => {
+    if (!entityId || !pullTarget?.repositoryId || pullTarget.runtimeId !== activeRuntimeId) return
+    const route = JSON.stringify([entityId, navigationKey, pullTarget])
+    if (openedPullTarget.current === route || !workspace.tasks.some((item) => item.id === entityId))
+      return
+    openedPullTarget.current = route
+    const key = taskCollectionKey(activeRuntimeId, entityId)
+    setPullPreviews((current) => ({
+      ...current,
+      [key]: {
+        repositoryId: pullTarget.repositoryId!,
+        number: pullTarget.number,
+        tab: pullTarget.tab,
+        fragment: pullTarget.fragment,
+      },
+    }))
+    setThreadSurfaces((current) => ({ ...current, [key]: 'pull-preview' }))
+  }, [entityId, navigationKey, pullTarget, activeRuntimeId, workspace.tasks])
   const openArtifact = (reference: ArtifactReference) => {
     const key = taskCollectionKey(activeRuntimeId, reference.taskId)
     setArtifactSelection({ threadKey: key, id: reference.id, openId: randomUUID() })
@@ -511,7 +605,7 @@ export default function TasksView({
         return
       }
       if (!target.source.online) {
-        setError('This device is offline. Reconnect it before starting a task.')
+        setError('This device is offline. Reconnect it before starting a thread.')
         return
       }
       const runtimeId = target.source.runtimeId
@@ -546,7 +640,7 @@ export default function TasksView({
     const repository = workspace.repositories.find((repo) => repo.id === pendingCreate.repositoryId)
     const template = repository?.templates?.find((item) => item.id === pendingCreate.templateId)
     const created = createTask({
-      title: template?.name ?? 'New task',
+      title: template?.name ?? 'New thread',
       objective: '',
       agentId: '',
       ...resolveTaskDefaults(store.snapshot?.defaults, repository),
@@ -635,23 +729,23 @@ export default function TasksView({
   })
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.new',
         title: 'New thread',
-        aliases: ['new task', 'new chat', 'start conversation'],
+        aliases: ['new thread', 'new chat', 'start conversation'],
         run: newThread,
       }),
-    [host, newThread],
+    [registerCommand, newThread],
   )
   useEffect(() => {
     const disposers = [
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.switch',
-        title: 'Go to task…',
-        aliases: ['go to thread', 'find thread', 'find task', 'switch thread', 'switch task'],
+        title: 'Go to thread…',
+        aliases: ['go to thread', 'find thread', 'find thread', 'switch thread', 'switch thread'],
         run: () => setSearching('tasks'),
       }),
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.search',
         title: 'Search conversations…',
         aliases: ['search messages', 'find message', 'search thread', 'find in conversation'],
@@ -661,16 +755,16 @@ export default function TasksView({
     return () => {
       for (const dispose of disposers) dispose()
     }
-  }, [host])
+  }, [registerCommand])
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.terminal',
         title: 'Toggle terminal',
         aliases: ['shell', 'console', 'command line'],
         run: toggleTerminal,
       }),
-    [host, toggleTerminal],
+    [registerCommand, toggleTerminal],
   )
   // Sidebar order, reported by the visible task list, for switching tasks from the keyboard.
   const order = useRef<TaskEntry[]>([])
@@ -687,15 +781,78 @@ export default function TasksView({
     selectedKey: '',
     stop: () => {},
     split: false,
+    closeSplit: () => {},
   })
   const { request } = store
   const [stopError, setStopError] = useApplicationState('')
   const [transcriptNotice, setTranscriptNotice] = useApplicationState('')
-  const openSideChat = useCommittedCallback((key: string, chatId?: string) => {
-    if (chatId) setSelectedSideChats((current) => ({ ...current, [key]: chatId }))
-    setThreadSurfaces((current) => ({ ...current, [key]: 'side-chats' }))
-    // Saving a question can finish after the user has switched threads or runtimes.
-    if (key === threadKey) selectSurface('side-chats', true)
+  const openThread = useCommittedCallback((id: string, beside: string = '') => {
+    setSelectedId(id)
+    setDeselected(false)
+    setSplitId(compact ? '' : beside)
+    host.navigate({ viewId: 'tasks', entityId: id })
+  })
+  // Side chats open beside their parent where there is room, and as a normal thread otherwise.
+  // The current tool, such as a PR preview, stays open next to both threads.
+  const openSideThread = useCommittedCallback((key: string, childId?: string) => {
+    if (!childId) {
+      setThreadSurfaces((current) => ({ ...current, [key]: 'side-chats' }))
+      if (key === threadKey) selectSurface('side-chats', true)
+      return
+    }
+    // Creating a side chat can finish after the user has switched threads or runtimes.
+    if (key !== threadKey) return
+    if (compact) openThread(childId)
+    else setSplitId(childId)
+  })
+  const [handoffNotice, setHandoffNotice] = useState<{ threadKey: string; text: string } | null>(
+    null,
+  )
+  useEffect(() => {
+    if (!handoffNotice) return
+    const timer = setTimeout(() => setHandoffNotice(null), 8000)
+    return () => clearTimeout(timer)
+  }, [handoffNotice])
+  const deliverHandoff = useCommittedCallback((handoff: SideThreadHandoff, title: string) => {
+    const key = taskCollectionKey(activeRuntimeId, handoff.id)
+    // A repeated receipt, or text the saved draft already holds, is not added again.
+    const repeat =
+      handoffApplied(key, handoff.receiptId) ||
+      !!workspace.tasks.find((item) => item.id === handoff.id)?.draft?.includes(handoff.text)
+    setHandoffNotice({
+      threadKey: key,
+      text: repeat
+        ? `Results from “${title}” were already brought back to this draft.`
+        : `Added results from “${title}” to this draft. Review them before sending.`,
+    })
+    if (handoffApplied(key, handoff.receiptId)) return
+    setHandoffs((current) => [
+      ...current.filter((item) => item.threadKey !== key || item.id !== handoff.receiptId),
+      { threadKey: key, id: handoff.receiptId, text: handoff.text, once: true },
+    ])
+  })
+  const sideAttention = useSideThreadAttention()
+  // Approvals and questions use the side chat's normal controls, opened where it is shown.
+  const attendSideThread = useCommittedCallback((childId: string, kind: SideThreadAttention) => {
+    if (compact) openThread(childId)
+    else setSplitId(childId)
+    focusSideThreadAttention(childId, kind)
+  })
+  const sideThreadDiscarded = useCommittedCallback((childId: string) => {
+    const parentId = sideThreadOf(
+      workspace.tasks.find((item) => item.id === childId) ?? { id: '' },
+    )?.parentTaskId
+    if (parentId && sideChatBeside(besideScope(parentId), runtimeIdentity) === childId)
+      forgetSideChatBeside(besideScope(parentId))
+    if (splitId === childId) setSplitId('')
+    if (task?.id === childId && parentId) openThread(parentId)
+  })
+  const returnToParent = useCommittedCallback((parentId: string, childId: string) => {
+    setThreadSurfaces((current) => ({
+      ...current,
+      [taskCollectionKey(activeRuntimeId, parentId)]: 'chat',
+    }))
+    openThread(parentId, childId)
   })
   const [searching, setSearching] = useApplicationState<TaskSearchMode | null>(null)
   // After opening a search result, scroll its message into view once the thread renders.
@@ -716,6 +873,7 @@ export default function TasksView({
     task,
     selectedKey: task ? taskCollectionKey(activeRuntimeId, task.id) : '',
     split: !!splitTask,
+    closeSplit: () => closeSplit(),
     stop: () => {
       if (task?.replica || task?.status !== 'running' || !connected) return
       setStopError('')
@@ -759,7 +917,7 @@ export default function TasksView({
         })
       // ⌘\ (Ctrl+\ elsewhere) closes the side-by-side task.
       if (mod && !e.altKey && !e.shiftKey && e.key === '\\' && current.split)
-        return run(() => setSplitId(''))
+        return run(() => current.closeSplit())
       // ⌘; (Ctrl+; elsewhere) asks a side question about the open task.
       if (mod && !e.altKey && !e.shiftKey && e.key === ';' && current.task)
         return run(() => {
@@ -851,6 +1009,7 @@ export default function TasksView({
     workspaceControls?: WorkspaceControls,
     temporary = false,
     onSelectRemote?: SelectRemoteProject,
+    onStartBackground?: (task: Task) => void,
   ) => {
     const task = storedTask?.id === currentTask.id ? storedTask : currentTask
     if (task.replica) return <ReplicatedThread key={`${activeRuntimeId}:${task.id}`} task={task} />
@@ -870,6 +1029,10 @@ export default function TasksView({
         ) ??
         native.agent)
     const projectPanelOpen = preferences.projectPanelOpen
+    const pendingInsert =
+      (composerInsert?.threadKey === threadKey ? composerInsert : null) ??
+      handoffs.find((item) => item.threadKey === threadKey) ??
+      null
     const setProjectPanelOpen = (open: boolean) => {
       if (open && (compact || (fileViewer && viewerExpanded))) {
         setViewerExpanded(false)
@@ -901,7 +1064,7 @@ export default function TasksView({
               data-window-edge
               data-window-right-edge={!splitTask || undefined}
             >
-              New task
+              New thread
             </header>
           </HeaderContent>
         ) : (
@@ -925,25 +1088,14 @@ export default function TasksView({
             compact={compact}
             sidebarVisible={sidebar}
             hasDiff={hasDiff}
-            toolsExpanded={toolsExpanded}
-            onTools={() => {
-              if (toolsExpanded) {
-                lastToolSurface.current = surface
-                selectSurface('chat', true)
-              } else {
-                selectSurface(lastToolSurface.current)
-              }
-            }}
-            bottomTerminalOpen={bottomTerminalOpen}
-            onBottomTerminal={toggleBottomTerminal}
           />
         )}
         <div
-          ref={workspacePane}
           className={cn('relative flex min-h-0 min-w-0 flex-1 overflow-hidden', native && 'hidden')}
         >
           <div
             data-project-panel-frame
+            data-info-open={projectPanelOpen || undefined}
             ref={(element) => {
               panes.current.chat = element
             }}
@@ -951,13 +1103,19 @@ export default function TasksView({
             className={cn(
               'relative flex min-h-0 min-w-0 flex-1 flex-col',
               ((fileViewer && viewerExpanded) ||
-                (surface !== 'chat' && compact && !fileViewer && !browserDetached)) &&
+                (surface !== 'chat' && compact && !browserDetached)) &&
                 'hidden',
             )}
           >
-            {!temporary && (
-              <TaskProjectPopover>
+            <TaskProjectPopover title={task.title}>
+              {!temporary && projectPanelOpen && (
                 <TaskProjectPanel
+                  active={
+                    !native &&
+                    !listOpen &&
+                    !(fileViewer && viewerExpanded) &&
+                    (!compact || surface === 'chat')
+                  }
                   key={taskCollectionKey(activeRuntimeId, task.id)}
                   task={task}
                   onPullLink={(url) => openPullPreview(task, url)}
@@ -976,15 +1134,8 @@ export default function TasksView({
                     selectSurface(next)
                   }}
                 />
-              </TaskProjectPopover>
-            )}
-            {!temporary && !projectPanelOpen && !native && (
-              <TaskWaitingPanel
-                onPullLink={(url) => openPullPreview(task, url)}
-                key={`${activeRuntimeId}:${task.id}`}
-                taskId={task.id}
-              />
-            )}
+              )}
+            </TaskProjectPopover>
             <p
               role="status"
               aria-live="polite"
@@ -1005,13 +1156,43 @@ export default function TasksView({
                 Could not stop the agent. {stopError}
               </p>
             )}
+            {!temporary && sideThreadOf(task) && (
+              <SideThreadBar
+                task={task}
+                link={sideThreadOf(task)!}
+                onReturn={(parentId) => returnToParent(parentId, task.id)}
+                onBroughtBack={(handoff) => {
+                  deliverHandoff(handoff, task.title)
+                  returnToParent(handoff.id, task.id)
+                }}
+                onDiscarded={sideThreadDiscarded}
+              />
+            )}
+            {!temporary && !sideThreadOf(task) && (
+              <SideThreadAttentionBanner task={task} onAttend={attendSideThread} />
+            )}
+            {handoffNotice?.threadKey === threadKey && (
+              <div
+                role="status"
+                className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5 text-xs text-muted-foreground"
+              >
+                <span className="min-w-0 flex-1">{handoffNotice.text}</span>
+                <IconButton
+                  label="Dismiss"
+                  className="size-6"
+                  onClick={() => setHandoffNotice(null)}
+                >
+                  <X className="size-3.5" />
+                </IconButton>
+              </div>
+            )}
             <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
               <ResizablePanel
                 id="thread"
                 defaultSize={bottomTerminalOpen ? '65%' : '100%'}
                 minSize="30%"
               >
-                <div className="relative h-full min-h-0">
+                <div className="relative h-full min-h-0" data-conversation-boundary>
                   <TaskConversation
                     historyLoaded={usingStartupDraft || historyLoaded}
                     historyError={historyError}
@@ -1020,6 +1201,7 @@ export default function TasksView({
                     temporary={temporary}
                     workspaceControls={workspaceControls}
                     onSelectRemote={onSelectRemote}
+                    onStartBackground={onStartBackground}
                     revealMessage={revealMessage}
                     onRevealHandled={revealHandled}
                     visible={!native && !listOpen && (!compact || surface === 'chat')}
@@ -1035,19 +1217,27 @@ export default function TasksView({
                       setBrowserLink({ taskId: task.id, id: randomUUID(), url })
                       selectSurface('browser')
                     }}
-                    onAside={(chatId) => openSideChat(threadKey, chatId)}
-                    composerInsert={composerInsert?.threadKey === threadKey ? composerInsert : null}
-                    onComposerInsertApplied={() =>
-                      setComposerInsert((current) =>
-                        current?.id === composerInsert?.id ? null : current,
-                      )
+                    onAside={
+                      sideThreadOf(task)
+                        ? undefined
+                        : (childId) => openSideThread(threadKey, childId)
                     }
+                    composerInsert={pendingInsert}
+                    onComposerInsertApplied={() => {
+                      if (pendingInsert && 'once' in pendingInsert) {
+                        recordHandoff(threadKey, pendingInsert.id)
+                        setHandoffs((current) => current.filter((item) => item !== pendingInsert))
+                      } else
+                        setComposerInsert((current) =>
+                          current?.id === composerInsert?.id ? null : current,
+                        )
+                    }}
                   />
                 </div>
               </ResizablePanel>
-              {bottomTerminalOpen && surface === 'chat' && (
+              {bottomTerminalOpen && surface !== 'terminal' && (
                 <>
-                  <ResizableHandle />
+                  <ResizableHandle className="bg-transparent hover:bg-border focus-visible:bg-border data-[separator=active]:bg-border" />
                   <ResizablePanel id="bottom-terminal" defaultSize="35%" minSize="15%">
                     <div
                       ref={(element) => {
@@ -1060,6 +1250,10 @@ export default function TasksView({
                         key={`bottom:${task.id}`}
                         taskId={task.id}
                         focusId={terminalFocus}
+                        onOpenFile={(file) => {
+                          setFileReveal({ ...file, threadKey, requestId: randomUUID() })
+                          selectSurface('files', true)
+                        }}
                         onAddSelection={(taskId, text) =>
                           addTerminalSelection(threadKey, taskId, text)
                         }
@@ -1079,16 +1273,9 @@ export default function TasksView({
             side="right"
             label="tools sidebar"
             maxFraction={
-              fileViewer && !viewerDocked
-                ? 1
-                : surface === 'artifacts'
-                  ? 0.6
-                  : fileViewer
-                    ? 0.5
-                    : 0.48
+              surface === 'artifacts' ? 0.6 : fileViewer ? (surface === 'files' ? 0.4 : 0.5) : 0.48
             }
-            maxWidth={fileViewer && !viewerDocked ? 640 : 960}
-            reservedWidth={fileViewer && !viewerDocked ? 72 : 0}
+            maxWidth={960}
             resizable={
               !compact && !browserDetached && surface !== 'chat' && !(fileViewer && viewerExpanded)
             }
@@ -1099,280 +1286,326 @@ export default function TasksView({
                 : cn(
                     'min-h-0 min-w-0 flex-col bg-background',
                     surface === 'chat' ? 'hidden' : 'flex',
-                    fileViewer
-                      ? viewerExpanded
-                        ? 'flex-1 border-l'
-                        : viewerDocked && !compact
-                          ? 'shrink-0 border-l'
-                          : cn(
-                              'absolute inset-y-2 z-30 rounded-lg border shadow-2xl overflow-hidden',
-                              compact ? 'right-2' : 'right-14',
-                              compact && 'w-[min(640px,calc(100%-72px))]',
-                            )
-                      : compact
-                        ? 'flex-1'
-                        : 'shrink-0 border-l',
+                    compact
+                      ? 'flex-1'
+                      : cn(
+                          'studio-thread-tools-panel',
+                          fileViewer && viewerExpanded ? 'flex-1' : 'shrink-0',
+                        ),
                   )
             }
           >
-            {fileViewer && (
-              <div className="flex h-9 shrink-0 items-center gap-1 border-b px-3 text-xs">
-                <span className="flex-1 text-muted-foreground">
-                  {surface === 'files' ? 'Project files' : 'Changes'}
-                </span>
-                <IconButton
-                  label={viewerExpanded ? 'Restore side panel' : 'Expand viewer'}
-                  aria-pressed={viewerExpanded}
-                  className="size-7"
-                  onClick={() => setViewerExpanded((value) => !value)}
-                >
-                  {viewerExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                </IconButton>
-                <IconButton
-                  label="Close viewer"
-                  className="size-7"
-                  onClick={() => selectSurface('chat', true)}
-                >
-                  <X size={14} />
-                </IconButton>
-              </div>
-            )}
-            {!compact &&
-              surface !== 'pull-preview' &&
-              surface !== 'linked-pulls' &&
-              surface !== 'browser' &&
-              surface !== 'devices' &&
-              surface !== 'changes' &&
-              surface !== 'files' && (
-                <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs text-muted-foreground">
-                  <span>Thread tools</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2"
-                    onClick={() => selectSurface('chat', true)}
-                  >
-                    Close
-                  </Button>
-                </div>
-              )}
-            {surface === 'linked-pulls' && (
-              <div
-                ref={(element) => {
-                  panes.current['linked-pulls'] = element
-                }}
-                tabIndex={-1}
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <TaskLinkedPullPanel
-                  key={threadKey}
-                  task={task}
-                  onPullLink={(url) => openPullPreview(task, url, 'linked-pulls')}
-                  onClose={() => selectSurface('chat', true)}
-                />
-              </div>
-            )}
-            {surface === 'pull-preview' && pullPreviews[threadKey] && (
-              <div
-                ref={(element) => {
-                  panes.current['pull-preview'] = element
-                }}
-                tabIndex={-1}
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <PullDetail
-                  key={JSON.stringify([threadKey, pullPreviews[threadKey]])}
-                  repositoryId={pullPreviews[threadKey]!.repositoryId}
-                  number={pullPreviews[threadKey]!.number}
-                  initialTab={pullPreviews[threadKey]?.tab}
-                  initialFragment={pullPreviews[threadKey]?.fragment}
-                  embedded
-                  onBack={() =>
-                    selectSurface(
-                      pullPreviews[threadKey]?.returnTo === 'linked-pulls' &&
-                        taskPullLinks(task).length
-                        ? 'linked-pulls'
-                        : 'chat',
-                      true,
-                    )
-                  }
-                  onChanged={() => {}}
-                />
-              </div>
-            )}
-            {surface === 'side-chats' && (
-              <div
-                className="flex min-h-0 flex-1 flex-col"
-                ref={(element) => {
-                  panes.current['side-chats'] = element
-                }}
-                tabIndex={-1}
-              >
-                <SideQuestion
-                  key={task.id}
-                  task={task}
-                  selectedChatId={selectedSideChats[threadKey]}
-                  drafts={sideChatDrafts[threadKey] ?? {}}
-                  setDrafts={(update) =>
-                    setSideChatDrafts((current) => {
-                      const previous = current[threadKey] ?? {}
-                      const next = typeof update === 'function' ? update(previous) : update
-                      return next === previous ? current : { ...current, [threadKey]: next }
-                    })
-                  }
-                  onAddToComposer={(text) => addCodeReference(task.id, text)}
-                />
-              </div>
-            )}
-            {surface === 'artifacts' && (
-              <div
-                ref={(element) => {
-                  panes.current.artifacts = element
-                }}
-                tabIndex={-1}
-                className="min-h-0 min-w-0 flex-1 overflow-hidden"
-              >
-                <ThreadArtifacts
-                  key={`${threadKey}:${artifactSelection?.threadKey === threadKey ? artifactSelection.openId : ''}`}
-                  taskId={task.id}
-                  initialId={
-                    artifactSelection?.threadKey === threadKey ? artifactSelection.id : undefined
-                  }
-                  onClose={() => selectSurface('chat', true)}
-                />
-              </div>
-            )}
-            {surface === 'projects' && (
-              <div
-                ref={(element) => {
-                  panes.current.projects = element
-                }}
-                tabIndex={-1}
-                className="min-h-0 flex-1 overflow-y-auto p-4"
-              >
-                <LinkedProjects key={threadKey} task={task} />
-              </div>
-            )}
-            {surface === 'agents' && (
-              <div
-                ref={(element) => {
-                  panes.current.agents = element
-                }}
-                tabIndex={-1}
-                className="min-h-0 flex-1 overflow-y-auto"
-              >
-                <TaskAgents
-                  key={task.id}
-                  task={task}
-                  onOpenThread={(thread) => {
-                    setNativeThread({
-                      ...thread,
-                      parentKey: taskCollectionKey(activeRuntimeId, task.id),
-                    })
-                  }}
-                />
-              </div>
-            )}
-            {(surface === 'browser' || surface === 'devices') && (
-              <div
-                ref={(element) => {
-                  panes.current[surface] = element
-                }}
-                tabIndex={-1}
-                className={browserDetached ? 'contents' : 'min-h-0 min-w-0 flex-1'}
-              >
-                {surface === 'devices' ? (
-                  <DevicesPane taskId={task.id} onClose={() => selectSurface('chat', true)} />
-                ) : (
-                  <FloatingPreview
-                    key={threadKey}
-                    title="Browser"
-                    placement={browserPlacement}
-                    onPlacementChange={(placement) =>
-                      setBrowserPlacements((current) => ({ ...current, [threadKey]: placement }))
-                    }
-                    inlineClassName="h-full"
-                    returnLabel="Dock preview"
-                    onClose={() => selectSurface('chat', true)}
-                  >
-                    <BrowserPane
-                      taskId={task.id}
-                      openLink={
-                        browserLink?.taskId === task.id &&
-                        (browserLink.runtimeId === undefined ||
-                          browserLink.runtimeId === activeRuntimeId)
-                          ? browserLink
-                          : null
-                      }
-                      onLinkOpened={() => setBrowserLink(null)}
-                    />
-                  </FloatingPreview>
-                )}
-              </div>
-            )}
             <div
-              ref={(element) => {
-                panes.current.changes = element
-              }}
-              tabIndex={-1}
-              className={cn(
-                'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
-                surface !== 'changes' && 'hidden',
-              )}
+              className={
+                browserDetached
+                  ? 'contents'
+                  : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[inherit]'
+              }
             >
               {surface === 'changes' && (
-                <ReviewPane
-                  key={`${task.id}:${reviewTarget?.threadKey === threadKey ? (reviewTarget.finding?.id ?? 'report') : ''}`}
-                  task={task}
-                  initialFinding={
-                    reviewTarget?.threadKey === threadKey ? reviewTarget.finding : undefined
-                  }
-                  initialTab={
-                    reviewTarget?.threadKey === threadKey && !reviewTarget.finding
-                      ? 'findings'
-                      : 'diff'
-                  }
-                  onReference={(text) => addCodeReference(task.id, text)}
-                  onEditingChange={setFileEditing}
-                />
+                <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
+                  <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />
+                  <h2 className="min-w-0 flex-1 truncate font-medium">Changes</h2>
+                  <IconButton
+                    label={viewerExpanded ? 'Restore side panel' : 'Expand viewer'}
+                    aria-pressed={viewerExpanded}
+                    className="size-7"
+                    onClick={() => setViewerExpanded((value) => !value)}
+                  >
+                    {viewerExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  </IconButton>
+                  <IconButton
+                    label="Close viewer"
+                    className="size-7"
+                    onClick={() => selectSurface('chat', true)}
+                  >
+                    <X size={14} />
+                  </IconButton>
+                </header>
               )}
-            </div>
-            <div
-              ref={(element) => {
-                panes.current.files = element
-              }}
-              tabIndex={-1}
-              className={cn(
-                'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
-                surface !== 'files' && 'hidden',
+              {!compact && (surface === 'projects' || surface === 'agents') && (
+                <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
+                  {surface === 'projects' ? (
+                    <FolderSymlink size={16} className="text-muted-foreground" aria-hidden="true" />
+                  ) : (
+                    <Bot size={16} className="text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <h2 className="min-w-0 flex-1 truncate font-medium">
+                    {surface === 'projects' ? 'Linked projects' : 'Agents'}
+                  </h2>
+                  <IconButton
+                    label={surface === 'projects' ? 'Close linked projects' : 'Close agents'}
+                    className="size-7"
+                    onClick={() => selectSurface('chat', true)}
+                  >
+                    <X size={14} />
+                  </IconButton>
+                </header>
               )}
-            >
-              {surface === 'files' && (
-                <TaskFiles
-                  key={task.id}
-                  task={task}
-                  onEditingChange={setFileEditing}
-                  onReference={(text) => addCodeReference(task.id, text)}
-                />
+              {surface === 'linked-pulls' && (
+                <div
+                  ref={(element) => {
+                    panes.current['linked-pulls'] = element
+                  }}
+                  tabIndex={-1}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <TaskLinkedPullPanel
+                    key={threadKey}
+                    task={task}
+                    onPullLink={(url) => openPullPreview(task, url, 'linked-pulls')}
+                    onClose={() => selectSurface('chat', true)}
+                  />
+                </div>
               )}
-            </div>
-            <div
-              ref={(element) => {
-                if (compact) panes.current.terminal = element
-              }}
-              tabIndex={-1}
-              className={cn('min-h-0 min-w-0 flex-1', surface !== 'terminal' && 'hidden')}
-            >
-              {compact && terminalVisited && (
-                <TerminalPane
-                  key={task.id}
-                  taskId={task.id}
-                  focusId={terminalFocus}
-                  visible={surface === 'terminal'}
-                  onAddSelection={(taskId, text) => addTerminalSelection(threadKey, taskId, text)}
-                  onClose={() => selectSurface('chat', true)}
-                />
+              {surface === 'pull-preview' && pullPreviews[threadKey] && (
+                <div
+                  ref={(element) => {
+                    panes.current['pull-preview'] = element
+                  }}
+                  tabIndex={-1}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <PullDetail
+                    key={JSON.stringify([threadKey, pullPreviews[threadKey]])}
+                    repositoryId={pullPreviews[threadKey]!.repositoryId}
+                    number={pullPreviews[threadKey]!.number}
+                    initialTab={pullPreviews[threadKey]?.tab}
+                    initialFragment={pullPreviews[threadKey]?.fragment}
+                    embedded
+                    onBack={() =>
+                      selectSurface(
+                        pullPreviews[threadKey]?.returnTo === 'linked-pulls' &&
+                          taskPullLinks(task).length
+                          ? 'linked-pulls'
+                          : 'chat',
+                        true,
+                      )
+                    }
+                    onChanged={() => {}}
+                    linkedThread={{
+                      task,
+                      // The draft stays reviewable beside the PR; nothing is sent automatically.
+                      onAsk: (text) => {
+                        const preview = pullPreviews[threadKey]
+                        setComposerInsert({
+                          threadKey,
+                          id: randomUUID(),
+                          text,
+                          // A newer ask about the same PR replaces its untouched earlier context.
+                          ...(preview
+                            ? {
+                                replaceKey: JSON.stringify([
+                                  'pull',
+                                  preview.repositoryId,
+                                  preview.number,
+                                ]),
+                              }
+                            : {}),
+                        })
+                        if (compact) selectSurface('chat', true)
+                      },
+                    }}
+                  />
+                </div>
               )}
+              {surface === 'side-chats' && (
+                <div
+                  className="flex min-h-0 flex-1 flex-col"
+                  ref={(element) => {
+                    panes.current['side-chats'] = element
+                  }}
+                  tabIndex={-1}
+                >
+                  <SideThreadsPanel
+                    key={task.id}
+                    task={task}
+                    onClose={compact ? undefined : () => selectSurface('chat', true)}
+                    openId={splitTask?.id}
+                    onOpen={(childId) => openSideThread(threadKey, childId)}
+                    onOpenThread={(childId) => openThread(childId, compact ? '' : task.id)}
+                    onAttend={attendSideThread}
+                    onDiscarded={sideThreadDiscarded}
+                    onBroughtBack={(handoff, child) => {
+                      deliverHandoff(handoff, child.title)
+                      selectSurface('chat', true)
+                    }}
+                    readOnlyQuestions={
+                      <SideQuestion
+                        key={task.id}
+                        task={task}
+                        drafts={sideChatDrafts[threadKey] ?? {}}
+                        setDrafts={(update) =>
+                          setSideChatDrafts((current) => {
+                            const previous = current[threadKey] ?? {}
+                            const next = typeof update === 'function' ? update(previous) : update
+                            return next === previous ? current : { ...current, [threadKey]: next }
+                          })
+                        }
+                        onAddToComposer={(text) => addCodeReference(task.id, text)}
+                      />
+                    }
+                  />
+                </div>
+              )}
+              {surface === 'artifacts' && (
+                <div
+                  ref={(element) => {
+                    panes.current.artifacts = element
+                  }}
+                  tabIndex={-1}
+                  className="min-h-0 min-w-0 flex-1 overflow-hidden"
+                >
+                  <ThreadArtifacts
+                    key={`${threadKey}:${artifactSelection?.threadKey === threadKey ? artifactSelection.openId : ''}`}
+                    taskId={task.id}
+                    initialId={
+                      artifactSelection?.threadKey === threadKey ? artifactSelection.id : undefined
+                    }
+                    onClose={() => selectSurface('chat', true)}
+                  />
+                </div>
+              )}
+              {surface === 'projects' && (
+                <div
+                  ref={(element) => {
+                    panes.current.projects = element
+                  }}
+                  tabIndex={-1}
+                  className="min-h-0 flex-1 overflow-y-auto p-4"
+                >
+                  <LinkedProjects key={threadKey} task={task} />
+                </div>
+              )}
+              {surface === 'agents' && (
+                <div
+                  ref={(element) => {
+                    panes.current.agents = element
+                  }}
+                  tabIndex={-1}
+                  className="min-h-0 flex-1 overflow-y-auto"
+                >
+                  <TaskAgents
+                    key={task.id}
+                    task={task}
+                    onOpenThread={(thread) => {
+                      setNativeThread({
+                        ...thread,
+                        parentKey: taskCollectionKey(activeRuntimeId, task.id),
+                      })
+                    }}
+                  />
+                </div>
+              )}
+              {(surface === 'browser' || surface === 'devices') && (
+                <div
+                  ref={(element) => {
+                    panes.current[surface] = element
+                  }}
+                  tabIndex={-1}
+                  className={browserDetached ? 'contents' : 'min-h-0 min-w-0 flex-1'}
+                >
+                  {surface === 'devices' ? (
+                    <DevicesPane taskId={task.id} onClose={() => selectSurface('chat', true)} />
+                  ) : (
+                    <FloatingPreview
+                      key={threadKey}
+                      title="Browser"
+                      placement={browserPlacement}
+                      onPlacementChange={(placement) =>
+                        setBrowserPlacements((current) => ({ ...current, [threadKey]: placement }))
+                      }
+                      inlineClassName="h-full"
+                      returnLabel="Dock preview"
+                      onClose={() => selectSurface('chat', true)}
+                    >
+                      <BrowserPane
+                        taskId={task.id}
+                        openLink={
+                          browserLink?.taskId === task.id &&
+                          (browserLink.runtimeId === undefined ||
+                            browserLink.runtimeId === activeRuntimeId)
+                            ? browserLink
+                            : null
+                        }
+                        onLinkOpened={() => setBrowserLink(null)}
+                      />
+                    </FloatingPreview>
+                  )}
+                </div>
+              )}
+              <div
+                ref={(element) => {
+                  panes.current.changes = element
+                }}
+                tabIndex={-1}
+                className={cn(
+                  'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+                  surface !== 'changes' && 'hidden',
+                )}
+              >
+                {surface === 'changes' && (
+                  <ReviewPane
+                    key={`${task.id}:${reviewTarget?.threadKey === threadKey ? (reviewTarget.finding?.id ?? 'report') : ''}`}
+                    task={task}
+                    initialFinding={
+                      reviewTarget?.threadKey === threadKey ? reviewTarget.finding : undefined
+                    }
+                    initialTab={
+                      reviewTarget?.threadKey === threadKey && !reviewTarget.finding
+                        ? 'findings'
+                        : 'diff'
+                    }
+                    onReference={(text) => addCodeReference(task.id, text)}
+                    onEditingChange={setFileEditing}
+                  />
+                )}
+              </div>
+              <div
+                ref={(element) => {
+                  panes.current.files = element
+                }}
+                tabIndex={-1}
+                className={cn(
+                  'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+                  surface !== 'files' && 'hidden',
+                )}
+              >
+                {surface === 'files' && (
+                  <TaskFiles
+                    key={task.id}
+                    onClose={() => selectSurface('chat', true)}
+                    onExpand={() => setViewerExpanded((value) => !value)}
+                    expanded={viewerExpanded}
+                    task={task}
+                    reveal={fileReveal?.threadKey === threadKey ? fileReveal : undefined}
+                    onEditingChange={setFileEditing}
+                    onReference={(text) => addCodeReference(task.id, text)}
+                  />
+                )}
+              </div>
+              <div
+                ref={(element) => {
+                  if (compact) panes.current.terminal = element
+                }}
+                tabIndex={-1}
+                className={cn('min-h-0 min-w-0 flex-1', surface !== 'terminal' && 'hidden')}
+              >
+                {compact && terminalVisited && (
+                  <TerminalPane
+                    key={task.id}
+                    taskId={task.id}
+                    focusId={terminalFocus}
+                    onOpenFile={(file) => {
+                      setFileReveal({ ...file, threadKey, requestId: randomUUID() })
+                      selectSurface('files', true)
+                    }}
+                    visible={surface === 'terminal'}
+                    onAddSelection={(taskId, text) => addTerminalSelection(threadKey, taskId, text)}
+                    onClose={() => selectSurface('chat', true)}
+                  />
+                )}
+              </div>
             </div>
           </ResizableSidebar>
           {!compact && !temporary && (
@@ -1381,7 +1614,17 @@ export default function TasksView({
               surface={surface}
               onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
               hasDiff={hasDiff}
-              hasLinkedPulls={taskPullLinks(task).length > 0}
+              toolsExpanded={toolsExpanded}
+              onTools={() => {
+                if (toolsExpanded) {
+                  lastToolSurface.current = surface
+                  selectSurface('chat', true)
+                } else {
+                  selectSurface(lastToolSurface.current)
+                }
+              }}
+              bottomTerminalOpen={bottomTerminalOpen}
+              onBottomTerminal={toggleBottomTerminal}
               artifactsEnabled={!!snapshot?.artifactsEnabled}
             />
           )}
@@ -1420,7 +1663,7 @@ export default function TasksView({
                 onDeselect={deselectTask}
                 onOrderChange={reportOrder}
                 onSplit={(entry) => {
-                  if (entry.source.runtimeId === activeRuntimeId) setSplitId(entry.task.id)
+                  if (entry.source.runtimeId === activeRuntimeId) closeSplit(entry.task.id)
                 }}
                 onTemplate={(entry, templateId) =>
                   void startTask(entry.projectKey, true, templateId)
@@ -1435,6 +1678,11 @@ export default function TasksView({
               <StartupDraft
                 key={draftVersion}
                 onDraftChange={reportStartupDraft}
+                onBackgroundStarted={() => {
+                  setDeselected(true)
+                  setSelectedId('')
+                  host.navigate({ viewId: 'tasks' })
+                }}
                 onProject={() => void startTask()}
                 renderThread={renderThread}
                 onCommit={(draft) => {
@@ -1463,8 +1711,36 @@ export default function TasksView({
                       className="size-4"
                     />
                     <span className="min-w-0 flex-1 truncate font-medium" title={splitTask.title}>
+                      {sideThreadOf(splitTask)?.parentTaskId === task?.id && (
+                        <span className="mr-1.5 font-normal text-muted-foreground">
+                          Side chat ·
+                        </span>
+                      )}
                       {splitTask.title}
                     </span>
+                    {sideThreadOf(splitTask) &&
+                      (() => {
+                        const kind = sideThreadAttention(sideAttention, splitTask.id)
+                        return kind && <SideThreadAttentionBadge kind={kind} />
+                      })()}
+                    {task && sideThreadOf(splitTask)?.parentTaskId === task.id && (
+                      <>
+                        <DiscardSideDraft child={splitTask} onDiscarded={sideThreadDiscarded} />
+                        {!unusedSideDraft(splitTask) && (
+                          <>
+                            <ReviewSideThreadChangesButton task={splitTask} />
+                            <BringBackButton
+                              child={splitTask}
+                              parent={task}
+                              onDone={(handoff) => {
+                                deliverHandoff(handoff, splitTask.title)
+                                selectSurface('chat', true)
+                              }}
+                            />
+                          </>
+                        )}
+                      </>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -1480,13 +1756,19 @@ export default function TasksView({
                       Swap
                     </Button>
                     <IconButton
-                      label="Close side-by-side task (⌘/Ctrl+\)"
+                      label="Close side-by-side thread (⌘/Ctrl+\)"
                       className="size-6"
-                      onClick={() => setSplitId('')}
+                      onClick={() => closeSplit()}
                     >
                       <X className="size-3.5" />
                     </IconButton>
                   </header>
+                  {sideThreadOf(splitTask) && (
+                    <SideThreadProvenance
+                      link={sideThreadOf(splitTask)!}
+                      className="shrink-0 border-b px-4 py-1.5"
+                    />
+                  )}
                   <div className="min-h-0 flex-1">
                     <TaskConversation
                       historyLoaded={splitHistoryLoaded}
@@ -1495,13 +1777,21 @@ export default function TasksView({
                       onArtifact={openArtifact}
                       key={`split:${splitTask.id}`}
                       task={splitTask}
-                      onAside={(chatId) => {
-                        const key = taskCollectionKey(activeRuntimeId, splitTask.id)
-                        openSideChat(key, chatId)
-                        if (shortcuts.current.selectedKey !== threadKey) return
-                        setSelectedId(splitTask.id)
-                        setSplitId(task?.id ?? '')
-                      }}
+                      onAside={
+                        sideThreadOf(splitTask)
+                          ? undefined
+                          : (childId) => {
+                              const key = taskCollectionKey(activeRuntimeId, splitTask.id)
+                              if (!childId)
+                                setThreadSurfaces((current) => ({
+                                  ...current,
+                                  [key]: 'side-chats',
+                                }))
+                              if (shortcuts.current.selectedKey !== threadKey) return
+                              // The asking thread moves to the main pane, its side chat beside it.
+                              openThread(splitTask.id, childId ?? task?.id ?? '')
+                            }
+                      }
                       visible
                       onBrowser={(url) => {
                         setBrowserLink({ taskId: splitTask.id, id: randomUUID(), url })
@@ -1541,8 +1831,8 @@ export default function TasksView({
               event.preventDefault()
           }}
         >
-          <DialogTitle className="px-4 pt-4">Tasks</DialogTitle>
-          <DialogDescription className="sr-only">Select or create a task.</DialogDescription>
+          <DialogTitle className="px-4 pt-4">Threads</DialogTitle>
+          <DialogDescription className="sr-only">Select or create a thread.</DialogDescription>
           <TaskList
             projectId={projectId}
             onProjectChange={setProjectId}

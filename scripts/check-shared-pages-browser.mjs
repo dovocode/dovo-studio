@@ -9,7 +9,7 @@ const mocks = {
   // This suite checks shared page layout; encrypted publication has its own suite.
   './chat/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export {isActiveRuntime} from '${root}/packages/studio-core/src/runtime/ownership';export {useAccount} from '${root}/packages/studio-core/src/use-account';export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const useRepositorySources=()=>[];export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{version:'0.0.9',channel:'nightly'},windowPlatform:window.platform,navigate:()=>{}});export const useAppPreferences=()=>({showIssues:true,showJira:true});export const updateAppPreferences=()=>{};export const formatDateTime=value=>String(value);export const WorkspaceScope=({children})=>children;`,
+  '@dovo/studio-core': `export {isActiveRuntime} from '${root}/packages/studio-core/src/runtime/ownership';export {useAccount} from '${root}/packages/studio-core/src/use-account';export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const useRepositorySources=()=>[];export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{version:'0.0.9',channel:'nightly'},windowPlatform:window.platform,navigate:()=>{}});export const useAppPreferences=()=>({showIssues:true,showJira:true});export const updateAppPreferences=()=>{};export const formatDateTime=(value,options)=>new Date(value).toLocaleString(undefined,options??{dateStyle:'medium',timeStyle:'short'});export const WorkspaceScope=({children})=>children;`,
   '@dovo/studio-ui': `export {PageHeader} from '${ui}/page-header';export * from '${ui}/sidebar-header';export {Button} from '${ui}/components/ui/button';export {Input} from '${ui}/components/ui/input';export * from '${ui}/components/ui/dialog';export {ChoicePicker} from '${ui}/choice-picker';export {cn} from '${ui}/lib/utils';export {IconButton} from '${ui}/components/icon-button';export {EmptyState} from '${ui}/components/empty-state';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const useCompactLayout=()=>innerWidth<1024;`,
   './work-sources': `export const workRemoteKey=source=>source.jira?JSON.stringify(['jira',new URL(source.jira.site).origin,source.jira.project]):source.key;export const matchesWorkSource=(source,key)=>!key||source.key===key||workRemoteKey(source)===key;export const jiraSourceKey=(a,b)=>a+b;export const useIssueSources=()=>window.sources;`,
   './use-work-sources': `export const useWorkSources=(mode,query,kind)=>({sources:[{...window.source,reader:window.source}],pages:[{source:window.source,reader:window.source,items:mode==='issues'?window.issues:[window.pipeline.run],options:{issues:true,pipelines:true,pipelineActions:[]}}],busy:false,refresh:()=>{},more:async()=>{}});`,
@@ -22,7 +22,6 @@ const mocks = {
   './automation-canvas': `export const AutomationCanvas=()=>null;`,
   './node-inspector': `export const NodeInspector=()=>null;`,
   './use-automation': `export const useAutomation=id=>({workspace:window.store.workspace,flow:window.flow,drafts:new Map(),messages:[],setMessages:()=>{},update:()=>{}});`,
-  './use-job-actions': `export const useJobActions=()=>({});`,
   './run-details': `export const StepStatus=()=>null;export const RunDetails=()=>null;`,
   './chat/artifact-snapshot': `export const ArtifactSnapshot=()=>null;`,
   './chat/artifact-library-actions': `export const ArtifactLibraryActions=()=>null;`,
@@ -36,15 +35,15 @@ const bundle = await build({
     contents: `
 import {createRoot} from 'react-dom/client';import {TooltipProvider} from '@radix-ui/react-tooltip';import {useState} from 'react';import {Effect} from 'effect';import {SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '${ui}/sidebar-header';import {PageHeader} from '${ui}/page-header';
 import IssuesView,{JiraView,PipelinesView} from '${root}/packages/extension-scm/src/work/work-view';import {WorkContent} from '${root}/packages/extension-scm/src/work/content';import JobsView from '${root}/packages/extension-jobs/src/view';import ArtifactsView from '${root}/packages/extension-tasks/src/artifacts-view';
-window.platform='darwin';window.flow={id:'flow',name:'Nightly automation',nodes:[],edges:[],triggers:[]};
+window.deleteCalls=[];window.failDelete=false;window.platform='darwin';window.flow={id:'flow',name:'Nightly automation',nodes:[],edges:[],triggers:[]};
 const repo={id:'repo',name:'Dovo Studio',path:'/studio',branch:'main'};const profile={id:'mac',name:'MacBook',connection:{address:'http://mac.local',token:'paired'}};
 window.issues=[{id:'1',title:'Fix reconnection',body:'Preserve the runtime session',state:'open',url:'https://github.com/o/r/issues/1',labels:[],assignees:[],author:'Dominic',updatedAt:''}];
 window.source={key:'source',scope:'source',name:'Dovo Studio',runtimeId:'mac',runtimeName:'MacBook',connected:true,repository:repo,input:{repositoryId:'repo'},jira:{id:'jira',site:'https://team.atlassian.net',project:'STUDIO'}};
 window.pipeline={run:{id:'42',title:'Release',url:'https://github.com/o/r/actions/runs/42',ref:'main',sha:'a'.repeat(40),actor:'Dominic',status:'in_progress',createdAt:'2026-10-14T09:00:00Z',updatedAt:'2026-10-14T09:00:00Z'},jobs:[{id:'1',name:'Tests',status:'success',url:'https://github.com/o/r/actions/runs/42/job/1'},{id:'2',name:'Build',status:'in_progress',url:'https://github.com/o/r/actions/runs/42/job/2',steps:[{id:'1',name:'Compile',status:'in_progress'}]}],graph:[{id:'check',name:'Tests',needs:[],jobIds:['1']},{id:'build',name:'Build',needs:['check'],jobIds:['2']}]};
-const workspace={repositories:[repo],automations:[window.flow],tasks:[]};const snapshot={workspace,runs:[],artifactsEnabled:true};
-const request=async(path,input)=>{if(path==='/api/scm/source/identity')return{readerIdentity:'fixture-account',destination:'fixture-destination'};if(path.endsWith('/options'))return{provider:'github',issues:true,pipelines:true,issueActions:[],pipelineActions:[],issueStates:[]};if(path.endsWith('/issues/detail'))return{issue:window.issues[0],comments:[]};if(path.endsWith('/pipelines/detail'))return window.pipeline;return{items:[],artifacts:[]}};
+const workspace={repositories:[repo],automations:[window.flow,{...window.flow,id:'unrun',name:'Unrun automation'}],tasks:[]};const snapshot={workspace,runs:[{id:'run',automationId:'flow',status:'completed',createdAt:'2026-10-14T09:00:00Z',updatedAt:'2026-10-14T09:15:00Z',completedNodes:[],steps:[]}],artifactsEnabled:true};
+const request=async(path,input)=>{if(path==='/api/jobs/delete'){window.deleteCalls.push(input);if(window.failDelete)throw Error('Automation is still active');return{ok:true}};if(path==='/api/scm/source/identity')return{readerIdentity:'fixture-account',destination:'fixture-destination'};if(path.endsWith('/options'))return{provider:'github',issues:true,pipelines:true,issueActions:[],pipelineActions:[],issueStates:[]};if(path.endsWith('/issues/detail'))return{issue:window.issues[0],comments:[]};if(path.endsWith('/pipelines/detail'))return window.pipeline;return{items:[],artifacts:[]}};
 window.sources=[window.source];window.source.request=request;window.source.requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});window.source.readCache={readEffect:()=>Effect.succeed(null),writeEffect:()=>Effect.void,removeEffect:()=>Effect.void};
-window.store={workspace,snapshot,profile,connection:profile.connection,connected:true,activeRuntimeId:'mac',runtimes:[{profile,snapshot,connected:true}],request,readRuntime:(_profile,path,input)=>request(path,input),readCache:null,switchRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
+window.store={workspace,snapshot,profile,connection:profile.connection,connected:true,activeRuntimeId:'mac',runtimes:[{profile,snapshot,connected:true},{profile:{id:'backup',name:'Backup Mac',connection:{address:'http://backup.local',token:'paired'}},snapshot:{...snapshot,workspace:{...workspace,automations:[{...window.flow,id:'offline',name:'Offline automation'}]},runs:[]},connected:false}],request,flush:async()=>{},readRuntime:(_profile,path,input)=>request(path,input),readCache:null,switchRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
 function App(){const[page,setPage]=useState('issues'),[sidebar,setSidebar]=useState(true);window.show=setPage;window.toggle=()=>setSidebar(v=>!v);return <SidebarHeaderLayout collapsed={!sidebar} onCollapsedChange={value=>setSidebar(previous=>!(typeof value==='function'?value(!previous):value))} brand={<div className="studio-sidebar-brand">Dovo Studio · Nightly</div>}><HeaderFallback><div className="studio-titlebar flex items-center"><span className="px-4">Dovo Studio · Nightly</span><HeaderMainSlot/></div></HeaderFallback><div className="flex h-full min-h-0">{page==='issues'?<IssuesView/>:page==='jira'?<JiraView/>:page==='pipelines'?<PipelinesView/>:page==='jobs'?<JobsView/>:page==='artifacts'?<ArtifactsView/>:<WorkContent key={page} repositoryId="repo" repositoryName="Dovo Studio" mode={page==='pipeline'?'pipelines':'issues'} initialSelected={page==='pipeline'?'42':'1'} request={request} connected onBack={()=>setPage('issues')} collectionHeader={<PageHeader title="Collection"/>}/>}</div></SidebarHeaderLayout>};createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);`,
   },
   bundle: true,
@@ -107,7 +106,14 @@ try {
       'issue',
       'pipeline',
     ]) {
-      await page.evaluate((target) => window.show(target), target)
+      await page.evaluate((target) => {
+        window.automationRuntimes ??= window.store.runtimes
+        window.store.runtimes =
+          target === 'jobs'
+            ? window.automationRuntimes
+            : window.automationRuntimes.filter((entry) => entry.connected)
+        window.show(target)
+      }, target)
       await page.waitForFunction(
         () =>
           document.querySelectorAll('.studio-page-header,.studio-task-thread-header').length === 1,
@@ -120,6 +126,50 @@ try {
           0,
           'Artifact header verification must load without request errors',
         )
+      if (target === 'jobs') {
+        const collection = await page
+          .getByRole('navigation', { name: 'Automations across computers', exact: true })
+          .boundingBox()
+        assert.ok(
+          collection.width >= width - 1,
+          'Automation collection uses the available page width',
+        )
+        const completed = page.getByRole('button', { name: /Nightly automation/ })
+        const status = await completed.getByText('Completed', { exact: true }).boundingBox()
+        const title = await completed.getByText('Nightly automation', { exact: true }).boundingBox()
+        const context = await completed.getByText('MacBook', { exact: true }).boundingBox()
+        assert.ok(
+          status.y < title.y && title.y < context.y,
+          'Automation row shows status, title, then computer context',
+        )
+        assert.equal(
+          await completed.locator('time').getAttribute('datetime'),
+          '2026-10-14T09:15:00Z',
+        )
+        assert.equal(
+          await page
+            .getByRole('button', { name: /Unrun automation/ })
+            .locator('time')
+            .count(),
+          0,
+          'An unrun automation has no invented date',
+        )
+        assert.ok(
+          await completed.evaluate((row) => row.scrollWidth <= row.clientWidth),
+          'Automation row fits the viewport',
+        )
+        const search = page.getByRole('textbox', { name: 'Search automations', exact: true })
+        await search.fill('Unrun')
+        await completed.waitFor({ state: 'hidden' })
+        assert.equal(await completed.count(), 0)
+        await page.getByRole('button', { name: /Unrun automation/ }).waitFor()
+        await search.fill('Backup Mac')
+        await page
+          .getByRole('button', { name: /Offline automation/ })
+          .getByText('Offline · Last saved state', { exact: true })
+          .waitFor()
+        await search.fill('')
+      }
       if (target === 'pipeline')
         await page
           .locator('[aria-label="Pipeline graph"]')
@@ -153,7 +203,8 @@ try {
       }
     }
     await page.evaluate(() => window.show('jobs'))
-    await page.getByRole('button', { name: /Nightly automation/ }).click()
+    await page.getByRole('button', { name: /Nightly automation/ }).focus()
+    await page.keyboard.press('Enter')
     await page.getByRole('heading', { name: 'Nightly automation', exact: true }).waitFor()
     assert.equal(await page.locator('.studio-page-header').count(), 1)
     await page.evaluate(() => window.toggle())
@@ -161,6 +212,34 @@ try {
       () => document.querySelector('.studio-header-layout')?.dataset.sidebarCollapsed === 'true',
     )
     await page.evaluate(() => window.toggle())
+    await page.getByRole('button', { name: 'Automation actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Delete automation', exact: true }).click()
+    const confirmation = page.getByRole('dialog', {
+      name: 'Delete “Nightly automation”?',
+      exact: true,
+    })
+    await confirmation.waitFor()
+    await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
+    assert.equal(await page.evaluate(() => window.deleteCalls.length), 0)
+    await page.getByRole('button', { name: 'Automation actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Delete automation', exact: true }).click()
+    await page.evaluate(() => {
+      window.failDelete = true
+    })
+    await confirmation.getByRole('button', { name: 'Delete automation', exact: true }).click()
+    await confirmation
+      .getByRole('alert')
+      .filter({ hasText: 'Automation is still active' })
+      .waitFor()
+    await page.evaluate(() => {
+      window.failDelete = false
+    })
+    await confirmation.getByRole('button', { name: 'Delete automation', exact: true }).click()
+    await confirmation.waitFor({ state: 'hidden' })
+    assert.deepEqual(await page.evaluate(() => window.deleteCalls), [
+      { id: 'flow' },
+      { id: 'flow' },
+    ])
     await page.locator('[aria-label="Automations across computers"]').waitFor({ state: 'attached' })
     assert.deepEqual(errors, [])
     await page.close()

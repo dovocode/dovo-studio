@@ -19,3 +19,13 @@ it('previews text near a match in a long reply, including folded intermediate wo
   expect(results[0].preview.startsWith('…')).toBe(true)
   expect(results[0].preview.length).toBeLessThan(200)
 })
+
+it('uses the same folded multiword and literal-phrase search for local thread history', () => {
+  const messages = [
+    { id: 'a', role: 'assistant' as const, text: 'Café is open' },
+    { id: 'b', role: 'user' as const, text: 'A cafe open late' },
+  ]
+  expect(searchThread(messages, 'open café').map((hit) => hit.id)).toEqual(['a', 'b'])
+  expect(searchThread(messages, '"cafe open"').map((hit) => hit.id)).toEqual(['b'])
+  expect(searchThread(messages, 'é').map((hit) => hit.id)).toEqual(['a', 'b'])
+})

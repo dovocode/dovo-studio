@@ -47,6 +47,7 @@ export class ExternalListener {
     port: number,
     enabled: boolean,
   ): Promise<ExternalNetworkStatus> {
+    if (enabled) this.services.policy.require('remoteClients')
     if (
       (enabled && (isIP(host) !== 4 || host.startsWith('127.'))) ||
       !Number.isInteger(port) ||

@@ -1,15 +1,29 @@
+import { isAbsolute, relative } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { isRunToken } from '../../auth/run-credentials.js'
 import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { mutableStruct, threadServerRequestSchema, stopThreadServerSchema } from '@dovo/protocol'
+import {
+  STUDIO_TERMINAL_SCOPE,
+  SCRATCH_PROJECT_ID,
+  updateTerminalSchema,
+  createWorkspaceTerminalSchema,
+  terminalShellsResponseSchema,
+  type TerminalInfo,
+} from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
 import { isDeepStrictEqual } from 'node:util'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import { RuntimeServices } from '../../runtime-services.js'
-import { HttpError, runtimeOperation } from '../../errors.js'
+import { HttpError, errorMessage, runtimeOperation } from '../../errors.js'
 import { body } from '../support/body.js'
+import { quoteTerminalPaths } from '../../terminal/file-paths.js'
+import { resolveTerminalShell, terminalShells } from '../../terminal/shell.js'
+import { workspaceTerminalCheckout } from '../../terminal/workspace-checkout.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 function terminalCheckout(store: WorkspaceStore, taskId: string, checkoutId?: string) {
   const seen = new Set<string>()
@@ -49,6 +63,104 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/terminals/shells') {
+        s.devices.authenticate(token)
+        const shells = yield* runtimeOperation(() => terminalShells(s.commands.get()))
+        s.devices.authenticate(token)
+        return decode(terminalShellsResponseSchema, { shells })
+      }
+      if (method === 'POST' && path === '/api/terminals/update') {
+        const input = decode(updateTerminalSchema, yield* serviceResult(body(request)))
+        return yield* runtimeOperation(() => {
+          s.devices.authenticate(token)
+          return s.terminals.update(input)
+        })
+      }
+      if (method === 'POST' && path === '/api/terminals/workspace') {
+        s.devices.authenticate(token)
+        const input = decode(createWorkspaceTerminalSchema, yield* serviceResult(body(request)))
+        const { repositoryId, command, sourceTerminalId } = input
+        if (sourceTerminalId) {
+          if (
+            repositoryId ||
+            input.shellId ||
+            input.execution ||
+            input.existingWorktreePath ||
+            input.worktreeBaseBranch
+          )
+            throw new HttpError(400, 'A split inherits its source terminal settings')
+          return yield* runtimeOperation(() => {
+            s.devices.authenticate(token)
+            const source = s.terminals.get(sourceTerminalId)
+            if (source.info.taskId !== STUDIO_TERMINAL_SCOPE)
+              throw new HttpError(400, 'Choose a standalone source terminal')
+            const session = s.terminals.createCommand(
+              STUDIO_TERMINAL_SCOPE,
+              source.directory,
+              source.launch,
+              `Terminal ${s.terminals.list().length + 1}`,
+              undefined,
+              source.info.repositoryId,
+              {
+                directory: source.directory,
+                shellId: source.info.shellId,
+                execution: source.info.execution,
+                checkoutBranch: source.info.checkoutBranch,
+                rememberSession: Boolean(source.recovery),
+              },
+            )
+            if (command) s.terminals.input(session.id, `${command.replace(/\r?\n/g, '\r')}\r`)
+            return session
+          })
+        }
+        const repository = repositoryId
+          ? s.store.get().repositories.find((item) => item.id === repositoryId)
+          : undefined
+        if (repositoryId && repositoryId !== SCRATCH_PROJECT_ID && !repository)
+          throw new HttpError(404, 'Project not found')
+        const authorize = () => {
+          s.devices.authenticate(token)
+          if (
+            repository &&
+            !isDeepStrictEqual(
+              repository,
+              s.store.get().repositories.find((item) => item.id === repositoryId),
+            )
+          )
+            throw new HttpError(409, 'The project changed. Reopen the terminal.')
+        }
+        authorize()
+        const shell = yield* runtimeOperation(() =>
+          resolveTerminalShell(s.commands.get(), input.shellId),
+        )
+        authorize()
+        s.terminals.checkCapacity()
+        const checkout = yield* runtimeOperation(() =>
+          workspaceTerminalCheckout(s, input, authorize),
+        )
+        return yield* runtimeOperation(() => {
+          authorize()
+          let session: TerminalInfo
+          try {
+            session = s.terminals.createCommand(
+              STUDIO_TERMINAL_SCOPE,
+              checkout.directory,
+              shell,
+              `Terminal ${s.terminals.list().length + 1}`,
+              undefined,
+              checkout.repositoryId,
+              { ...checkout, shellId: shell.id, rememberSession: input.rememberSession },
+            )
+          } catch (error) {
+            if (checkout.execution !== 'worktree' || input.existingWorktreePath) throw error
+            const message = `${errorMessage(error)}\nWorktree kept at ${checkout.directory}`
+            if (error instanceof HttpError) throw new HttpError(error.status, message, error)
+            throw new Error(message, { cause: error })
+          }
+          if (command) s.terminals.input(session.id, `${command.replace(/\r?\n/g, '\r')}\r`)
+          return session
+        })
+      }
       if (
         method === 'POST' &&
         (path === '/api/terminals/servers' || path === '/api/terminals/servers/stop')
@@ -198,6 +310,48 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         )
         if (isRunToken(token)) s.runCredentials.addTerminal(token, terminal.id)
         return terminal
+      }
+      if (method === 'POST' && path === '/api/terminals/quote-paths') {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            paths: Schema.Array(maxValue(minValue(Schema.String, 1), 32768)).pipe(
+              Schema.check(Schema.isMinLength(1)),
+              Schema.check(Schema.isMaxLength(100)),
+            ),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        const session = s.terminals.get(input.id)
+        if (session.info.exited) throw new HttpError(409, 'The terminal has exited.')
+        return { text: quoteTerminalPaths(input.paths, session.command) }
+      }
+      if (method === 'POST' && path === '/api/terminals/file') {
+        const input = decode(
+          mutableStruct({ id: idSchema, path: maxValue(minValue(Schema.String, 1), 4000) }),
+          yield* serviceResult(body(request)),
+        )
+        const session = s.terminals.get(input.id)
+        terminalCheckout(s.store, session.info.taskId, session.info.checkoutId)
+        const root = yield* serviceResult(
+          repositoryPath(
+            yield* serviceResult(
+              s.checkouts.selectedDirectory(session.info.taskId, session.info.checkoutId),
+            ),
+          ),
+        )
+        const original = yield* serviceResult(repositoryPath(session.directory))
+        if (root !== original)
+          throw new HttpError(409, 'The working directory changed. Reopen the terminal.')
+        const path = isAbsolute(input.path) ? relative(root, input.path) : input.path
+        const filename = yield* serviceResult(safeFile(root, path))
+        const details = yield* serviceResult(stat(filename))
+        if (!details.isFile()) throw new HttpError(400, 'Choose a regular file')
+        return {
+          taskId: session.info.taskId,
+          checkoutId: session.info.checkoutId,
+          path: relative(root, filename).replaceAll('\\', '/'),
+        }
       }
       if (method === 'POST' && path === '/api/terminals/close') {
         const { id } = decode(

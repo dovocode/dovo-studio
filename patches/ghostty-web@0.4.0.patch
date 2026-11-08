@@ -1,0 +1,14 @@
+diff --git a/dist/ghostty-web.js b/dist/ghostty-web.js
+index a4ca427b95288e70c782ce303013cd644893dcec..e7fb121f2f7a020a7d2e80d457bc4905dbfa811e 100644
+--- a/dist/ghostty-web.js
++++ b/dist/ghostty-web.js
+@@ -2951,6 +2951,9 @@ export {
+   q as Ghostty,
+   W as GhosttyTerminal,
+   P as InputHandler,
++  o as Key,
++  b as KeyAction,
++  y as Mods,
+   V as KeyEncoder,
+   H as KeyEncoderOption,
+   v as LinkDetector,

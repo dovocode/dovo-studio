@@ -5,26 +5,40 @@ export type MarkdownImagePart =
   | { kind: 'image'; url: string; alt: string; offset: number }
 /** Parse Markdown images (including references) without interpreting fenced/escaped text. */
 export function markdownImages(text: string): MarkdownImagePart[] {
-  const root = fromMarkdown(text),
-    definitions = new Map(
-      root.children.flatMap((node) =>
-        node.type === 'definition' ? [[node.identifier, node.url] as const] : [],
-      ),
-    )
+  if (!text.includes('![')) return [{ kind: 'text', text, offset: 0 }]
+  return markdownImagesFromNodes(text, fromMarkdown(text).children, 0)
+}
+/** Reuse the fence tree; references still resolve only inside this rendered fragment. */
+export function markdownImagesFromNodes(
+  text: string,
+  nodes: readonly Nodes[],
+  sourceOffset: number,
+): MarkdownImagePart[] {
+  if (!text.includes('![')) return [{ kind: 'text', text, offset: 0 }]
+  const definitions = new Map(
+    nodes.flatMap((node) =>
+      node.type === 'definition' ? [[node.identifier, node.url] as const] : [],
+    ),
+  )
   const images: Array<{ start: number; end: number; url: string; alt: string }> = []
   const visit = (node: Nodes, parent?: Nodes) => {
     if (node.type === 'image' || node.type === 'imageReference') {
-      const url = node.type === 'image' ? node.url : definitions.get(node.identifier),
-        position =
-          parent?.type === 'link' && parent.children.length === 1 ? parent.position : node.position,
-        start = position?.start.offset,
-        end = position?.end.offset
+      const url = node.type === 'image' ? node.url : definitions.get(node.identifier)
+      const position =
+        parent?.type === 'link' && parent.children.length === 1 ? parent.position : node.position
+      const start = position?.start.offset
+      const end = position?.end.offset
       if (url && start !== undefined && end !== undefined)
-        images.push({ start, end, url, alt: node.alt ?? 'Image' })
+        images.push({
+          start: start - sourceOffset,
+          end: end - sourceOffset,
+          url,
+          alt: node.alt ?? 'Image',
+        })
     }
     if ('children' in node) for (const child of node.children) visit(child, node)
   }
-  visit(root)
+  for (const node of nodes) visit(node)
   const parts: MarkdownImagePart[] = []
   let offset = 0
   for (const image of images) {

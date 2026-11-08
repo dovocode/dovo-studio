@@ -571,3 +571,206 @@ it('rejects oversized signaling frames while keeping other rooms usable', async 
   const retry = await f.open(f.clientHello)
   expect(JSON.parse(String((await retry.reply)[0]))).toEqual({ type: 'ready' })
 })
+
+/** Drives one trickle offer through a fresh phone socket and retires it by closing the socket,
+ * optionally before the computer answers. The host registers with `customRelay` so Connect's
+ * `relay-cancel` notice marks the exact point where the exchange was retired server-side;
+ * without `awaitRetirement` the computer's frames race the phone's closing socket instead. */
+async function retireTrickleExchange(
+  f: Awaited<ReturnType<typeof fixture>>,
+  host: { socket: WebSocket },
+  session: string,
+  options: { answered?: boolean; sdp?: string; awaitRetirement?: boolean } = {},
+) {
+  const client = await f.open({ ...f.clientHello, session, trickle: true })
+  await client.reply
+  const sdp = options.sdp ?? `v=0\r\na=fingerprint:sha-256 AA:${session.slice(0, 2)}\r\n`
+  const offer = signPeerSignal(f.config, {
+    session,
+    role: 'offer',
+    offer: peerDigest(sdp),
+    sdp,
+    trickle: true,
+    pipeWindow: 64,
+  })
+  const offered = once(host.socket, 'message')
+  client.socket.send(JSON.stringify(offer))
+  await offered
+  if (options.answered !== false) {
+    const answered = once(client.socket, 'message')
+    host.socket.send(JSON.stringify(signPeerSignal(f.config, { ...offer, role: 'answer' })))
+    await answered
+  }
+  const retired = once(host.socket, 'message')
+  const gone = once(client.socket, 'close')
+  client.socket.close()
+  await gone
+  if (options.awaitRetirement !== false) {
+    const notice: unknown = JSON.parse(String((await retired)[0]))
+    if (JSON.stringify(notice) !== JSON.stringify({ type: 'relay-cancel', session }))
+      throw new Error(`Expected retirement notice, received ${JSON.stringify(notice)}`)
+  }
+  if (options.answered === false)
+    host.socket.send(JSON.stringify(signPeerSignal(f.config, { ...offer, role: 'answer' })))
+  return offer
+}
+const hostIce = (
+  f: Awaited<ReturnType<typeof fixture>>,
+  offer: { session: string; offer: string },
+  sequence: number,
+  end = false,
+) =>
+  signPeerIce(f.config, {
+    type: 'ice',
+    session: offer.session,
+    offer: offer.offer,
+    role: 'answer',
+    sequence,
+    candidate: end
+      ? null
+      : { candidate: 'candidate:1 1 UDP 1 192.0.2.1 1234 typ host', sdpMid: '0', sdpMLineIndex: 0 },
+  })
+async function trickleHost(f: Awaited<ReturnType<typeof fixture>>) {
+  const host = await f.open({ ...f.hostHello, trickle: true, customRelay: true })
+  await host.reply
+  return host
+}
+/** Proves the shared host socket still serves other phones after the frames under test. */
+async function expectHostStillSignaling(
+  f: Awaited<ReturnType<typeof fixture>>,
+  host: { socket: WebSocket },
+  session: string,
+) {
+  const client = await f.open({ ...f.clientHello, session })
+  expect(JSON.parse(String((await client.reply)[0]))).toEqual({ type: 'ready' })
+  const sdp = 'v=0\r\na=fingerprint:sha-256 CC:DD\r\n'
+  const offer = signPeerSignal(f.config, { session, role: 'offer', offer: peerDigest(sdp), sdp })
+  const received = once(host.socket, 'message')
+  client.socket.send(JSON.stringify(offer))
+  expect(JSON.parse(String((await received)[0]))).toEqual({ type: 'offer', signal: offer })
+  const answered = once(client.socket, 'message')
+  host.socket.send(JSON.stringify(signPeerSignal(f.config, { ...offer, role: 'answer' })))
+  expect(JSON.parse(String((await answered)[0])).role).toBe('answer')
+  expect(host.socket.readyState).toBe(WebSocket.OPEN)
+}
+
+it('consumes late host candidates and end markers for a cancelled phone without closing the shared host socket', async () => {
+  for (const answered of [true, false])
+    for (const awaitRetirement of [true, false]) {
+      const f = await fixture()
+      const host = await trickleHost(f)
+      // Another phone is mid-negotiation on the same computer and must survive the cancellation.
+      const pending = await f.open({ ...f.clientHello, session: 'c'.repeat(64), trickle: true })
+      await pending.reply
+      const pendingClosed = vi.fn<() => void>()
+      pending.socket.on('close', pendingClosed)
+      const offer = await retireTrickleExchange(f, host, 'b'.repeat(64), {
+        answered,
+        awaitRetirement,
+      })
+      const forwarded = vi.fn<() => void>()
+      pending.socket.on('message', forwarded)
+      host.socket.send(JSON.stringify(hostIce(f, offer, 0)))
+      host.socket.send(JSON.stringify(hostIce(f, offer, 1)))
+      host.socket.send(JSON.stringify(hostIce(f, offer, 2, true)))
+      await expectHostStillSignaling(f, host, 'd'.repeat(64))
+      expect(pendingClosed).not.toHaveBeenCalled()
+      expect(forwarded).not.toHaveBeenCalled()
+      expect(pending.socket.readyState).toBe(WebSocket.OPEN)
+    }
+})
+
+it('still closes the host for ICE that does not match a live or retired exchange', async () => {
+  for (const attack of ['unknown', 'offer', 'role', 'sequence', 'end', 'non-trickle'] as const) {
+    const f = await fixture()
+    const host = await trickleHost(f)
+    let offer: { session: string; offer: string }
+    if (attack === 'non-trickle') {
+      // A completed non-trickle answer never retires anything: no host frames may follow.
+      const client = await f.open(f.clientHello)
+      await client.reply
+      const sdp = 'v=0\r\na=fingerprint:sha-256 AA:BB\r\n'
+      const signal = signPeerSignal(f.config, {
+        session: f.clientHello.session,
+        role: 'offer',
+        offer: peerDigest(sdp),
+        sdp,
+      })
+      const offered = once(host.socket, 'message')
+      client.socket.send(JSON.stringify(signal))
+      await offered
+      const answered = once(client.socket, 'message')
+      host.socket.send(JSON.stringify(signPeerSignal(f.config, { ...signal, role: 'answer' })))
+      await answered
+      offer = signal
+    } else offer = await retireTrickleExchange(f, host, 'b'.repeat(64))
+    if (attack === 'end') host.socket.send(JSON.stringify(hostIce(f, offer, 0, true)))
+    const frame = hostIce(
+      f,
+      {
+        session: attack === 'unknown' ? 'e'.repeat(64) : offer.session,
+        offer: attack === 'offer' ? 'f'.repeat(64) : offer.offer,
+      },
+      attack === 'sequence' || attack === 'end' ? 1 : 0,
+    )
+    const closed = once(host.socket, 'close')
+    host.socket.send(JSON.stringify(attack === 'role' ? { ...frame, role: 'offer' } : frame))
+    expect((await closed)[0]).toBe(1008)
+  }
+})
+
+it('keeps retired and live offers apart when a phone reuses its session key', async () => {
+  const f = await fixture()
+  const host = await trickleHost(f)
+  const session = 'b'.repeat(64)
+  const old = await retireTrickleExchange(f, host, session, { sdp: 'v=0\r\na=old\r\n' })
+  const client = await f.open({ ...f.clientHello, session, trickle: true })
+  await client.reply
+  const sdp = 'v=0\r\na=new\r\n'
+  const fresh = signPeerSignal(f.config, {
+    session,
+    role: 'offer',
+    offer: peerDigest(sdp),
+    sdp,
+    trickle: true,
+    pipeWindow: 64,
+  })
+  const offered = once(host.socket, 'message')
+  client.socket.send(JSON.stringify(fresh))
+  await offered
+  const answered = once(client.socket, 'message')
+  host.socket.send(JSON.stringify(signPeerSignal(f.config, { ...fresh, role: 'answer' })))
+  await answered
+  // The stale end marker is consumed silently; the live exchange still forwards its own frames.
+  host.socket.send(JSON.stringify(hostIce(f, old, 0, true)))
+  const live = hostIce(f, fresh, 0)
+  const received = once(client.socket, 'message')
+  host.socket.send(JSON.stringify(live))
+  expect(JSON.parse(String((await received)[0]))).toEqual(live)
+  expect(host.socket.readyState).toBe(WebSocket.OPEN)
+})
+
+it('bounds retired exchanges per room by count and age', async () => {
+  const f = await fixture()
+  const host = await trickleHost(f)
+  const sessions = Array.from({ length: 17 }, (_, index) =>
+    index.toString(16).padStart(2, '0').repeat(32),
+  )
+  const offers = []
+  for (const session of sessions) offers.push(await retireTrickleExchange(f, host, session))
+  // The newest 16 survive, so their end markers are consumed and the host keeps signaling.
+  for (const offer of offers.slice(1)) host.socket.send(JSON.stringify(hostIce(f, offer, 0, true)))
+  await expectHostStillSignaling(f, host, 'd'.repeat(64))
+  const evicted = once(host.socket, 'close')
+  host.socket.send(JSON.stringify(hostIce(f, offers[0]!, 0, true)))
+  expect((await evicted)[0]).toBe(1008)
+
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const aged = await fixture()
+  const replacement = await trickleHost(aged)
+  const offer = await retireTrickleExchange(aged, replacement, 'b'.repeat(64))
+  vi.setSystemTime(Date.now() + 60001)
+  const expired = once(replacement.socket, 'close')
+  replacement.socket.send(JSON.stringify(hostIce(aged, offer, 0, true)))
+  expect((await expired)[0]).toBe(1008)
+})

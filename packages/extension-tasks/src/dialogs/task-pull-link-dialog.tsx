@@ -176,7 +176,7 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
         </form>
         {!connected && (
           <p className="text-xs text-muted-foreground">
-            Connect to the task’s computer to manage links.
+            Connect to the thread’s computer to manage links.
           </p>
         )}
         {error && (

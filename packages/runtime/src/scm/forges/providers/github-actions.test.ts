@@ -423,7 +423,7 @@ it('uses the selected GitHub profile only in the command environment from its ch
       host: repo.host,
       repository: repo.nameWithOwner,
       profile: 'selected-user',
-      token: profileToken,
+      credential: async (cwd) => ({ token: await profileToken(cwd), onUnauthorized: () => {} }),
     }).create(directory, {
       title: 'Fix',
       body: '',

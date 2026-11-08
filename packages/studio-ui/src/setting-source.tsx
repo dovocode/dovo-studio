@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+import { useConfirmation } from '@dovo/studio-core'
 import * as Popover from '@radix-ui/react-popover'
 import { useOptionalSettingsTarget, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -31,7 +33,7 @@ export type SettingOrigin = {
   overridden: boolean
 }
 const popoverClassName =
-  'z-50 max-h-[min(480px,70vh)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg'
+  'studio-menu-surface z-50 max-h-[min(480px,70vh)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border bg-popover p-3 text-popover-foreground'
 const overrideName = (entry: SettingOverride) =>
   [entry.project, entry.computer].filter(Boolean).join(' on ')
 
@@ -105,14 +107,23 @@ export function SettingSource({
             : undefined,
       })
     : []
+  const confirm = useConfirmation(JSON.stringify([setting, overrides, disabled, resetState.busy]))
+  const confirming = useRef(false)
   async function resetOverrides() {
-    if (!setting) return
-    if (
-      !window.confirm(
-        `Remove the ${label.toLowerCase()} override at ${overrides.length} later ${overrides.length === 1 ? 'level' : 'levels'}? They inherit the earlier value again.`,
-      )
-    )
-      return
+    if (!setting || confirming.current) return
+    confirming.current = true
+    let accepted: boolean
+    try {
+      accepted = await confirm({
+        title: 'Reset later overrides?',
+        description: `Remove the ${label.toLowerCase()} override at ${overrides.length} later ${overrides.length === 1 ? 'level' : 'levels'}? They inherit the earlier value again.`,
+        confirmLabel: 'Reset overrides',
+        destructive: true,
+      })
+    } finally {
+      confirming.current = false
+    }
+    if (!accepted) return
     setResetState({ busy: true, message: '' })
     const failures: string[] = []
     let done = 0
@@ -175,7 +186,14 @@ export function SettingSource({
             </Button>
           </Popover.Trigger>
           <Popover.Portal>
-            <Popover.Content sideOffset={6} align="start" className={popoverClassName}>
+            <Popover.Content
+              sideOffset={6}
+              align="start"
+              className={popoverClassName}
+              onInteractOutside={(event) => {
+                if (confirming.current) event.preventDefault()
+              }}
+            >
               <p className="mb-1 text-xs font-semibold">{label} · inheritance</p>
               <p className="mb-1 break-words text-xs [overflow-wrap:anywhere]">{sourceLabel}</p>
               <p className="mb-3 break-words text-xs font-medium [overflow-wrap:anywhere]">
@@ -294,7 +312,14 @@ export function SettingSource({
             </Button>
           </Popover.Trigger>
           <Popover.Portal>
-            <Popover.Content sideOffset={6} align="start" className={popoverClassName}>
+            <Popover.Content
+              sideOffset={6}
+              align="start"
+              className={popoverClassName}
+              onInteractOutside={(event) => {
+                if (confirming.current) event.preventDefault()
+              }}
+            >
               <p className="mb-1 text-xs font-semibold">{label} · later levels</p>
               <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
                 These levels keep their own value when {settingsScopeLabels[setting.scope]} changes.

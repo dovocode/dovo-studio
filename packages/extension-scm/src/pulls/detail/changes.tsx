@@ -1,4 +1,8 @@
-import { pullCommentsByFile } from '@dovo/protocol'
+import {
+  buildPullReviewObjective,
+  pullCommentsByFile,
+  type PullReviewSelection,
+} from '@dovo/protocol'
 import {
   pullFileFingerprint,
   createReviewFileLookup,
@@ -7,7 +11,7 @@ import {
   type FileKind,
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
-import { ChangeTypeFilters, OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
+import { ChangeSummary, OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppPreferences, whitespaceOnlyPatch } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -28,10 +32,16 @@ export function PullChanges({
   active = true,
   repositoryId,
   onSteer,
+  thread,
+  onAskAgent,
   onPosted,
   embedded = false,
   initialFragment = '',
 }: {
+  /** The explicitly linked thread that receives agent feedback instead of a new task. */
+  thread?: { title: string; onAsk: (objective: string) => void }
+  /** Opens the explicit conversation chooser for agent feedback. */
+  onAskAgent?: (selection: PullReviewSelection) => void
   embedded?: boolean
   initialFragment?: string
   detail: PullDetail
@@ -41,9 +51,13 @@ export function PullChanges({
   onPosted: () => void
 }) {
   const { hideWhitespaceChanges } = useAppPreferences()
+  const [guidePath, setGuidePath] = useState('')
   const visibleFiles = useMemo(
-    () => detail.files.filter((file) => !hideWhitespaceChanges || !whitespaceOnlyPatch(file)),
-    [detail.files, hideWhitespaceChanges],
+    () =>
+      detail.files.filter(
+        (file) => file.path === guidePath || !hideWhitespaceChanges || !whitespaceOnlyPatch(file),
+      ),
+    [detail.files, hideWhitespaceChanges, guidePath],
   )
   const { headSha, baseSha } = detail.pull
   const fingerprints = useMemo(
@@ -89,7 +103,7 @@ export function PullChanges({
     [split, setSplit] = useApplicationState(
       !embedded && readAppPreferences().diffLayout === 'split',
     ),
-    [treeOpen, setTreeOpen] = useApplicationState(true)
+    [summaryExpanded, setSummaryExpanded] = useState(false)
   const cards = useRef(new Map<string, HTMLElement>())
   const [heights] = useState(() => new Map<string, number>())
   const draftKey = usePullStateKey(
@@ -117,6 +131,10 @@ export function PullChanges({
     setSelected(path)
     cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }
+  useEffect(() => {
+    if (guidePath)
+      cards.current.get(guidePath)?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }, [guidePath, files])
   const anchoredFragment = useRef('')
   useEffect(() => {
     if (!initialFragment) {
@@ -129,209 +147,264 @@ export function PullChanges({
         comment.kind === 'inline' &&
         (comment.url.endsWith(initialFragment) || `#${comment.id}` === initialFragment),
     )
-    const file = files.find(
+    const file = visibleFiles.find(
       (file) => file.path === comment?.path || file.previousPath === comment?.path,
     )
+    if (file && kind && pullFileKind(file) !== kind) {
+      setKind(undefined)
+      return
+    }
     if (file) {
       anchoredFragment.current = initialFragment
       selectFile(file.path)
     }
-  }, [initialFragment, detail.comments, files, active])
+  }, [initialFragment, detail.comments, files, visibleFiles, kind, active])
   const selectedFile = files.find((file) => file.path === selected) ?? files[0]
   if (!detail.files.length)
     return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
   return (
     <section aria-label="Code changes" className="min-w-0">
-      <div className="flex flex-wrap items-center gap-2 border-y py-2 text-xs">
-        <h3 className="mr-auto font-medium">
-          {files.filter((file) => viewed.has(file.path)).length} of {files.length} viewed
-        </h3>
-        <Button size="sm" variant="outline" onClick={() => setSplit((v) => !v)}>
-          {split ? 'Split diff' : 'Unified diff'}
-        </Button>
+      <ChangeSummary
+        title={`${files.length} ${files.length === 1 ? 'file' : 'files'} · ${viewed.size} viewed`}
+        files={visibleFiles}
+        expanded={summaryExpanded}
+        onExpandedChange={setSummaryExpanded}
+        value={kind}
+        onChange={setKind}
+        total={hideWhitespaceChanges ? undefined : detail.pull.changedFiles}
+      >
+        <div className="flex max-h-80 min-h-0 flex-col overflow-hidden">
+          <ReviewFiles
+            showTypeFilters={false}
+            showChangeBars
+            files={files.map((file) => ({
+              path: file.path,
+              changeKind: pullFileKind(file),
+              viewed: viewed.has(file.path),
+              additions: file.additions ?? undefined,
+              deletions: file.deletions ?? undefined,
+            }))}
+            groups={review.progress?.groups ?? []}
+            related={related}
+            onRelatedChange={setRelated}
+            selected={selectedFile?.path ?? ''}
+            onSelect={selectFile}
+          />
+        </div>
+      </ChangeSummary>
+      <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+        <OrganizeReview
+          onOpenFile={(path) => {
+            setGuidePath(path)
+            setKind(undefined)
+            selectFile(path)
+          }}
+          review={review}
+          onOrganized={() => setRelated(true)}
+        />
         <Button
           size="sm"
-          variant="ghost"
-          aria-pressed={treeOpen}
-          onClick={() => setTreeOpen((v) => !v)}
+          variant="outline"
+          aria-pressed={split}
+          onClick={() => setSplit((v) => !v)}
         >
-          {treeOpen ? 'Hide files' : 'Show files'}
+          {split ? 'Split diff' : 'Unified diff'}
         </Button>
       </div>
-      <div
-        aria-label="Changed file breakdown"
-        title="Based on file paths and generated-file attributes."
-      >
-        <ChangeTypeFilters
-          files={detail.files}
-          total={detail.pull.changedFiles}
-          value={kind}
-          onChange={setKind}
-        />
-      </div>
-      <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
-      <div
-        aria-label="Pinned file review controls"
-        className="sticky -top-4 z-20 -mx-4 bg-background shadow-sm"
-      >
-        <FileReviewControls
-          files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
-          selected={selectedFile?.path ?? ''}
-          onSelect={selectFile}
-          onViewed={(viewed) => {
-            if (selectedFile)
-              review.setViewed(selectedFile.path, fingerprints.get(selectedFile.path) ?? '', viewed)
-          }}
-          disabled={
-            !review.ready ||
-            !selectedFile ||
-            !fileState(selectedFile.path, fingerprints.get(selectedFile.path) ?? '')
-          }
-          busy={review.busy}
-          error={review.error}
-          onRetry={review.reload}
-        />
-      </div>
-      <div className="flex min-w-0 flex-col-reverse gap-3 @4xl:flex-row">
-        <div className="min-w-0 flex-1 space-y-4 py-3">
-          {!files.length && <p className="p-4 text-xs text-muted-foreground">No matching files.</p>}
-          {files.map((file) => {
-            const comments = commentsByPath.get(file.path) ?? []
-            return (
-              <article
-                key={file.path}
-                ref={(element) => {
-                  if (element) cards.current.set(file.path, element)
-                  else cards.current.delete(file.path)
-                }}
-                className="scroll-mt-28 overflow-hidden rounded-xl border bg-card/30"
-              >
-                <div className="px-3">
-                  <div className="flex flex-wrap items-center gap-2 py-3">
-                    <span className="min-w-0 flex-1 break-all font-mono text-xs">
-                      {file.previousPath ? `${file.previousPath} → ` : ''}
-                      {file.path}
-                    </span>
-                    <span className="text-xs">
-                      {file.additions !== null && (
-                        <span className="text-status-success">+{file.additions}</span>
-                      )}{' '}
-                      {file.deletions !== null && (
-                        <span className="text-status-error">−{file.deletions}</span>
-                      )}
-                    </span>
-                    <label className="flex items-center gap-1 text-xs">
-                      <Checkbox
-                        checked={viewed.has(file.path)}
-                        disabled={
-                          !review.ready ||
-                          review.busy ||
-                          !fileState(file.path, fingerprints.get(file.path) ?? '')
-                        }
-                        aria-label={`Viewed ${file.path}`}
-                        onCheckedChange={(checked) =>
-                          review.setViewed(
-                            file.path,
-                            fingerprints.get(file.path) ?? '',
-                            checked === true,
-                          )
-                        }
-                      />
-                      Viewed
-                    </label>
-                  </div>
-                  <DeferredPullFile
-                    file={file}
-                    heights={heights}
-                    pinned={selected === file.path || !!drafts.get(file.path)?.selection}
-                  >
-                    <PullPatch
-                      key={file.path}
-                      file={file}
-                      draft={drafts.get(file.path)}
-                      onDraft={(update) => updateDraft(file.path, update)}
-                      commentDisabled={!connected || !!detail.stale || !active}
-                      headSha={detail.pull.headSha}
-                      expectedDestination={detail.destination ?? detail.pull.destination}
-                      split={split}
-                      provider={detail.pull.provider}
-                      allowAgent={!repositoryId.startsWith('http')}
-                      allowInlineComment={
-                        detail.capabilities?.actions.includes('inline-comment') ?? true
-                      }
-                      allowInlineRange={detail.capabilities?.inlineRange ?? true}
-                      onComment={
-                        connected && !detail.stale && active
-                          ? async (body, range, destination, baseline) => {
-                              if (destination === 'github') {
-                                if (baseline.headSha !== detail.pull.headSha)
-                                  throw new Error(
-                                    'The PR changed while you were writing. Your draft is preserved. Copy it, cancel, and select lines on the current revision before posting.',
-                                  )
-                                await request(
-                                  '/api/scm/pulls/comment',
-                                  {
-                                    repositoryId,
-                                    number: detail.pull.number,
-                                    headSha: baseline.headSha,
-                                    expectedDestination: baseline.expectedDestination,
-                                    connectionId: detail.pull.connectionId,
-                                    path: baseline.path,
-                                    body,
-                                    ...range,
-                                  },
-                                  pullLineCommentResponse,
-                                )
-                                onPosted()
-                              } else
-                                onSteer(
-                                  `Address this feedback on ${baseline.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${baseline.headSha}:\n${body}\n\nReference patch at time of comment:\n${baseline.patch.slice(0, 1500)}`,
-                                  baseline,
-                                )
-                            }
-                          : undefined
-                      }
-                    />
-                    <h4 className="my-3 text-xs font-medium">
-                      Feedback on this file ({comments.length})
-                    </h4>
-                    <PullComments
-                      comments={comments}
-                      fileBaseURL={
-                        detail.fileBaseUrl ??
-                        `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
-                      }
-                      actionContext={{
-                        repositoryId,
-                        detail,
-                        onDone: onPosted,
-                      }}
-                    />
-                  </DeferredPullFile>
-                </div>
-              </article>
-            )
-          })}
+      {files.length > 1 && (
+        <div
+          aria-label="Pinned file review controls"
+          className="sticky -top-4 z-20 -mx-4 bg-background shadow-sm"
+        >
+          <FileReviewControls
+            files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
+            selected={selectedFile?.path ?? ''}
+            onSelect={selectFile}
+            onViewed={(viewed) => {
+              if (selectedFile)
+                review.setViewed(
+                  selectedFile.path,
+                  fingerprints.get(selectedFile.path) ?? '',
+                  viewed,
+                )
+            }}
+            disabled={
+              !review.ready ||
+              !selectedFile ||
+              !fileState(selectedFile.path, fingerprints.get(selectedFile.path) ?? '')
+            }
+            busy={review.busy}
+            error={review.error}
+            onRetry={review.reload}
+          />
         </div>
-        {treeOpen && (
-          <aside className="flex max-h-[min(65vh,calc(100cqh-2rem))] min-h-0 shrink-0 flex-col overflow-hidden border-b p-2 @4xl:sticky @4xl:top-2 @4xl:w-64 @4xl:self-start @4xl:border-b-0 @4xl:border-l">
-            <ReviewFiles
-              showTypeFilters={false}
-              files={files.map((file) => ({
-                path: file.path,
-                changeKind: pullFileKind(file),
-                viewed: viewed.has(file.path),
-                additions: file.additions ?? 0,
-                deletions: file.deletions ?? 0,
-              }))}
-              groups={review.progress?.groups ?? []}
-              related={related}
-              onRelatedChange={setRelated}
-              selected={selectedFile?.path ?? ''}
-              onSelect={selectFile}
-            />
-          </aside>
-        )}
+      )}
+      {files.length <= 1 && review.error && (
+        <p role="alert" className="flex items-center gap-2 text-xs text-destructive">
+          {review.error}
+          <Button size="sm" variant="ghost" onClick={review.reload}>
+            Retry
+          </Button>
+        </p>
+      )}
+      <div className="min-w-0 space-y-4 py-2">
+        {!files.length && <p className="p-4 text-xs text-muted-foreground">No matching files.</p>}
+        {files.map((file) => {
+          const comments = commentsByPath.get(file.path) ?? []
+          return (
+            <article
+              key={file.path}
+              ref={(element) => {
+                if (element) cards.current.set(file.path, element)
+                else cards.current.delete(file.path)
+              }}
+              className="scroll-mt-28 overflow-hidden rounded-xl border bg-card/30"
+            >
+              <div className="px-3 pb-3">
+                <div className="flex flex-wrap items-center gap-2 py-3">
+                  <span className="min-w-0 flex-1 break-all font-mono text-xs">
+                    {file.previousPath ? `${file.previousPath} → ` : ''}
+                    {file.path}
+                  </span>
+                  <span className="text-xs">
+                    {file.additions !== null && (
+                      <span className="text-status-success">+{file.additions}</span>
+                    )}{' '}
+                    {file.deletions !== null && (
+                      <span className="text-status-error">−{file.deletions}</span>
+                    )}
+                  </span>
+                  <label className="flex items-center gap-1 text-xs">
+                    <Checkbox
+                      checked={viewed.has(file.path)}
+                      disabled={
+                        !review.ready ||
+                        review.busy ||
+                        !fileState(file.path, fingerprints.get(file.path) ?? '')
+                      }
+                      aria-label={`Viewed ${file.path}`}
+                      onCheckedChange={(checked) =>
+                        review.setViewed(
+                          file.path,
+                          fingerprints.get(file.path) ?? '',
+                          checked === true,
+                        )
+                      }
+                    />
+                    Viewed
+                  </label>
+                </div>
+                <DeferredPullFile
+                  file={file}
+                  heights={heights}
+                  pinned={selected === file.path || !!drafts.get(file.path)?.selection}
+                >
+                  <PullPatch
+                    key={file.path}
+                    file={file}
+                    draft={drafts.get(file.path)}
+                    onDraft={(update) => updateDraft(file.path, update)}
+                    commentDisabled={!connected || !!detail.stale || !active}
+                    headSha={detail.pull.headSha}
+                    expectedDestination={detail.destination ?? detail.pull.destination}
+                    split={split}
+                    provider={detail.pull.provider}
+                    allowAgent={!repositoryId.startsWith('http')}
+                    agentAction={
+                      thread
+                        ? {
+                            option: `“${thread.title}”`,
+                            submit: `Ask in “${thread.title}”`,
+                            clears: true,
+                          }
+                        : onAskAgent
+                          ? { option: 'Agent', submit: 'Ask agent…', clears: false }
+                          : undefined
+                    }
+                    allowInlineComment={
+                      detail.capabilities?.actions.includes('inline-comment') ?? true
+                    }
+                    allowInlineRange={detail.capabilities?.inlineRange ?? true}
+                    onComment={
+                      connected && !detail.stale && active
+                        ? async (body, range, destination, baseline) => {
+                            if (destination === 'github') {
+                              if (baseline.headSha !== detail.pull.headSha)
+                                throw new Error(
+                                  'The PR changed while you were writing. Your draft is preserved. Copy it, cancel, and select lines on the current revision before posting.',
+                                )
+                              await request(
+                                '/api/scm/pulls/comment',
+                                {
+                                  repositoryId,
+                                  number: detail.pull.number,
+                                  headSha: baseline.headSha,
+                                  expectedDestination: baseline.expectedDestination,
+                                  connectionId: detail.pull.connectionId,
+                                  path: baseline.path,
+                                  body,
+                                  ...range,
+                                },
+                                pullLineCommentResponse,
+                              )
+                              onPosted()
+                            } else if (thread) {
+                              if (baseline.headSha !== detail.pull.headSha)
+                                throw new Error(
+                                  'The PR changed while you were writing. Your draft is preserved. Select lines on the current revision before asking the thread.',
+                                )
+                              thread.onAsk(
+                                buildPullReviewObjective(detail, {
+                                  question: body,
+                                  path: baseline.path,
+                                  ...range,
+                                  code: baseline.code,
+                                }),
+                              )
+                            } else if (onAskAgent) {
+                              if (baseline.headSha !== detail.pull.headSha)
+                                throw new Error(
+                                  'The PR changed while you were writing. Your draft is preserved. Select lines on the current revision before asking an agent.',
+                                )
+                              onAskAgent({
+                                question: body,
+                                path: baseline.path,
+                                ...range,
+                                code: baseline.code,
+                              })
+                            } else
+                              onSteer(
+                                `Address this feedback on ${baseline.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${baseline.headSha}:\n${body}\n\nReference patch at time of comment:\n${baseline.patch.slice(0, 1500)}`,
+                                baseline,
+                              )
+                          }
+                        : undefined
+                    }
+                  />
+                  {comments.length > 0 && (
+                    <>
+                      <h4 className="my-3 text-xs font-medium">
+                        Feedback on this file ({comments.length})
+                      </h4>
+                      <PullComments
+                        comments={comments}
+                        fileBaseURL={
+                          detail.fileBaseUrl ??
+                          `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
+                        }
+                        actionContext={{
+                          repositoryId,
+                          detail,
+                          onDone: onPosted,
+                        }}
+                      />
+                    </>
+                  )}
+                </DeferredPullFile>
+              </div>
+            </article>
+          )
+        })}
       </div>
     </section>
   )

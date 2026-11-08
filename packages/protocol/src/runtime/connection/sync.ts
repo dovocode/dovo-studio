@@ -111,19 +111,35 @@ export const activityDeltaSchema = mutableStruct({
     }),
   ),
 })
+// Name the payload codecs so declaration emit does not expand the whole workspace schema
+// again inside each frame variant. Their decoded and encoded types remain checked here.
+const syncSnapshotSchema: Schema.Codec<RuntimeSnapshot, (typeof snapshotSchema)['Encoded']> =
+  snapshotSchema
+const syncDeltaSchema: Schema.Codec<SnapshotDelta, (typeof snapshotDeltaSchema)['Encoded']> =
+  snapshotDeltaSchema
 export const syncFrameSchema = Schema.Union([
   mutableStruct({
     type: Schema.Literal('snapshot'),
     ...cursor,
     tag: Schema.String,
-    snapshot: snapshotSchema,
+    snapshot: syncSnapshotSchema,
   }),
   mutableStruct({
     type: Schema.Literal('delta'),
     ...cursor,
     tag: Schema.String,
     base: Schema.Number,
-    delta: snapshotDeltaSchema,
+    delta: syncDeltaSchema,
+  }),
+  // Opt-in handoff between scoped views. The predecessor belongs to the old
+  // view; the destination cursor can have a different epoch and sequence.
+  mutableStruct({
+    type: Schema.Literal('selection'),
+    ...cursor,
+    previousEpoch: Schema.String,
+    base: Schema.Number,
+    tag: Schema.String,
+    delta: syncDeltaSchema,
   }),
   mutableStruct({
     type: Schema.Literal('activity'),
@@ -151,6 +167,7 @@ export const syncInputSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('watch'),
+    selectionDelta: Schema.optional(Schema.Literal(true)),
     tasks: Schema.optional(
       mutableArray(Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))).pipe(
         Schema.check(Schema.isMaxLength(8)),
@@ -173,7 +190,15 @@ export const syncTicketSchema = mutableStruct({
 export type SyncFrame = Schema.Schema.Type<typeof syncFrameSchema>
 export type SnapshotDelta = Schema.Schema.Type<typeof snapshotDeltaSchema>
 const taskMetadata = ({ messages: _messages, updatedAt: _updatedAt, ...metadata }: Task) => metadata
-const equal = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b)
+function equalArrayItems(a: readonly unknown[], b: readonly unknown[]) {
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false
+  return true
+}
+const equal = (a: unknown, b: unknown) =>
+  a === b ||
+  (Array.isArray(a) && Array.isArray(b) && equalArrayItems(a, b)) ||
+  JSON.stringify(a) === JSON.stringify(b)
 // Streaming replaces a task, but usually shares its files, turns and other large fields.
 // Compare those references before serializing any changed field. Undefined and missing
 // properties are equivalent on the wire, just as they are with JSON.stringify.

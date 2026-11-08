@@ -67,9 +67,14 @@ it('shares a real HTTP runtime stream, unions thread histories, and keeps the po
     ).toBe(true),
   )
   const snapshot = popout.find((event) => event.type === 'snapshot')
-  expect(snapshot?.type === 'snapshot' ? snapshot.snapshot.detailTaskIds?.sort() : []).toEqual([
+  expect(snapshot?.type === 'snapshot' ? snapshot.snapshot.detailTaskIds : []).toEqual(['reviewer'])
+  expect(popoutSnapshot?.workspace.tasks.find((task) => task.id === 'author')?.messages).toEqual([])
+  expect(
+    popoutSnapshot?.workspace.tasks.find((task) => task.id === 'reviewer')?.messages[0]?.text,
+  ).toBe('reviewer history')
+  const mainSnapshot = main.find((event) => event.type === 'snapshot')
+  expect(mainSnapshot?.type === 'snapshot' ? mainSnapshot.snapshot.detailTaskIds : []).toEqual([
     'author',
-    'reviewer',
   ])
   expect(start).toHaveBeenCalledOnce()
   runtime.services.store.updateTask('reviewer', (task) => ({

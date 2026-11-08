@@ -17,7 +17,9 @@ export function createConversationScroll({ inverted = false }: { inverted?: bool
     content(height: number) {
       if (height === contentHeight) return undefined
       contentHeight = height
-      return target()
+      // The inverted list anchors natively in this layout pass. A JS scroll on
+      // every older-row measurement competes with that anchor a frame later.
+      return inverted ? undefined : target()
     },
     viewport(height: number) {
       if (height === viewportHeight) return undefined

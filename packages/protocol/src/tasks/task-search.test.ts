@@ -1,6 +1,12 @@
 import { expect, it } from 'vite-plus/test'
 import type { Task } from '../workspace'
-import { searchTaskMessages, taskSearchHit, taskSearchNeedle } from './task-search'
+import {
+  searchTaskMessages,
+  taskSearchHit,
+  taskSearchMatch,
+  taskSearchNeedle,
+  taskSearchTerms,
+} from './task-search'
 const thread = (id: string, updatedAt: string, texts: string[]): Task => ({
   id,
   title: id,
@@ -33,4 +39,51 @@ it('lists every matching thread by recent activity while bounding hits', () => {
   expect(result.taskIds).toEqual(['newer', 'older', 'tie'])
   expect(result.hits.map((hit) => hit.messageId)).toEqual(['newer-0', 'older-1'])
   expect(searchTaskMessages(tasks, '   ')).toEqual({ taskIds: [], hits: [] })
+})
+
+it('matches separated words and accents without typos, with explicit literal phrases', () => {
+  const tasks = [
+    thread('one', '', [
+      'The Café has an open door',
+      'An OPEN café',
+      'A cafe open late',
+      'The cafeteria is closed',
+    ]),
+  ]
+  expect(searchTaskMessages(tasks, 'cafe open').hits.map((hit) => hit.messageId)).toEqual([
+    'one-2',
+    'one-1',
+    'one-0',
+  ])
+  expect(searchTaskMessages(tasks, '"café open"').hits.map((hit) => hit.messageId)).toEqual([
+    'one-2',
+  ])
+  expect(searchTaskMessages(tasks, 'late "cafe open"').hits.map((hit) => hit.messageId)).toEqual([
+    'one-2',
+  ])
+  expect(searchTaskMessages(tasks, 'cfae open').hits).toEqual([])
+  expect(searchTaskMessages(tasks, 'has z').hits).toEqual([])
+  expect(searchTaskMessages(tasks, 'é').hits).toHaveLength(4)
+  expect(taskSearchTerms('  café "open door" café ')).toEqual(['cafe', 'open door'])
+  expect(taskSearchMatch('text', '""')).toBeUndefined()
+})
+
+it.each([
+  ['İ 🐱 Café needle', 'needle', 'needle'],
+  ['ﬃ İstanbul cafe\u0301 🐱', 'cafe', 'cafe\u0301'],
+  ['before ﬁnal after', 'final', 'ﬁnal'],
+  ['before ﬁ after', 'i', 'ﬁ'],
+  ['before 🐱 after', '🐱', '🐱'],
+  ['Αυτός', 'αυτοσ', 'Αυτός'],
+])('maps folded offsets back to source text: %s', (text, query, source) => {
+  const match = taskSearchMatch(text, query)!
+  expect(text.slice(match.start, match.end)).toBe(source)
+})
+
+it('keeps snippet context at Unicode character boundaries after folding', () => {
+  const text = `${'İ'.repeat(80)}🐱${'x'.repeat(59)} Café ${'z'.repeat(99)}🐱end`
+  const snippet = taskSearchHit('one', { id: 'm', role: 'assistant', text }, 'cafe')!.snippet
+  expect(snippet).toContain('Café')
+  expect(snippet).not.toContain('\ufffd')
+  expect(/[\ud800-\udfff]/u.test(snippet)).toBe(false)
 })

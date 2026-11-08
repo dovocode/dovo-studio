@@ -14,9 +14,9 @@ import {
 import { agentSchema, resolveTaskAgent, taskModelSchema, defaultTaskHarness } from '../workspace'
 
 it('uses host display names, formats raw versioned GPT IDs and keeps custom identifiers intact', () => {
-  expect(modelDisplayName('gpt-5.1-sol')).toBe('GPT-5.1-Sol')
-  expect(modelDisplayName('openai/gpt-6.1-sol')).toBe('openai/GPT-6.1-Sol')
-  expect(modelDisplayName('gpt-6.1-sol', 'GPT-6.1 Sol')).toBe('GPT-6.1 Sol')
+  expect(modelDisplayName('gpt-5.1-sol')).toBe('5.1 Sol')
+  expect(modelDisplayName('openai/gpt-6.1-sol')).toBe('openai/6.1 Sol')
+  expect(modelDisplayName('gpt-6.1-sol', 'GPT-6.1 Sol')).toBe('6.1 Sol')
   expect(modelDisplayName('gpt-test')).toBe('gpt-test')
   expect(modelDisplayName('my-custom-name')).toBe('my-custom-name')
   expect(
@@ -24,7 +24,7 @@ it('uses host display names, formats raw versioned GPT IDs and keeps custom iden
       { id: 'openai/gpt-5.1-sol', name: 'GPT-5.1-Sol' },
       { id: 'azure/gpt-5.1-sol', name: 'GPT-5.1-Sol' },
     ]).map((model) => model.name),
-  ).toEqual(['GPT-5.1-Sol · openai', 'GPT-5.1-Sol · azure'])
+  ).toEqual(['5.1 Sol · openai', '5.1 Sol · azure'])
 })
 
 it('canonicalizes discovery settings without losing environment or ACP configuration', () => {

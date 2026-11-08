@@ -183,12 +183,15 @@ export function TaskActivity({
   turn,
   status,
   artifactsOnly = false,
+  working = false,
 }: {
   tools: ReturnType<typeof recentTools>
   error?: string
   turn?: TaskTurn
   status?: TaskTurn['status']
   artifactsOnly?: boolean
+  /** Fallback while the running task has no current assistant message. */
+  working?: boolean
 }) {
   // Settings → General → Conversation → Tool activity; Ctrl+O switches it from the task.
   const detailsId = useId()
@@ -232,17 +235,23 @@ export function TaskActivity({
   const running = entries.filter((entry) => entry.state === 'running')
   const current =
     running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
-  if (!tools.length && !error && !turn) return null
   // Replies only: keep failures, stops and unresolved work visible.
-  if (
+  const hidden =
     toolActivity === 'hidden' &&
     !error &&
     !apps.length &&
     !artifacts.length &&
     !images.length &&
     !entries.some((entry) => ['failed', 'stopped', 'interrupted'].includes(entry.state))
-  )
-    return null
+  const workingIndicator =
+    working && (hidden || !current) ? (
+      <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span aria-hidden className="size-1.5 rounded-full bg-primary" />
+        Working
+      </p>
+    ) : null
+  if (!tools.length && !error && !turn) return workingIndicator
+  if (hidden) return workingIndicator
   const outcome = taskActivityOutcome(
     entries.filter((entry) => entry.presentation.kind !== 'reasoning').map((entry) => entry.state),
   )
@@ -258,7 +267,7 @@ export function TaskActivity({
   return (
     <section
       className="min-w-0 border-l border-border/60 pl-3 text-xs"
-      aria-label="Task tool activity"
+      aria-label="Thread tool activity"
     >
       {tools.length ? (
         <div className="min-w-0">
@@ -339,6 +348,7 @@ export function TaskActivity({
           Activity could not be loaded. {error}
         </p>
       )}
+      {workingIndicator}
     </section>
   )
 }

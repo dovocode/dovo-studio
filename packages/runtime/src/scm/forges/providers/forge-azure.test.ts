@@ -3,6 +3,17 @@ import type { PullAction } from '@dovo/protocol'
 import { ForgeHttp } from '../integration/forge-http.js'
 import { AzureForge } from './forge-azure.js'
 const sha = 'a'.repeat(40)
+it('stops at the supported PR page limit with an explicit notice', async () => {
+  const { forge } = fixture(({ url }) =>
+    url.pathname.endsWith('/pullrequests')
+      ? { data: { value: Array.from({ length: 51 }, () => pull) } }
+      : undefined,
+  )
+  const page = await forge.list('open', 100)
+  expect(page.pulls).toHaveLength(50)
+  expect(page.hasMore).toBe(false)
+  expect(page.paginationNotice).toContain('Open older requests on Azure DevOps')
+})
 const base = 'b'.repeat(40)
 const author = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

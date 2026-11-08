@@ -5,7 +5,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentRun } from '../../execution/types.js'
-import { acpAdapter } from './acp.js'
+import { acpAdapter, createAcpAdapter } from './acp.js'
+import { decode, resourceSettingsSchema } from '@dovo/protocol'
 
 const dirs: string[] = []
 afterEach(async () => {
@@ -18,6 +19,7 @@ async function fixture(
   compactCommand = false,
   permissionKinds: string[] = [],
   nativeChildren = false,
+  mcpCapabilities: { acp?: boolean; http?: boolean } = {},
 ) {
   const cwd = await mkdtemp(join(tmpdir(), 'dovo-acp-run-'))
   dirs.push(cwd)
@@ -52,7 +54,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line)
   messages.push(input)
   writeFileSync(process.env.TEST_ACP_RECORD, JSON.stringify(messages))
-  if (input.method === 'initialize') respond(input.id, { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: ${lifecycle ? '{ resume: {}, close: {}, delete: {} }' : '{}'} } })
+  if (input.method === 'initialize') respond(input.id, { protocolVersion: 1, agentCapabilities: { mcpCapabilities: ${JSON.stringify(mcpCapabilities)}, loadSession: true, sessionCapabilities: ${lifecycle ? '{ resume: {}, close: {}, delete: {} }' : '{}'} } })
   if (input.method === 'session/new') respond(input.id, { sessionId: 'session', modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions })
   if (input.method === 'session/load') { update('old'); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
   if (input.method === 'session/resume') { if (${compactCommand}) commands(); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
@@ -306,5 +308,51 @@ it.each(['on-request', 'never'] as const)(
         approvalPolicy === 'never' ? 'allow' : 'reject',
       )
     expect(approve).toHaveBeenCalledTimes(approvalPolicy === 'never' ? 0 : 2)
+  },
+)
+
+it.each([true, false])(
+  'negotiates opted-in MCP-over-ACP only when advertised=%s, retaining HTTP fallback',
+  async (supported) => {
+    const adapter = createAcpAdapter()
+    const { cwd, launch, record } = await fixture(false, false, false, [], false, {
+      acp: supported,
+      http: true,
+    })
+    const input = run(cwd, launch)
+    input.run.taskId = 'mcp-task'
+    input.run.agent.resources = decode(resourceSettingsSchema, {
+      mcpServers: [
+        {
+          name: 'native',
+          enabled: true,
+          transport: 'http',
+          acpTransport: true,
+          url: 'http://127.0.0.1:1234/mcp',
+          headerValues: { Authorization: 'Bearer fixture-secret' },
+        },
+      ],
+    })
+    try {
+      await adapter.run(input.run)
+      await adapter.run({ ...input.run, sessionId: 'session' })
+      const messages: Array<{
+        method: string
+        params?: {
+          protocolVersion?: number
+          mcpServers?: Array<{ type?: string; serverId?: string }>
+        }
+      }> = JSON.parse(await readFile(record, 'utf8'))
+      expect(
+        messages.find((message) => message.method === 'initialize')?.params?.protocolVersion,
+      ).toBe(1)
+      const declarations = messages.find((message) => message.method === 'session/new')?.params
+        ?.mcpServers
+      expect(declarations?.[0].type).toBe(supported ? 'acp' : 'http')
+      expect(Boolean(declarations?.[0].serverId)).toBe(supported)
+      expect(JSON.stringify(declarations).includes('fixture-secret')).toBe(!supported)
+    } finally {
+      await adapter.dispose?.()
+    }
   },
 )

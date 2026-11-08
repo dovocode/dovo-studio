@@ -10,6 +10,7 @@ export function useAccount(
   storage: AccountStorage,
   open: (url: string) => Promise<unknown>,
   services?: Partial<ServiceUrls> & { ready?: boolean },
+  foreground = true,
 ) {
   const { connectOrigin, artifactsOrigin } = normalizeServiceUrls({
     connectOrigin: services?.connectOrigin ?? '',
@@ -33,8 +34,22 @@ export function useAccount(
   const state = useSyncExternalStore(client.subscribe, client.snapshot, client.snapshot)
   const session = client.sessionId()
   useEffect(() => {
-    if (services?.ready !== false && state.loaded && state.directory && !state.deletionPending)
-      return client.sharing.startSync()
+    if (
+      !foreground ||
+      services?.ready === false ||
+      !state.loaded ||
+      !state.directory ||
+      state.deletionPending
+    )
+      return
+    const active = () => typeof document === 'undefined' || document.visibilityState === 'visible'
+    const stop = client.sharing.startSync(active)
+    const refresh = () => client.sharing.refreshSync()
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', refresh)
+    return () => {
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', refresh)
+      stop()
+    }
   }, [
     client,
     session,
@@ -42,6 +57,7 @@ export function useAccount(
     state.directory?.user.id,
     state.deletionPending,
     services?.ready,
+    foreground,
   ])
   useEffect(() => {
     if (services?.ready === false) return

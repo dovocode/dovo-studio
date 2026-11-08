@@ -15,7 +15,14 @@ export function ProjectIcon({
         'inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded text-[9px] font-bold uppercase',
         className,
       )}
-      style={icon ? undefined : { backgroundColor: projectIconColor(repository), color: '#fff' }}
+      style={
+        icon
+          ? undefined
+          : {
+              backgroundColor: projectIconColor(repository),
+              color: '#fff',
+            }
+      }
       aria-hidden="true"
     >
       {icon ? (

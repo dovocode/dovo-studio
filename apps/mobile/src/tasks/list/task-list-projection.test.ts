@@ -261,7 +261,7 @@ it('projects General parents, remote children and orphaned local children into t
   expect(tree.roots.map((entry) => entry.task.id)).toEqual(['general', 'orphan'])
   const root = tree.roots.find((entry) => entry.task.id === 'general')!
   expect(root.needsInput).toBe(true)
-  expect(root.projectName).toBe('General')
+  expect(root.projectName).toBe('No Project')
   expect(tree.nodes.get(root.key)?.children[0]).toMatchObject({
     title: 'Remote project child',
     projectName: 'Project',
@@ -363,4 +363,95 @@ it('resolves background-only children to empty saved profiles and retains scoped
     runtimeIdentity: 'peer-identity',
     repositoryId: 'remote-repo',
   })
+})
+
+it('projects active terminals without retaining terminal payloads or changing unrelated owners', () => {
+  const source = overview()
+  const snapshot = source.snapshot!
+  const initial = taskListProjection([source], now)
+  const shell: Subagent = {
+    id: 'shell',
+    name: 'Dev server',
+    provider: 'claude',
+    kind: 'background',
+    status: 'working',
+    sessionLive: true,
+    startedAt: '',
+    updatedAt: '',
+  }
+  const active = {
+    ...source,
+    snapshot: {
+      ...snapshot,
+      terminals: [{ id: 'term', taskId: 'running', title: 'Shell', exited: false }],
+      workspace: {
+        ...snapshot.workspace,
+        tasks: snapshot.workspace.tasks.map((task) =>
+          task.id === 'running' ? { ...task, status: 'review' as const, subagents: [shell] } : task,
+        ),
+      },
+    },
+  }
+  const projected = taskListProjection([active], now, initial)
+  const key = (id: string) => JSON.stringify([source.profile.id, id])
+  expect(projected.get(key('running'))?.owner.activeTerminals).toBe(2)
+  expect(projected.get(key('untouched'))?.owner).toBe(initial.get(key('untouched'))?.owner)
+  const exited = {
+    ...active,
+    snapshot: {
+      ...active.snapshot,
+      terminals: [{ ...active.snapshot.terminals[0]!, exited: true }],
+    },
+  }
+  expect(
+    taskListProjection([exited], now, projected).get(key('running'))?.owner.activeTerminals,
+  ).toBe(1)
+})
+
+it('keeps unused side drafts in their parent while surfacing input, started and orphaned chats', () => {
+  const source = overview()
+  const snapshot = source.snapshot!
+  const parent = task('parent')
+  const child = {
+    ...task('side'),
+    status: 'draft' as const,
+    sideThread: {
+      parentTaskId: parent.id,
+      objective: '',
+      source: 'head' as const,
+      contextMessageCount: 0,
+      contextHash: '',
+      parentHistoryRevision: 0,
+      permissionCeiling: { provider: 'codex' as const, permission: 'read-only' as const },
+    },
+  }
+  const publish = (tasks: typeof snapshot.workspace.tasks, approvals = snapshot.approvals) => [
+    {
+      ...source,
+      snapshot: { ...snapshot, approvals, workspace: { ...snapshot.workspace, tasks } },
+    },
+  ]
+  const key = JSON.stringify([source.profile.id, child.id])
+  expect(taskListProjection(publish([parent, child]), now).has(key)).toBe(false)
+  const waiting = taskListProjection(
+    publish(
+      [parent, child],
+      [
+        {
+          id: 'approval',
+          taskId: child.id,
+          detail: 'Run command',
+          createdAt: '',
+          title: 'Run command',
+        },
+      ],
+    ),
+    now,
+  )
+  expect(waiting.get(key)?.row.needsInput).toBe(true)
+  expect(waiting.get(JSON.stringify([source.profile.id, parent.id]))?.row.needsInput).toBe(true)
+  expect(taskListProjection(publish([child]), now).has(key)).toBe(true)
+  expect(taskListProjection(publish([parent, { ...child, status: 'running' }]), now).has(key)).toBe(
+    true,
+  )
 })

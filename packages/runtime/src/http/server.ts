@@ -1,7 +1,9 @@
+import { BinaryTerminalStream } from '../terminal/binary-stream.js'
 import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
 import { authorizeRunTerminal, authenticateRuntimeOperation } from '../auth/run-authorization.js'
 import { serveTaskFile } from './endpoints/task-files.js'
+import { browserDownloadPath, serveBrowserDownload } from './endpoints/browser-downloads.js'
 import { assertForeignDeviceScope } from '../previews/device-hosts.js'
 import { attachRuntimeSync } from './support/runtime-sync.js'
 import { pairingAddresses } from './support/pairing-addresses.js'
@@ -9,6 +11,7 @@ import { ValidationError, safeValidationIssues, safeValidationMessage } from '@d
 import { decode } from '@dovo/protocol'
 import { completeRequest } from './support/request-activity.js'
 import { createServer, type IncomingMessage } from 'node:http'
+import { isIP } from 'node:net'
 import type { Socket } from 'node:net'
 import { WebSocketServer, WebSocket } from 'ws'
 
@@ -23,6 +26,7 @@ import { HttpError, errorMessage } from '../errors.js'
 import { attachBrowserSocket } from './support/browser-socket.js'
 import { attachDesktopUnlockSocket } from './support/desktop-unlock-socket.js'
 import type { PeerOrigin } from './peer-connections.js'
+import { expensiveRequestName, memoryAttribution } from '../diagnostics/memory-attribution.js'
 /** `tunnel` marks the dedicated internet listener. Its connections arrive over loopback, so
  * their provenance comes only from the tunnel itself, never from the socket address. */
 export function createRuntimeServer(
@@ -31,6 +35,35 @@ export function createRuntimeServer(
   advertise = true,
   tunnel?: (socket: Socket) => PeerOrigin | undefined,
 ) {
+  const requireClientAccess = (request: IncomingMessage, peer?: PeerOrigin) => {
+    const address = request.socket.remoteAddress?.toLowerCase()
+    const ipv4 = address?.replace(/^::ffff:/, '')
+    const remote =
+      peer || !(address === '::1' || (ipv4 && isIP(ipv4) === 4 && ipv4.startsWith('127.')))
+    if (remote) services.policy.require('remoteClients')
+    if (peer) services.policy.require('connect')
+    if (
+      !remote &&
+      request.headers.origin &&
+      request.headers.origin !== 'null' &&
+      request.headers.origin !== 'file://'
+    ) {
+      let desktopDevelopmentOrigin: string | undefined
+      if (process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop' && process.env.VITE_DEV_SERVER_URL) {
+        try {
+          const url = new URL(process.env.VITE_DEV_SERVER_URL)
+          if (url.protocol === 'http:' || url.protocol === 'https:')
+            desktopDevelopmentOrigin = url.origin
+        } catch {
+          // An invalid development URL does not grant an exemption.
+        }
+      }
+      // Origin is a browser classification signal, not authentication. Packaged Electron's
+      // file renderer can send an opaque `null` or file origin; the desktop enforces its own policy.
+      if (request.headers.origin !== desktopDevelopmentOrigin)
+        services.policy.requireClient('local-browser')
+    }
+  }
   let stopping = false
   let closing: Promise<void> | undefined
   const connections = new Set<Socket>()
@@ -67,6 +100,13 @@ export function createRuntimeServer(
       return
     }
     if (request.method === 'OPTIONS') {
+      try {
+        requireClientAccess(request, peer)
+      } catch (error) {
+        return json(request, response, error instanceof HttpError ? error.status : 500, {
+          error: errorMessage(error),
+        })
+      }
       response.writeHead(204)
       response.end()
       return
@@ -75,14 +115,20 @@ export function createRuntimeServer(
       response.once('finish', resolve)
       response.once('close', resolve)
     })
+    // Measured until the response finishes, because serializing a large result also holds memory.
+    const expensive = expensiveRequestName(request.method, request.url?.split('?')[0] ?? '/')
+    if (expensive) void finished.then(memoryAttribution(services).begin(expensive))
     const handled = Promise.resolve()
       .then(() => {
+        requireClientAccess(request, peer)
         let url: URL
         try {
           url = new URL(request.url ?? '/', 'http://runtime.local')
         } catch {
           throw new HttpError(400, 'Invalid request URL')
         }
+        if (request.method === 'GET' && url.pathname.startsWith(browserDownloadPath))
+          return serveBrowserDownload(services, response, url, peer)
         if (
           request.method === 'GET' &&
           url.pathname.startsWith('/api/tasks/files/shared/') &&
@@ -225,6 +271,7 @@ export function createRuntimeServer(
         throw new HttpError(403, 'This internet connection belongs to another device')
     }
     try {
+      requireClientAccess(request, peer)
       if (tunnel && !peer?.deviceId)
         throw new HttpError(403, 'Internet connection is not authorized')
       const url = new URL(request.url ?? '/', 'http://runtime.local')
@@ -403,19 +450,29 @@ export function createRuntimeServer(
       sockets.handleUpgrade(request, socket, head, (client) => {
         track(client, ticket.token)
         services.activity.add('terminal', ticket.resourceId, 'Terminal connected')
+        const binary = url.searchParams.get('stream') === 'binary-v1'
+        const stream = binary
+          ? new BinaryTerminalStream(client, services.terminals.pressure(ticket.resourceId))
+          : undefined
+        let replay = true
         const detach = services.terminals.attach(ticket.resourceId, (data) => {
-          if (client.readyState === WebSocket.OPEN) {
+          if (stream) {
+            if (replay) stream.replay(data)
+            else stream.data(data)
+          } else if (client.readyState === WebSocket.OPEN) {
             if (client.bufferedAmount > 2 * 1024 * 1024)
               client.close(1013, 'Terminal client is too slow')
             else client.send(data)
           }
         })
+        replay = false
         client.on('message', (raw) => {
           try {
             if (isRunToken(ticket.token))
               authorizeRunTerminal(services, ticket.token, ticket.resourceId)
             else services.devices.authenticate(ticket.token)
           } catch {
+            stream?.stop()
             client.close(1008, 'Device authentication required')
             return
           }
@@ -433,20 +490,28 @@ export function createRuntimeServer(
             )
             if (input.type === 'ping') {
               // Binary control frames cannot be confused with raw terminal text.
-              client.send(JSON.stringify({ type: 'pong', nonce: input.nonce }), { binary: true })
+              if (stream) stream.pong(input.nonce)
+              else
+                client.send(JSON.stringify({ type: 'pong', nonce: input.nonce }), { binary: true })
+            } else if (input.type === 'ack') {
+              if (!stream) throw new Error('Unexpected terminal acknowledgement')
+              stream.ack(input.bytes)
             } else if (input.type === 'input') {
               recordInput(ticket.resourceId, input.data.length)
               services.terminals.input(ticket.resourceId, input.data)
             } else services.terminals.resize(ticket.resourceId, input.cols, input.rows)
           } catch {
+            stream?.stop()
             client.close(1008, 'Invalid terminal request')
           }
         })
         client.on('error', () => {
+          stream?.stop()
           detach()
           authenticated.delete(client)
         })
         client.on('close', () => {
+          stream?.stop()
           detach()
           authenticated.delete(client)
         })

@@ -5,7 +5,14 @@ import {
   decodeResult,
   type BrowserWebsiteCustomization,
 } from '@dovo/protocol'
-import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
+import {
+  Checkbox,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@dovo/studio-ui'
 
 export function WebsiteCustomizationEditor({
   website,
@@ -59,11 +66,10 @@ export function WebsiteCustomizationEditor({
         </DialogDescription>
         <div className="min-h-0 space-y-3 overflow-y-auto">
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={draft.enabled}
               disabled={busy}
-              onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
+              onCheckedChange={(enabled) => setDraft({ ...draft, enabled: enabled === true })}
             />{' '}
             Enable customization
           </label>

@@ -3,7 +3,7 @@ import { useBrowserProfileName } from './browser-profile-label'
 import { useWorkspace } from '@dovo/studio-core'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useState } from 'react'
-import { BookOpen, History, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import {
   Button,
   Dialog,
@@ -15,6 +15,8 @@ import {
 import { browserPageKey, type BrowserTab } from './shared-browser-tabs'
 
 export type BrowserLibraryProps = {
+  view: 'bookmarks' | 'history'
+  onClose: () => void
   bookmarks: readonly BrowserTab[]
   closed: readonly BrowserTab[]
   visits: readonly BrowserTab[]
@@ -74,6 +76,8 @@ function BrowserLibraryEntry({
 }
 
 export function BrowserLibrary({
+  view,
+  onClose,
   bookmarks,
   closed,
   visits,
@@ -82,7 +86,6 @@ export function BrowserLibrary({
   onClearHistory,
   onReopen,
 }: BrowserLibraryProps) {
-  const [view, setView] = useState<'bookmarks' | 'history' | null>(null)
   const [query, setQuery] = useState('')
   const title = view === 'history' ? 'History' : 'Bookmarks'
   const sections =
@@ -93,93 +96,67 @@ export function BrowserLibrary({
         ]
       : [{ title: 'Bookmarks', tabs: bookmarks }]
   return (
-    <>
-      <div className="flex flex-wrap gap-1">
-        {(['bookmarks', 'history'] as const).map((kind) => (
-          <Button
-            key={kind}
-            size="sm"
-            variant="ghost"
-            className="min-w-0 flex-1 justify-start"
-            aria-label={kind === 'bookmarks' ? 'Bookmarks' : 'History'}
-            onClick={() => {
-              setQuery('')
-              setView(kind)
-            }}
-          >
-            {kind === 'bookmarks' ? (
-              <BookOpen size={14} className="shrink-0" />
-            ) : (
-              <History size={14} className="shrink-0" />
-            )}
-            <span className="min-w-0 truncate">
-              {kind === 'bookmarks' ? 'Bookmarks' : 'History'}
-            </span>
-          </Button>
-        ))}
-      </div>
-      <Dialog
-        open={view !== null}
-        onOpenChange={(open) => {
-          if (!open) setView(null)
-        }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            Open a saved page on its original computer and browser profile.
-          </DialogDescription>
-          <Input
-            aria-label={`Search ${title.toLowerCase()}`}
-            placeholder="Search pages, computers or profiles…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {view === 'history' && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!closed.length}
-                onClick={() => {
-                  onReopen()
-                  setView(null)
-                }}
-              >
-                Reopen last closed tab
-              </Button>
-              <Button size="sm" variant="ghost" disabled={!visits.length} onClick={onClearHistory}>
-                Clear history
-              </Button>
-            </div>
-          )}
-          <div className="max-h-[55vh] space-y-4 overflow-y-auto">
-            {sections.map(({ title, tabs }) => (
-              <section key={title} aria-label={title}>
-                <h3 className="mb-1 text-sm font-medium">{title}</h3>
-                <div>
-                  {tabs.map((tab, index) => (
-                    <BrowserLibraryEntry
-                      key={`${browserPageKey(tab)}:${index}`}
-                      tab={tab}
-                      query={query}
-                      onOpen={() => {
-                        onOpen(tab)
-                        setView(null)
-                      }}
-                      onRemove={title === 'Bookmarks' ? () => onRemoveBookmark(tab) : undefined}
-                    />
-                  ))}
-                  {/* Profile catalogs load in each entry; show this only when no entries match. */}
-                  <p className="hidden px-3 py-2 text-xs text-muted-foreground only:block">
-                    {query.trim() ? 'No matching pages.' : `No ${title.toLowerCase()} yet.`}
-                  </p>
-                </div>
-              </section>
-            ))}
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>
+          Open a saved page on its original computer and browser profile.
+        </DialogDescription>
+        <Input
+          aria-label={`Search ${title.toLowerCase()}`}
+          placeholder="Search pages, computers or profiles…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {view === 'history' && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!closed.length}
+              onClick={() => {
+                onReopen()
+                onClose()
+              }}
+            >
+              Reopen last closed tab
+            </Button>
+            <Button size="sm" variant="ghost" disabled={!visits.length} onClick={onClearHistory}>
+              Clear history
+            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-    </>
+        )}
+        <div className="max-h-[55vh] space-y-4 overflow-y-auto">
+          {sections.map(({ title, tabs }) => (
+            <section key={title} aria-label={title}>
+              <h3 className="mb-1 text-sm font-medium">{title}</h3>
+              <div>
+                {tabs.map((tab, index) => (
+                  <BrowserLibraryEntry
+                    key={`${browserPageKey(tab)}:${index}`}
+                    tab={tab}
+                    query={query}
+                    onOpen={() => {
+                      onOpen(tab)
+                      onClose()
+                    }}
+                    onRemove={title === 'Bookmarks' ? () => onRemoveBookmark(tab) : undefined}
+                  />
+                ))}
+                {/* Profile catalogs load in each entry; show this only when no entries match. */}
+                <p className="hidden px-3 py-2 text-xs text-muted-foreground only:block">
+                  {query.trim() ? 'No matching pages.' : `No ${title.toLowerCase()} yet.`}
+                </p>
+              </div>
+            </section>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

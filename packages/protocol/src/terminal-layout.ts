@@ -1,3 +1,4 @@
+export const MAX_TERMINAL_PANES = 4
 export type TerminalGroup = { id: string; sessions: string[]; layout: 'columns' | 'rows' }
 /** Unassigned sessions (including restored shells) start in their own tab. */
 export function terminalGroups(
@@ -25,8 +26,18 @@ export function splitTerminal(
   layout: TerminalGroup['layout'],
 ): TerminalGroup[] {
   return groups.map((group) =>
-    group.sessions.includes(selected)
-      ? { ...group, layout, sessions: [...group.sessions, id] }
+    group.sessions.includes(selected) &&
+    !group.sessions.includes(id) &&
+    group.sessions.length < MAX_TERMINAL_PANES
+      ? {
+          ...group,
+          layout,
+          sessions: [
+            ...group.sessions.slice(0, group.sessions.indexOf(selected) + 1),
+            id,
+            ...group.sessions.slice(group.sessions.indexOf(selected) + 1),
+          ],
+        }
       : group,
   )
 }

@@ -188,6 +188,75 @@ function pair(
   else a.runtime.services.retrievalPeers.register('owner', input)
 }
 
+it('merges independent settings categories over paired HTTP and restores their prior values together', async () => {
+  const a = await fixture()
+  const b = await fixture()
+  const shared = (f: typeof a) => f.runtime.services.defaults.get().scopedSettings?.shared[0]
+  try {
+    a.runtime.services.defaults.mergeShared([
+      {
+        key: 'global',
+        updatedAt: 10,
+        changeId: 'rename',
+        value: { taskDefaults: { setupCommand: 'Shared command' } },
+        revisions: { taskDefaults: { updatedAt: 10, changeId: 'rename' } },
+      },
+    ])
+    b.runtime.services.defaults.mergeShared([
+      {
+        key: 'global',
+        updatedAt: 10,
+        changeId: 'pin',
+        value: { taskBehavior: { continueAfterRestart: true } },
+        revisions: { taskBehavior: { updatedAt: 10, changeId: 'pin' } },
+      },
+    ])
+    pair(a, b)
+    pair(b, a)
+    await Promise.all([
+      a.runtime.services.stateReplication.refresh(),
+      b.runtime.services.stateReplication.refresh(),
+    ])
+    await expect
+      .poll(() => shared(a)?.value)
+      .toEqual({
+        taskDefaults: { setupCommand: 'Shared command' },
+        taskBehavior: { continueAfterRestart: true },
+      })
+    await expect.poll(() => shared(b)?.value).toEqual(shared(a)?.value)
+    const before = await a
+      .call('/api/agents/settings/read', { scope: 'global' })
+      .then((response) => response.json())
+    const saved = await a.call('/api/agents/settings/save', {
+      scope: 'global',
+      before: before.value,
+      after: {
+        taskDefaults: { setupCommand: 'Later' },
+        taskBehavior: { continueAfterRestart: false },
+      },
+    })
+    expect(saved.status).toBe(200)
+    const old = (await a.runtime.services.stateReplication.history('global')).find(
+      (entry) => entry.value.taskBehavior?.continueAfterRestart === true,
+    )
+    expect(old).toBeDefined()
+    const restored = await a.call('/api/state/restore', {
+      key: old!.key,
+      updatedAt: old!.updatedAt,
+      changeId: old!.changeId,
+    })
+    expect(restored.status).toBe(200)
+    await expect
+      .poll(() => shared(b)?.value)
+      .toEqual({
+        taskDefaults: { setupCommand: 'Shared command' },
+        taskBehavior: { continueAfterRestart: true },
+      })
+  } finally {
+    await Promise.all([a.close(), b.close()])
+  }
+})
+
 it('syncs directly in both directions over authenticated HTTP and removes revoked peer sessions', async () => {
   const a = await fixture(),
     b = await fixture()
