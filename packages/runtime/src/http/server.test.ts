@@ -774,7 +774,12 @@ it('reconciles HTTP model-switch conflicts, preserves the superseded edit, and p
   await Effect.runPromise(edit('', 'model-one'))
   const conflict = await Effect.runPromise(edit('', 'model-two'))
   expect(conflict).toMatchObject({ outcome: 'reconciled', reconciled: true })
-  expect(queue.status(connection)).toEqual({ pending: 0, error: null, reviewRequired: false })
+  expect(queue.status(connection)).toEqual({
+    pending: 0,
+    error: null,
+    reviewRequired: false,
+    actions: [],
+  })
   expect(runtime.services.store.task(task.id).harness?.model).toBe('model-one')
   expect(runtime.services.store.recoveredEdits()).toEqual([
     expect.objectContaining({
@@ -789,6 +794,11 @@ it('reconciles HTTP model-switch conflicts, preserves the superseded edit, and p
     }),
   ])
   await Effect.runPromise(edit('model-one', 'model-two'))
-  expect(queue.status(connection)).toEqual({ pending: 0, error: null, reviewRequired: false })
+  expect(queue.status(connection)).toEqual({
+    pending: 0,
+    error: null,
+    reviewRequired: false,
+    actions: [],
+  })
   expect(runtime.services.store.task(task.id).harness?.model).toBe('model-two')
 })

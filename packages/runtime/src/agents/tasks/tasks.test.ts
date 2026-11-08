@@ -1162,7 +1162,10 @@ it('applies project resources with custom-agent overrides and resets changed ses
   await (
     await s.tasks.start(task.id)
   ).done
-  expect(runs[0].agent.instructions).toContain('Project rules')
+  expect(runs[0].agent.instructions).toContain('- review: Review')
+  expect(runs[0].agent.instructions).toContain('skill_read')
+  expect(runs[0].agent.instructions).not.toContain('Project rules')
+  expect(runs[0].agent.resources?.skills).toEqual([skill])
   s.store.update((workspace) => ({
     ...workspace,
     agents: workspace.agents.map((agent) => ({
@@ -1182,6 +1185,7 @@ it('applies project resources with custom-agent overrides and resets changed ses
     await s.tasks.start(task.id)
   ).done
   expect(runs[1].agent.instructions).not.toContain('Project rules')
+  expect(runs[1].agent.instructions).not.toContain('- review: Review')
   expect(runs[1].sessionId).toBeUndefined()
 })
 it.each([false, true])(
@@ -1830,9 +1834,8 @@ it.each(['custom', 'built-in'] as const)(
     }).toMatchObject(expected)
     expect(configured.args).toEqual(choice === 'custom' ? custom.args : undefined)
     expect(configured.instructions.includes(custom.instructions)).toBe(choice === 'custom')
-    expect(configured.instructions.includes('Use the custom review skill.')).toBe(
-      choice === 'custom',
-    )
+    expect(configured.instructions.includes('- review: Review')).toBe(choice === 'custom')
+    expect(configured.instructions).not.toContain('Use the custom review skill.')
     expect(configured.endpoint === custom.endpoint).toBe(choice === 'custom')
     expect(s.store.task(task.id).agentId).toBe(choice === 'custom' ? custom.id : '')
     expect(s.store.task(task.id).agentOverrides).toEqual(
