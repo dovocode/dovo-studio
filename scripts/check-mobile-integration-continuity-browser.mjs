@@ -34,6 +34,10 @@ export const Alert={alert:(...args)=>window.alerts.push(args.slice(0,2))};
 export const Linking={openURL:async url=>window.external.push(url)};
 `
 const boundaries = new Map([
+  [
+    mobile + 'runtime/connection/shared-state-storage',
+    `export {mobileSharedStateStorage,mobileThreadStateStorage} from '${root}scripts/browser/mobile-state-storage.mjs';`,
+  ],
   ...[
     'ui/content/text',
     'ui/controls/action',

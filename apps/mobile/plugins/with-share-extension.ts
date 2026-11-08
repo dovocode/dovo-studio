@@ -3,9 +3,34 @@ import {
   withXcodeProject,
   withMainActivity,
   type ConfigPlugin,
+  type XcodeProject,
 } from 'expo/config-plugins'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+
+// node-xcode reuses relative file paths across groups. Each extension needs its own plist.
+export function separateExtensionPlists(project: XcodeProject) {
+  const references = project.pbxFileReferenceSection()
+  const seen = new Set<string>()
+  for (const key of Object.keys(project.hash.project.objects.PBXGroup)) {
+    if (key.endsWith('_comment')) continue
+    const group = project.getPBXGroupByKey(key)
+    if (!group) continue
+    for (const child of group.children) {
+      const reference = references[child.value]
+      if (typeof reference !== 'object' || !reference) continue
+      if (reference.path !== 'Info.plist' && reference.path !== '"Info.plist"') continue
+      if (reference.sourceTree !== '"<group>"') continue
+      if (seen.has(child.value)) {
+        const uuid = project.generateUuid()
+        references[uuid] = { ...reference }
+        references[`${uuid}_comment`] = references[`${child.value}_comment`] ?? 'Info.plist'
+        child.value = uuid
+      }
+      seen.add(child.value)
+    }
+  }
+}
 
 // Expo names the generated share extension after its internal target by default.
 const withShareExtension: ConfigPlugin = (config) => {
@@ -56,6 +81,7 @@ const withShareExtension: ConfigPlugin = (config) => {
     return config
   })
   config = withXcodeProject(config, (config) => {
+    separateExtensionPlists(config.modResults)
     const configurations = config.modResults.pbxXCBuildConfigurationSection()
     for (const entry of Object.values(configurations)) {
       if (typeof entry !== 'object' || !entry || !('buildSettings' in entry)) continue

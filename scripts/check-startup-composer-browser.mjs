@@ -30,6 +30,7 @@ const mocks = {
     export const formatDateTime=value=>value;
   `,
   '@dovo/studio-ui': `
+export {ConversationHistory,useConversationHistory} from '../studio-ui/src/components/ai-elements/conversation';
 export {permissionPolicyUIIssue} from './src/permission-policy-fields';
 export * as Popover from '@radix-ui/react-popover';
 export * as DropdownMenu from '@radix-ui/react-dropdown-menu';

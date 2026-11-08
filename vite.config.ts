@@ -169,6 +169,7 @@ export default defineConfig({
     include: [
       'packages/**/*.test.ts',
       'apps/mobile/src/**/*.test.ts',
+      'apps/mobile/plugins/**/*.test.ts',
       'apps/api/src/**/*.test.ts',
       'apps/notification-relay/src/**/*.test.ts',
       'apps/connect-server/src/**/*.test.ts',

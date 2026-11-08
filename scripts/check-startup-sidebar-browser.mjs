@@ -7,7 +7,7 @@ const mocks = {
   './task-empty-state': 'export const TaskEmptyState=()=>null;',
   './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
-  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
+  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export * from '@dovo/protocol';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
@@ -19,6 +19,7 @@ const mocks = {
     export const updateAppPreferences=changes=>Object.assign(window.preferences, changes);
   `,
   '@dovo/studio-ui': `
+export {ConversationHistory,useConversationHistory,Conversation,ConversationContent,ConversationScrollButton} from '../studio-ui/src/components/ai-elements/conversation';
 export const SidebarHeader=()=>null;
 
     export const Button=({children,onClick,disabled})=><button disabled={disabled} onClick={onClick}>{children}</button>;

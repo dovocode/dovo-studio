@@ -40,6 +40,12 @@ export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
 const preferenceModule = `export * from '${mobile}runtime/preferences/app-preferences.ts';`
 const stubs = [
+  { path: 'expo-crypto', contents: 'export const randomUUID=()=>crypto.randomUUID();' },
+  {
+    path: './shared-state-storage',
+    importer: mobile + 'runtime/connection/provider.tsx',
+    contents: `export {mobileSharedStateStorage,mobileThreadStateStorage} from '${root}scripts/browser/mobile-state-storage.mjs';`,
+  },
   {
     path: '@react-native-async-storage/async-storage',
     contents: `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,

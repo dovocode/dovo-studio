@@ -12,7 +12,7 @@ const mocks = {
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
-  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
+  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
     export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';
@@ -35,6 +35,7 @@ const mocks = {
   `,
   '../../dialogs/harness-dialog': 'export const HarnessDialog=()=>null;',
   '@dovo/studio-ui': `
+export {ConversationHistory,useConversationHistory,Conversation,ConversationContent,ConversationScrollButton} from '../studio-ui/src/components/ai-elements/conversation';
 export {permissionPolicyUIIssue} from './src/permission-policy-fields';
 export const SidebarHeader=()=>null;
 export {PullRequestIcon,pullRequestIconTone} from '${new URL('../packages/studio-ui/src/pull-request-icon.tsx', import.meta.url).pathname}';
