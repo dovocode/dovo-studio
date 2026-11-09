@@ -273,6 +273,7 @@ try {
         const control = node.querySelector('.studio-setting-control').getBoundingClientRect()
         const row = node.getBoundingClientRect()
         return {
+          columnWidth: node.closest('.studio-settings-content').getBoundingClientRect().width,
           rowWidth: row.width,
           controlWidth: control.width,
           copyRight: copy.right,
@@ -281,7 +282,8 @@ try {
           controlTop: control.top,
         }
       })
-    assert.ok(Math.abs(row.rowWidth - width) <= 1, 'Probe measures the actual content width')
+    assert.ok(Math.abs(row.columnWidth - width) <= 1, 'Probe measures the query container width')
+    assert.ok(row.rowWidth <= width, 'The settings card stays inside its content column')
     if (width === 720) {
       assert.equal(row.controlWidth, 240, 'Wide Settings rows use a fixed 240px control column')
       assert.ok(row.controlLeft >= row.copyRight, 'Wide controls sit beside their labels')

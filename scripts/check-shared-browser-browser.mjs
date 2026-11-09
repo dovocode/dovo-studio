@@ -3604,17 +3604,13 @@ try {
     0,
     'Home stays in the URL bar, not the pinned-tab panel',
   )
-  await pins.first().getByLabel('This computer · Local Default').waitFor()
   assert.equal(
-    await pins.first().getByLabel('This computer · Local Default').textContent(),
-    '',
-    'Default pins retain machine identity without cryptic profile initials',
+    await pins.locator('.studio-browser-tab-profile').count(),
+    0,
+    'Compact pins keep device and profile identity in their accessible name and tooltip',
   )
-  assert.equal(
-    await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
-    'LW',
-    'Nondefault pins retain compact profile identity',
-  )
+  assert.match(await pins.first().getAttribute('aria-label'), /This computer · Local Default/)
+  assert.match(await pins.nth(1).getAttribute('title'), /This computer · Local Work/)
   assert.equal(
     await compactSidebar
       .locator('[data-browser-tab-id="compact-4"] .studio-browser-tab-profile')
@@ -3631,14 +3627,9 @@ try {
     }),
   )
   assert.equal(
-    await pins.first().getByLabel('This computer · Local Default').textContent(),
-    '💼',
-    'Pinned tabs resolve the current profile emoji',
-  )
-  assert.equal(
-    await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
-    '🏠',
-    'Each pin uses its own profile emoji',
+    await pins.locator('.studio-browser-tab-profile').count(),
+    0,
+    'Profile emoji updates do not add a badge row to compact pins',
   )
   const pinnedGeometry = () =>
     compactSidebar.locator('[data-browser-tab-id][data-pinned]').evaluateAll((tiles) =>
@@ -3650,7 +3641,7 @@ try {
     )
   const idlePinGeometry = await pinnedGeometry()
   assert.ok(
-    idlePinGeometry.every((tile) => tile.height === 80),
+    idlePinGeometry.every((tile) => tile.height === 56),
     'Pinned cards keep a fixed height',
   )
   await controlsPage.evaluate(async () => {
@@ -3696,16 +3687,14 @@ try {
   )
   assert.equal(await compactSidebar.locator('[aria-label*="available to agents"]').count(), 0)
   const faviconBounds = await pins.first().locator('img').boundingBox()
-  const identityBounds = await pins
-    .first()
-    .getByLabel('This computer · Local Default')
-    .boundingBox()
+  const pinCenter = await pins.first().boundingBox()
+  assert.equal(faviconBounds.width, 24, 'Pinned cards keep a compact favicon')
   assert.ok(
-    identityBounds.y >= faviconBounds.y + faviconBounds.height,
-    'Device/profile badges sit below the favicon without overlapping it',
+    Math.abs(faviconBounds.x + faviconBounds.width / 2 - (pinCenter.x + pinCenter.width / 2)) < 1 &&
+      Math.abs(faviconBounds.y + faviconBounds.height / 2 - (pinCenter.y + pinCenter.height / 2)) <
+        1,
+    'The pinned favicon stays centered in both directions',
   )
-  assert.equal(faviconBounds.width, 28, 'Pinned cards use a large centered favicon')
-  assert.equal(identityBounds.height, 14, 'Device and profile use separate pills below the favicon')
   const selectedBeforeMute = await controlsPage.evaluate(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
   )
@@ -3736,8 +3725,9 @@ try {
     )
   }
   assert.ok(
-    activityBounds.y + activityBounds.height <= faviconBounds.y,
-    'Pinned activity sits at the top right above the favicon',
+    activityBounds.y <= tileBounds.y + 4 &&
+      activityBounds.y + activityBounds.height <= faviconBounds.y + faviconBounds.height / 2,
+    'Pinned activity stays in the top-right corner while the favicon stays centered',
   )
   assert.ok(
     activityBounds.x >= tileBounds.x &&
@@ -3757,7 +3747,7 @@ try {
   assert.equal(
     await regularTab.locator('.studio-browser-tab-source .studio-browser-tab-profile').count(),
     0,
-    'Only pinned tabs overlay identity badges on the icon',
+    'Regular tabs keep identity beside the title',
   )
   const regularActivity = await regularTab.getByLabel('Tab activity', { exact: true }).boundingBox()
   assert.ok(
@@ -3813,13 +3803,15 @@ try {
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-wide.png' })
   for (let step = 0; step < 6; step++) await separator.press('ArrowLeft')
   await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 184)
-  const narrowPins = await Promise.all([0, 1, 2].map((index) => pins.nth(index).boundingBox()))
+  const narrowPins = await Promise.all([0, 1, 2, 3].map((index) => pins.nth(index).boundingBox()))
   assert.equal(narrowPins[0].y, narrowPins[1].y)
-  assert.ok(
-    narrowPins[2].y > narrowPins[0].y,
-    'Narrow sidebars wrap pins before their contents are squeezed',
-  )
+  assert.equal(narrowPins[0].y, narrowPins[2].y)
+  assert.ok(narrowPins[3].y > narrowPins[0].y, 'Narrow sidebars wrap after three compact pins')
   const narrowActiveGeometry = await pinnedGeometry()
+  assert.ok(
+    narrowActiveGeometry.every((tile) => tile.width >= 48),
+    'The card border fits inside the minimum pin width',
+  )
   const narrowMic = await firstTile.locator('[data-browser-activity="microphone"]').boundingBox()
   await controlsPage.evaluate(async () => {
     window.savedActivityStates = window.tabActivityStates

@@ -647,9 +647,8 @@ try {
         await advanced.evaluate((element) => getComputedStyle(element).backgroundImage),
         'none',
       )
-      assert.ok(
-        (await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('18px'),
-      )
+      const effectsShadow = await menu.evaluate((element) => getComputedStyle(element).boxShadow)
+      assert.notEqual(effectsShadow, 'none')
       if (!mobile) await page.screenshot({ path: '/tmp/dovo-project-git-menu-effects.png' })
       await page.evaluate(() => {
         document.documentElement.dataset.themeGradients = 'false'
@@ -660,8 +659,16 @@ try {
         await advanced.evaluate((element) => getComputedStyle(element).backgroundImage),
         'none',
       )
-      assert.ok(
-        !(await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('18px'),
+      assert.notEqual(
+        await menu.evaluate((element) => getComputedStyle(element).boxShadow),
+        effectsShadow,
+        'Disabling glow removes the colored shadow while keeping surface depth',
+      )
+      assert.equal(
+        await menu.evaluate((element) =>
+          getComputedStyle(element).getPropertyValue('--studio-glow-wide').trim(),
+        ),
+        '0 0 0 transparent',
       )
       if (!mobile) await page.screenshot({ path: '/tmp/dovo-project-git-menu-flat.png' })
       await page.evaluate(() => {
