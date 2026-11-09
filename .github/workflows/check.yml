@@ -37,9 +37,13 @@ jobs:
       # All packages were compiled above; the local test command intentionally builds first.
       - uses: ./.github/actions/setup-browser
       - name: Prepare verified Electron for native checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/packaging/prepare-electron.mjs
       - run: pnpm exec vp test --maxWorkers=4
       - name: Verify bundled GLiClass inference and offline worker
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/check-workspace-router-model.mjs
       - name: Verify native browser extensions
         run: pnpm test:browser-extensions:native

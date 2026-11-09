@@ -2,10 +2,24 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 async function fetchWithRetry(url, fallback) {
   for (let attempt = 1; ; attempt++) {
-    const response = await fetch(url, {
-      headers: { Accept: url.includes('/releases/assets/') ? 'application/octet-stream' : '*/*' },
+    const accept = url.includes('/releases/assets/') ? 'application/octet-stream' : '*/*'
+    const token =
+      new URL(url).origin === 'https://api.github.com'
+        ? process.env.GH_TOKEN || process.env.GITHUB_TOKEN
+        : undefined
+    let response = await fetch(url, {
+      headers: { Accept: accept, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      redirect: token ? 'manual' : 'follow',
       signal: AbortSignal.timeout(600_000),
     })
+    const location = response.headers.get('location')
+    if (token && [301, 302, 303, 307, 308].includes(response.status) && location) {
+      await response.body?.cancel()
+      response = await fetch(new URL(location, url).href, {
+        headers: { Accept: accept },
+        signal: AbortSignal.timeout(600_000),
+      })
+    }
     if (attempt === 3 || ![502, 503, 504].includes(response.status)) return response
     await response.body?.cancel()
     console.warn(`Release download returned HTTP ${response.status}; retrying (${attempt}/3)`)

@@ -135,9 +135,11 @@ jobs:
       - run: pnpm exec vp run --cache --filter @dovo/api... --filter @dovo/desktop... build
       - run: pnpm run package:prepare-runtime
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOVO_PREPARED_RUNTIME: ${{ runner.temp }}/dovo-prepared-runtime
       - name: Build signed Mac update artifacts
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
           CSC_NAME: ${{ secrets.MAC_SIGNING_IDENTITY }}
@@ -242,12 +244,17 @@ jobs:
       - run: pnpm exec vp run --cache --filter @dovo/api... --filter @dovo/desktop... build
       - run: pnpm run package:prepare-runtime
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOVO_PREPARED_RUNTIME: ${{ runner.temp }}/dovo-prepared-runtime
       - name: Build Linux desktop and server packages
         if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run package:platform
       - name: Build native Windows app and server archive
         if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run package:platform -- --dir
       - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'

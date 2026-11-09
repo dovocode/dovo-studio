@@ -129,8 +129,10 @@ it is private staging within one build, rather than a persistent dependency cach
 
 Model downloads use at most three attempts for HTTP 502, 503 and 504 responses, with waits of one
 and two seconds. After a GitHub download gateway error, retries use the public release asset API for
-the same release and file. No token is required. Each file must still match its pinned size and
-SHA-256 checksum. Other HTTP errors and checksum errors stop packaging.
+the same release and file. CI uses its workflow token only for GitHub API requests. The downloader
+removes it before following asset redirects. Public downloads also work without a token. Each file
+must still match its pinned size and SHA-256 checksum. Other HTTP errors and checksum errors stop
+packaging.
 
 Electron preparation uses the same download fallback and the checksum in the locked Electron npm
 package. Run `node scripts/packaging/prepare-electron.mjs` to prepare its verified archive in
