@@ -19,6 +19,8 @@ const mocks = {
   './icon-button':
     'export const IconButton=({label,onPress})=><button aria-label={label} onClick={onPress}>Dismiss</button>;',
   '../theme': 'export const useTheme=()=>({colors:{text:"#222",surface:"#fff",border:"#ccc"}});',
+  // Native glass and accessibility fallbacks have their own appearance checks.
+  '../layout/glass': 'export const Glass=({children})=><div>{children}</div>;',
   '../../ui/layout/sheet': 'export const Sheet=({children})=><div>{children}</div>;',
   '../../ui/controls/use-action': 'export const useAction=()=>({busy:false,act:work=>work()});',
   '../../ui/content/format-date': 'export const formatDateTime=value=>value;',

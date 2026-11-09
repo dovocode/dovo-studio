@@ -272,9 +272,12 @@ try {
         const copy = node.querySelector('.studio-setting-copy').getBoundingClientRect()
         const control = node.querySelector('.studio-setting-control').getBoundingClientRect()
         const row = node.getBoundingClientRect()
+        const style = getComputedStyle(node)
         return {
           columnWidth: node.closest('.studio-settings-content').getBoundingClientRect().width,
           rowWidth: row.width,
+          insetLeft: parseFloat(style.paddingLeft),
+          insetRight: parseFloat(style.paddingRight),
           controlWidth: control.width,
           copyRight: copy.right,
           copyBottom: copy.bottom,
@@ -284,11 +287,17 @@ try {
       })
     assert.ok(Math.abs(row.columnWidth - width) <= 1, 'Probe measures the query container width')
     assert.ok(row.rowWidth <= width, 'The settings card stays inside its content column')
+    assert.equal(row.insetLeft, 16, 'Labels keep the settings card inset')
+    assert.equal(row.insetRight, 16, 'Controls keep the settings card inset')
     if (width === 720) {
       assert.equal(row.controlWidth, 240, 'Wide Settings rows use a fixed 240px control column')
       assert.ok(row.controlLeft >= row.copyRight, 'Wide controls sit beside their labels')
     } else {
-      assert.equal(row.controlWidth, row.rowWidth, 'Controls fill the stacked row below 720px')
+      assert.equal(
+        row.controlWidth,
+        row.rowWidth - row.insetLeft - row.insetRight,
+        'Controls fill the inset content area below 720px',
+      )
       assert.ok(row.controlTop >= row.copyBottom, 'Narrow content stacks despite a wide viewport')
     }
   }

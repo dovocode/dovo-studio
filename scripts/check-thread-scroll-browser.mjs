@@ -76,8 +76,9 @@ try {
   await cssServer.close()
 }
 const browser = await chromium.launch({ headless: true })
+let page
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+  page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent(`<style>${css}</style><div id="app"></div>`)
@@ -415,9 +416,13 @@ try {
   // A repeated zero-distance jump must not leave a listener for some future scroll.
   await targets.nth(39).focus()
   await page.keyboard.press('Enter')
-  await page.waitForFunction(
-    () => Math.abs(document.getElementById('second-39').getBoundingClientRect().top - 16) < 3,
-  )
+  await page.waitForFunction(() => {
+    const target = document.getElementById('second-39')
+    const scroll = document.querySelector('[role=log] > div')
+    return (
+      Math.abs(target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16) < 3
+    )
+  })
   await layoutFrames()
   await page.keyboard.press('Enter')
   await layoutFrames()
@@ -447,6 +452,27 @@ try {
   console.log(
     'Thread following, composer resizing, long turn navigation, keyboard previews, reduced motion, and reading-column action placement passed.',
   )
+} catch (error) {
+  if (page && !page.isClosed())
+    console.error(
+      'Thread scroll failure state:',
+      await page.evaluate(() => {
+        const scroll = document.querySelector('[role=log] > div')
+        const target = document.getElementById('second-39')
+        return {
+          scrollTop: scroll?.scrollTop,
+          scrollHeight: scroll?.scrollHeight,
+          clientHeight: scroll?.clientHeight,
+          rootTop: scroll?.getBoundingClientRect().top,
+          turnTop: target?.getBoundingClientRect().top,
+          focused: document.activeElement?.getAttribute('aria-label'),
+          reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+          following: window.followProbe?.isAtBottom,
+          escaped: window.followProbe?.escapedFromLock,
+        }
+      }),
+    )
+  throw error
 } finally {
   await browser.close()
 }
