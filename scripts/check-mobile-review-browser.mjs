@@ -63,7 +63,7 @@ const built = await bundleBrowser(
         const flatten=style=>Array.isArray(style)?Object.assign({},...style.flat(Infinity).filter(Boolean)):style;
         export const Image=({source,accessibilityLabel,style})=><img src={source.uri} alt={accessibilityLabel} style={style}/>;
         export const View=({children,style,...props})=><div style={flatten(style)} role={props.accessibilityRole}>{children}</div>;
-        export const ScrollView=({children,contentContainerStyle,style})=><div style={style}><div style={flatten(contentContainerStyle)}>{children}</div></div>;
+        export const ScrollView=({children,contentContainerStyle,style,horizontal,directionalLockEnabled})=><div data-horizontal={horizontal || undefined} data-direction-lock={directionalLockEnabled || undefined} style={style}><div style={flatten(contentContainerStyle)}>{children}</div></div>;
         export const Pressable=({children,accessibilityLabel,onPress,disabled,style})=><button style={style} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;
         export const Switch=({value,onValueChange})=><input type="checkbox" checked={value} onChange={e=>onValueChange(e.target.checked)}/>;
         export const Platform={OS:'ios'};export const useWindowDimensions=()=>({width:360,fontScale:window.diffFontScale??1});
@@ -251,6 +251,21 @@ try {
   )
   const codeText = await name.evaluate((element) => element.parentElement.parentElement.textContent)
   assert.equal(codeText, '// Héllo 👋\r\n\r\n\tclass Example {}\r\n')
+  const horizontalCode = page.locator('[data-horizontal="true"]')
+  assert.equal(await horizontalCode.getAttribute('data-direction-lock'), 'true')
+  await page.getByRole('button', { name: 'Wrap code lines', exact: true }).click()
+  assert.equal(await horizontalCode.count(), 0, 'Wrap lets the conversation own vertical scrolling')
+  assert.equal(
+    await name.evaluate((element) => element.parentElement.parentElement.textContent),
+    codeText,
+    'Wrapping preserves tabs, Unicode and line endings',
+  )
+  await page.getByRole('button', { name: 'Scroll code horizontally', exact: true }).click()
+  await horizontalCode.waitFor()
+  assert.equal(
+    await name.evaluate((element) => element.parentElement.parentElement.textContent),
+    codeText,
+  )
   await page.evaluate(() => {
     window.language = 'unknown'
     window.source = '<script>literal & source</script>'

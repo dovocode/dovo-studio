@@ -1,10 +1,20 @@
 import { useRef, useState } from 'react'
+import { Alert } from 'react-native'
 import { jiraDestination } from '../../scm/source-key'
 import { clientScopeKey } from '@dovo/client-runtime'
 import type { RuntimeConnection, RuntimeSnapshot } from '@dovo/protocol'
 
-/** Small field snapshots only; never retain detail views or network results. */
-export function createDetailDrafts<A>(limit = 40) {
+export const detailDraftPressureMessage =
+  'Your existing drafts are kept. Save or discard an existing draft of this type before editing another item.'
+
+/** Bounded field snapshots. Only explicitly clean entries may be evicted. */
+export function createDetailDrafts<A>({
+  limit = 40,
+  isClean = () => false,
+}: {
+  limit?: number
+  isClean?: (value: A) => boolean
+} = {}) {
   const entries = new Map<string, A>()
   return {
     read(key: string) {
@@ -16,13 +26,15 @@ export function createDetailDrafts<A>(limit = 40) {
       return value
     },
     write(key: string, value: A) {
+      if (!entries.has(key) && entries.size >= limit) {
+        const clean = [...entries].find(([, entry]) => isClean(entry))
+        if (clean) entries.delete(clean[0])
+        // An empty new editor does not need to displace retained user text.
+        else return isClean(value)
+      }
       entries.delete(key)
       entries.set(key, value)
-      while (entries.size > limit) {
-        const oldest = entries.keys().next().value
-        if (oldest === undefined) break
-        entries.delete(oldest)
-      }
+      return true
     },
     remove(key: string) {
       entries.delete(key)
@@ -48,8 +60,12 @@ export function useDetailDraft<A>(
   const setField = <K extends keyof A>(field: K, next: A[K]) => {
     const previous = current.current
     const updated = { ...previous, [field]: next }
+    if (!cache.write(key, updated)) {
+      setState({ key, value: previous })
+      Alert.alert('Draft limit reached', detailDraftPressureMessage)
+      return
+    }
     current.current = updated
-    cache.write(key, updated)
     setState({ key, value: updated })
   }
   return { draft: value, setField, clear: () => cache.remove(key) }

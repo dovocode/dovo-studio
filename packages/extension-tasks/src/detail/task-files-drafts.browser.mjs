@@ -19,7 +19,7 @@ const bundle = await bundleBrowser(
       throw Error(path);
     };
     window.runtime={connected:true,connection:{runtimeId:'runtime',address:'http://lan.test',token:'paired-secret'},request};
-    function App(){const[thread,setThread]=useState('one');const[visible,setVisible]=useState(true);window.showFiles=()=>setVisible(true);return <div onClick={event=>{if(window.unmountOnEdit&&event.target.textContent==='Edit')setVisible(false)}}><button onClick={()=>setThread(thread==='one'?'two':'one')}>thread</button>{visible&&<TaskFiles key={thread} task={{id:thread,repositoryId:'repo',files:[]}}/>}</div>};
+    function App(){const[thread,setThread]=useState('one');const[visible,setVisible]=useState(true);window.showFiles=()=>setVisible(true);return <div onClick={event=>{if(window.unmountOnEdit&&event.target.textContent==='Edit')setVisible(false)}}><button onClick={()=>setThread(thread==='one'?'two':'one')}>thread</button>{visible&&<TaskFiles key={thread} onReference={text=>window.reference=text} task={{id:thread,repositoryId:'repo',files:[]}}/>}</div>};
     createRoot(document.getElementById('app')).render(<App/>);
   `,
     },
@@ -59,7 +59,7 @@ const bundle = await bundleBrowser(
     {
       path: '@pierre/diffs/react',
       contents:
-        'export const EditProvider=({children})=>children;export const File=({file,edit,onEditChange})=>edit?<textarea aria-label="File editor" defaultValue={file.contents} onChange={event=>onEditChange({file:{contents:event.target.value}})}/>:<pre>{file.contents}</pre>',
+        'export const EditProvider=({children})=>children;export const File=({file,edit,onEditChange,options})=>{window.selectLine=()=>options.onLineSelectionEnd({start:1,end:1});return edit?<textarea aria-label="File editor" defaultValue={file.contents} onChange={event=>onEditChange({file:{contents:event.target.value}})}/>:<pre>{file.contents}</pre>}',
     },
     {
       path: './resizable-sidebar',
@@ -127,6 +127,11 @@ try {
   await page.evaluate(() => (window.fail = true))
   await button('Save draft').click()
   await page.getByText('save failed', { exact: true }).first().waitFor()
+  await page.evaluate(() => window.selectLine())
+  await button('Add reference to composer').click()
+  assert.match(await page.evaluate(() => window.reference), /dirty source/)
+  assert.doesNotMatch(await page.evaluate(() => window.reference), /original/)
+
   await page.evaluate(() => {
     window.fail = false
     window.delay = true
@@ -137,7 +142,7 @@ try {
   await button('Recover draft: a.txt').click()
   await button('Saving…').waitFor()
   await button('thread').click()
-  await page.getByText('Draft from another task or checkout: a.txt', { exact: true }).waitFor()
+  await page.getByText('Draft from another thread or checkout: a.txt', { exact: true }).waitFor()
   assert.equal(
     await button('Discard draft: a.txt').isDisabled(),
     true,
@@ -172,7 +177,7 @@ try {
   assert.equal(await button('Edit').isEnabled(), true)
   // Switching scope never hides retained drafts or applies them to the new source.
   await button('thread').click()
-  await page.getByText('Draft from another task or checkout: a.txt', { exact: true }).waitFor()
+  await page.getByText('Draft from another thread or checkout: a.txt', { exact: true }).waitFor()
   await button('a.txt').click()
   await button('Edit').waitFor()
   assert.equal(await button('Save draft').count(), 0)
@@ -192,11 +197,11 @@ try {
   await button('Discard draft: a.txt').click()
   assert.equal(await page.evaluate(() => window.drafts.unsafe), false)
   assert.equal(
-    await page.getByText('Draft from another task or checkout: a.txt', { exact: true }).count(),
+    await page.getByText('Draft from another thread or checkout: a.txt', { exact: true }).count(),
     0,
   )
   // The real Electron preload exposes window.dovo before renderer imports.
-  // Preserve native close semantics even when this window has unsaved work.
+  // Native close and reload must protect the same unsaved work as web.
   await page.addInitScript(() => {
     window.dovo = {}
   })
@@ -217,12 +222,12 @@ try {
       window.dispatchEvent(event)
       return event.defaultPrevented
     }),
-    false,
-    'Electron preload marker must leave close/reload unblocked',
+    true,
+    'Electron close/reload must protect unsaved file drafts',
   )
   assert.deepEqual(errors, [])
   console.log(
-    'PASS batched-unmount reservation cleanup, draft projected budget, active editing under pressure, shrinking, scope visibility, download, discard, browser-only unload warning, Electron preload bypass and failed/inflight saves',
+    'PASS batched-unmount reservation cleanup, draft projected budget, active editing under pressure, shrinking, scope visibility, download, discard, browser and Electron unload warnings and failed/inflight saves',
   )
 } finally {
   await browser.close()

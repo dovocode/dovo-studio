@@ -1,4 +1,4 @@
-import { useConfirmation } from '@dovo/studio-core'
+import { useSettingsDraft, useConfirmSettingsNavigation, useConfirmation } from '@dovo/studio-core'
 import {
   runtimeComputerName,
   browserLanguageSchema,
@@ -118,30 +118,66 @@ function ProfileName({
   onSave,
   onRemove,
   routing,
+  saving,
 }: {
   profile: BrowserProfile
   disabled: boolean
   routing: boolean
-  onSave: (profile: BrowserProfile) => void
+  saving: boolean
+  onSave: (profile: BrowserProfile) => Promise<boolean>
   onRemove: () => void
 }) {
-  const [name, setName] = useState(profile.name)
-  const [emoji, setEmoji] = useState(profile.emoji ?? '')
-  const [language, setLanguage] = useState(profile.language ?? 'en-US')
-  const [doNotTrack, setDoNotTrack] = useState(profile.doNotTrack === true)
-  const [keepSessionCookies, setKeepSessionCookies] = useState(profile.keepSessionCookies === true)
-  const [engine, setEngine] = useState<BrowserSearchEngine['engine']>(
-    profile.search?.engine ?? 'google',
-  )
-  const [searchUrl, setSearchUrl] = useState(
-    profile.search?.engine === 'custom' ? profile.search.url : '',
-  )
+  const [edits, setEdits] = useState<
+    Partial<{
+      name: string
+      emoji: string
+      language: string
+      doNotTrack: boolean
+      keepSessionCookies: boolean
+      engine: BrowserSearchEngine['engine']
+      searchUrl: string
+      domains: string
+    }>
+  >({})
+  const saved = {
+    name: profile.name,
+    emoji: profile.emoji ?? '',
+    language: profile.language ?? 'en-US',
+    doNotTrack: profile.doNotTrack === true,
+    keepSessionCookies: profile.keepSessionCookies === true,
+    engine: profile.search?.engine ?? 'google',
+    searchUrl: profile.search?.engine === 'custom' ? profile.search.url : '',
+    domains: (profile.linkDomains ?? []).join(', '),
+  }
+  const { name, emoji, language, doNotTrack, keepSessionCookies, engine, searchUrl, domains } = {
+    ...saved,
+    ...edits,
+  }
+  const dirty = Object.entries(edits).some(([key, value]) => Reflect.get(saved, key) !== value)
+  useSettingsDraft(dirty, saving)
+  // When an external update acknowledges one edited field, stop overriding that field.
+  useEffect(() => {
+    setEdits((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([key, value]) => Reflect.get(saved, key) !== value),
+      ),
+    )
+  }, [profile])
+  const setName = (name: string) => setEdits((current) => ({ ...current, name }))
+  const setEmoji = (emoji: string) => setEdits((current) => ({ ...current, emoji }))
+  const setLanguage = (language: string) => setEdits((current) => ({ ...current, language }))
+  const setDoNotTrack = (doNotTrack: boolean) => setEdits((current) => ({ ...current, doNotTrack }))
+  const setKeepSessionCookies = (keepSessionCookies: boolean) =>
+    setEdits((current) => ({ ...current, keepSessionCookies }))
+  const setEngine = (engine: BrowserSearchEngine['engine']) =>
+    setEdits((current) => ({ ...current, engine }))
+  const setSearchUrl = (searchUrl: string) => setEdits((current) => ({ ...current, searchUrl }))
+  const setDomains = (domains: string) => setEdits((current) => ({ ...current, domains }))
   const search: BrowserSearchEngine =
     engine === 'custom' ? { engine, url: searchUrl.trim() } : { engine }
   const validSearch = decodeResult(browserSearchEngineSchema, search).success
   const unchangedSearch =
     JSON.stringify(search) === JSON.stringify(profile.search ?? { engine: 'google' })
-  const [domains, setDomains] = useState((profile.linkDomains ?? []).join(', '))
   const linkDomains = domains
     .split(',')
     .map((value) => value.trim())
@@ -155,19 +191,22 @@ function ProfileName({
     <form
       aria-label={`Browser profile ${profile.name}`}
       className="studio-browser-profile-fields flex flex-wrap items-center gap-2"
-      onSubmit={(event) => {
+      onSubmit={async (event) => {
         event.preventDefault()
         if (validLanguage && validDomains && validSearch)
-          onSave({
-            ...profile,
-            name: name.trim(),
-            language: Intl.getCanonicalLocales(language)[0]!,
-            linkDomains,
-            emoji: emoji || undefined,
-            search,
-            keepSessionCookies,
-            doNotTrack,
-          })
+          if (
+            await onSave({
+              ...profile,
+              name: name.trim(),
+              language: Intl.getCanonicalLocales(language)[0]!,
+              linkDomains,
+              emoji: emoji || undefined,
+              search,
+              keepSessionCookies,
+              doNotTrack,
+            })
+          )
+            setEdits({})
       }}
     >
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -304,13 +343,7 @@ function ProfileName({
           !validLanguage ||
           !validDomains ||
           !validSearch ||
-          (name.trim() === profile.name &&
-            emoji === (profile.emoji ?? '') &&
-            language === (profile.language ?? 'en-US') &&
-            doNotTrack === (profile.doNotTrack === true) &&
-            keepSessionCookies === (profile.keepSessionCookies === true) &&
-            domains === (profile.linkDomains ?? []).join(', ') &&
-            unchangedSearch)
+          (!dirty && unchangedSearch)
         }
       >
         Save
@@ -344,9 +377,10 @@ function Profiles({
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  useSettingsDraft(!!name.trim(), busy)
   const confirm = useConfirmation(JSON.stringify([profiles, disabled, busy]))
   const update = async (next: BrowserProfile[], added = false) => {
-    if (busy || disabled) return
+    if (busy || disabled) return false
     setBusy(true)
     setError('')
     try {
@@ -357,8 +391,10 @@ function Profiles({
         )
       await save(parsed.data)
       if (added) setName('')
+      return true
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
+      return false
     } finally {
       setBusy(false)
     }
@@ -372,12 +408,13 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.keepSessionCookies}:${profile.doNotTrack}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
+          key={profile.id}
           profile={profile}
           routing={routing}
           disabled={disabled || busy}
+          saving={busy}
           onSave={(updated) =>
-            void update(profiles.map((item) => (item.id === profile.id ? updated : item)))
+            update(profiles.map((item) => (item.id === profile.id ? updated : item)))
           }
           onRemove={async () => {
             if (
@@ -465,6 +502,21 @@ function RemoteProfiles({
           {catalog.error}
         </p>
       )}
+      {catalog.applyError && (
+        <div role="alert" className="space-y-2 text-xs">
+          <p>
+            Profiles are saved. Some open browser settings could not apply: {catalog.applyError}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!catalog.connected || catalog.applying}
+            onClick={() => void catalog.retryApply()}
+          >
+            {catalog.applying ? 'Applying…' : 'Retry browser settings'}
+          </Button>
+        </div>
+      )}
       {catalog.profiles ? (
         <Profiles profiles={catalog.profiles} save={catalog.save} disabled={!catalog.connected} />
       ) : (
@@ -480,6 +532,7 @@ function RemoteProfiles({
 }
 export default function BrowserSettings() {
   const preferences = useAppPreferences()
+  const confirmNavigation = useConfirmSettingsNavigation()
   const { browser } = useStudioHost()
   const { runtimes, activeRuntimeId } = useWorkspace()
   const [runtimeId, setRuntimeId] = useState(activeRuntimeId ?? '')
@@ -573,7 +626,10 @@ export default function BrowserSettings() {
             <Profiles
               profiles={preferences.browserProfiles}
               routing
-              save={(browserProfiles) => updateAppPreferences({ browserProfiles })}
+              save={(browserProfiles) => {
+                if (!updateAppPreferences({ browserProfiles }))
+                  throw new Error('Could not save profiles on this device. Retry saving settings.')
+              }}
             />
           </div>
         </SettingsGroup>
@@ -592,7 +648,11 @@ export default function BrowserSettings() {
                   <ChoicePicker
                     aria-label="Computer for browser profiles"
                     value={runtime.profile.id}
-                    onValueChange={setRuntimeId}
+                    onValueChange={(id) => {
+                      void confirmNavigation().then((allowed) => {
+                        if (allowed) setRuntimeId(id)
+                      })
+                    }}
                   >
                     {runtimes.map((entry) => (
                       <option key={entry.profile.id} value={entry.profile.id}>
@@ -604,7 +664,7 @@ export default function BrowserSettings() {
                 </label>
               )}
               <RemoteProfiles
-                key={runtime.profile.id}
+                key={JSON.stringify([runtime.profile.id, runtime.profile.connection])}
                 profile={runtime.profile}
                 computerName={runtimeComputerName(runtime)}
               />

@@ -11,10 +11,13 @@ const fixture = vi.hoisted(() => {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   return {
     resourcesDescriptor,
+    readClipboard: vi.fn<() => string>(() => 'native clipboard'),
+    closeWindows: vi.fn<() => Promise<boolean>>(async () => true),
     copy: vi.fn<(text: string) => Promise<void>>(async () => {}),
     handlers,
     appHandlers: new Map<string, (...args: unknown[]) => void>(),
     windows: 0,
+    closedWindows: false,
     ipc: vi.fn<
       (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void
     >((channel, listener) => {
@@ -28,6 +31,9 @@ const fixture = vi.hoisted(() => {
     startupErrors: [] as unknown[][],
     startupIpc: [] as string[],
     startupUpdates: 0,
+    prepareUpdate: undefined as
+      | Parameters<typeof import('./updates').registerUpdates>[1]
+      | undefined,
     startupQuits: 0,
     translated: false,
     choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
@@ -73,7 +79,7 @@ vi.mock('electron', () => ({
     requestSingleInstanceLock: () => true,
     quit: fixture.quit,
   },
-  clipboard: { writeText: fixture.copy },
+  clipboard: { writeText: fixture.copy, readText: fixture.readClipboard },
   nativeTheme: { shouldUseDarkColors: true },
   BrowserWindow: class {
     webContents = {
@@ -82,9 +88,10 @@ vi.mock('electron', () => ({
       once: vi.fn<(...args: unknown[]) => void>(),
     }
     once = vi.fn<(...args: unknown[]) => void>()
-    isDestroyed = () => false
+    isDestroyed = () => fixture.closedWindows
     constructor() {
       fixture.windows++
+      fixture.closedWindows = false
     }
     loadFile() {
       return Promise.resolve()
@@ -95,6 +102,10 @@ vi.mock('electron', () => ({
   },
   ipcMain: { handle: fixture.ipc, on: fixture.ipc },
   dialog: { showMessageBox: fixture.error },
+}))
+vi.mock('./window-unload.js', () => ({
+  registerWindowUnload: vi.fn<() => void>(),
+  closeStudioWindows: fixture.closeWindows,
 }))
 vi.mock('./runtime-connection-health.js', () => ({ checkRuntimeConnection: fixture.confirm }))
 vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
@@ -164,6 +175,9 @@ beforeAll(async () => {
     // observations independently of the mocks used by subsequent scenarios.
     fixture.startupIpc = fixture.ipc.mock.calls.map(([channel]) => channel)
     fixture.startupUpdates = fixture.updates.mock.calls.length
+    fixture.prepareUpdate = vi.mocked(
+      (await import('./updates')).registerUpdates,
+    ).mock.calls[0]?.[1]
     fixture.startupQuits = fixture.quit.mock.calls.length
   } finally {
     log.mockRestore()
@@ -417,6 +431,28 @@ it('registers only validated link receiver readiness from the trusted owning ren
   expect(() => handler(event, 'true')).toThrow('Expected link receiver readiness')
 })
 
+it('keeps the runtime alive when update closing is cancelled and reopens after preparation fails', async () => {
+  const { prepareLocalRuntimeUpdate } = await import('./local-runtime')
+  const prepare = fixture.prepareUpdate
+  if (!prepare) throw new Error('Missing update preparation')
+  fixture.closeWindows.mockClear()
+  fixture.closeWindows.mockResolvedValueOnce(false)
+  await expect(prepare()).rejects.toThrow('Update cancelled')
+  expect(prepareLocalRuntimeUpdate).not.toHaveBeenCalled()
+  const windows = fixture.windows
+  const quits = fixture.quit.mock.calls.length
+  fixture.closeWindows.mockImplementationOnce(async () => {
+    fixture.closedWindows = true
+    fixture.appHandlers.get('window-all-closed')?.()
+    return true
+  })
+  vi.mocked(prepareLocalRuntimeUpdate).mockRejectedValueOnce(new Error('Preparation failed'))
+  await expect(prepare()).rejects.toThrow('Preparation failed')
+  expect(fixture.quit).toHaveBeenCalledTimes(quits)
+  expect(fixture.windows).toBe(windows + 1)
+  fixture.closeWindows.mockClear()
+})
+
 it('keeps repeated quit requests blocked until detached tabs are saved, and permits retry on failure', async () => {
   await import('./main')
   const beforeQuit = fixture.appHandlers.get('before-quit')
@@ -430,6 +466,12 @@ it('keeps repeated quit requests blocked until detached tabs are saved, and perm
   expect(fixture.stop).not.toHaveBeenCalled()
   expect(fixture.browserQuitting).not.toHaveBeenCalledWith(true)
 
+  fixture.closeWindows.mockResolvedValueOnce(false)
+  beforeQuit(event)
+  await vi.waitFor(() => expect(fixture.closeWindows).toHaveBeenCalledOnce())
+  expect(fixture.stop).not.toHaveBeenCalled()
+  expect(fixture.quit).not.toHaveBeenCalled()
+
   let saved = () => {}
   fixture.returnBrowserTabs.mockImplementationOnce(
     () =>
@@ -439,8 +481,8 @@ it('keeps repeated quit requests blocked until detached tabs are saved, and perm
   )
   beforeQuit(event)
   beforeQuit(event)
-  expect(event.preventDefault).toHaveBeenCalledTimes(3)
-  expect(fixture.returnBrowserTabs).toHaveBeenCalledTimes(2)
+  expect(event.preventDefault).toHaveBeenCalledTimes(4)
+  expect(fixture.returnBrowserTabs).toHaveBeenCalledTimes(3)
   expect(fixture.stop).not.toHaveBeenCalled()
   expect(fixture.quit).not.toHaveBeenCalled()
   saved()
@@ -448,7 +490,7 @@ it('keeps repeated quit requests blocked until detached tabs are saved, and perm
   expect(fixture.stop).toHaveBeenCalledOnce()
   expect(fixture.browserQuitting).toHaveBeenLastCalledWith(true)
   beforeQuit(event)
-  expect(event.preventDefault).toHaveBeenCalledTimes(3)
+  expect(event.preventDefault).toHaveBeenCalledTimes(4)
 })
 
 it('copies through the trusted Studio bridge without requiring renderer focus', async () => {
@@ -465,4 +507,13 @@ it('copies through the trusted Studio bridge without requiring renderer focus', 
     copy({ ...event, senderFrame: { url: 'https://example.com/' } }, 'website'),
   ).rejects.toThrow('Untrusted')
   await expect(copy(event, {})).rejects.toThrow('Expected clipboard text')
+})
+
+it('reads clipboard text only for a trusted Studio renderer', () => {
+  const read = fixture.handlers.get('clipboard:read-text')
+  if (!read) throw new Error('Missing clipboard reader')
+  expect(read(trustedEvent())).toBe('native clipboard')
+  expect(() =>
+    read({ senderFrame: { url: 'https://website.test' }, sender: { mainFrame: {} } }),
+  ).toThrow('Untrusted')
 })

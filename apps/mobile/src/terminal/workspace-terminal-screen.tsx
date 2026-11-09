@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, View } from 'react-native'
 import { router } from 'expo-router'
 import {
@@ -14,6 +14,7 @@ import { Sheet } from '../ui/layout/sheet'
 import { Field } from '../ui/controls/field'
 import { Action } from '../ui/controls/action'
 import { EmptyState } from '../ui/content/empty-state'
+import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { ResourceActions, useTerminalActions } from '../workspace/resource-actions'
 import { workspaceItems } from '../workspace/workspace-items'
@@ -163,20 +164,19 @@ export function WorkspaceTerminalScreen({
                 />
               }
             />
-          ) : owner?.connected && focused ? (
-            <RuntimeScope runtimeId={runtimeId}>
-              <TerminalSession
-                key={`${runtimeId}:${terminalId}:${generation}`}
-                id={terminalId}
-                visible={focused}
-              />
-            </RuntimeScope>
           ) : (
-            <EmptyState
-              icon="device"
-              title="Computer offline"
-              description="Reconnect to resume this session."
-            />
+            <RuntimeScope
+              key={JSON.stringify([
+                runtimeId,
+                terminalId,
+                owner?.profile.connection.address,
+                owner?.profile.connection.token,
+                owner?.profile.connection.runtimeId,
+              ])}
+              runtimeId={runtimeId}
+            >
+              <RetainedTerminalSession id={terminalId} focused={focused} generation={generation} />
+            </RuntimeScope>
           )}
         </>
       )}
@@ -201,5 +201,41 @@ export function WorkspaceTerminalScreen({
         </Sheet>
       )}
     </View>
+  )
+}
+
+/** Keep a loaded grid mounted during temporary outages and hidden native-stack screens. */
+function RetainedTerminalSession({
+  id,
+  focused,
+  generation,
+}: {
+  id: string
+  focused: boolean
+  generation: number
+}) {
+  const { connected } = useRuntime()
+  const { styles } = useTheme()
+  const [started, setStarted] = useState(false)
+  useEffect(() => {
+    if (connected && focused) setStarted(true)
+  }, [connected, focused])
+  if (!started && !(connected && focused))
+    return (
+      <EmptyState
+        icon="device"
+        title="Computer offline"
+        description="Reconnect to load this session."
+      />
+    )
+  return (
+    <>
+      {!connected && (
+        <Text style={[styles.muted, { padding: 10 }]}>
+          Computer offline. Showing retained terminal output.
+        </Text>
+      )}
+      <TerminalSession key={`${id}:${generation}`} id={id} visible={focused} />
+    </>
   )
 }

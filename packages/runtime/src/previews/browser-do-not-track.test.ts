@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { chromium } from 'playwright'
 import { createServer } from 'node:http'
 import type { BrowserProfile } from '@dovo/protocol'
@@ -44,6 +44,33 @@ it('sends DNT only for opted-in profiles and updates existing contexts after sav
       { id: 'work', name: 'Work', doNotTrack: false },
     ]
     await browsers.refreshProfiles()
+    expect(await read(normal)).toEqual({ dnt: '1' })
+    expect(await read(work)).toEqual({ dnt: null })
+
+    // A fast failure must not let a retry overtake another context from the same apply.
+    let releaseApply!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      releaseApply = resolve
+    })
+    const slow = vi
+      .spyOn(defaultProfile.context, 'setExtraHTTPHeaders')
+      .mockReturnValueOnce(blocked)
+    const failed = vi
+      .spyOn(workProfile.context, 'setExtraHTTPHeaders')
+      .mockRejectedValueOnce(new Error('Context unavailable'))
+    const applying = browsers.applyProfiles()
+    const retrying = browsers.applyProfiles()
+    try {
+      await vi.waitFor(() => expect(failed).toHaveBeenCalledTimes(1))
+      expect(slow).toHaveBeenCalledTimes(1)
+    } finally {
+      releaseApply()
+    }
+    expect(await applying).toEqual({ applyError: 'Context unavailable' })
+    expect(await retrying).toEqual({})
+    expect(browsers.profileApplyStatus()).toEqual({})
+    expect(slow).toHaveBeenCalledTimes(2)
+    expect(failed).toHaveBeenCalledTimes(2)
     expect(await read(normal)).toEqual({ dnt: '1' })
     expect(await read(work)).toEqual({ dnt: null })
   } finally {

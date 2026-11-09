@@ -335,7 +335,7 @@ export function TaskList({
                       (!!repo.gitIdentity && `git:${repo.gitIdentity}` === projectId)),
                 )) &&
                 (!environment || JSON.stringify(source.runtimeId) === environment))) &&
-              !t.archivedAt &&
+              (!t.archivedAt || threadTree.contextKeys.has(key)) &&
               (!needle ||
                 [
                   t.title,

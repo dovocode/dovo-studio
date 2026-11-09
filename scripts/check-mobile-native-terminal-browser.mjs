@@ -11,9 +11,10 @@ const importer = root + 'apps/mobile/src/terminal'
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TerminalSession} from './src/terminal/terminal-session.native.tsx';import {runtimeProfile} from '${root}packages/protocol/src/index.ts';
+      contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TerminalSession} from './src/terminal/terminal-session.native.tsx';import {WorkspaceTerminalScreen} from './src/terminal/workspace-terminal-screen.tsx';import {runtimeProfile} from '${root}packages/protocol/src/index.ts';
 window.tickets=0;window.runtime={connection:runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'}).connection,call:async(path,input)=>{if(path!=='/api/terminals/ticket'||input.id!=='terminal')throw Error('Unexpected request '+path);window.tickets++;return {ticket:'ticket-'+window.tickets}}};
-const node=createRoot(document.getElementById('app'));window.renderTerminal=(visible=true)=>flushSync(()=>node.render(<TerminalSession id="terminal" visible={visible}/>));window.renderTerminal();`,
+window.focused=true;window.runtime.connected=true;window.runtime.overviews=[{profile:{id:'computer',name:'Computer',connection:window.runtime.connection},connected:true,snapshot:{terminals:[{id:'terminal',taskId:'studio:terminals',title:'Shell'}]}}];
+const node=createRoot(document.getElementById('app'));window.renderTerminal=(visible=true)=>flushSync(()=>node.render(<TerminalSession id="terminal" visible={visible}/>));window.renderStandalone=()=>flushSync(()=>node.render(<WorkspaceTerminalScreen runtimeId="computer" terminalId="terminal"/>));window.renderTerminal();`,
       loader: 'tsx',
       resolveDir: root + 'apps/mobile',
     },
@@ -38,16 +39,16 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
   [
     {
       path: 'react-native',
-      contents: `import {forwardRef,useImperativeHandle} from 'react';const keyboardListeners=new Map();window.keyboardEvent=(name,event)=>{for(const fn of keyboardListeners.get(name)??[])fn(event)};const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,fn)=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}}};window.appState=value=>{AppState.currentState=value;listeners.forEach(fn=>fn(value))};export const Keyboard={addListener:(name,fn)=>{const set=keyboardListeners.get(name)??new Set();keyboardListeners.set(name,set);set.add(fn);return {remove:()=>set.delete(fn)}}};export const Platform={get OS(){return window.platformOS}};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Text=({children})=><span>{children}</span>;export const View=forwardRef(({children,testID,style},ref)=>{useImperativeHandle(ref,()=>({measureInWindow:fn=>fn(0,100,400,600)}));return <div data-testid={testID} data-pointer-events={[style].flat(9).filter(Boolean).reduce((value,item)=>item.pointerEvents??value,undefined)}>{children}</div>});`,
+      contents: `import {forwardRef,useImperativeHandle} from 'react';const keyboardListeners=new Map();window.keyboardEvent=(name,event)=>{for(const fn of keyboardListeners.get(name)??[])fn(event)};const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,fn)=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}}};window.appState=value=>{AppState.currentState=value;listeners.forEach(fn=>fn(value))};export const Keyboard={addListener:(name,fn)=>{const set=keyboardListeners.get(name)??new Set();keyboardListeners.set(name,set);set.add(fn);return {remove:()=>set.delete(fn)}}};export const Alert={alert:()=>{}};export const Platform={get OS(){return window.platformOS}};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Text=({children})=><span>{children}</span>;export const View=forwardRef(({children,testID,style},ref)=>{useImperativeHandle(ref,()=>({measureInWindow:fn=>fn(0,100,400,600)}));return <div data-testid={testID} data-pointer-events={[style].flat(9).filter(Boolean).reduce((value,item)=>item.pointerEvents??value,undefined)}>{children}</div>});`,
     },
     {
       path: 'expo',
-      contents: `export const requireOptionalNativeModule=name=>name==='ExpoLibghostty'&&window.nativeTerminal?{}:null;`,
+      contents: `export const requireOptionalNativeModule=name=>name==='ExpoLibghostty'&&window.nativeTerminal?{clipboardActions:true}:null;`,
     },
     {
       path: 'expo-libghostty',
       // Mirrors expo-libghostty 0.8.1: imperative calls queue until the first grid size.
-      contents: `import {useEffect,useImperativeHandle} from 'react';export function TerminalView(props){const {ref,fontSize,theme,onInput,onResize}=props;window.props=props;window.fontFallback=(fontFamily,message)=>props.onFontFallback({nativeEvent:{fontFamily,message}});useImperativeHandle(ref,()=>({focus:async()=>{window.focusCalls=(window.focusCalls??0)+1;window.props.onKeyboardVisibilityChange({nativeEvent:{visible:true}});window.keyboardEvent('keyboardWillChangeFrame',{endCoordinates:{screenY:500}})},blur:async()=>{window.blurCalls=(window.blurCalls??0)+1;window.props.onKeyboardVisibilityChange({nativeEvent:{visible:false}});window.keyboardEvent('keyboardWillHide')},writeText:async text=>{window.writes.push(text)},write:async base64=>{window.writes.push(new TextDecoder().decode(Uint8Array.from(atob(base64),c=>c.charCodeAt(0))))},finish:async()=>{}}),[]);useEffect(()=>{window.mounts++;window.fontSizes.push(fontSize);window.themes.push(theme);window.input=text=>onInput({nativeEvent:{text,data:btoa(text)}});window.resize=(cols,rows)=>onResize({nativeEvent:{cols,rows}});onResize({nativeEvent:{cols:80,rows:24}})},[]);return <div data-testid="ghostty"/>}`,
+      contents: `import {useEffect,useImperativeHandle} from 'react';export function TerminalView(props){const {ref,fontSize,theme,onInput,onResize}=props;window.props=props;window.fontFallback=(fontFamily,message)=>props.onFontFallback({nativeEvent:{fontFamily,message}});useImperativeHandle(ref,()=>({copySelection:async()=>{window.copyCalls=(window.copyCalls??0)+1;return window.copyResult},pasteFromClipboard:async()=>{window.pasteCalls=(window.pasteCalls??0)+1},focus:async()=>{window.focusCalls=(window.focusCalls??0)+1;window.props.onKeyboardVisibilityChange({nativeEvent:{visible:true}});window.keyboardEvent('keyboardWillChangeFrame',{endCoordinates:{screenY:500}})},blur:async()=>{window.blurCalls=(window.blurCalls??0)+1;window.props.onKeyboardVisibilityChange({nativeEvent:{visible:false}});window.keyboardEvent('keyboardWillHide')},writeText:async text=>{window.writes.push(text)},write:async base64=>{window.writes.push(new TextDecoder().decode(Uint8Array.from(atob(base64),c=>c.charCodeAt(0))))},finish:async()=>{}}),[]);useEffect(()=>{window.mounts++;window.fontSizes.push(fontSize);window.themes.push(theme);window.input=text=>onInput({nativeEvent:{text,data:btoa(text)}});window.resize=(cols,rows)=>onResize({nativeEvent:{cols,rows}});onResize({nativeEvent:{cols:80,rows:24}})},[]);return <div data-testid="ghostty"/>}`,
     },
     {
       path: './webview-terminal-session',
@@ -62,12 +63,12 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
     {
       path: '../runtime/connection/provider',
       importer,
-      contents: `export const useRuntime=()=>window.runtime;`,
+      contents: `export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=><>{children}</>;`,
     },
     {
       path: '../runtime/preferences/app-preferences',
       importer,
-      contents: `export const useMobilePreferences=()=>({terminalFontFamily:window.fontFamily,terminalFontSize:window.fontSize});`,
+      contents: `export const useMobilePreferences=()=>({terminalFontFamily:window.fontFamily,terminalFontSize:window.fontSize,unifiedWorkspaceEnabled:true});`,
     },
     {
       path: '../ui/theme',
@@ -79,6 +80,55 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
       importer,
       contents: `export const Text=({children})=><p className="status">{children}</p>;`,
     },
+    {
+      path: 'expo-router',
+      contents: 'export const router={canGoBack:()=>false,replace:()=>{},push:()=>{}};',
+    },
+    {
+      path: './terminal-session',
+      importer,
+      contents: "export {TerminalSession} from './src/terminal/terminal-session.native';",
+    },
+    {
+      path: '../shell/navigation',
+      importer,
+      contents: 'export const useNavigation=()=>({focused:window.focused});',
+    },
+    {
+      path: '../ui/layout/screen-header',
+      importer,
+      contents:
+        'export const ScreenHeader=({title,buttons})=><header>{title}{buttons?.map(button=><button key={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;',
+    },
+    {
+      path: '../ui/layout/sheet',
+      importer,
+      contents: 'export const Sheet=({children})=><div>{children}</div>;',
+    },
+    { path: '../ui/controls/field', importer, contents: 'export const Field=()=>null;' },
+    {
+      path: '../ui/controls/action',
+      importer,
+      contents:
+        'export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;',
+    },
+    {
+      path: '../ui/content/empty-state',
+      importer,
+      contents:
+        'export const EmptyState=({title,description,action})=><div><p>{title}</p><p>{description}</p>{action}</div>;',
+    },
+    {
+      path: '../workspace/resource-actions',
+      importer,
+      contents:
+        'export const ResourceActions=()=>null;export const useTerminalActions=()=>({disabled:!window.runtime.connected});',
+    },
+    {
+      path: '../workspace/workspace-items',
+      importer,
+      contents: 'export const workspaceItems=()=>[];',
+    },
   ],
 )
 
@@ -86,7 +136,7 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
 const setup = (platformOS, nativeTerminal, fontProp) => `
 window.platformOS=${JSON.stringify(platformOS)};window.nativeTerminal=${nativeTerminal};window.fontSize=14;window.fontFamily='';
 window.expo={getViewConfig:name=>name==='ExpoLibghostty'?{validAttributes:${fontProp ? '{fontSize:true,fontFamily:true}' : '{fontSize:true}'}}:null};
-window.writes=[];window.mounts=0;window.webviews=0;window.fontSizes=[];window.themes=[];window.sockets=[];
+window.copyResult=true;window.writes=[];window.mounts=0;window.webviews=0;window.fontSizes=[];window.themes=[];window.sockets=[];
 window.WebSocket=class{static OPEN=1;readyState=0;sent=[];closed=false;constructor(url){this.url=url;window.sockets.push(this)}send(text){this.sent.push(JSON.parse(text))}close(){this.closed=true;this.readyState=3}open(){this.readyState=1;this.onopen?.({})}};
 window.socket=()=>window.sockets.at(-1);
 // Binary stream v1 frames: kind byte (0 data, 1 replayStart, 2 replayEnd, 3 pong) + payload.
@@ -139,7 +189,8 @@ try {
     )
   assert.doesNotMatch(await page.textContent('#app'), /Connecting terminal…/)
   assert.match(await page.textContent('#app'), /Replaying terminal history…/)
-  assert.equal(await surface(), 'none')
+  assert.equal(await surface(), 'auto', 'Selection and Copy do not require a writable stream')
+  assert.equal(await page.getByRole('button', { name: 'Paste into terminal' }).isDisabled(), true)
 
   // Binary v1: reset, replay and live output reach Ghostty in order and are acknowledged
   // after the native write resolves. Emulator answers to replayed queries are not sent.
@@ -157,12 +208,13 @@ try {
     'live',
   ])
   await page.waitForFunction(() => window.acks().length === 2)
+
   assert.deepEqual(await page.evaluate(() => window.acks()), [
     { type: 'ack', bytes: 12 },
     { type: 'ack', bytes: 4 },
   ])
   assert.match(await page.textContent('#app'), /Replaying terminal history…/)
-  assert.equal(await surface(), 'none')
+  assert.equal(await surface(), 'auto')
   await page.evaluate(() => {
     window.input('\x1b[?62c')
     window.input('\x1b[0n')
@@ -172,6 +224,16 @@ try {
     () => !document.body.textContent.includes('Replaying terminal history…'),
   )
   assert.equal(await surface(), 'auto')
+  await page.getByRole('button', { name: 'Copy terminal selection', exact: true }).click()
+  await page.getByText('Copied', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.copyCalls), 1)
+  await page.evaluate(() => (window.copyResult = false))
+  await page.getByRole('button', { name: 'Copy terminal selection', exact: true }).click()
+  await page
+    .getByText('Long press terminal output to select text, then choose Copy.', { exact: true })
+    .waitFor()
+  await page.getByRole('button', { name: 'Paste into terminal', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.pasteCalls), 1)
   // An accessory-only frame can overlap the terminal while the software keyboard stays hidden.
   await page.evaluate(() => {
     window.keyboardEvent('keyboardWillChangeFrame', { endCoordinates: { screenY: 650 } })
@@ -236,6 +298,20 @@ try {
   await page.waitForFunction(() =>
     document.body.textContent.includes('Device revoked Reconnecting…'),
   )
+  assert.equal(await surface(), 'auto', 'Retained output remains selectable while disconnected')
+  assert.equal(
+    await page.getByRole('button', { name: 'Copy terminal selection' }).isDisabled(),
+    false,
+  )
+  assert.equal(await page.getByRole('button', { name: 'Paste into terminal' }).isDisabled(), true)
+  await page.evaluate(() => {
+    window.copyResult = true
+    window.input('must not reach the socket')
+  })
+  const writesWhileOffline = await page.evaluate(() => window.socket().sent.length)
+  await page.getByRole('button', { name: 'Copy terminal selection' }).click()
+  await page.getByText('Copied', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.socket().sent.length), writesWhileOffline)
   await page.waitForFunction(() => window.sockets.length === 4, null, { timeout: 5000 })
   await page.evaluate(() => window.socket().open())
 
@@ -334,6 +410,68 @@ try {
     window.renderTerminal(true)
   })
   assert.doesNotMatch(await unpatchedIos.textContent('#app'), /terminal font/)
+
+  // Exercise the standalone screen too. Its offline state must not unmount the native grid.
+  const standalone = await load('ios')
+  await standalone.evaluate(() => window.renderStandalone())
+  await standalone.waitForFunction(() => window.mounts === 2 && window.sockets.length === 2)
+  await standalone.evaluate(() => {
+    window.socket().open()
+    window.replay('Retained standalone output')
+  })
+  await standalone.waitForFunction(() => window.writes.includes('Retained standalone output'))
+  await standalone.evaluate(() => window.input('\x1b[0n'))
+  await standalone.waitForFunction(
+    () => !document.body.textContent.includes('Replaying terminal history…'),
+  )
+  const mounts = await standalone.evaluate(() => window.mounts)
+  await standalone.evaluate(() => {
+    window.runtime.connected = false
+    window.runtime.overviews[0].connected = false
+    window.socket().readyState = 3
+    window.socket().onclose({ reason: 'Computer offline' })
+    window.renderStandalone()
+  })
+  await standalone
+    .getByText('Computer offline. Showing retained terminal output.', { exact: true })
+    .waitFor()
+  assert.equal(await standalone.evaluate(() => window.mounts), mounts)
+  assert.equal(await standalone.getByTestId('ghostty').count(), 1)
+  assert.equal(
+    await standalone.getByRole('button', { name: 'Paste into terminal' }).isDisabled(),
+    true,
+  )
+  await standalone.getByRole('button', { name: 'Copy terminal selection' }).click()
+  await standalone.getByText('Copied', { exact: true }).waitFor()
+  // Hidden stack screens keep their grid but release their socket.
+  await standalone.evaluate(() => {
+    window.focused = false
+    window.renderStandalone()
+  })
+  assert.equal(await standalone.evaluate(() => window.mounts), mounts)
+  await standalone.evaluate(() => {
+    window.focused = true
+    window.runtime.connected = true
+    window.runtime.overviews[0].connected = true
+    window.renderStandalone()
+  })
+  assert.equal(await standalone.evaluate(() => window.mounts), mounts)
+  // Re-pairing is a new scope and must clear the previous computer's retained output.
+  await standalone.evaluate(() => {
+    window.runtime.connection = { ...window.runtime.connection, token: 'new-pairing' }
+    window.runtime.overviews[0].profile.connection = window.runtime.connection
+    window.renderStandalone()
+  })
+  await standalone.waitForFunction((previous) => window.mounts === previous + 1, mounts)
+  await standalone.evaluate(() => {
+    window.runtime.overviews = []
+    window.renderStandalone()
+  })
+  await standalone.getByText('This computer is no longer paired.', { exact: true }).waitFor()
+  assert.equal(await standalone.getByTestId('ghostty').count(), 0)
+  console.log(
+    'Native terminal adapters: clipboard, replay, fonts and standalone offline retention passed.',
+  )
 } finally {
   await browser.close()
 }

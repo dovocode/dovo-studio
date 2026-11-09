@@ -27,6 +27,68 @@ const storage = (initial: Record<string, string> = {}) => {
   }
 }
 
+it.each(['desktop', 'web'] as const)(
+  'keeps the last valid %s settings and pending edits when a read fails',
+  async (platform) => {
+    let saved = {
+      theme: 'light',
+      browserProfiles: [
+        { id: 'default', name: 'Default' },
+        { id: 'work', name: 'Work' },
+      ],
+      futurePreference: 'keep',
+    }
+    let failRead = false
+    const read = vi.fn<() => typeof saved>(() => {
+      if (failRead) throw new Error('Temporary read error')
+      return saved
+    })
+    const write = vi.fn<(encoded: string) => void>((encoded) => {
+      saved = JSON.parse(encoded)
+    })
+    vi.stubGlobal('localStorage', {
+      getItem: () => (platform === 'web' ? JSON.stringify(read()) : null),
+      setItem: (_key: string, encoded: string) => write(encoded),
+    })
+    if (platform === 'desktop')
+      vi.stubGlobal('dovo', { readAppSettings: read, writeAppSettings: write })
+    const prefs = await import('./preferences')
+    expect(prefs.readAppPreferences().theme).toBe('light')
+    failRead = true
+    expect(prefs.updateAppPreferences({ textSize: 'large' })).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    expect(prefs.readAppPreferences()).toMatchObject({ theme: 'light', textSize: 'large' })
+    expect(prefs.useAppPreferenceSaveError()).toContain('Temporary read error')
+    failRead = false
+    saved = { ...saved, theme: 'system', futurePreference: 'newer value' }
+    expect(prefs.retryAppPreferences()).toBe(true)
+    expect(saved).toMatchObject({
+      theme: 'system',
+      textSize: 'large',
+      futurePreference: 'newer value',
+    })
+    expect(saved.browserProfiles).toHaveLength(2)
+    expect(prefs.useAppPreferenceSaveError()).toBeNull()
+  },
+)
+
+it('blocks writes after an unreadable first load, including an invalid legacy migration', async () => {
+  const local = storage({ 'dovo.app-preferences.v1': '{broken' })
+  vi.stubGlobal('localStorage', local)
+  let saved: unknown = null
+  const write = vi.fn<(encoded: string) => void>((encoded) => {
+    saved = JSON.parse(encoded)
+  })
+  vi.stubGlobal('dovo', { readAppSettings: () => saved, writeAppSettings: write })
+  const prefs = await import('./preferences')
+  expect(prefs.updateAppPreferences({ textSize: 'large' })).toBe(false)
+  expect(write).not.toHaveBeenCalled()
+  expect(local.getItem('dovo.app-preferences.v1')).toBe('{broken')
+  local.setItem('dovo.app-preferences.v1', JSON.stringify({ theme: 'light', future: 'keep' }))
+  expect(prefs.retryAppPreferences()).toBe(true)
+  expect(saved).toMatchObject({ theme: 'light', textSize: 'large', future: 'keep' })
+})
+
 it('keeps valid saved choices, fills in new defaults and ignores invalid values', async () => {
   vi.stubGlobal(
     'localStorage',
@@ -566,4 +628,100 @@ it('does not broadcast unchanged desktop settings when browser windows receive f
   expect(write).not.toHaveBeenCalled()
   preferences.updateAppPreferences({ browserWorkspaceEnabled: false })
   expect(write).toHaveBeenCalledTimes(1)
+})
+
+it('retains failed web saves, reports failure and retries all pending choices', async () => {
+  const local = storage({ 'dovo.app-preferences.v1': JSON.stringify({ theme: 'dark' }) })
+  const write = vi.spyOn(local, 'setItem').mockImplementation(() => {
+    throw new Error('Disk full')
+  })
+  vi.stubGlobal('localStorage', local)
+  const preferences = await import('./preferences')
+  expect(preferences.updateAppPreferences({ theme: 'light' })).toBe(false)
+  expect(preferences.useAppPreferenceSaveError()).toBe('Disk full')
+  expect(preferences.readAppPreferences().theme).toBe('light')
+  expect(preferences.updateAppPreferences({ textSize: 'large' })).toBe(false)
+  write.mockRestore()
+  expect(preferences.retryAppPreferences()).toBe(true)
+  expect(preferences.useAppPreferenceSaveError()).toBeNull()
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences()).toMatchObject({
+    theme: 'light',
+    textSize: 'large',
+  })
+})
+
+it('merges pending desktop edits with newer settings when retrying after failure', async () => {
+  let saved = { theme: 'dark', textSize: 'default' }
+  let fail = true
+  vi.stubGlobal('dovo', {
+    readAppSettings: () => saved,
+    writeAppSettings: (value: string) => {
+      if (fail) throw new Error('Settings unavailable')
+      saved = JSON.parse(value)
+    },
+  })
+  const preferences = await import('./preferences')
+  expect(preferences.updateAppPreferences({ theme: 'light' })).toBe(false)
+  saved = { ...saved, textSize: 'large' }
+  fail = false
+  expect(preferences.retryAppPreferences()).toBe(true)
+  expect(saved).toMatchObject({ theme: 'light', textSize: 'large' })
+})
+
+it.each([false, true])(
+  'retains newer stored fields without exposing them (desktop=%s)',
+  async (desktop) => {
+    const key = 'dovo.app-preferences.v1'
+    const future = { layout: ['new-client-choice'] }
+    const local = storage({ [key]: JSON.stringify({ theme: 'light', futureSetting: future }) })
+    vi.stubGlobal('localStorage', local)
+    let saved: unknown = { theme: 'light', futureSetting: future }
+    if (desktop)
+      vi.stubGlobal('dovo', {
+        readAppSettings: () => saved,
+        writeAppSettings: (value: string) => {
+          saved = JSON.parse(value)
+        },
+      })
+    const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+    expect(readAppPreferences()).not.toHaveProperty('futureSetting')
+    expect(updateAppPreferences({ theme: 'dark' })).toBe(true)
+    expect(desktop ? saved : JSON.parse(local.values.get(key) ?? '{}')).toMatchObject({
+      theme: 'dark',
+      futureSetting: future,
+    })
+  },
+)
+
+it('preserves newer fields when migrating legacy preferences to desktop storage', async () => {
+  const local = storage({
+    'dovo.app-preferences.v1': JSON.stringify({ theme: 'light', futureSetting: 'kept' }),
+  })
+  vi.stubGlobal('localStorage', local)
+  let saved: unknown = null
+  vi.stubGlobal('dovo', {
+    readAppSettings: () => saved,
+    writeAppSettings: (value: string) => {
+      saved = JSON.parse(value)
+    },
+  })
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).not.toHaveProperty('futureSetting')
+  expect(saved).toMatchObject({ theme: 'light', futureSetting: 'kept' })
+  expect(local.values.size).toBe(0)
+})
+
+it('restores validated optional fields that have no default', async () => {
+  const local = storage({
+    'dovo.app-preferences.v1': JSON.stringify({ preferredRepositoryOpenTarget: 'zed' }),
+  })
+  vi.stubGlobal('localStorage', local)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().preferredRepositoryOpenTarget).toBe('zed')
+  updateAppPreferences({ theme: 'light' })
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences().preferredRepositoryOpenTarget).toBe(
+    'zed',
+  )
 })

@@ -5,6 +5,7 @@ import { registerDictation } from './dictation.js'
 import { checkRuntimeConnection } from './runtime-connection-health.js'
 import { configureDesktopRuntimeDirectory, desktopDataRoot } from './runtime-data-directory.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
+import { registerWindowUnload, closeStudioWindows } from './window-unload.js'
 import { registerDefaultBrowser } from './default-browser.js'
 import { registerLinuxDesktop } from './linux-desktop.js'
 import { registerInputPreview } from './input-preview.js'
@@ -247,6 +248,10 @@ ipcMain.handle('clipboard:write-text', async (event, text: unknown) => {
   if (typeof text !== 'string') throw new Error('Expected clipboard text')
   await clipboard.writeText(text)
 })
+ipcMain.handle('clipboard:read-text', (event) => {
+  requireTrustedRenderer(event, rendererPath)
+  return clipboard.readText()
+})
 
 /** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
  * natively, so they would otherwise stay dark on a light theme. The last palette is kept for
@@ -311,6 +316,7 @@ function createWindow(): void {
     if (mainWindow === window) mainWindow = undefined
   })
   registerQuitShortcut(window.webContents)
+  registerWindowUnload(window)
   window.webContents.on('will-navigate', guardNavigation)
   window.webContents.on('will-redirect', guardNavigation)
   // A crashed or hung renderer must not leave a blank or frozen window. Reload once per
@@ -586,14 +592,31 @@ const startup = Effect.gen(function* () {
       } satisfies NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     })
     const updates = registerUpdates(__dirname, async () => {
-      await browserWindows.returnAll()
-      const restore = await prepareLocalRuntimeUpdate(__dirname)
-      quitting = true
-      browserWindows.setQuitting(true)
-      return async () => {
-        quitting = false
-        browserWindows.setQuitting(false)
-        await restore()
+      preparingUpdate = true
+      const reopen = () => {
+        if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+      }
+      try {
+        await browserWindows.returnAll()
+        if (!(await closeStudioWindows()))
+          throw new Error('Update cancelled. Save your edits before updating.')
+        const restore = await prepareLocalRuntimeUpdate(__dirname)
+        quitting = true
+        browserWindows.setQuitting(true)
+        return async () => {
+          quitting = false
+          browserWindows.setQuitting(false)
+          try {
+            await restore()
+          } finally {
+            reopen()
+          }
+        }
+      } catch (error) {
+        reopen()
+        throw error
+      } finally {
+        preparingUpdate = false
       }
     })
     void registerRemoteUpdates(dataDirectory, updates, dataRoot)
@@ -656,11 +679,12 @@ else
   })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin' && !preparingUpdate) app.quit()
 })
 
 let quitting = false
 let shuttingDown = false
+let preparingUpdate = false
 app.on('before-quit', (event) => {
   if (quitting) return
   event.preventDefault()
@@ -670,6 +694,10 @@ app.on('before-quit', (event) => {
     try {
       // Return and persist detached workspaces before any window/runtime is torn down.
       await browserWindows.returnAll()
+      if (!(await closeStudioWindows())) {
+        shuttingDown = false
+        return
+      }
     } catch (error) {
       shuttingDown = false
       await dialog.showMessageBox({

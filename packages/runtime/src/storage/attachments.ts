@@ -430,6 +430,16 @@ export class Attachments {
       this.assertUploadActive(input.id)
       const current = this.store.taskSummary(input.taskId)
       if (current.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
+      if (
+        !input.queuedMessageId &&
+        !input.detached &&
+        input.draftGuard !== undefined &&
+        this.draftUploadGuard(input.taskId) !== input.draftGuard
+      )
+        throw new HttpError(
+          409,
+          'The draft changed. Review the draft before attaching the file again.',
+        )
       if (this.db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)) {
         if (device) throw new HttpError(409, 'Upload ID already belongs to an earlier upload')
         const previous = this.read(input.taskId, input.id)
@@ -478,7 +488,13 @@ export class Attachments {
         }))
         this.activity.add('attachment', input.taskId, `Attached ${attachment.name}`, attachment)
       }
-      const result = { attachment, revision: this.store.version() }
+      const result = {
+        attachment,
+        revision: this.store.version(),
+        ...(input.draftGuard !== undefined
+          ? { nextGuard: this.draftUploadGuard(input.taskId) }
+          : {}),
+      }
       if (device && fingerprint)
         this.db
           .prepare(

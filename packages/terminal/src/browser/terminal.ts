@@ -37,6 +37,8 @@ export class BrowserTerminal {
   onViewport: (viewport: TerminalViewport) => void = () => {}
   onActivate: (point: TerminalPoint, viewport: TerminalViewport) => void = () => {}
   onDrop: (data: DataTransfer) => void = () => {}
+  onCopy?: (text: string) => Promise<void>
+  onPaste?: () => Promise<void>
   renderer: string | undefined
 
   constructor(private options: BrowserTerminalOptions) {
@@ -254,6 +256,29 @@ export class BrowserTerminal {
     })
     this.textarea.addEventListener('keydown', (event) => {
       if (this.composing || event.isComposing || event.keyCode === 229) return
+      const key = event.key.toLowerCase()
+      const copy =
+        key === 'c' &&
+        !event.altKey &&
+        (event.metaKey || (event.ctrlKey && (event.shiftKey || this.hasSelection())))
+      const paste =
+        !event.altKey &&
+        ((key === 'v' && (event.metaKey || (event.ctrlKey && event.shiftKey))) ||
+          (event.key === 'Insert' && event.shiftKey))
+      if (copy && this.hasSelection() && this.onCopy) {
+        event.preventDefault()
+        void this.onCopy(this.selection).catch((cause) =>
+          this.onError(cause instanceof Error ? cause : new Error(String(cause))),
+        )
+        return
+      }
+      if (paste && this.onPaste) {
+        event.preventDefault()
+        void this.onPaste().catch((cause) =>
+          this.onError(cause instanceof Error ? cause : new Error(String(cause))),
+        )
+        return
+      }
       if ((event.metaKey || (event.ctrlKey && event.shiftKey)) && event.key.toLowerCase() === 'v')
         return
       if ((event.metaKey || (event.ctrlKey && event.shiftKey)) && event.key.toLowerCase() === 'c')

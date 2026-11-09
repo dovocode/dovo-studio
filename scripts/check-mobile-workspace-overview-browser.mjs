@@ -68,7 +68,7 @@ const stubs = [
     path: '../tasks/list/task-list-row',
     importer: workspace,
     contents:
-      'export const TaskListRow=({row,commands,showTypeIndicator,density})=><button data-testid={`Workspace thread ${row.task.title}`} data-type-indicator={showTypeIndicator} data-density={density} onClick={()=>commands.open(row.key)}>{row.task.title}</button>;',
+      'export const TaskListRow=({row,thread,commands,showTypeIndicator,density})=><button data-children={thread?.children.map(child=>child.title).join(",")} data-testid={`Workspace thread ${row.task.title}`} data-type-indicator={showTypeIndicator} data-density={density} onClick={()=>commands.open(row.key)}>{row.task.title}</button>;',
   },
   {
     path: '../tasks/list/task-swipe-actions',
@@ -216,6 +216,96 @@ try {
   await page.waitForFunction(
     () => !!window.pages.find((page) => page.title === 'Page A')?.settledAt,
   )
+  await page.getByRole('button', { name: 'Workspace filters', exact: true }).click()
+  await page.getByLabel('Computer', { exact: true }).selectOption('all')
+  await page.getByRole('button', { name: 'Close sheet', exact: true }).click()
+  await page.evaluate(() => {
+    const owner = window.runtime.overviews[0]
+    const parent = { ...owner.snapshot.workspace.tasks[0], pinned: false }
+    const child = {
+      ...parent,
+      id: 'worker',
+      title: 'Delegated worker',
+      delegation: { parentTaskId: parent.id, parentRunId: 'run', key: 'worker' },
+    }
+    const nested = {
+      ...parent,
+      id: 'nested',
+      title: 'Nested worker',
+      delegation: { parentTaskId: child.id, parentRunId: 'run', key: 'nested' },
+    }
+    const remote = {
+      ...parent,
+      id: 'remote-worker',
+      title: 'Remote worker',
+      spawnParent: { runtimeId: 'mac-identity', threadId: parent.id },
+    }
+    const remoteProfile = { ...owner.profile, id: 'remote-profile', name: 'Remote' }
+    window.runtime.profiles = [owner.profile, remoteProfile]
+    window.runtime.overviews = [
+      {
+        ...owner,
+        snapshot: {
+          ...owner.snapshot,
+          runtimeId: 'mac-identity',
+          workspace: { ...owner.snapshot.workspace, tasks: [parent, child, nested] },
+          questions: [{ taskId: 'nested' }],
+        },
+      },
+      {
+        ...owner,
+        profile: remoteProfile,
+        snapshot: {
+          ...owner.snapshot,
+          runtimeId: 'remote-identity',
+          workspace: { ...owner.snapshot.workspace, tasks: [remote] },
+          terminals: [],
+        },
+      },
+    ]
+    window.publish()
+  })
+  const parentRow = page.getByTestId('Workspace thread Thread A')
+  await parentRow.waitFor()
+  await page.getByRole('button', { name: 'Needs input, 1 items', exact: true }).waitFor()
+  assert.equal(await parentRow.getAttribute('data-children'), 'Delegated worker,Remote worker')
+  for (const title of ['Delegated worker', 'Nested worker', 'Remote worker'])
+    assert.equal(
+      await page.getByTestId('Workspace thread ' + title).count(),
+      0,
+      'Child stays under its parent',
+    )
+  await page.getByLabel('Search workspace').fill('Nested worker')
+  await parentRow.waitFor()
+  await page.getByLabel('Search workspace').fill('')
+  await page.getByRole('button', { name: 'Workspace filters', exact: true }).click()
+  await page.getByLabel('Computer', { exact: true }).selectOption('remote-profile')
+  await page.getByRole('button', { name: 'Close sheet', exact: true }).click()
+  await parentRow.waitFor()
+  assert.equal(
+    await page.getByTestId('Workspace thread Remote worker').count(),
+    0,
+    'Computer filters keep subagents under the parent',
+  )
+  assert.equal(await parentRow.getAttribute('data-children'), 'Delegated worker,Remote worker')
+  await page.evaluate(() => {
+    window.runtime.overviews = window.runtime.overviews.map((owner) => ({
+      ...owner,
+      snapshot: {
+        ...owner.snapshot,
+        workspace: {
+          ...owner.snapshot.workspace,
+          tasks: owner.snapshot.workspace.tasks.map((task) =>
+            task.title === 'Thread A' ? { ...task, archivedAt: '2026-11-09T09:00:00Z' } : task,
+          ),
+        },
+      },
+    }))
+    window.publish()
+  })
+  await parentRow.waitFor()
+  assert.equal(await parentRow.getAttribute('data-children'), 'Delegated worker,Remote worker')
+  assert.equal(await page.getByTestId('Workspace thread Remote worker').count(), 0)
   assert.deepEqual(errors, [])
   assert.deepEqual(await page.evaluate(() => window.alerts), [])
   console.log(

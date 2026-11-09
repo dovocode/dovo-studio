@@ -1,3 +1,4 @@
+import { searchRuntimeHistory } from './support/history-search.js'
 import { attachmentArchiveRequestSchema, attachmentArchiveReadRequestSchema } from '@dovo/protocol'
 import { listAttachmentArchive, readAttachmentArchive } from '../storage/attachment-archive.js'
 import { STUDIO_BROWSER_SCOPE, isPrivateBrowserProfile } from '@dovo/protocol'
@@ -96,7 +97,7 @@ import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import {
   previewActionSchema,
-  browserProfilesResultSchema,
+  browserProfilesSaveSchema,
   remoteBrowserOpenSchema,
   browserElementPointSchema,
   simulatorInputSchema,
@@ -995,15 +996,27 @@ export function route(
         return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path === '/api/previews/browser/profiles/read')
-        return yield* serviceResult({ profiles: s.preferences.get().browserProfiles })
+        return yield* serviceResult({
+          profiles: s.preferences.get().browserProfiles,
+          ...s.browsers.profileApplyStatus(),
+        })
+      if (method === 'POST' && path === '/api/previews/browser/profiles/apply') {
+        const status = yield* serviceResult(s.browsers.applyProfiles())
+        return yield* serviceResult({ profiles: s.preferences.get().browserProfiles, ...status })
+      }
       if (method === 'POST' && path === '/api/previews/browser/profiles/save') {
-        const { profiles } = decode(
-          browserProfilesResultSchema,
+        const { profiles, expected } = decode(
+          browserProfilesSaveSchema,
           yield* serviceResult(body(request)),
         )
-        const saved = s.preferences.save({ browserProfiles: profiles }).browserProfiles
-        yield* serviceResult(s.browsers.refreshProfiles())
-        return yield* serviceResult({ profiles: saved })
+        if (
+          expected &&
+          JSON.stringify(expected) !== JSON.stringify(s.preferences.get().browserProfiles)
+        )
+          throw new HttpError(409, 'Browser profiles changed. Refresh the profiles and save again.')
+        s.preferences.save({ browserProfiles: profiles })
+        const status = yield* serviceResult(s.browsers.applyProfiles())
+        return yield* serviceResult({ profiles: s.preferences.get().browserProfiles, ...status })
       }
       if (method === 'POST' && path === '/api/previews/browser/agent') {
         const { taskId, command } = decode(
@@ -1141,7 +1154,7 @@ export function route(
           mutableStruct({ taskId: idSchema }),
           yield* serviceResult(body(request, 8192)),
         )
-        return { guard: s.attachments.draftUploadGuard(taskId) }
+        return { guard: s.attachments.draftUploadGuard(taskId), guardedUploads: 1 }
       }
       if (method === 'POST' && path === '/api/attachments/commit-upload') {
         const { id, guard } = decode(
@@ -1343,7 +1356,7 @@ export function route(
         )
         if (before !== undefined && !id)
           throw new HttpError(400, 'Choose one thread for paged search')
-        return s.store.searchHistory(query, id, before)
+        return searchRuntimeHistory(s, query, id, before)
       }
       if (method === 'GET' && path === '/api/snapshot') {
         return yield* runtimeSnapshot(
@@ -1477,12 +1490,14 @@ export function route(
         if (input && typeof input === 'object' && 'memory' in input)
           throw new HttpError(400, 'Configure memory through its scope settings')
         const settings = s.preferences.save(input)
-        if (input && typeof input === 'object' && 'browserProfiles' in input)
-          yield* serviceResult(s.browsers.refreshProfiles())
+        const profileStatus =
+          input && typeof input === 'object' && 'browserProfiles' in input
+            ? yield* serviceResult(s.browsers.applyProfiles())
+            : {}
         s.approvals.applyWebRules()
         s.artifacts.prune()
         if (!settings.enableRemoteDesktop) yield* serviceResult(s.remoteDesktop.stop())
-        return yield* serviceResult(settings)
+        return yield* serviceResult({ ...settings, ...profileStatus })
       }
       if (method === 'POST' && path === '/api/commands/cua/action') {
         const input = decode(cuaActionRequest, yield* serviceResult(body(request)))

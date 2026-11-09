@@ -56,6 +56,23 @@ export const runtimeDiagnosticsSchema = mutableStruct({
   ready: Schema.Boolean,
   checkedAt: Schema.String,
   warnings: mutableArray(Schema.String),
+  // Optional for runtimes released before replication health was included.
+  replication: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        channel: Schema.String,
+        revision: Schema.Number,
+        error: Schema.NullOr(Schema.String),
+        peers: mutableArray(
+          mutableStruct({
+            name: Schema.String,
+            error: Schema.NullOr(Schema.String),
+            lastSuccess: Schema.optional(Schema.NullOr(Schema.String)),
+          }),
+        ),
+      }),
+    ),
+  ),
   internet: Schema.optional(peerDiagnosticsSchema),
   roots: mutableStruct({
     database: Schema.String,

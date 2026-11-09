@@ -86,3 +86,17 @@ await test('timing refresh uses successful measurements and preserves suites mis
   )
   assert.throws(() => updateDurations(previous, [report(-1)]), /Invalid/)
 })
+
+await test('detects package-local browser regressions missing from scheduled suites', async () => {
+  const { unregisteredBrowserChecks } = await import('./browser-shards.mjs')
+  const { fileURLToPath } = await import('node:url')
+  const root = fileURLToPath(new URL('../../', import.meta.url))
+  const { scripts } = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+  )
+  assert.deepEqual(unregisteredBrowserChecks(root, scripts), [])
+  delete scripts['test:file-drafts:browser']
+  assert.deepEqual(unregisteredBrowserChecks(root, scripts), [
+    'packages/extension-tasks/src/detail/task-files-drafts.browser.mjs',
+  ])
+})

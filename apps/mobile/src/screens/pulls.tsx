@@ -52,7 +52,7 @@ const pullPreferences = createDetailDrafts<{
   draft: string
   attention: boolean
   sort: string
-}>()
+}>({ isClean: () => true })
 export default function PullsScreen() {
   const { colors, styles } = useTheme()
 

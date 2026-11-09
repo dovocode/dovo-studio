@@ -23,7 +23,7 @@ const lineDrafts = createDetailDrafts<{
   end: string
   side: string
   body: string
-}>()
+}>({ isClean: (draft) => !draft.body })
 export function LineComment({
   repositoryId,
   detail: initialDetail,

@@ -13,6 +13,7 @@ import { terminalFontSources } from '@dovo/studio-ui/terminal-fonts'
 import { responses, useWorkspace, useStudioTheme, useResolvedTheme } from '@dovo/studio-core'
 import { terminalSelection } from './terminal-selection'
 import { ContextMenu } from '@dovo/studio-ui'
+import { copyTextToClipboard, readTextFromClipboard } from '@dovo/studio-ui/clipboard'
 
 const menuItem =
   'cursor-default rounded px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50'
@@ -107,6 +108,17 @@ export function TerminalSession({
     const terminal = new BrowserTerminal(optionsRef.current)
     terminalRef.current = terminal
     terminal.onError = (cause) => setError(cause.message)
+    terminal.onCopy = copyTextToClipboard
+    // Browser paste events retain OS permissions. Electron uses its trusted clipboard bridge.
+    if (window.dovoReadText)
+      terminal.onPaste = async () => {
+        const scope = actionScope.current
+        const text = await readTextFromClipboard()
+        if (scope !== actionScope.current || !canWriteRef.current?.() || !inputAllowedRef.current)
+          return
+        terminal.paste(text)
+        terminal.focus()
+      }
     terminal.onDrop = (data) => {
       const scope = actionScope.current
       setActionError('')
@@ -251,11 +263,12 @@ export function TerminalSession({
     if (!context) return
     setActionError('')
     try {
-      if (operation === 'copy') await navigator.clipboard.writeText(context.selection)
+      if (operation === 'copy') await copyTextToClipboard(context.selection)
       else {
-        const text = await navigator.clipboard.readText()
+        const text = await readTextFromClipboard()
         if (currentMenu() !== context) return
-        if (!canWriteRef.current?.()) throw new Error('Terminal is not connected.')
+        if (!canWriteRef.current?.() || !inputAllowedRef.current)
+          throw new Error('Terminal is not writable.')
         context.terminal.paste(text)
       }
       if (currentMenu() === context) context.terminal.focus()

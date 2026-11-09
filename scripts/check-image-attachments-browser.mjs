@@ -10,7 +10,7 @@ const built = await bundleBrowser(
       contents: `
 import {ChatImageEditProvider} from './src/chat/composer/chat-image-edit';import {EditChatImage,useChatImageUploader} from './src/chat/composer/chat-image-edit-context';import {useScreenshotAttachment} from './src/browser/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
 window.calls=[];window.rows=[];window.stored={};window.failed=false;window.revision=1;
-window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:window.source};if(window.failed)throw Error('Upload rejected');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};if(!input.queuedMessageId)window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision}};
+window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/draft-guard')return {guard:'guard-'+window.revision,guardedUploads:window.oldRuntime?undefined:1};if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:window.source};if(window.failed)throw Error('Upload rejected');if(window.holdUpload)await new Promise(resolve=>window.releaseUpload=resolve);if(input.draftGuard&&input.draftGuard!=='guard-'+window.revision)throw Error('Draft changed during upload');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};if(!input.queuedMessageId)window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision,nextGuard:'guard-'+window.revision}};
 function Contents(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const [editing,setEditing]=useState(null);window.beginEdit=()=>setEditing({messageId:'queued',files:window.files.slice(0,1)});window.cancelEdit=()=>setEditing(null);window.editing=editing;const a=useAttachments(snapshot.workspace.tasks[0],editing?{...editing,uploaded:(file,replaceId)=>setEditing(current=>({...current,files:[...current.files.filter(item=>item.id!==replaceId),file]})),remove:id=>setEditing(current=>({...current,files:current.files.filter(file=>file.id!==id)}))}:undefined);useChatImageUploader(file=>a.upload([file],undefined,true),true);window.remove=a.remove;const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/><textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<ChatImageEditProvider><Contents/></ChatImageEditProvider>);`,
     },
     bundle: true,
@@ -265,6 +265,60 @@ try {
   await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.waitForFunction(() => !window.working)
   assert.equal(await page.evaluate(() => window.rows.length), 0)
+  // A direct batch must chain the guard returned by each successful commit.
+  await page.evaluate(async () => {
+    window.rows = []
+    window.publish()
+  })
+  await page.waitForFunction(() => window.files.length === 0)
+  await page.evaluate(async () => {
+    window.batchRevision = window.revision
+    await window.upload([
+      new File(['one'], 'one.txt', { type: 'text/plain' }),
+      new File(['two'], 'two.txt', { type: 'text/plain' }),
+    ])
+  })
+  await page.waitForFunction(() => !window.working && window.files.length === 2)
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.calls
+        .filter((call) => call.path === '/api/attachments/upload')
+        .slice(-2)
+        .map((call) => call.input.draftGuard),
+    ),
+    await page.evaluate(() => [
+      'guard-' + window.batchRevision,
+      'guard-' + (window.batchRevision + 1),
+    ]),
+  )
+  await page.evaluate(() => {
+    window.holdUpload = true
+    window.operation = window.upload([new File(['next'], 'next.txt', { type: 'text/plain' })])
+  })
+  await page.waitForFunction(() => !!window.releaseUpload)
+  await page.evaluate(() => {
+    window.revision++
+    window.holdUpload = false
+    window.releaseUpload()
+  })
+  await page.evaluate(() => window.operation)
+  await page.getByRole('alert').filter({ hasText: 'Draft changed during upload' }).waitFor()
+  assert.equal(await page.evaluate(() => window.rows.length), 2)
+  // Refuse an older runtime before dispatching an upload it could commit without a guard.
+  const uploadCount = await page.evaluate(
+    () => window.calls.filter((call) => call.path === '/api/attachments/upload').length,
+  )
+  await page.evaluate(async () => {
+    window.oldRuntime = true
+    await window.upload([new File(['old'], 'old.txt', { type: 'text/plain' })])
+  })
+  await page.getByRole('alert').filter({ hasText: 'Update this computer' }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/attachments/upload').length,
+    ),
+    uploadCount,
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Image attachments: real desktop editor uploads, cropped replacement before snapshot acknowledgement, cancel, failed replacement, screenshot edit/attach/cancel, input validation, chat-image editing into draft/queue, source preservation, limits, GIF still frames and draft preservation passed.',

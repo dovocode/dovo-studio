@@ -67,6 +67,92 @@ it('nests all local generations and completed children without needing working-a
   expect(tree.rootKeys.get(key('desktop', 'nested'))).toBe(key('desktop', 'parent'))
 })
 
+it('groups original children under a parent replica on another computer', () => {
+  const entries = collectTasks([
+    source('cache', [
+      task('parent-copy', {
+        replica: {
+          ownerRuntimeId: 'owner',
+          threadId: 'parent',
+          ownerName: 'Owner',
+          projectName: '',
+        },
+      }),
+    ]),
+    source('owner', [
+      task('child', { spawnParent: { runtimeId: 'owner', threadId: 'parent' } }),
+      task('nested', { delegation: { parentTaskId: 'child', parentRunId: 'run', key: 'nested' } }),
+    ]),
+    source('unrelated', [task('parent')]),
+  ])
+  for (const items of [entries, [...entries].reverse()]) {
+    const tree = buildThreadTree(items)
+    expect(new Set(tree.roots.map((entry) => entry.key))).toEqual(
+      new Set([key('cache', 'parent-copy'), key('unrelated', 'parent')]),
+    )
+    expect(tree.rootKeys.get(key('owner', 'nested'))).toBe(key('cache', 'parent-copy'))
+    const scoped = buildThreadTree(items, undefined, (entry) => entry.source.runtimeId === 'owner')
+    expect([...scoped.contextKeys]).toEqual([key('cache', 'parent-copy')])
+    expect(scoped.rootKeys.get(key('owner', 'child'))).toBe(key('cache', 'parent-copy'))
+  }
+})
+
+it.each([true, false])(
+  'resolves watched children and descendants to selected replicas (online=%s)',
+  (online) => {
+    const remote = watch({
+      snapshot: {
+        ...watch().snapshot!,
+        runtimeId: 'owner',
+        threads: [
+          {
+            runtimeId: 'owner',
+            threadId: 'nested',
+            title: 'Fresh nested',
+            parent: { runtimeId: 'owner', threadId: 'child' },
+            phase: 'needs-input',
+            revision: 'new',
+            attention: ['question'],
+            watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+          },
+        ],
+      },
+    })
+    const entries = collectTasks([
+      source('desktop', [task('parent', { threadWatches: [remote] })]),
+      source(
+        'cache',
+        ['child', 'nested'].map((id) =>
+          task(`${id}-copy`, {
+            replica: { ownerRuntimeId: 'owner', threadId: id, ownerName: 'Owner', projectName: '' },
+            spawnParent: {
+              runtimeId: id === 'child' ? 'desktop' : 'owner',
+              threadId: id === 'child' ? 'parent' : 'child',
+            },
+          }),
+        ),
+        online,
+      ),
+    ])
+    const tree = buildThreadTree(entries, undefined, undefined, {
+      runtimeIds: new Map([['owner', 'paired-owner']]),
+    })
+    expect(tree.roots.map((entry) => entry.task.id)).toEqual(['parent'])
+    expect([...tree.nodes.keys()]).toEqual(entries.map((entry) => entry.key))
+    const children = threadDescendants(tree.nodes.get(key('desktop', 'parent'))!.children)
+    expect(children.map((node) => [node.runtimeId, node.threadId])).toEqual([
+      ['cache', 'child-copy'],
+      ['cache', 'nested-copy'],
+    ])
+    expect(children[1]).toMatchObject({
+      title: online ? 'nested-copy' : 'Fresh nested',
+      needsInput: !online,
+      online: true,
+    })
+    expect(tree.roots[0].needsInput).toBe(!online)
+  },
+)
+
 it('deduplicates a paired remote child and keeps unrelated identical IDs and linked work at the top level', () => {
   const entries = collectTasks([
     source('desktop', [
@@ -172,7 +258,7 @@ it('uses a live background monitor instead of an older offline UI snapshot', () 
   })
 })
 
-it('keeps remote work discoverable after its parent is archived', () => {
+it('keeps remote work under its parent after the parent is archived', () => {
   const tree = buildThreadTree(
     collectTasks([
       source('desktop', [
@@ -181,7 +267,8 @@ it('keeps remote work discoverable after its parent is archived', () => {
       source('server', [task('child', { status: 'running' })]),
     ]),
   )
-  expect(tree.roots.map((entry) => entry.task.id)).toEqual(['parent', 'child'])
+  expect(tree.roots.map((entry) => entry.task.id)).toEqual(['parent'])
+  expect(tree.nodes.get(key('desktop', 'parent'))?.children[0]?.threadId).toBe('child')
 })
 
 it('resolves foreign profile IDs by computer identity and uses live input without counting ancestors twice', () => {
@@ -367,7 +454,7 @@ it('does not hide failed or stopped outcomes behind a saved feedback flag', () =
   expect(tree.nodes.get(key('desktop', 'stopped'))?.phase).toBe('stopped')
 })
 
-it('promotes matching project/computer children when their parent is outside the scope', () => {
+it('keeps matching project/computer children under their parent outside the scope', () => {
   const entries = collectTasks([
     source('desktop', [task('parent', { repositoryId: 'general', threadWatches: [watch()] })]),
     source('server', [
@@ -383,11 +470,30 @@ it('promotes matching project/computer children when their parent is outside the
     (entry: (typeof entries)[number]) => entry.source.runtimeId === 'server',
   ]) {
     const tree = buildThreadTree(entries, undefined, include)
-    expect(tree.roots.filter(include).map((entry) => entry.task.id)).toEqual(['child'])
+    expect(tree.roots.map((entry) => entry.task.id)).toEqual(['parent'])
+    expect([...tree.contextKeys]).toEqual([key('desktop', 'parent')])
     expect(tree.nodes.get(key('server', 'child'))?.children.map((child) => child.threadId)).toEqual(
       ['nested'],
     )
   }
+})
+
+it('keeps visible subagents behind an archived parent icon', () => {
+  const entries = collectTasks([
+    source('desktop', [
+      task('parent', { archivedAt: '2026-11-09T09:00:00Z', threadWatches: [watch()] }),
+      task('local-child', {
+        delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'child' },
+      }),
+    ]),
+    source('server', [task('child')]),
+  ])
+  const tree = buildThreadTree(entries, undefined, (entry) => !entry.task.archivedAt)
+  expect(tree.roots.map((entry) => entry.task.id)).toEqual(['parent'])
+  expect([...tree.contextKeys]).toEqual([key('desktop', 'parent')])
+  expect(tree.nodes.get(key('desktop', 'parent'))?.children.map((child) => child.threadId)).toEqual(
+    ['local-child', 'child'],
+  )
 })
 
 it('reconstructs bounded remote descendants while rejecting disconnected and cyclic facts', async () => {

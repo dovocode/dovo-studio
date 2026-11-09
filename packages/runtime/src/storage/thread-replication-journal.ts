@@ -14,6 +14,12 @@ import {
   replicatedThreadList,
   replicatedThread,
   ThreadHistoryChangedError,
+  taskSearchNeedle,
+  taskSearchTerms,
+  taskSearchText,
+  taskSearchHit,
+  taskSearchOrder,
+  type TaskSearchResult,
   type ThreadRecord,
   type ThreadVersion,
   type Task,
@@ -46,6 +52,7 @@ const snapshotSchema = mutableStruct({
 export class ThreadReplicationJournal {
   readonly generation?: string
   readonly replicaId: string
+  private summaries?: { revision: number; tasks: Task[] }
   private disabled = false
   private initializationFailed = false
   disable() {
@@ -66,6 +73,8 @@ export class ThreadReplicationJournal {
       CREATE TABLE IF NOT EXISTS thread_state_log (sequence INTEGER PRIMARY KEY, value TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS thread_state_sequences ON thread_state_log(sequence);
       CREATE INDEX IF NOT EXISTS thread_versions_clock ON thread_versions(json_extract(value,'$.updatedAt'));
+      CREATE INDEX IF NOT EXISTS thread_versions_metadata_revision ON thread_versions(sequence)
+        WHERE json_extract(value,'$.value.kind')!='message';
       CREATE INDEX IF NOT EXISTS thread_registers_thread ON thread_registers(
         json_extract(value,'$.value.ownerRuntimeId'),json_extract(value,'$.value.threadId'),json_extract(value,'$.value.kind'));
       CREATE INDEX IF NOT EXISTS thread_registers_history ON thread_registers(
@@ -73,7 +82,18 @@ export class ThreadReplicationJournal {
         json_extract(value,'$.value.kind'),json_extract(value,'$.value.position'),json_extract(value,'$.value.messageId'));
       CREATE INDEX IF NOT EXISTS thread_registers_metadata ON thread_registers(
         json_extract(value,'$.value.ownerRuntimeId'),json_extract(value,'$.value.threadId'))
-        WHERE json_extract(value,'$.value.kind')!='message'`)
+        WHERE json_extract(value,'$.value.kind')!='message';
+      CREATE TABLE IF NOT EXISTS thread_search (key TEXT PRIMARY KEY, search_text TEXT NOT NULL)`)
+      if (!db.prepare("SELECT 1 FROM documents WHERE id='thread-search:v1'").get()) {
+        db.transaction(() => {
+          db.prepare('DELETE FROM thread_search').run()
+          for (const version of this.rows(
+            "SELECT value FROM thread_registers WHERE json_extract(value,'$.value.kind')='message'",
+          ))
+            this.indexMessage(version)
+          db.prepare("INSERT INTO documents VALUES ('thread-search:v1','true')").run()
+        })()
+      }
     } catch {
       // Index creation can encounter unreadable legacy records before start() runs.
       // Keep their tables intact and let the channel report its startup failure.
@@ -107,6 +127,16 @@ export class ThreadReplicationJournal {
     )
     return row ? decode(versionSchema, JSON.parse(row.value)) : undefined
   }
+  private indexMessage(version: ThreadVersion) {
+    if (version.deleted || version.value.kind !== 'message') return
+    if (version.value.message)
+      this.db
+        .prepare(
+          'INSERT INTO thread_search VALUES (?,?) ON CONFLICT(key) DO UPDATE SET search_text=excluded.search_text',
+        )
+        .run(version.key, taskSearchText(version.value.message.text))
+    else this.db.prepare('DELETE FROM thread_search WHERE key=?').run(version.key)
+  }
   private merge(version: ThreadVersion) {
     validateThreadVersion(version)
     const encoded = JSON.stringify(version)
@@ -122,12 +152,14 @@ export class ThreadReplicationJournal {
       .prepare('INSERT OR IGNORE INTO thread_versions(identity,value) VALUES (?,?)')
       .run(this.identity(version), encoded)
     const previous = this.get(version.key)
-    if (!previous || compareVersions(version, previous) > 0)
+    if (!previous || compareVersions(version, previous) > 0) {
+      this.indexMessage(version)
       this.db
         .prepare(
           'INSERT INTO thread_registers VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
         )
         .run(version.key, encoded)
+    }
   }
   record(value: ThreadRecord) {
     const normalized = decode(threadRecordSchema, value)
@@ -180,6 +212,16 @@ export class ThreadReplicationJournal {
       ...(task.archivedAt ? { archivedAt: task.archivedAt } : {}),
       historyRevision: Math.max(task.historyRevision ?? 0, this.descriptorRevision(task.id)),
       removed,
+      ...(task.delegation
+        ? { parent: { runtimeId: this.runtimeId, threadId: task.delegation.parentTaskId } }
+        : task.spawnParent
+          ? {
+              parent: {
+                runtimeId: task.spawnParent.runtimeId,
+                threadId: task.spawnParent.threadId,
+              },
+            }
+          : {}),
     }
   }
   private metadata(task: TaskSummary | Task, previous?: TaskSummary | Task) {
@@ -305,17 +347,30 @@ export class ThreadReplicationJournal {
   seed(store: WorkspaceStore) {
     if (this.initializationFailed)
       throw new Error('Thread replication storage could not initialize')
-    if (this.db.prepare("SELECT 1 FROM documents WHERE id='thread-replication-seeded:v1'").get())
+    const seeded = !!this.db
+      .prepare("SELECT 1 FROM documents WHERE id='thread-replication-seeded:v1'")
+      .get()
+    if (
+      seeded &&
+      this.db.prepare("SELECT 1 FROM documents WHERE id='thread-replication-parents:v1'").get()
+    )
       return
     store.transaction(() => {
       const workspace = store.get()
       for (const task of workspace.tasks) {
         if (task.example || task.replica) continue
         this.record(this.descriptor(task, workspace, false))
-        this.metadata(task)
-        this.history(store.task(task.id))
+        if (!seeded) {
+          this.metadata(task)
+          this.history(store.task(task.id))
+        }
       }
-      this.db.prepare("INSERT INTO documents VALUES ('thread-replication-seeded:v1','true')").run()
+      this.db
+        .prepare("INSERT OR IGNORE INTO documents VALUES ('thread-replication-seeded:v1','true')")
+        .run()
+      this.db
+        .prepare("INSERT OR IGNORE INTO documents VALUES ('thread-replication-parents:v1','true')")
+        .run()
     })
   }
   versions(after: number) {
@@ -488,11 +543,98 @@ export class ThreadReplicationJournal {
       false,
     )
   }
-  replicas(detailIds?: readonly string[]) {
+  private replicaSummaries() {
+    // Message streaming does not change summaries. The partial index keeps this lookup bounded
+    // while SQLite owns the revision, including transaction rollback and imported records.
+    const revision = this.db
+      .prepare(
+        "SELECT COALESCE(MAX(sequence),0) FROM thread_versions WHERE json_extract(value,'$.value.kind')!='message'",
+      )
+      .pluck()
+      .get()
+    if (typeof revision !== 'number') throw new Error('Invalid thread metadata revision')
+    // Do not retain projections of uncommitted data. Rolled-back sequence numbers can be reused.
+    if (!this.db.inTransaction && this.summaries?.revision === revision) return this.summaries.tasks
     const metadata = this.rows(
       "SELECT value FROM thread_registers WHERE json_extract(value,'$.value.kind')!='message'",
     )
-    const summaries = replicatedThreadList(metadata, this.runtimeId, [])
+    const previous = new Map(this.summaries?.tasks.map((task) => [task.id, task]))
+    let tasks = replicatedThreadList(metadata, this.runtimeId, []).map((task) => {
+      const before = previous.get(task.id)
+      return before && JSON.stringify(before) === JSON.stringify(task) ? before : task
+    })
+    if (
+      this.summaries &&
+      tasks.length === this.summaries.tasks.length &&
+      tasks.every((task, index) => task === this.summaries?.tasks[index])
+    )
+      tasks = this.summaries.tasks
+    if (!this.db.inTransaction) this.summaries = { revision, tasks }
+    return tasks
+  }
+  search(query: string, id?: string, before?: string): TaskSearchResult {
+    const needle = taskSearchNeedle(query)
+    const terms = taskSearchTerms(needle)
+    const result: TaskSearchResult = { taskIds: [], hits: [] }
+    if (!terms.length) return result
+    const tasks = taskSearchOrder(
+      this.replicaSummaries().filter((task) => id === undefined || task.id === id),
+    )
+    const originalText =
+      /[\ud800-\udfff]/u.test(needle) || needle.includes('\ufffd') || needle.includes('\0')
+    for (const task of tasks) {
+      if (!task.replica) continue
+      const { ownerRuntimeId, threadId } = task.replica
+      const cursor =
+        before === undefined
+          ? undefined
+          : this.get(JSON.stringify([ownerRuntimeId, threadId, 'message', before]))
+      if (
+        before !== undefined &&
+        (!cursor || cursor.value.kind !== 'message' || !cursor.value.message)
+      )
+        throw new ThreadHistoryChangedError('The search cursor no longer exists. Search again.')
+      const position =
+        cursor?.value.kind === 'message' ? cursor.value.position : Number.MAX_SAFE_INTEGER
+      const limit = id ? 51 : Math.max(1, 50 - result.hits.length)
+      const rows = this.db
+        .prepare(`SELECT entry.value FROM thread_registers AS entry
+        JOIN thread_search AS search USING (key)
+        WHERE json_extract(entry.value,'$.value.ownerRuntimeId')=? AND json_extract(entry.value,'$.value.threadId')=?
+          AND json_extract(entry.value,'$.value.kind')='message'
+          AND (json_extract(entry.value,'$.value.position'),json_extract(entry.value,'$.value.messageId')) < (?,?)
+          ${originalText ? '' : 'AND NOT EXISTS (SELECT 1 FROM json_each(?) AS term WHERE instr(search.search_text, term.value)=0)'}
+        ORDER BY json_extract(entry.value,'$.value.position') DESC,json_extract(entry.value,'$.value.messageId') DESC
+        ${originalText ? '' : 'LIMIT ?'}`)
+        .iterate(
+          ownerRuntimeId,
+          threadId,
+          position,
+          before ?? '',
+          ...(originalText ? [] : [JSON.stringify(terms), limit]),
+        )
+      let matched = false
+      for (const row of rows) {
+        const { value } = decode(mutableStruct({ value: Schema.String }), row)
+        const version = decode(versionSchema, JSON.parse(value))
+        if (version.value.kind !== 'message' || !version.value.message) continue
+        const hit = taskSearchHit(task.id, version.value.message, needle)
+        if (!hit) continue
+        matched = true
+        if (result.hits.length < (id ? 51 : 50)) result.hits.push(hit)
+        if (originalText && result.hits.length >= (id ? 51 : 50)) break
+      }
+      if (matched) result.taskIds.push(task.id)
+    }
+    if (id && result.hits.length > 50) {
+      result.hits = result.hits.slice(0, 50)
+      result.nextBefore = result.hits.at(-1)?.messageId
+    }
+    return result
+  }
+  replicas(detailIds?: readonly string[]) {
+    const summaries = this.replicaSummaries()
+    if (detailIds?.length === 0) return summaries
     const wanted = detailIds === undefined ? undefined : new Set(detailIds)
     return summaries.map((task) => {
       if (!task.replica || (wanted && !wanted.has(task.id))) return task

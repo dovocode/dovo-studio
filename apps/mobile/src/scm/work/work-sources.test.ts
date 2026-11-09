@@ -1,6 +1,7 @@
 import { createDetailDrafts, integrationDraftKey } from '../../runtime/state/detail-drafts'
 import { decode } from '@dovo/protocol'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
+vi.mock('react-native', () => ({ Alert: { alert: vi.fn<() => void>() } }))
 import { runtimeProfile, snapshotSchema, type RuntimeOverview } from '@dovo/protocol'
 import {
   retainWorkPages,

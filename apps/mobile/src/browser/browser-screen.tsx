@@ -117,6 +117,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const [tabCategory, setTabCategory] = useState<BrowserTabCategory>('active')
   const [profiles, setProfiles] = useState<BrowserProfile[]>([{ id: 'default', name: 'Default' }])
   const [profilesOwner, setProfilesOwner] = useState<string | null>(null)
+  const [profileApply, setProfileApply] = useState<{ scope: string; error: string }>()
   const [customization, setCustomization] = useState<BrowserWebsiteCustomization | null>(null)
   const [threadOpen, setThreadOpen] = useState(false)
   const [customizationRequest, setCustomizationRequest] = useState<{
@@ -148,6 +149,21 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     active.kind === 'remote'
       ? runtime.overviews.find((entry) => entry.profile.id === active.runtimeId)
       : undefined
+  const profileScope = JSON.stringify([
+    owner?.profile.id,
+    owner?.profile.connection.address,
+    owner?.profile.connection.token,
+    owner?.profile.connection.runtimeId,
+  ])
+  const currentProfileScope = useRef(profileScope)
+  currentProfileScope.current = profileScope
+  const profileApplyError = profileApply?.scope === profileScope ? profileApply.error : ''
+  const acceptRemoteProfiles = (result: typeof browserProfilesResultSchema.Type) => {
+    if (currentProfileScope.current !== profileScope) return
+    setProfiles(result.profiles)
+    setProfilesOwner(owner?.profile.id ?? null)
+    setProfileApply({ scope: profileScope, error: result.applyError ?? '' })
+  }
   useEffect(() => {
     setCustomization(null)
     setThreadOpen(false)
@@ -193,12 +209,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       const result = await runtime.readRuntime(
         owner.profile,
         '/api/previews/browser/profiles/save',
-        { profiles: next },
+        { profiles: next, expected: existing },
         browserProfilesResultSchema,
       )
-      const currentTab = current.current.tabs.find((tab) => tab.id === current.current.active)
-      if (currentTab?.kind === 'remote' && currentTab.runtimeId === active.runtimeId)
-        setProfiles(result.profiles)
+      acceptRemoteProfiles(result)
     } else updateMobilePreferences({ browserProfiles: next })
   }
   const websiteScripts = useMemo(
@@ -235,10 +249,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       const result = await runtime.readRuntime(
         owner.profile,
         '/api/previews/browser/profiles/save',
-        { profiles: next },
+        { profiles: next, expected: websiteProfiles },
         browserProfilesResultSchema,
       )
-      setProfiles(result.profiles)
+      acceptRemoteProfiles(result)
       setWebsiteReload((previous) => previous + 1)
     } else {
       if (nativeAvailable) {
@@ -281,8 +295,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         .then(
           (result) => {
             if (alive) {
-              setProfiles(result.profiles)
-              setProfilesOwner(owner.profile.id)
+              acceptRemoteProfiles(result)
             }
           },
           (cause) => {
@@ -292,7 +305,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     return () => {
       alive = false
     }
-  }, [owner?.profile.id, owner?.connected, runtime.readRuntime])
+  }, [profileScope, owner?.connected, runtime.readRuntime])
   useEffect(() => {
     const module = DovoWebKitBrowser
     if (!nativeAvailable || !module || !loaded) return
@@ -870,6 +883,31 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           </Text>
         ) : null}
         {notice ? <Text style={styles.muted}>{notice}</Text> : null}
+        {active.kind === 'remote' && !!profileApplyError && (
+          <View>
+            <Text accessibilityRole="alert" style={styles.muted}>
+              Profiles are saved. Some open browser settings could not apply: {profileApplyError}
+            </Text>
+            <Action
+              secondary
+              label="Retry browser settings"
+              disabled={busy || !owner?.connected}
+              onPress={() =>
+                void act(async () => {
+                  if (!owner?.connected) throw new Error('This computer is offline.')
+                  acceptRemoteProfiles(
+                    await runtime.readRuntime(
+                      owner.profile,
+                      '/api/previews/browser/profiles/apply',
+                      {},
+                      browserProfilesResultSchema,
+                    ),
+                  )
+                })
+              }
+            />
+          </View>
+        )}
         {!writable && (
           <Action
             label="Reset saved browser data"

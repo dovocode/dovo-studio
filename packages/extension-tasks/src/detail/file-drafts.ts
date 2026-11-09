@@ -93,9 +93,8 @@ export class FileDrafts {
   }
 }
 export const fileDrafts = new FileDrafts()
-// Electron's preload exposes window.dovo. Its existing shutdown sequence has no
-// unload confirmation flow; only ordinary browsers should intercept navigation.
-if (typeof window !== 'undefined' && !Reflect.has(window, 'dovo'))
+// Browsers show their own prompt; Electron's main process handles will-prevent-unload.
+if (typeof window !== 'undefined')
   window.addEventListener('beforeunload', (event) => {
     if (!fileDrafts.unsafe) return
     event.preventDefault()

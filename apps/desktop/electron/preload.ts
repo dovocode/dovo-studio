@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('dovoTerminalFilePath', (file: File) =>
 contextBridge.exposeInMainWorld('dovoCopyText', (text: string): Promise<void> =>
   ipcRenderer.invoke('clipboard:write-text', text),
 )
+contextBridge.exposeInMainWorld('dovoReadText', (): Promise<string> =>
+  ipcRenderer.invoke('clipboard:read-text'),
+)
 
 const browserFrameListeners = new Map<string, number>()
 

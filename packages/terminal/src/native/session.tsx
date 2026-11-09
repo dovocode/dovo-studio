@@ -44,9 +44,8 @@ type ExpoViewConfigs = {
   }
 }
 
-const GhosttyView: ComponentType<GhosttyViewProps> | null = requireOptionalNativeModule(
-  'ExpoLibghostty',
-)
+const nativeModule = requireOptionalNativeModule<{ clipboardActions?: boolean }>('ExpoLibghostty')
+const GhosttyView: ComponentType<GhosttyViewProps> | null = nativeModule
   ? // Loaded lazily: requiring the package registers a native view that may not exist.
     (require('expo-libghostty') as typeof import('expo-libghostty')).TerminalView
   : null
@@ -74,7 +73,7 @@ export type NativeTerminalStatus = {
   /**
    * Whether keystrokes reach the shell. False until the reconnect replay has been consumed:
    * emulator answers to replayed queries and typed keys share one native input callback, so all
-   * input is dropped (and the surface does not take touches) until then.
+   * input is dropped until then. Retained output still supports selection and Copy.
    */
   inputReady: boolean
   /** Connection or render error; reconnect attempts continue while it is shown. */
@@ -145,6 +144,7 @@ export function NativeTerminalSession({
   const [backgrounded, setBackgrounded] = useState(AppState.currentState === 'background')
   const [readyKey, setReadyKey] = useState('')
   const [keyboardVisible, setKeyboardVisible] = useState(false)
+  const [clipboardNotice, setClipboardNotice] = useState('')
   const ready = readyKey === viewKey
   const terminal = useRef<TerminalViewRef>(null)
   const size = useRef<{ key: string; value: TerminalGridSize } | null>(null)
@@ -240,11 +240,66 @@ export function NativeTerminalSession({
       style={[
         { flex: 1, minHeight: 0, backgroundColor: theme.background ?? '#101113' },
         style,
-        // Output keeps rendering, but touches (focus, keyboard, paste) wait for input readiness.
-        { pointerEvents: inputReady ? 'auto' : 'none' },
+        // Retained output supports selection and Copy while reconnecting. Paste, keyboard
+        // controls and forwarded input remain gated by the stream's input readiness.
+        { pointerEvents: ready ? 'auto' : 'none' },
       ]}
-      accessibilityState={{ disabled: !inputReady }}
     >
+      {nativeModule?.clipboardActions && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Copy terminal selection"
+            disabled={!ready}
+            onPress={() => {
+              setClipboardNotice('')
+              void terminal.current
+                ?.copySelection()
+                .then((copied) =>
+                  setClipboardNotice(
+                    copied
+                      ? 'Copied'
+                      : 'Long press terminal output to select text, then choose Copy.',
+                  ),
+                )
+                .catch((cause: unknown) =>
+                  setClipboardNotice(
+                    `Could not copy: ${cause instanceof Error ? cause.message : String(cause)}`,
+                  ),
+                )
+            }}
+            style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' }}
+          >
+            <Text style={{ color: theme.foreground ?? '#ededee' }}>Copy</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Paste into terminal"
+            disabled={!inputReady}
+            onPress={() => {
+              setClipboardNotice('')
+              void terminal.current
+                ?.pasteFromClipboard()
+                .catch((cause: unknown) =>
+                  setClipboardNotice(
+                    `Could not paste: ${cause instanceof Error ? cause.message : String(cause)}`,
+                  ),
+                )
+            }}
+            style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' }}
+          >
+            <Text style={{ color: theme.foreground ?? '#ededee' }}>Paste</Text>
+          </Pressable>
+        </View>
+      )}
+      {!!clipboardNotice && (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{ color: theme.foreground ?? '#ededee', paddingHorizontal: 12 }}
+        >
+          {clipboardNotice}
+        </Text>
+      )}
       {platform === 'ios' && (
         <Pressable
           accessibilityRole="button"

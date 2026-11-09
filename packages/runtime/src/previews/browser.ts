@@ -1761,9 +1761,32 @@ export class RemoteBrowsers {
       }
     }
   }
+  private profileApplyPending?: Promise<{ applyError?: string }>
+  private profileApplyError?: string
+  profileApplyStatus(): { applyError?: string } {
+    return this.profileApplyError ? { applyError: this.profileApplyError } : {}
+  }
+  /** A failed live apply does not undo the saved catalog. Serialize applies so the latest wins. */
+  applyProfiles() {
+    const pending = (this.profileApplyPending ?? Promise.resolve())
+      .then(async () => {
+        try {
+          await this.refreshProfiles()
+          this.profileApplyError = undefined
+        } catch (cause) {
+          this.profileApplyError = errorMessage(cause)
+        }
+        return this.profileApplyStatus()
+      })
+      .finally(() => {
+        if (this.profileApplyPending === pending) this.profileApplyPending = undefined
+      })
+    this.profileApplyPending = pending
+    return pending
+  }
   async refreshProfiles() {
     const profiles = this.browserProfiles()
-    await Promise.all(
+    const results = await Promise.allSettled(
       [...this.profiles.values()].map(async (entry) => {
         const context = await entry.context
         if (!context.isClosed())
@@ -1774,21 +1797,30 @@ export class RemoteBrowsers {
           )
       }),
     )
-    if (!this.profileDirectory) return
-    // Let an already-started save finish before removing a disabled profile's snapshot.
-    await Promise.all([...this.closingProfiles.values()])
-    const directory = this.profileDirectory
-    await Promise.all(
-      this.browserProfiles()
-        .filter((profile) => profile.keepSessionCookies !== true)
-        .flatMap((profile) => [
-          clearBrowserSessionCookies(join(directory, profile.id)),
-          clearBrowserSessionCookies(join(directory, WORKSPACE_PROFILES, profile.id)),
-        ]),
+    if (this.profileDirectory) {
+      // Finish every operation before a queued apply starts, including failed attempts.
+      // Let an already-started save finish before removing a disabled profile's snapshot.
+      results.push(...(await Promise.allSettled([...this.closingProfiles.values()])))
+      const directory = this.profileDirectory
+      results.push(
+        ...(await Promise.allSettled(
+          this.browserProfiles()
+            .filter((profile) => profile.keepSessionCookies !== true)
+            .flatMap((profile) => [
+              clearBrowserSessionCookies(join(directory, profile.id)),
+              clearBrowserSessionCookies(join(directory, WORKSPACE_PROFILES, profile.id)),
+            ]),
+        )),
+      )
+    }
+    const errors = results.flatMap((result) =>
+      result.status === 'rejected' ? [errorMessage(result.reason)] : [],
     )
+    if (errors.length) throw new Error(errors.join('; '))
   }
   async dispose() {
     this.disposed = true
+    await this.profileApplyPending
     clearTimeout(this.browserIdle)
     this.browserIdle = undefined
     await this.installation.dispose()

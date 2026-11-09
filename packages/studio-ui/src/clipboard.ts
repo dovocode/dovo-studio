@@ -2,7 +2,16 @@ declare global {
   interface Window {
     /** Trusted Studio preload only; websites do not receive this bridge. */
     dovoCopyText?: (text: string) => Promise<void>
+    dovoReadText?: () => Promise<string>
   }
+}
+
+export async function readTextFromClipboard() {
+  if (window.dovoReadText) return window.dovoReadText()
+  if (navigator.clipboard?.readText) return navigator.clipboard.readText()
+  throw new Error(
+    'Clipboard access is unavailable here. Focus the terminal and use the system Paste command.',
+  )
 }
 
 /** Clipboard API needs a secure context; the selection fallback also supports LAN HTTP. */

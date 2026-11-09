@@ -24,6 +24,7 @@ export const attachmentUploadResultSchema = mutableStruct({
   ...attachmentResultSchema.fields,
   ...{
     revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+    nextGuard: Schema.optional(Schema.String),
   },
 })
 export const attachmentCommitResultSchema = mutableStruct({
@@ -44,6 +45,8 @@ export const attachmentUploadSchema = mutableStruct({
   taskId: minValue(Schema.String, 1),
   queuedMessageId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   detached: Schema.optional(Schema.Boolean),
+  /** Bind a direct composer upload to the draft that selected the file. */
+  draftGuard: Schema.optional(maxValue(minValue(Schema.String, 64), 64)),
   id: uuidSchema,
   name: maxValue(minValue(Schema.String, 1), 250),
   data: maxValue(Schema.String, Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4),

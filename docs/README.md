@@ -29,6 +29,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Scoped settings](scoped-settings.md): global, environment, shared project and local project
   inheritance.
 - [Memory](memory.md): optional project, system-wide and projectless notes shared across threads.
+- [Studio editing and recovery](studio-editing-recovery.md): draft guards, preference retry,
+  terminal clipboard, mobile code blocks, and replicated thread search.
 - [General settings](general-settings.md): organized device preferences, task defaults and lifecycle
   policies.
 - [Desktop dictation](desktop-dictation.md): offline Nemotron streaming speech-to-text, model

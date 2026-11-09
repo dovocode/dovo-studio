@@ -4,6 +4,7 @@ import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { defaultWindowColors, readWindowColors, titleBarOverlay } from './window-colors.js'
 import { offerLink } from './links.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
+import { registerWindowUnload } from './window-unload.js'
 
 /** A pop-out stays registered while it loads so a repeated request focuses it once it is
  * ready, rather than showing a blank window early or opening a duplicate. */
@@ -117,6 +118,7 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
     window.webContents.on('will-navigate', guardNavigation)
     window.webContents.on('will-redirect', guardNavigation)
     registerQuitShortcut(window.webContents)
+    registerWindowUnload(window)
     guardRenderer(window, target.title)
     const hash = 'thread=' + encodeURIComponent(JSON.stringify(target))
     const ready = (async () => {

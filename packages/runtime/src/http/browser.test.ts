@@ -12,6 +12,40 @@ afterEach(async () => {
   for (const close of cleanups.splice(0)) await close()
   vi.restoreAllMocks()
 })
+
+it('acknowledges committed profiles after an apply failure and retries without replacing the catalog', async () => {
+  const refresh = vi
+    .spyOn(RemoteBrowsers.prototype, 'refreshProfiles')
+    .mockRejectedValueOnce(new Error('Open browser unavailable'))
+    .mockResolvedValue()
+  const token = 'profile-apply-token-with-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  const save = vi.spyOn(runtime.services.preferences, 'save')
+  const call = (action: string, input: unknown = {}) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/profiles/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const original = (await (await call('read')).json()).profiles
+  const profiles = [{ id: 'default', name: 'Saved name', doNotTrack: true }]
+  const response = await call('save', { profiles, expected: original })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ profiles, applyError: 'Open browser unavailable' })
+  expect(runtime.services.preferences.get().browserProfiles).toEqual(profiles)
+  expect(await (await call('read')).json()).toEqual({
+    profiles,
+    applyError: 'Open browser unavailable',
+  })
+  expect((await call('save', { profiles: original, expected: original })).status).toBe(409)
+  const writes = save.mock.calls.length
+  expect(await (await call('apply')).json()).toEqual({ profiles })
+  expect(save).toHaveBeenCalledTimes(writes)
+  expect(refresh).toHaveBeenCalledTimes(2)
+  expect(await (await call('read')).json()).toEqual({ profiles })
+})
+
 it('checks task ownership and credentials before launching, isolates browser tickets, and detaches on revocation', async () => {
   const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
   const detach = vi.fn<() => void>()
@@ -593,11 +627,15 @@ it('isolates remote tabs, binds their tickets to the task, and closes only the r
   expect(close).not.toHaveBeenCalled()
   expect((await call('close', 'task', 'first')).status).toBe(200)
   expect(close).toHaveBeenCalledWith(JSON.stringify(['task', 'first']))
-  const catalog = (action: string, profiles?: Array<{ id: string; name: string }>) =>
+  const catalog = (
+    action: string,
+    profiles?: Array<{ id: string; name: string }>,
+    expected?: Array<{ id: string; name: string }>,
+  ) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/profiles/${action}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(profiles ? { profiles } : {}),
+      body: JSON.stringify(profiles ? { profiles, expected } : {}),
     })
   expect((await (await catalog('read')).json()).profiles).toEqual([
     { id: 'default', name: 'Default' },
@@ -608,6 +646,17 @@ it('isolates remote tabs, binds their tickets to the task, and closes only the r
   ]
   expect((await catalog('save', profiles)).status).toBe(200)
   expect((await (await catalog('read')).json()).profiles).toEqual(profiles)
+  expect(
+    (
+      await catalog(
+        'save',
+        [{ id: 'default', name: 'Old client edit' }],
+        [{ id: 'default', name: 'Default' }],
+      )
+    ).status,
+  ).toBe(409)
+  expect((await (await catalog('read')).json()).profiles).toEqual(profiles)
+  expect((await catalog('save', profiles, profiles)).status).toBe(200)
   expect((await catalog('save', [{ id: '../outside', name: 'Bad' }])).status).toBe(400)
   const openProfile = (profileId: string) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/open`, {

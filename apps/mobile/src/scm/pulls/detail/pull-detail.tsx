@@ -58,7 +58,9 @@ import {
   useDetailDraft,
 } from '../../../runtime/state/detail-drafts'
 import { pullDestination, type PullTab } from './pull-destination'
-const pullNavigation = createDetailDrafts<{ tab: PullTab; metadataOpen: boolean }>()
+const pullNavigation = createDetailDrafts<{ tab: PullTab; metadataOpen: boolean }>({
+  isClean: () => true,
+})
 export function PullDetail({
   repositoryId,
   number,

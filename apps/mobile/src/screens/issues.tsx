@@ -1,7 +1,7 @@
 import { createDetailDrafts, detailDraftKey, useDetailDraft } from '../runtime/state/detail-drafts'
 import { useRuntime } from '../runtime/connection/provider'
 import { WorkScreen } from '../scm/work/work'
-const selections = createDetailDrafts<{ repositoryId: string }>()
+const selections = createDetailDrafts<{ repositoryId: string }>({ isClean: () => true })
 export default function IssuesScreen() {
   const { profiles } = useRuntime()
   const { draft, setField } = useDetailDraft(

@@ -180,7 +180,9 @@ function HighlightedFile({
             className="h-6 px-2 text-[0.625rem]"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              onReference(formatCodeReference(path, selection.start, selection.end, contents))
+              onReference(
+                formatCodeReference(path, selection.start, selection.end, displayedContents),
+              )
               setSelection(null)
             }}
           >

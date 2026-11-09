@@ -211,7 +211,7 @@ patchedDependencies:
   '@electron/osx-sign@1.3.3': 1eb9f6087600661b34ad7125175a0098179ba31700a064b16e135015b7325e3d
   braces@3.0.3: de064a4d75e634c66eb99d727b5ba9bf2034053a255d342706578a7e2894abea
   electron-chrome-extensions@4.10.0: b335250c197edbdc7c90ff7a3f20f759b13f66d48ec59057b5f284c849d0feab
-  expo-libghostty@0.8.1: 6c947c90f2ce5c086a2a26d27d4b27bbacc6c1f3350a303726e56c445834bce6
+  expo-libghostty@0.8.1: 654fcf73ca6ef3a9a7dc8bb2dcd9d8d4b4d275fb1a14e6f265bb82d1fa83a2e1
   expo-modules-autolinking@58.0.16: ad6bc6b2ca4f96b5a82d1f3669da9619293b758dafa948c548249f92c7094be0
   ghostty-web@0.4.0: 5e5b87535821fd4454a1a68fed7e71c3fdf6d12c79539f331a0d5392ffa60c3a
   node-pty@1.2.0-beta.15: 37fdac163ed4da76b410333015449ae5101dd110c1cff818ae62a379e7771bfa
@@ -1510,7 +1510,7 @@ importers:
         version: 58.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-webview@14.0.1(patch_hash=e5cdeb5e97bd3928a5c38709ce389696c7158cbd2bc4879bae30a1b3d226377b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1))(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2)
       expo-libghostty:
         specifier: 0.8.1
-        version: 0.8.1(patch_hash=6c947c90f2ce5c086a2a26d27d4b27bbacc6c1f3350a303726e56c445834bce6)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
+        version: 0.8.1(patch_hash=654fcf73ca6ef3a9a7dc8bb2dcd9d8d4b4d275fb1a14e6f265bb82d1fa83a2e1)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       ghostty-web:
         specifier: 0.4.0
         version: 0.4.0(patch_hash=5e5b87535821fd4454a1a68fed7e71c3fdf6d12c79539f331a0d5392ffa60c3a)
@@ -16316,7 +16316,7 @@ snapshots:
       expo: 58.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-webview@14.0.1(patch_hash=e5cdeb5e97bd3928a5c38709ce389696c7158cbd2bc4879bae30a1b3d226377b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1))(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2)
       react: 19.3.1
 
-  expo-libghostty@0.8.1(patch_hash=6c947c90f2ce5c086a2a26d27d4b27bbacc6c1f3350a303726e56c445834bce6)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
+  expo-libghostty@0.8.1(patch_hash=654fcf73ca6ef3a9a7dc8bb2dcd9d8d4b4d275fb1a14e6f265bb82d1fa83a2e1)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
     dependencies:
       expo: 58.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-webview@14.0.1(patch_hash=e5cdeb5e97bd3928a5c38709ce389696c7158cbd2bc4879bae30a1b3d226377b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1))(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2)
       react: 19.3.1

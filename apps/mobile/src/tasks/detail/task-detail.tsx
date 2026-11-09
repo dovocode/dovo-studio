@@ -201,7 +201,10 @@ const threadDrafts = createDetailDrafts<{
   sideChat: Record<string, string>
   file: FileEditDraft | null
   browsedFile: ThreadFileDraft | null
-}>()
+}>({
+  isClean: (draft) =>
+    !draft.file && !draft.browsedFile && Object.values(draft.sideChat).every((text) => !text),
+})
 function TaskDetailContent({
   task,
   onBack,

@@ -36,6 +36,7 @@ type Session = {
   runtimeId: string
   error: string | null
   connected: boolean
+  lastSuccess: string | null
   connection: ReturnType<typeof startReplication<ScopedSettingsValue>>
 }
 type Peer = { id: string; name: string; connection: RuntimeConnection }
@@ -147,6 +148,7 @@ export class SharedStateReplication {
         name: peer.name,
         runtimeId: peer.connection.runtimeId ?? peer.id,
         connected: false,
+        lastSuccess: null,
         error: null,
         connection: startReplication({
           state,
@@ -156,6 +158,7 @@ export class SharedStateReplication {
             this.publish(state)
             session.connected = true
             session.error = null
+            session.lastSuccess = new Date().toISOString()
           },
           exchange: async (request, signal) => {
             // Re-check durable grants before every transfer, including after credential changes.
@@ -280,6 +283,7 @@ export class SharedStateReplication {
         name: session.name,
         connected: session.connected,
         error: session.error,
+        lastSuccess: session.lastSuccess,
       })),
     }
   }

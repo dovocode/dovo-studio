@@ -61,7 +61,7 @@ const workPreferences = createDetailDrafts<{
   jiraState: string
   search: string
   sort: string
-}>()
+}>({ isClean: () => true })
 export function WorkScreen({
   mode,
   repositoryId,

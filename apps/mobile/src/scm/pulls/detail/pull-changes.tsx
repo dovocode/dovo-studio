@@ -33,7 +33,7 @@ const changeDrafts = createDetailDrafts<{
   selected: string
   related: boolean
   expanded: string[]
-}>()
+}>({ isClean: () => true })
 export function PullChanges({
   detail,
   active = true,

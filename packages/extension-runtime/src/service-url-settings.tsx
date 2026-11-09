@@ -1,27 +1,47 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { ACCOUNT_DIRECTORY_URL, normalizeServiceUrls } from '@dovo/protocol'
-import { useAppPreferences, updateAppPreferences, useSettingsDraft } from '@dovo/studio-core'
+import {
+  useAppPreferences,
+  useAppPreferenceSaveError,
+  updateAppPreferences,
+  useSettingsDraft,
+} from '@dovo/studio-core'
 import { Button, Input, SettingsGroup, SettingsSaveBar, SettingsStorageInfo } from '@dovo/studio-ui'
 
 export function ServiceUrlSettings() {
   const saved = useAppPreferences()
+  const preferenceError = useAppPreferenceSaveError()
   const [draft, setDraft] = useState<{ connectOrigin: string; artifactsOrigin: string }>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [saveFailed, setSaveFailed] = useState(false)
+  useEffect(() => {
+    if (!saveFailed || preferenceError !== null) return
+    setSaveFailed(false)
+    setError('')
+    setNotice('Service URLs saved on this device.')
+  }, [saveFailed, preferenceError])
   const id = useId()
   const fields = draft ?? saved
   const dirty =
-    fields.connectOrigin !== saved.connectOrigin || fields.artifactsOrigin !== saved.artifactsOrigin
+    fields.connectOrigin !== saved.connectOrigin ||
+    fields.artifactsOrigin !== saved.artifactsOrigin ||
+    (draft !== undefined && error !== '')
   useSettingsDraft(dirty)
   const save = () => {
     if (!dirty) return
+    setSaveFailed(false)
     try {
       const normalized = normalizeServiceUrls(fields)
-      updateAppPreferences({
+      const saved = updateAppPreferences({
         ...normalized,
         connectOrigin:
           normalized.connectOrigin === ACCOUNT_DIRECTORY_URL ? '' : normalized.connectOrigin,
       })
+      if (saved === false) {
+        setSaveFailed(true)
+        throw new Error('Could not save service URLs on this device. Retry saving.')
+      }
       setDraft(undefined)
       setError('')
       setNotice('Service URLs saved on this device.')

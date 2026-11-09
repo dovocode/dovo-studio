@@ -1202,3 +1202,67 @@ it('reads only validated attachment metadata in requested order without loading 
     db.close()
   }
 })
+
+it.each(['draft', 'sent', 'queued'])(
+  'rejects a direct desktop upload when another client changed its destination (%s)',
+  async (change) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(runtime.close)
+    const { store, attachments, tasks, db } = runtime.services
+    store.update(() => f.workspace)
+    const task = tasks.create({
+      title: 'Desktop guarded upload',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+    })
+    const input = {
+      taskId: task.id,
+      id: randomUUID(),
+      name: 'image.png',
+      data: png,
+      draftGuard: attachments.draftUploadGuard(task.id),
+    }
+    // MIME detection yields before the transaction that attaches the file.
+    const upload = attachments.upload(input)
+    store.updateTaskHistory(task.id, (current) => ({
+      ...current,
+      ...(change === 'draft'
+        ? { draft: 'Changed on the other device' }
+        : change === 'sent'
+          ? {
+              messages: [
+                ...current.messages,
+                { id: randomUUID(), role: 'user' as const, text: 'Sent from another device' },
+              ],
+            }
+          : {
+              queue: [
+                {
+                  id: randomUUID(),
+                  role: 'user' as const,
+                  createdAt: new Date().toISOString(),
+                  text: 'Queued from another device',
+                  attachments: [],
+                },
+              ],
+            }),
+    }))
+    await expect(upload).rejects.toThrow('draft changed')
+    expect(store.task(task.id).draftAttachments ?? []).toEqual([])
+    expect(db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)).toBeUndefined()
+    const saved = await attachments.upload({
+      ...input,
+      draftGuard: attachments.draftUploadGuard(task.id),
+    })
+    expect(store.task(task.id).draftAttachments).toEqual([saved.attachment])
+    const second = await attachments.upload({
+      ...input,
+      id: randomUUID(),
+      draftGuard: saved.nextGuard,
+    })
+    expect(store.task(task.id).draftAttachments).toEqual([saved.attachment, second.attachment])
+  },
+)

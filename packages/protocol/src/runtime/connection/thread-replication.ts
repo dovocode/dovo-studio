@@ -26,6 +26,8 @@ export const threadRecordSchema = Schema.Union([
     archivedAt: Schema.optional(Schema.String),
     historyRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
     removed: Schema.Boolean,
+    /** Presentation provenance only; never an execution or permission grant. */
+    parent: Schema.optional(mutableStruct({ runtimeId: id, threadId: id })),
   }),
   mutableStruct({
     ...identity,
@@ -161,6 +163,7 @@ export function replicatedThread(
     example: false,
     pinned: pinned?.kind === 'pinned' ? pinned.value : false,
     snoozedUntil: snoozed?.kind === 'snoozedUntil' ? snoozed.value : null,
+    spawnParent: descriptor.parent,
     replica: {
       ownerRuntimeId: owner,
       threadId,

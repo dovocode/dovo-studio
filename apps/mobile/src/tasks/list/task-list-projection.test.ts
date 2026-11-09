@@ -270,7 +270,7 @@ it('projects General parents, remote children and orphaned local children into t
   expect(rows.get(root.key)?.subagents).toEqual([])
 })
 
-it('keeps a child as a visible root when the selected project or computer excludes its coordinator', async () => {
+it('keeps subagents under their parent when a project or computer filter excludes it', async () => {
   const { mobileThreadTree } = await import('./task-list-projection')
   const parent = overview(),
     child = overview()
@@ -306,7 +306,11 @@ it('keeps a child as a visible root when the selected project or computer exclud
     (row: { task: { repositoryId: string } }) => row.task.repositoryId === 'repo',
   ]) {
     const tree = mobileThreadTree(rows, overviews, undefined, include)
-    expect(tree.roots.filter(include).map((row) => row.task.id)).toEqual(['child'])
+    expect(tree.roots.map((row) => row.task.id)).toEqual(['parent'])
+    expect([...tree.contextKeys]).toEqual([JSON.stringify(['parent-computer', 'parent'])])
+    expect(tree.nodes.get(JSON.stringify(['parent-computer', 'parent']))?.children).toMatchObject([
+      { threadId: 'child', runtimeId: 'child-computer' },
+    ])
   }
 })
 

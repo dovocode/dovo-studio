@@ -30,6 +30,7 @@ type Peer = { id: string; name: string; connection: RuntimeConnection }
 type Session = {
   name: string
   error: string | null
+  lastSuccess: string | null
   worker: ReturnType<typeof startReplication<ThreadRecord>>
 }
 export class ThreadReplication {
@@ -150,6 +151,7 @@ export class ThreadReplication {
       const session: Session = {
         name: peer.name,
         error: null,
+        lastSuccess: null,
         worker: startReplication({
           state,
           peerId: peer.connection.runtimeId,
@@ -179,6 +181,7 @@ export class ThreadReplication {
           },
           afterExchange: () => {
             session.error = null
+            session.lastSuccess = new Date().toISOString()
           },
           onError: (error) => {
             session.error = error.message
@@ -326,6 +329,7 @@ export class ThreadReplication {
       peers: [...this.sessions.values()].map((session) => ({
         name: session.name,
         error: session.error,
+        lastSuccess: session.lastSuccess,
       })),
     }
   }
@@ -334,6 +338,15 @@ export class ThreadReplication {
   }
   replicas(detailIds?: readonly string[]) {
     return this.failure ? [] : this.journal.replicas(detailIds)
+  }
+  search(query: string, id?: string, before?: string) {
+    if (this.failure) return { taskIds: [], hits: [] }
+    try {
+      return this.journal.search(query, id, before)
+    } catch (error) {
+      if (error instanceof ThreadHistoryChangedError) throw new HttpError(409, error.message)
+      throw error
+    }
   }
   stop() {
     if (this.stopPromise) return this.stopPromise

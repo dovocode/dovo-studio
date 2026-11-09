@@ -1,16 +1,18 @@
-import { appendFileSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { browserChecks, browserShards } from './ci/browser-shards.mjs'
+import { browserChecks, browserShards, unregisteredBrowserChecks } from './ci/browser-shards.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const suites = Object.keys(manifest.scripts)
   .filter((name) => /^test:.+:browser$/.test(name))
   .sort()
-const referenced = Object.values(manifest.scripts).join('\n')
-for (const file of readdirSync(new URL('./', import.meta.url))) {
-  if (/^check-.*-browser\.mjs$/.test(file) && !referenced.includes(file))
-    throw new Error(`Browser suite is not registered in package.json: ${file}`)
-}
+const missing = unregisteredBrowserChecks(
+  fileURLToPath(new URL('../', import.meta.url)),
+  manifest.scripts,
+)
+if (missing.length)
+  throw new Error(`Browser suites are not registered in package.json: ${missing.join(', ')}`)
 const [shardText = '0', countText = '1', mode] = process.argv.slice(2)
 const shard = Number(shardText),
   count = Number(countText)

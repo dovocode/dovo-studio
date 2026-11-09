@@ -25,6 +25,7 @@ import {
   isSnoozed,
   randomUUID,
   runtimeComputerName,
+  preferredThreadCopies,
   STUDIO_BROWSER_SCOPE,
   STUDIO_TERMINAL_SCOPE,
   taskFamilyInputIds,
@@ -204,6 +205,18 @@ function WorkspaceContent() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | WorkspaceTab['kind']>('all')
   const [computer, setComputer] = useState('')
+  const preferredThreads = useMemo(
+    () =>
+      preferredThreadCopies(
+        computers.map((owner) => ({
+          runtimeId:
+            owner.snapshot?.runtimeId ?? owner.profile.connection.runtimeId ?? owner.profile.id,
+          connected: owner.connected,
+          tasks: owner.snapshot?.workspace.tasks ?? [],
+        })),
+      ),
+    [computers],
+  )
   const threadEntries = useMemo(
     () =>
       collectTasks(
@@ -215,13 +228,18 @@ function WorkspaceContent() {
                   name: runtimeComputerName(owner),
                   online: owner.connected,
                   snapshot: owner.snapshot,
-                  workspace: owner.snapshot.workspace,
+                  workspace: {
+                    ...owner.snapshot.workspace,
+                    tasks: owner.snapshot.workspace.tasks.filter((task) =>
+                      preferredThreads.has(task),
+                    ),
+                  },
                 },
               ]
             : [],
         ),
       ),
-    [computers],
+    [computers, preferredThreads],
   )
   // Use the Threads forest across computers, retaining unchanged branches while tasks stream.
   const retainThreadTree = useMemo(() => {
@@ -499,9 +517,15 @@ function WorkspaceContent() {
       for (const session of snapshot.terminals)
         if (!session.exited)
           shellCounts.set(session.taskId, (shellCounts.get(session.taskId) ?? 0) + 1)
-      // Settled threads are task.archived; only hard-archived threads (archivedAt) leave the list.
+      // Retain an archived parent only as context for visible subagents behind its icon.
       const threads = snapshot.workspace.tasks
-        .filter((task) => !task.example && !task.archivedAt)
+        .filter(
+          (task) =>
+            preferredThreads.has(task) &&
+            !task.example &&
+            (!task.archivedAt ||
+              threadTree.contextKeys.has(taskCollectionKey(owner.profile.id, task.id))),
+        )
         .map((task): WorkspaceResource => {
           const tab = { kind: 'thread' as const, runtimeId: owner.profile.id, id: task.id }
           // Capture the owner now so a later active-computer switch cannot redirect the write.

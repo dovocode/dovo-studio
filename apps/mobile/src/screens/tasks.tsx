@@ -246,7 +246,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             ((source === 'all' || runtimeId === source) &&
               (!project ||
                 projectMembers.has(runtimeResourceKey(runtimeId, task.repositoryId))))) &&
-          (archived ? !!task.archivedAt : !task.archivedAt) &&
+          (tree.contextKeys.has(key) || (archived ? !!task.archivedAt : !task.archivedAt)) &&
           (!car ||
             task.pinned ||
             (!task.archived &&

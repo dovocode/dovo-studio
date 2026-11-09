@@ -129,6 +129,23 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   for (const [identity, id] of options.runtimeIds ?? []) identities.set(identity, id)
   const resolveIdentity = (identity: string) =>
     identities.has(identity) ? identities.get(identity)! : identity
+  // Parent links use logical identities. The selected copies may live on different computers.
+  const copies = new Map<string, string>()
+  for (const entry of entries) {
+    const identity =
+      entry.task.replica?.ownerRuntimeId ??
+      entry.source.snapshot?.runtimeId ??
+      entry.source.runtimeId
+    const threadId = entry.task.replica?.threadId ?? entry.task.id
+    copies.set(taskCollectionKey(identity, threadId), entry.key)
+    copies.set(
+      taskCollectionKey(identity === null ? null : resolveIdentity(identity), threadId),
+      entry.key,
+    )
+  }
+  const resolveThreadKey = (identity: string | null, threadId: string) =>
+    copies.get(taskCollectionKey(identity, threadId)) ??
+    taskCollectionKey(identity === null ? null : resolveIdentity(identity), threadId)
   const snapshotSources = new Map<string, ThreadWatchSummary>()
   const acceptSnapshot = (
     key: string,
@@ -148,10 +165,6 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   }
   const entryByKey = new Map(entries.map((entry) => [entry.key, entry]))
   const attach = (parentKey: string, childKey: string) => {
-    const parentEntry = entryByKey.get(parentKey),
-      childEntry = entryByKey.get(childKey)
-    // Promote a matching child when its owner is outside the visible scope.
-    if (include && parentEntry && childEntry && include(childEntry) && !include(parentEntry)) return
     if (parents.has(childKey)) return
     // A linked peer can report a cycle or self-reference. Keep every thread navigable.
     let ancestor: string | undefined = parentKey
@@ -168,8 +181,10 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   // Local delegation is authoritative when a remote monitor also refers to the same child.
   for (const entry of entries)
     if (entry.task.delegation) {
-      const parentKey = taskCollectionKey(
-        entry.source.runtimeId,
+      const parentKey = resolveThreadKey(
+        entry.task.replica?.ownerRuntimeId ??
+          entry.source.snapshot?.runtimeId ??
+          entry.source.runtimeId,
         entry.task.delegation.parentTaskId,
       )
       const record = entryByKey
@@ -182,19 +197,21 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
     }
   for (const entry of entries) {
     const parent = entry.task.spawnParent
-    if (parent)
-      attach(taskCollectionKey(resolveIdentity(parent.runtimeId), parent.threadId), entry.key)
+    if (parent) attach(resolveThreadKey(parent.runtimeId, parent.threadId), entry.key)
   }
   for (const entry of entries) {
-    // Archiving a parent stops observing its remote work, but must not hide that work.
-    if (entry.task.archivedAt) continue
     for (const watch of entry.task.threadWatches ?? []) {
       if (watch.relation !== 'spawned') continue
       const fallback = watch.runtimeId === 'local' ? entry.source.runtimeId : watch.runtimeId
       const runtimeId = watch.snapshot?.runtimeId
         ? resolveIdentity(watch.snapshot.runtimeId)
         : fallback
-      const key = taskCollectionKey(runtimeId, watch.threadId)
+      const key = resolveThreadKey(watch.snapshot?.runtimeId ?? fallback, watch.threadId)
+      // Archiving stops observation, but known children still belong behind the parent icon.
+      if (entry.task.archivedAt) {
+        attach(entry.key, key)
+        continue
+      }
       const candidate = {
         ...watch,
         snapshot: watch.snapshot
@@ -208,7 +225,18 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
         const node = nodes.get(key)
         const next = watchedNode(entry, watch, runtimeId, key)
         next.partial ||= !!watch.snapshot && !(watch.snapshot.threads ?? watch.snapshot.entries)
-        if (node) Object.assign(node, next, { children: node.children })
+        if (node)
+          Object.assign(node, next, {
+            // Monitor facts can refresh an offline copy, but navigation still opens that copy.
+            ...(entryByKey.get(key)?.task.replica
+              ? {
+                  runtimeId: node.runtimeId,
+                  runtimeIdentity: node.runtimeIdentity,
+                  threadId: node.threadId,
+                }
+              : {}),
+            children: node.children,
+          })
         else nodes.set(key, next)
       }
       // Monitoring state belongs to the direct relationship even with a live UI snapshot.
@@ -226,8 +254,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
         watch.snapshot?.runtimeId ?? watch.runtimeId,
         watch.threadId,
       )
-      const factKey = (runtime: string, thread: string) =>
-        taskCollectionKey(resolveIdentity(runtime), thread)
+      const factKey = resolveThreadKey
       const admitted = new Set<string>()
       for (const fact of facts) {
         if (fact.threadId === watch.threadId && fact.runtimeId === watch.snapshot?.runtimeId)
@@ -282,7 +309,16 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
             lastSuccessAt: watch.lastSuccessAt,
             children: existing?.children ?? [],
           }
-          if (existing) Object.assign(existing, next)
+          if (existing)
+            Object.assign(existing, next, {
+              ...(entryByKey.get(childKey)?.task.replica
+                ? {
+                    runtimeId: existing.runtimeId,
+                    runtimeIdentity: existing.runtimeIdentity,
+                    threadId: existing.threadId,
+                  }
+                : {}),
+            })
           else nodes.set(childKey, next)
         }
       }
@@ -329,13 +365,14 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   }
   for (const node of nodes.values()) if (!parents.has(node.key)) retain(node)
   const contextKeys = new Set<string>()
-  if (options.includeSnapshot)
+  if (include || options.includeSnapshot)
     for (const entry of entries) {
-      if (parents.has(entry.key) || entry.task.archivedAt || include?.(entry)) continue
+      if (parents.has(entry.key) || include?.(entry)) continue
       if (
-        threadDescendants(nodes.get(entry.key)?.children ?? []).some(
-          (node) => !entryByKey.has(node.key) && options.includeSnapshot!(node),
-        )
+        threadDescendants(nodes.get(entry.key)?.children ?? []).some((node) => {
+          const child = entryByKey.get(node.key)
+          return child ? include?.(child) : options.includeSnapshot?.(node)
+        })
       )
         contextKeys.add(entry.key)
     }

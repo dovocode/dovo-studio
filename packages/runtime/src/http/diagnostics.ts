@@ -44,6 +44,12 @@ export async function runtimeDiagnostics(
     warnings.push(`${schedulers.errors.length} automation schedules need attention.`)
   // Readiness describes the runtime infrastructure, not historical task outcomes.
   const ready = warnings.length === 0
+  const replication = [s.stateReplication.status(), s.threadReplication.status()]
+  for (const status of replication) {
+    if (status.error) warnings.push(`${status.channel}: ${status.error}`)
+    for (const peer of status.peers)
+      if (peer.error) warnings.push(`${status.channel} · ${peer.name}: ${peer.error}`)
+  }
   const tasks = s.store.get().tasks
   const blockedQueues = tasks.filter(
     (task) =>
@@ -103,6 +109,7 @@ export async function runtimeDiagnostics(
     ready,
     checkedAt: new Date(now).toISOString(),
     warnings,
+    replication,
     internet: s.peers.diagnostics(),
     roots: {
       database: s.db.name,

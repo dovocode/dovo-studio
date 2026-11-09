@@ -875,3 +875,47 @@ it('isolates damaged legacy replication records encountered while creating index
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+it('searches older replica messages through the authenticated search route', async () => {
+  const a = await fixture(),
+    b = await fixture()
+  try {
+    a.create('search-thread', 65)
+    a.runtime.services.store.updateTaskHistory('search-thread', (task) => ({
+      ...task,
+      messages: task.messages.map((message, index) =>
+        index === 0 ? { ...message, text: 'nebula-cranberry older message' } : message,
+      ),
+    }))
+    pair(b, a)
+    await b.runtime.services.threadReplication.refresh()
+    await expect.poll(() => b.runtime.services.threadReplication.replicas([]).length).toBe(1)
+    await expect
+      .poll(
+        async () =>
+          (await (await b.call('/api/tasks/search', { query: 'nebula-cranberry' })).json()).hits
+            .length,
+      )
+      .toBe(1)
+    const replica = b.runtime.services.threadReplication.replicas([])[0]
+    expect(
+      b.runtime.services.threadReplication
+        .replicas([replica.id])[0]
+        .messages.some((message) => message.id === 'message-0'),
+    ).toBe(false)
+    const response = await b.call('/api/tasks/search', {
+      query: 'nebula-cranberry',
+      id: replica.id,
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      taskIds: [replica.id],
+      hits: [
+        { taskId: replica.id, messageId: 'message-0', snippet: 'nebula-cranberry older message' },
+      ],
+    })
+  } finally {
+    await a.close()
+    await b.close()
+  }
+})

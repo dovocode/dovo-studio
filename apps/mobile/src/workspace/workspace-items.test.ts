@@ -96,6 +96,24 @@ it('keeps pinned browser tiles above pinned threads and terminals', () => {
   ])
 })
 
+it('includes an archived parent only when the thread tree needs it as context', () => {
+  const owner = computer()
+  owner.snapshot!.workspace.tasks = [
+    { ...task, archivedAt: '2026-11-09T09:00:00Z' },
+    { ...task, id: 'unrelated', archivedAt: '2026-11-09T09:00:00Z' },
+  ]
+  expect(workspaceItems([owner], [], now).filter((item) => item.kind === 'thread')).toEqual([])
+  const items = workspaceItems(
+    [owner],
+    [],
+    now,
+    new Set([JSON.stringify([owner.profile.id, task.id])]),
+  )
+  expect(items.filter((item) => item.kind === 'thread').map((item) => item.task.id)).toEqual([
+    task.id,
+  ])
+})
+
 it('handles sleeping sessions, explicit terminal activity, waiting threads and expired snoozes', () => {
   const owner = computer()
   owner.snapshot!.workspace.tasks = [{ ...task, status: 'done', waitingForFeedback: true }]

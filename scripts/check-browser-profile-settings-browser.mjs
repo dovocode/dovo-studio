@@ -1,12 +1,12 @@
 import { build } from 'esbuild'
 import assert from 'node:assert/strict'
-import { chromium } from './browser/harness.mjs'
+import { bundleBrowser, chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const built = await build({
   stdin: {
-    contents: `import {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import Settings from '../studio-shell/src/app-settings/browser.tsx';import {ExternalBrowserLinkChooser} from '../studio-shell/src/external-browser-link-chooser.tsx';import {TooltipProvider} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><TooltipProvider><Settings/><ExternalBrowserLinkChooser subscribe={listener=>{window.sendExternal=listener;return()=>{window.sendExternal=undefined}}} onOpen={()=>window.openedBrowser=(window.openedBrowser??0)+1}/></TooltipProvider></StudioConfirmationProvider>);`,
+    contents: `import {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import Settings from '../studio-shell/src/app-settings/browser.tsx';import {ExternalBrowserLinkChooser} from '../studio-shell/src/external-browser-link-chooser.tsx';import {TooltipProvider} from '@dovo/studio-ui';import {SettingsTargetProvider} from '${root}packages/studio-core/src/settings-target.tsx';createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><TooltipProvider><SettingsTargetProvider><Settings/><ExternalBrowserLinkChooser subscribe={listener=>{window.sendExternal=listener;return()=>{window.sendExternal=undefined}}} onOpen={()=>window.openedBrowser=(window.openedBrowser??0)+1}/></SettingsTargetProvider></TooltipProvider></StudioConfirmationProvider>);`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -21,6 +21,18 @@ const built = await build({
     {
       name: 'fixture',
       setup(builder) {
+        builder.onResolve(
+          { filter: /^\.\/runtime\/application-state$|^\.\/workspace\/runtime-sources$/ },
+          ({ path }) => ({ path, namespace: 'profile-draft-deps' }),
+        )
+        builder.onLoad({ filter: /.*/, namespace: 'profile-draft-deps' }, ({ path }) => ({
+          loader: 'js',
+          resolveDir: root + 'packages/studio-ui',
+          contents: path.includes('application-state')
+            ? "export {useState as useApplicationState} from 'react'"
+            : 'export const useRuntimeSources=()=>[]',
+        }))
+
         builder.onResolve({ filter: /^@dovo\/studio-ui$/ }, () => ({
           path: 'ui',
           namespace: 'app-settings-ui',
@@ -38,10 +50,13 @@ export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';
 export * from '${root}packages/studio-ui/src/choice-picker.tsx';
 `,
         }))
-        builder.onResolve({ filter: /^@dovo\/studio-core$|^\.\/workspace\/context$/ }, () => ({
-          path: 'core',
-          namespace: 'fixture',
-        }))
+        builder.onResolve(
+          { filter: /^@dovo\/studio-core$|^\.\/workspace\/(?:context|provider)$/ },
+          () => ({
+            path: 'core',
+            namespace: 'fixture',
+          }),
+        )
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
           loader: 'js',
           resolveDir: root + 'packages/extension-tasks',
@@ -49,10 +64,10 @@ export * from '${root}packages/studio-ui/src/choice-picker.tsx';
 import {useSyncExternalStore} from 'react';
 export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export * from '@dovo/protocol';export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
-export const providers=[];export const useResolvedTheme=()=> 'dark';
+export {useSettingsDraft,useConfirmSettingsNavigation} from '${root}packages/studio-core/src/settings-target.tsx';export const providers=[];export const useResolvedTheme=()=> 'dark';
 let preferences={browserAutoSettleMinutes:0,browserCloseSettledMinutes:0,browserViewport:'fill',browserProfiles:[{id:'default',name:'Local Default'}]};const listeners=new Set();
 export const useAppPreferences=()=>useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>preferences);
-export const updateAppPreferences=changes=>{preferences={...preferences,...changes};window.preferences=preferences;for(const notify of listeners)notify()};
+export const updateAppPreferences=changes=>{preferences={...preferences,...changes};window.preferences=preferences;for(const notify of listeners)notify();return true};window.injectPreferences=updateAppPreferences;
 window.defaultStatus={supported:true,isDefault:false};window.defaultRequests=0;window.openedTabs=[];
 const defaultBrowser={status:async()=>window.defaultStatus,request:async()=>{window.defaultRequests++;if(window.defaultFailure)throw Error('System settings unavailable')}};
 const nativeBrowser=async(command)=>{if(window.browserFailure)throw Error('Could not open tab');window.openedTabs.push(command)};
@@ -60,7 +75,7 @@ export const useStudioHost=()=>({browser:nativeBrowser,defaultBrowser});
 const allRuntimes=[{profile:{id:'one',name:'Mac',connection:{address:'http://one',token:'token-one'}},connected:true},{profile:{id:'two',name:'Server',connection:{address:'http://two',token:'token-two'}},connected:true}];
 let runtimes=allRuntimes;window.setRuntimeCount=count=>{runtimes=allRuntimes.slice(0,count);updateAppPreferences({})};
 window.calls=[];const profiles={one:[{id:'default',name:'Remote Default'}],two:[{id:'default',name:'Server Default'}]};
-const call=async(id,path,input)=>{window.calls.push({id,path,input});if(path.endsWith('/save'))profiles[id]=input.profiles;return {profiles:profiles[id]}};
+const call=async(id,path,input)=>{window.calls.push({id,path,input});if(path.endsWith('/save'))profiles[id]=input.profiles;if(path.endsWith('/apply')){if(window.failApply)throw Error('Connection lost during retry');window.profileApplyError=undefined}return {profiles:profiles[id],applyError:window.profileApplyError}};
 const readRuntime=(profile,path,input)=>call(profile.id,path,input);const request=(path,input)=>call('one',path,input);
 export const useWorkspace=()=>({runtimes,activeRuntimeId:'one',connection:runtimes[0].profile.connection,connected:true,readRuntime,request});
 `,
@@ -90,6 +105,45 @@ try {
       content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
     })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const draftName = page.getByRole('textbox', { name: 'Name for Local Default', exact: true })
+  await draftName.fill('Unsaved local name')
+  await page.evaluate(() => {
+    window.injectPreferences({})
+    window.injectPreferences({
+      browserProfiles: window.preferences.browserProfiles.map((profile) => ({
+        ...profile,
+        language: 'nl-NL',
+      })),
+    })
+  })
+  assert.equal(await draftName.inputValue(), 'Unsaved local name')
+  assert.equal(
+    await page
+      .getByRole('textbox', { name: 'Language for Local Default', exact: true })
+      .inputValue(),
+    'nl-NL',
+  )
+  // A dirty form participates in the shared unload guard.
+  assert.equal(
+    await page.evaluate(
+      () => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })),
+    ),
+    true,
+  )
+  await page
+    .getByRole('form', { name: 'Browser profile Local Default' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  await page.getByRole('textbox', { name: 'Name for Unsaved local name' }).waitFor()
+  await page.evaluate(() =>
+    window.injectPreferences({
+      browserProfiles: window.preferences.browserProfiles.map((profile) => ({
+        ...profile,
+        name: 'Local Default',
+      })),
+    }),
+  )
+
   const makeDefault = page.getByRole('button', { name: 'Set as default browser', exact: true })
   await makeDefault.click()
   assert.equal(await page.evaluate(() => window.defaultRequests), 1)
@@ -284,9 +338,9 @@ try {
     .waitFor()
   assert.equal(
     await page.evaluate(
-      () => window.preferences.browserProfiles.find((p) => p.id === 'default').linkDomains,
+      () => window.preferences.browserProfiles.find((p) => p.id === 'default').linkDomains?.length,
     ),
-    undefined,
+    0,
   )
   await local
     .getByRole('textbox', { name: 'Link domains for Local Default' })
@@ -366,6 +420,43 @@ try {
   assert.equal(
     await page.evaluate(() => window.calls.filter((call) => call.path.endsWith('/save')).at(-1).id),
     'one',
+  )
+  // A committed catalog clears the form even when an open browser cannot apply it yet.
+  await page.evaluate(() => {
+    window.profileApplyError = 'Open browser unavailable'
+  })
+  const profileForm = remote.getByRole('form', { name: 'Browser profile Remote Personal' })
+  await profileForm.getByRole('textbox', { name: 'Language for Remote Personal' }).fill('de-DE')
+  await profileForm.getByRole('button', { name: 'Save', exact: true }).click()
+  const applyNotice = remote.getByRole('alert').filter({ hasText: 'Profiles are saved.' })
+  await applyNotice.waitFor()
+  assert.equal(
+    await profileForm.getByRole('button', { name: 'Save', exact: true }).isDisabled(),
+    true,
+  )
+  assert.equal(
+    await page.evaluate(
+      () => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })),
+    ),
+    false,
+  )
+  const committedSaves = await page.evaluate(
+    () => window.calls.filter((call) => call.path.endsWith('/save')).length,
+  )
+  await page.evaluate(() => {
+    window.failApply = true
+  })
+  await remote.getByRole('button', { name: 'Retry browser settings' }).click()
+  await remote.getByRole('alert').filter({ hasText: 'Connection lost during retry' }).waitFor()
+  await applyNotice.waitFor()
+  await page.evaluate(() => {
+    window.failApply = false
+  })
+  await remote.getByRole('button', { name: 'Retry browser settings' }).click()
+  await applyNotice.waitFor({ state: 'detached' })
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((call) => call.path.endsWith('/save')).length),
+    committedSaves,
   )
   const savesBeforeRemoval = await page.evaluate(
     () => window.calls.filter((call) => call.path.endsWith('/save')).length,
@@ -464,9 +555,143 @@ try {
     2,
     'Cancelling one queued link must not open it or lose the next link.',
   )
+  await checkRemoteProfileConcurrency(browser)
   console.log(
     'Browser settings: profiles, domain/path rules, default-browser setup and queued local/remote external links passed.',
   )
 } finally {
   await browser.close()
+}
+
+// Use the real hook. Only the authenticated request boundary is controlled.
+async function checkRemoteProfileConcurrency(browser) {
+  const bundle = await bundleBrowser(
+    {
+      stdin: {
+        contents: `import {createRoot} from 'react-dom/client';import {useRemoteBrowserProfiles} from './packages/studio-core/src/browser-profiles';
+const root=createRoot(document.getElementById('app'));function App(){const state=useRemoteBrowserProfiles(window.profile);window.catalog=state;return <pre>{JSON.stringify(state)}</pre>}window.render=()=>root.render(<App/>);window.render();`,
+        resolveDir: root,
+        loader: 'tsx',
+      },
+      bundle: true,
+      write: false,
+      format: 'iife',
+      platform: 'browser',
+      jsx: 'automatic',
+      conditions: ['development'],
+      alias: { react: root + 'packages/studio-ui/node_modules/react' },
+      nodePaths: [root + 'packages/studio-ui/node_modules'],
+    },
+    [
+      {
+        path: './workspace/context',
+        importer: root + 'packages/studio-core/src',
+        contents: 'export const useWorkspace=()=>window.workspace',
+      },
+    ],
+  )
+  const page = await browser.newPage()
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setContent('<div id="app"></div>')
+  await page.evaluate(() => {
+    window.calls = []
+    window.pending = []
+    window.profile = {
+      id: 'host',
+      name: 'Computer',
+      connection: { address: 'http://same.lan:8787', token: 'old-pairing' },
+    }
+    const readRuntime = (profile, path, input) => {
+      window.calls.push({ profile, path, input })
+      return new Promise((resolve, reject) => window.pending.push({ resolve, reject }))
+    }
+    window.workspace = { runtimes: [{ profile: window.profile, connected: true }], readRuntime }
+  })
+  await page.addScriptTag({ content: bundle.outputFiles[0].text })
+  await page.waitForFunction(() => window.pending.length === 1)
+  await page.evaluate(() =>
+    window.pending[0].resolve({ profiles: [{ id: 'default', name: 'Original' }] }),
+  )
+  await page.waitForFunction(() => window.catalog.profiles?.[0].name === 'Original')
+  // A read started while saving must join that save, with no stale follow-up publish.
+  await page.evaluate(() => {
+    window.saving = window.catalog.save([{ id: 'default', name: 'Saved' }])
+  })
+  await page.waitForFunction(() => window.calls.length === 2)
+  await page.evaluate(() => {
+    window.refreshing = window.catalog.refresh()
+  })
+  assert.equal(await page.evaluate(() => window.calls.length), 2)
+  assert.deepEqual(await page.evaluate(() => window.calls[1].input.expected), [
+    { id: 'default', name: 'Original' },
+  ])
+  await page.evaluate(() =>
+    window.pending[1].resolve({ profiles: [{ id: 'default', name: 'Saved' }] }),
+  )
+  await page.evaluate(() => Promise.all([window.saving, window.refreshing]))
+  await page.waitForFunction(() => window.catalog.profiles[0].name === 'Saved')
+  // Do not send a stale whole-list replacement after a pending refresh changes its base.
+  await page.evaluate(() => {
+    window.refreshing = window.catalog.refresh()
+  })
+  await page.waitForFunction(() => window.calls.length === 3)
+  await page.evaluate(() => {
+    window.saving = window.catalog
+      .save([{ id: 'default', name: 'My edit' }])
+      .catch((error) => error.message)
+  })
+  await page.evaluate(() =>
+    window.pending[2].resolve({
+      profiles: [
+        { id: 'default', name: 'Saved' },
+        { id: 'external', name: 'Other device' },
+      ],
+    }),
+  )
+  assert.match(await page.evaluate(() => window.saving), /profiles changed/)
+  assert.equal(await page.evaluate(() => window.calls.length), 3)
+  assert.equal(await page.evaluate(() => window.catalog.profiles.length), 2)
+  // A failed save must also release the catalog; a waiting refresh cannot reject an effect.
+  await page.evaluate(() => {
+    window.saving = window.catalog
+      .save([{ id: 'default', name: 'Retry' }])
+      .catch((error) => error.message)
+  })
+  await page.waitForFunction(() => window.calls.length === 4)
+  await page.evaluate(() => {
+    window.refreshing = window.catalog.refresh()
+    window.pending[3].reject(Error('Save rejected'))
+  })
+  assert.equal(await page.evaluate(() => window.saving), 'Save rejected')
+  await page.evaluate(() => window.refreshing)
+  // Re-pairing at the same address gets its own state and read even while the old read waits.
+  await page.evaluate(() => {
+    window.refreshing = window.catalog.refresh()
+  })
+  await page.waitForFunction(() => window.calls.length === 5)
+  await page.evaluate(() => {
+    window.profile = {
+      ...window.profile,
+      connection: { ...window.profile.connection, token: 'new-pairing' },
+    }
+    window.workspace = {
+      ...window.workspace,
+      runtimes: [{ profile: window.profile, connected: true }],
+    }
+    window.render()
+  })
+  await page.waitForFunction(() => window.calls.length === 6)
+  assert.equal(await page.evaluate(() => window.catalog.profiles), undefined)
+  assert.equal(await page.evaluate(() => window.calls[5].profile.connection.token), 'new-pairing')
+  await page.evaluate(() => {
+    window.pending[4].resolve({ profiles: [{ id: 'default', name: 'Late old pairing' }] })
+    window.pending[5].resolve({ profiles: [{ id: 'default', name: 'New pairing' }] })
+  })
+  await page.waitForFunction(() => window.catalog.profiles?.[0].name === 'New pairing')
+  assert.deepEqual(errors, [])
+  await page.close()
+  console.log(
+    'Remote profile concurrency: ordered saves, refreshed-base conflicts, failed-save recovery and isolated pairings passed.',
+  )
 }

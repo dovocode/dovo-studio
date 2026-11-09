@@ -121,7 +121,16 @@ export const browserProfilesSchema = mutableArray(browserProfileSchema).pipe(
     ),
   ),
 )
-export const browserProfilesResultSchema = mutableStruct({ profiles: browserProfilesSchema })
+export const browserProfilesResultSchema = mutableStruct({
+  profiles: browserProfilesSchema,
+  /** The catalog is saved. An open browser or cookie-file update still needs a retry. */
+  applyError: Schema.optional(Schema.String),
+})
+export const browserProfilesSaveSchema = mutableStruct({
+  profiles: browserProfilesSchema,
+  /** Omitted by older clients. New clients must not replace a catalog they did not read. */
+  expected: Schema.optional(browserProfilesSchema),
+})
 export type BrowserProfile = Schema.Schema.Type<typeof browserProfileSchema>
 
 /** Match only a new HTTP(S) link; never move an existing private session into another profile. */

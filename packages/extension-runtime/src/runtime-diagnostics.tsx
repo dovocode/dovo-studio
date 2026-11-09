@@ -114,6 +114,37 @@ export function RuntimeDiagnosticsPanel() {
               {warning}
             </p>
           ))}
+          {status.replication && (
+            <section aria-label="Replication health" className="space-y-2">
+              <h3 className="font-medium">Replication</h3>
+              {status.replication.map((channel) => (
+                <div key={channel.channel}>
+                  <p>
+                    {channel.channel}:{' '}
+                    {channel.error
+                      ? 'Unavailable'
+                      : channel.peers.some((peer) => peer.error)
+                        ? 'Retrying'
+                        : 'Ready'}{' '}
+                    · Revision {channel.revision}
+                  </p>
+                  {channel.peers.map((peer, index) => (
+                    <p key={index}>
+                      {peer.name} · Last sync:{' '}
+                      {peer.lastSuccess
+                        ? new Date(peer.lastSuccess).toLocaleString()
+                        : 'None since startup'}
+                      {peer.error ? ` · ${peer.error}` : ''}
+                    </p>
+                  ))}
+                </div>
+              ))}
+              <p className="text-muted-foreground">
+                Paired computers retry sync automatically. For an unavailable channel, check storage
+                and restart the runtime. Keep existing pairings and stored records.
+              </p>
+            </section>
+          )}
           <dl className="space-y-1 break-all">
             <div>
               <dt className="inline font-medium">Database: </dt>

@@ -1,7 +1,12 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Pressable, View } from 'react-native'
 import { router } from 'expo-router'
-import { orderThreadSections, runtimeResourceKey, runtimeComputerName } from '@dovo/protocol'
+import {
+  orderThreadSections,
+  runtimeResourceKey,
+  runtimeComputerName,
+  threadDescendants,
+} from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import {
@@ -63,8 +68,16 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
     [runtime.overviews, now],
   )
   const tree = useMemo(
-    () => mobileThreadTree(threadRows, runtime.overviews),
-    [threadRows, runtime.overviews],
+    () =>
+      mobileThreadTree(
+        threadRows,
+        runtime.overviews,
+        undefined,
+        (row) =>
+          !row.task.archivedAt && (view.computer === 'all' || row.runtimeId === view.computer),
+        (child) => view.computer === 'all' || child.runtimeId === view.computer,
+      ),
+    [threadRows, runtime.overviews, view.computer],
   )
   useLayoutEffect(() => {
     previousThreads.current = threadRows
@@ -80,25 +93,53 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   }, [view.computer, runtime.profiles, setView])
   const allItems = useMemo(
     () =>
-      workspaceItems(runtime.overviews, unified ? browser.state.tabs : [], now).filter(
-        (item) => unified || item.kind === 'terminal',
-      ),
-    [runtime.overviews, browser.state.tabs, unified, now],
+      workspaceItems(
+        runtime.overviews,
+        unified ? browser.state.tabs : [],
+        now,
+        tree.contextKeys,
+      ).filter((item) => unified || item.kind === 'terminal'),
+    [runtime.overviews, browser.state.tabs, unified, now, tree.contextKeys],
   )
+  const threadRoots = useMemo(() => new Map(tree.roots.map((row) => [row.key, row])), [tree])
   const items = useMemo(
     () =>
-      allItems.filter(
-        (item) =>
-          (view.kind === 'all' || item.kind === view.kind) &&
-          (view.computer === 'all' ||
-            (item.kind === 'browser'
-              ? item.tab.kind === 'local'
-                ? view.computer === 'device'
-                : item.tab.runtimeId === view.computer
-              : item.runtimeId === view.computer)) &&
-          `${item.title} ${item.detail} ${item.status}`.toLowerCase().includes(query),
-      ),
-    [allItems, view.kind, view.computer, query],
+      allItems
+        .flatMap((item): WorkspaceItem[] => {
+          if (item.kind !== 'thread') return [item]
+          const root = threadRoots.get(runtimeResourceKey(item.runtimeId, item.task.id))
+          if (!root) return []
+          return [
+            {
+              ...item,
+              needsInput: root.needsInput,
+              section:
+                !item.task.archived && !item.pinned && root.needsInput
+                  ? 'needs-input'
+                  : item.section,
+            },
+          ]
+        })
+        .filter(
+          (item) =>
+            (view.kind === 'all' || item.kind === view.kind) &&
+            (view.computer === 'all' ||
+              (item.kind === 'browser'
+                ? item.tab.kind === 'local'
+                  ? view.computer === 'device'
+                  : item.tab.runtimeId === view.computer
+                : item.runtimeId === view.computer ||
+                  (item.kind === 'thread' &&
+                    tree.contextKeys.has(runtimeResourceKey(item.runtimeId, item.task.id))))) &&
+            (`${item.title} ${item.detail} ${item.status}`.toLowerCase().includes(query) ||
+              (item.kind === 'thread' &&
+                threadDescendants(
+                  tree.nodes.get(runtimeResourceKey(item.runtimeId, item.task.id))?.children ?? [],
+                ).some((child) =>
+                  `${child.title} ${child.computerName}`.toLowerCase().includes(query),
+                ))),
+        ),
+    [allItems, view.kind, view.computer, query, threadRoots, tree],
   )
   const threadCommands = useMemo<TaskListRowActions>(
     () => ({
@@ -164,7 +205,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
     const data = threadRows.get(runtimeResourceKey(item.runtimeId, item.task.id))
     return data ? (
       <TaskListRow
-        row={data.row}
+        row={threadRoots.get(data.row.key) ?? data.row}
         owner={data.owner}
         thread={tree.nodes.get(data.row.key)}
         searching={!!query}

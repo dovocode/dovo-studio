@@ -3,6 +3,7 @@ import {
   isPrivateBrowserProfile,
   isSnoozed,
   runtimeComputerName,
+  runtimeResourceKey,
   STUDIO_TERMINAL_SCOPE,
   taskIsWorking,
   terminalStatus,
@@ -54,13 +55,19 @@ export function workspaceItems(
   overviews: readonly RuntimeOverview[],
   tabs: readonly BrowserTab[],
   now: number,
+  threadContext: ReadonlySet<string> = new Set(),
 ): WorkspaceItem[] {
   const items: WorkspaceItem[] = []
   for (const owner of overviews) {
     const workspace = owner.snapshot?.workspace
     const computer = runtimeComputerName(owner)
     for (const task of workspace?.tasks ?? []) {
-      if (task.archivedAt || task.example || task.sideThread) continue
+      if (
+        (task.archivedAt && !threadContext.has(runtimeResourceKey(owner.profile.id, task.id))) ||
+        task.example ||
+        task.sideThread
+      )
+        continue
       const repository = workspace?.repositories.find((entry) => entry.id === task.repositoryId)
       const needsInput =
         !!owner.snapshot?.approvals.some((entry) => entry.taskId === task.id) ||

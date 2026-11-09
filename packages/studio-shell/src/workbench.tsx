@@ -1,3 +1,4 @@
+import { PreferenceSaveNotice } from './preference-save-notice'
 import { previewUrl, browserLinkProfile } from '@dovo/protocol'
 import { RemoteDesktopSharing } from './remote-desktop-sharing'
 import { ExternalBrowserLinkChooser } from './external-browser-link-chooser'
@@ -975,6 +976,7 @@ function WorkbenchContent({
               />
             )}
           </HeaderFallback>
+          <PreferenceSaveNotice />
           <div className="studio-body">
             {!browserWindowId && (
               <ActivityBar

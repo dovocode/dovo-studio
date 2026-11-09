@@ -1,0 +1,134 @@
+# Studio editing and recovery
+
+Desktop and web show a warning if device preferences cannot be saved. Keep the window open. Correct
+the storage problem, then select **Retry saving settings**. Studio retains the pending choices in
+memory and merges them with the latest stored settings on retry. A failed service URL save does not
+show a success message. Desktop and web retain unknown stored fields when they save. An older client
+does not remove fields written by a newer client. Only validated, known fields appear in the
+application preferences.
+
+If a settings read fails, Studio keeps the last valid settings and pending edits in memory. It
+blocks writes until it can read the saved document again. **Retry saving settings** reads the latest
+document before it merges pending edits. It does not replace unread settings with defaults. The
+service URL form clears its save error when that retry succeeds.
+
+Mobile detail forms keep up to 40 drafts per form type in memory. The cache removes clean entries
+first. At capacity, it keeps unsaved text and allows edits to existing drafts. It blocks edits to a
+new item and shows **Draft limit reached**. Save or discard an existing draft of that type, then
+edit the new item. These drafts do not survive an app process exit.
+
+Browser profile forms retain edited fields when another window or computer changes the saved
+profile. Untouched fields use the new saved values. Unsaved profile changes and saves in progress
+use the settings navigation guard. Remote profile saves check the catalog version that the form
+read. If another client changes that catalog, select **Refresh**, review the retained edits, then
+save again. Reads and saves share one queue. A delayed read cannot replace an acknowledged save.
+Re-pairing starts a separate catalog. These server conflict checks require the updated runtime.
+Older clients can still use its existing profile API.
+
+The runtime confirms a profile save even if an open browser or saved cookie file cannot apply the
+change. Settings shows **Profiles are saved** with the apply error. Select **Retry browser
+settings** to apply the saved catalog again. A retry does not replace the catalog or repeat the
+save. Apply attempts run in order and wait for all browser and file operations before the next
+attempt starts.
+
+Desktop attachment uploads capture a draft guard before image editing or file reads. The runtime
+checks that guard in the transaction that attaches the file. A send or draft change from another
+client rejects the upload. The file does not move into the next draft. Review the draft and attach
+the file again. A batch uses the guard returned by each committed file. Queued-message and question
+attachments retain their existing destination rules. Direct uploads require an updated runtime;
+older runtimes show an update message before the upload starts.
+
+Desktop file edits remain in memory until saved. Closing, reloading, quitting, or installing an
+update checks for unsafe edits. Select **Keep editing**, then save or download the edited file.
+Select **Discard changes** to leave without saving. Cancelling Quit keeps the runtime available for
+saving. Failed update preparation reopens Studio. These guards do not recover edits after a process
+crash or power loss. Code references use the text currently shown in the editor, including a draft
+whose save failed.
+
+## Terminal clipboard
+
+On desktop, select terminal output, then use **Copy** in the context menu, **Cmd+C**, or
+**Ctrl+Shift+C**. **Ctrl+C** copies when text is selected and retains the terminal interrupt
+behavior when there is no selection. Electron uses its native clipboard bridge. **Cmd+V**,
+**Ctrl+Shift+V**, **Shift+Insert**, and the context menu paste through that bridge. A pending paste
+is cancelled if its terminal scope changes or input becomes unavailable. Web clients retain system
+paste events. HTTP LAN and VPN connections remain supported.
+
+On iOS, long press output to select text, then use **Copy** in the terminal toolbar or the system
+selection menu. The toolbar reports whether it copied a selection. **Paste** uses the native
+terminal clipboard action. The controls require a new native mobile build with the updated
+`expo-libghostty` patch. An OTA JavaScript update alone cannot add these native methods. Older
+binaries retain the existing system selection menu. Retained native terminal output supports
+selection and **Copy** while disconnected or replaying. **Paste**, keyboard controls, and forwarded
+terminal input still require input readiness.
+
+Standalone mobile terminal screens keep a loaded terminal mounted during a temporary disconnect or
+while another screen covers it. Copy remains available for retained output. Re-pairing or changing
+the terminal clears that retained view. A session opened while offline must connect once before it
+can show output.
+
+Mobile Markdown code blocks have a **Wrap** control. Select it to read long lines within the
+conversation width. Select **Scroll** to restore horizontal scrolling. Horizontal mode uses
+direction locking. Both modes retain tabs and line endings in selectable code.
+
+## Replicated threads and the unified list
+
+Search includes the full stored history of replicated threads, including messages outside the loaded
+conversation tail. Per-thread results support pagination. The search index is derived from the
+stored replication records and builds once for existing data. Message changes update it in the same
+database transaction.
+
+Runtime diagnostics show replication channel errors, peer errors, and the last successful sync since
+startup. Task execution readiness remains separate from replication health. Sync retries use the
+existing pairings. Summary reads reuse their projection until committed metadata changes.
+Message-only updates do not rebuild the summaries.
+
+The mobile unified list uses the shared thread tree. Delegated local and remote subthreads appear
+under their parent. Search can find a child through its parent. Child input requests reach the
+parent's **Needs input** section. Project and computer filters keep the parent as context. Subagents
+stay behind its icon. An archived parent remains as context when it has a visible child. Desktop
+Unified uses the same preferred-copy rules as Threads. A connected original wins over its replicas.
+A connected replica can replace an offline original. One logical thread has one main row.
+
+Parent links and monitor facts use the selected copy's row key. A child remains under its parent
+when the parent, the child, or both use replicas on other computers. Opening the row uses the
+computer that holds the selected copy.
+
+## Verification
+
+Install the managed browser before running browser checks:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
+pnpm --filter @dovo/runtime... --filter @dovo/api... -r build
+pnpm --filter @dovo/desktop build
+pnpm exec vp test packages/studio-core/src/preferences.test.ts apps/mobile/src/runtime/state/detail-drafts.test.ts packages/extension-tasks/src/list/thread-tree.test.ts packages/runtime/src/storage/thread-replication-journal.test.ts packages/runtime/src/storage/thread-replication.test.ts packages/runtime/src/http/diagnostics.test.ts packages/runtime/src/http/browser.test.ts packages/runtime/src/previews/browser-do-not-track.test.ts packages/runtime/src/previews/browser-session-cookies.test.ts apps/desktop/electron/main.test.ts
+pnpm exec vp test packages/extension-tasks/src/list/task-collection.test.ts apps/mobile/src/tasks/list/task-list-projection.test.ts apps/mobile/src/workspace/workspace-items.test.ts
+pnpm test:preference-storage:browser
+pnpm test:file-drafts:browser
+pnpm test:browser-profile-settings:browser
+node scripts/check-image-attachments-browser.mjs
+node scripts/check-question-attachments-browser.mjs
+node scripts/check-mobile-native-terminal-browser.mjs
+pnpm test:terminal-engine:browser
+pnpm test:code-review:browser
+pnpm test:mobile-workspaces:browser
+node scripts/check-mobile-task-list-rendering-browser.mjs
+pnpm test:unified-workspace:browser
+```
+
+Run `pnpm test:file-drafts:native` in a graphical desktop session. On headless Linux, use
+`xvfb-run -a pnpm test:file-drafts:native`. This runs real Electron unload events with a scripted
+prompt choice. Browser fixtures use native adapters for mobile components. They do not establish
+physical iOS gesture, selection, keyboard, or clipboard behavior. Verify those on a rebuilt iOS app.
+
+The runtime browser checks on the Linux review host used Playwright's managed Chromium with a
+temporary test launcher that set `chromiumSandbox: false`. This host could not start sandboxed
+Chromium. Those checks verify live profile headers and cookie recovery. They do not verify the
+Chromium sandbox. Production launch settings still enable it.
+
+A local CPU benchmark with 2,000 replica summaries measured a median of 0.014 ms for a summary read
+after an unrelated local message update. The previous implementation measured 24.3 ms for the same
+workload. This excludes message writes, screen rendering, network traffic, and the first projection
+after a metadata change.

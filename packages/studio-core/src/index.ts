@@ -196,6 +196,8 @@ export {
   readAppPreferences,
   reducedMotion,
   updateAppPreferences,
+  retryAppPreferences,
+  useAppPreferenceSaveError,
   useAppPreferences,
   useDiffOptions,
   useResolvedTheme,

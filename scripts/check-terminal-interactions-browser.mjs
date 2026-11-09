@@ -3,7 +3,9 @@ import { createServer } from 'vite-plus'
 import { chromium } from 'playwright'
 import { WebSocketServer } from 'ws'
 import { once } from 'node:events'
-import { realpathSync } from 'node:fs'
+import { realpathSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { encodeTerminalStreamFrame } from '../packages/protocol/dist/index.js'
 
 const contextMenu = realpathSync(
@@ -62,17 +64,22 @@ export const useAppPreferences=()=>({terminalFontFamily:'',terminalFontSize:12})
 export const useStudioTheme=()=>({card:'#101113',foreground:'#eeeeee',primary:'#88aaff',background:'#101113',selection:'#446688','muted-foreground':'#999999',pink:'#ff88cc',signal:'#88ffff'});
 export const useResolvedTheme=()=> 'dark';`,
 }
+const cacheDir = mkdtempSync(join(tmpdir(), 'dovo-terminal-interactions-'))
 const server = await createServer({
+  cacheDir,
   configFile: false,
   root: new URL('../packages/extension-tasks', import.meta.url).pathname,
   logLevel: 'error',
   optimizeDeps: {
+    noDiscovery: true,
     include: [
       'react',
       'react-dom',
       'react/jsx-runtime',
       'react/jsx-dev-runtime',
       'react-dom/client',
+      '@dovo/protocol',
+      '@dovo/client-runtime',
     ],
     exclude: ['@dovo/studio-core', '@dovo/studio-ui', '@dovo/terminal'],
   },
@@ -120,14 +127,27 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 1000, height: 600 } })
   const errors = []
+  page.on('requestfailed', (request) =>
+    console.error('Request failed:', request.url(), request.failure()),
+  )
+  page.on('response', (response) => {
+    if (response.status() >= 400) console.error('HTTP', response.status(), response.url())
+  })
   page.on('pageerror', (error) => {
     errors.push(error.message)
-    console.error('Page:', error.stack)
+    console.error('Page:', error.name, error.message, error.stack)
   })
   page.on('console', (message) => {
     if (message.type() === 'error') console.error(message.text())
   })
   await page.addInitScript(() => {
+    window.copied = []
+    window.clipboard = 'pasted text\nsecond line'
+    window.dovoCopyText = async (text) => window.copied.push(text)
+    window.dovoReadText = async () => {
+      if (window.delayPaste) await new Promise((resolve) => (window.finishPaste = resolve))
+      return window.clipboard
+    }
     window.pathRequests = []
     window.quoted = "'/tmp/with spaces.txt' '/tmp/it'\\''s.txt' "
     window.dovoTerminalFilePath = (file) =>
@@ -231,8 +251,44 @@ try {
   await page.keyboard.up('Shift')
   await page.waitForFunction(() => window.terminalSelection?.length > 0)
   assert.deepEqual(inputs, [], 'Shift-drag selects without sending mouse reports')
+  const selected = await page.evaluate(() => window.terminalSelection)
   output('\x1b[?1000l\x1b[?1006l')
   await page.waitForFunction(() => !window.terminalViewport.mouseTracking)
+  for (const [index, shortcut] of ['Control+Shift+C', 'Meta+C', 'Control+C'].entries()) {
+    await page.keyboard.press(shortcut)
+    await page.waitForFunction((count) => window.copied.length === count, index + 1)
+  }
+  assert.deepEqual(await page.evaluate(() => window.copied), [selected, selected, selected])
+  await canvas.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Copy', exact: true }).click()
+  await page.waitForFunction(() => window.copied.length === 4)
+  assert.equal(await page.evaluate(() => window.copied[3]), selected)
+  assert.deepEqual(inputs, [], 'Copy shortcuts do not send terminal input')
+  for (const shortcut of ['Control+Shift+V', 'Meta+V', 'Shift+Insert']) {
+    await page.keyboard.press(shortcut)
+    await assertEventually(() => inputs.length > 0)
+    assert.equal(inputs.join(''), 'pasted text\rsecond line', 'Keyboard paste writes once')
+    inputs.length = 0
+  }
+  await canvas.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Paste', exact: true }).click()
+  await assertEventually(() => inputs.length > 0)
+  assert.equal(inputs.join(''), 'pasted text\rsecond line', 'Menu paste writes once')
+  inputs.length = 0
+  await page.evaluate(() => {
+    window.delayPaste = true
+  })
+  await page.keyboard.press('Control+Shift+V')
+  await page.waitForFunction(() => !!window.finishPaste)
+  await page.evaluate(() => window.setState({ readOnly: true }))
+  await page.waitForFunction(() => window.state.readOnly)
+  await page.evaluate(() => {
+    window.finishPaste()
+    window.delayPaste = false
+  })
+  await page.evaluate(() => window.setState({ readOnly: false }))
+  await page.waitForFunction(() => !window.state.readOnly)
+  assert.deepEqual(inputs, [], 'Delayed paste respects a changed input scope')
   const cdp = await page.context().newCDPSession(page)
   for (const [index, deviceScaleFactor] of [1.25, 1.5, 2, 1].entries()) {
     await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -312,6 +368,9 @@ try {
     'Alt-click moves without selecting',
   )
   inputs.length = 0
+  await page.keyboard.press('Control+c')
+  await assertEventually(() => inputs.join('') === '\x03')
+  inputs.length = 0
   output('\x1b[2J\x1b[H' + 'w'.repeat(cols + 8))
   await page.waitForFunction(
     () => window.terminalViewport.cursor.x === 8 && window.terminalViewport.cursor.y === 1,
@@ -388,13 +447,14 @@ try {
   await assertEventually(() => inputs.join('') === "'/tmp/with spaces.txt' '/tmp/it'\\''s.txt' ")
   assert.deepEqual(errors, [])
   console.log(
-    'Terminal: file drops, read-only cancellation, pointer reporting, Alt-click cursor movement, Shift selection and live DPI changes passed.',
+    'Terminal: clipboard shortcuts and menus, single paste, read-only cancellation, Ctrl+C interrupt, file drops, pointer reporting, cursor movement, selection and live DPI changes passed.',
   )
 } finally {
   await browser.close()
   for (const peer of peers) peer.terminate()
   await new Promise((resolve) => sockets.close(resolve))
   await server.close()
+  rmSync(cacheDir, { recursive: true, force: true })
 }
 async function assertEventually(condition) {
   await assert.doesNotReject(async () => {

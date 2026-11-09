@@ -273,6 +273,12 @@ const desktopSettingsBridge = mutableStruct({
 })
 const listeners = new Set<() => void>()
 let cached: AppPreferences | undefined
+let lastRead: AppPreferences | undefined
+// Preserve fields written by newer clients without exposing unvalidated values to callers.
+let unknownPreferences: Record<string, unknown> = {}
+let pending: Partial<AppPreferences> | undefined
+let saveError: string | null = null
+let readError: string | null = null
 let stopExternalSubscription: (() => void) | undefined
 
 export function readAppPreferences(): AppPreferences {
@@ -284,38 +290,43 @@ export function readAppPreferences(): AppPreferences {
     stored = bridge.success
       ? bridge.data.dovo.readAppSettings()
       : JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null')
-  } catch {
-    stored = null
-  }
-  if (bridge.success && stored === null) {
-    try {
+    if (bridge.success && stored == null) {
       const legacy = globalThis.localStorage?.getItem(key)
       if (legacy) {
         stored = JSON.parse(legacy)
         migrateLegacy = true
       }
-    } catch {
-      // Keep the legacy value available for a later migration attempt.
     }
+    if (stored != null && (typeof stored !== 'object' || Array.isArray(stored)))
+      throw new Error('Saved settings must contain an object.')
+  } catch (cause) {
+    readError = `Could not read saved settings: ${cause instanceof Error ? cause.message : String(cause)}`
+    cached = { ...(lastRead ?? defaultAppPreferences), ...pending }
+    return cached
   }
+  readError = null
   // Validate field by field: one bad or renamed value falls back alone instead of resetting
   // every preference, and fields added in later versions start at their defaults.
   const saved = stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {}
+  unknownPreferences = Object.fromEntries(
+    Object.entries(saved).filter(([field]) => !Object.hasOwn(schema.fields, field)),
+  )
   const merged: Record<string, unknown> = { ...defaultAppPreferences }
   if (saved.themeEffects === false) {
     merged.themeGlow = 0
     merged.themeGradients = false
   }
-  for (const field of Object.keys(defaultAppPreferences)) {
+  for (const field of Object.keys(schema.fields)) {
     if (!(field in saved)) continue
     const candidate = { ...defaultAppPreferences, [field]: saved[field] }
     if (decodeResult(schema, candidate).success) merged[field] = saved[field]
   }
   const result = decodeResult(schema, merged)
-  cached = result.success ? result.data : defaultAppPreferences
+  lastRead = result.success ? result.data : defaultAppPreferences
+  cached = { ...lastRead, ...pending }
   if (migrateLegacy && bridge.success) {
     try {
-      bridge.data.dovo.writeAppSettings(JSON.stringify(cached))
+      bridge.data.dovo.writeAppSettings(JSON.stringify({ ...unknownPreferences, ...cached }))
       globalThis.localStorage?.removeItem(key)
     } catch {
       // Keep the old value available for the next launch.
@@ -325,23 +336,50 @@ export function readAppPreferences(): AppPreferences {
 }
 export function updateAppPreferences(changes: Partial<AppPreferences>) {
   const bridge = decodeResult(desktopSettingsBridge, globalThis)
-  // Desktop settings are shared across windows; merge against the latest stored value.
-  if (bridge.success) cached = undefined
+  // Read the latest stored document before replacing it, including writes from other windows.
+  cached = undefined
   const current = readAppPreferences()
   if (
+    !pending &&
+    readError === null &&
+    saveError === null &&
     Object.entries(changes).every(([field, value]) =>
       Object.is(current[field as keyof AppPreferences], value),
     )
   )
-    return
+    return true
+  pending = { ...pending, ...changes }
   cached = { ...current, ...changes }
+  if (readError !== null) {
+    for (const listener of listeners) listener()
+    return false
+  }
   try {
-    if (bridge.success) bridge.data.dovo.writeAppSettings(JSON.stringify(cached))
-    else globalThis.localStorage?.setItem(key, JSON.stringify(cached))
-  } catch {
-    // Private or full storage: keep the choice for this session.
+    const serialized = JSON.stringify({ ...unknownPreferences, ...cached })
+    if (bridge.success) bridge.data.dovo.writeAppSettings(serialized)
+    else {
+      if (!globalThis.localStorage) throw new Error('Local storage is unavailable')
+      globalThis.localStorage.setItem(key, serialized)
+    }
+    pending = undefined
+    lastRead = cached
+    saveError = null
+  } catch (cause) {
+    saveError = cause instanceof Error ? cause.message : String(cause)
   }
   for (const listener of listeners) listener()
+  return saveError === null
+}
+export const retryAppPreferences = () => updateAppPreferences({})
+export function useAppPreferenceSaveError() {
+  return useSyncExternalStore(
+    subscribe,
+    () => {
+      readAppPreferences()
+      return readError ?? saveError
+    },
+    () => null,
+  )
 }
 function subscribe(listener: () => void) {
   listeners.add(listener)

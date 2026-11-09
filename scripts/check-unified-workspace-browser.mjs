@@ -788,6 +788,62 @@ try {
     await snooze.evaluate((button) => button.blur())
     await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
   }
+  // Replication copies share one logical row, with the same preference as Threads.
+  await page.evaluate(() => {
+    const task = {
+      id: 'copy-owner',
+      title: 'Replicated conversation',
+      repositoryId: 'project',
+      status: 'draft',
+      createdAt: '2026-11-03T10:00:00Z',
+      messages: [],
+    }
+    window.computers[0].snapshot.runtimeId = 'copy-machine'
+    window.computers[0].snapshot.workspace.tasks.push(task)
+    window.computers[1].snapshot.workspace.tasks.push({
+      ...task,
+      id: 'copy-replica',
+      replica: {
+        ownerRuntimeId: 'copy-machine',
+        threadId: task.id,
+        ownerName: 'local',
+        projectName: 'Project',
+      },
+    })
+    window.computers = window.computers.map((owner) => ({
+      ...owner,
+      snapshot: { ...owner.snapshot },
+    }))
+    window.refresh()
+  })
+  const copyRow = page
+    .getByRole('complementary')
+    .getByRole('group', { name: 'Thread: Replicated conversation', exact: true })
+  await copyRow.waitFor()
+  assert.equal(await copyRow.count(), 1, 'Original and replica have one sidebar row')
+  await copyRow.getByLabel('local', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.computers = window.computers.map((owner, index) =>
+      index === 0 ? { ...owner, connected: false } : owner,
+    )
+    window.refresh()
+  })
+  await copyRow.getByLabel('remote', { exact: true }).waitFor()
+  assert.equal(await copyRow.count(), 1, 'A connected replica replaces an offline owner')
+  await page.evaluate(() => {
+    window.computers = window.computers.map((owner) => ({
+      ...owner,
+      connected: true,
+      snapshot: {
+        ...owner.snapshot,
+        workspace: {
+          ...owner.snapshot.workspace,
+          tasks: owner.snapshot.workspace.tasks.filter((task) => !task.id.startsWith('copy-')),
+        },
+      },
+    }))
+    window.refresh()
+  })
   // Unified must use the same relationship tree as Threads, across paired computers.
   const groupingOriginalRuntime = await page.evaluate(() => window.activeRuntimeId)
   await page.evaluate(() => {
@@ -883,23 +939,49 @@ try {
     .click()
   await page.locator('[data-thread="group-grandchild"][data-owner="remote"]').waitFor()
   await page.getByLabel('Search workspace').fill('')
+  await groupParent
+    .getByRole('button', { name: 'Subthreads for Grouping parent', exact: true })
+    .click()
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.getByLabel('Workspace computer filter').selectOption('remote')
-  await page
-    .getByRole('complementary')
-    .getByRole('group', { name: 'Thread: Grouping remote child', exact: true })
-    .waitFor()
+  await groupParent.waitFor()
   assert.equal(
-    await groupParent.count(),
+    await page.getByRole('group', { name: 'Thread: Grouping remote child', exact: true }).count(),
     0,
-    'Filtering out the parent computer promotes the visible child',
+    'A computer filter keeps subagents behind the parent icon',
   )
   assert.equal(
     await page.getByRole('group', { name: 'Thread: Grouping grandchild', exact: true }).count(),
     0,
   )
+  const filteredSubagents = groupParent.getByRole('button', {
+    name: 'Subthreads for Grouping parent',
+    exact: true,
+  })
+  assert.equal(await filteredSubagents.getAttribute('aria-expanded'), 'false')
+  await filteredSubagents.click()
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Grouping remote child', exact: true })
+    .waitFor()
   await page.getByLabel('Workspace computer filter').selectOption('')
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
+  await page.evaluate(() => {
+    const owner = window.computers[0]
+    owner.snapshot.workspace.tasks = owner.snapshot.workspace.tasks.map((task) =>
+      task.id === 'group-parent' ? { ...task, archivedAt: '2026-11-09T09:00:00Z' } : task,
+    )
+    window.computers = window.computers.map((computer) => ({ ...computer }))
+    window.refresh()
+  })
+  await groupParent.waitFor()
+  assert.equal(
+    await page.getByRole('group', { name: 'Thread: Grouping local child', exact: true }).count(),
+    0,
+    'Archiving the parent does not mix subagents into the main list',
+  )
+  await groupParent
+    .getByRole('button', { name: 'Subthreads for Grouping parent', exact: true })
+    .waitFor()
   await page.getByRole('button', { name: 'Hide Grouping grandchild', exact: true }).click()
   await page.getByRole('button', { name: 'Hide Grouping remote child', exact: true }).click()
   await returnHome()
@@ -1542,6 +1624,7 @@ try {
     .click()
   await page.getByLabel('Search workspace').fill('')
   const activeThreads = page.getByRole('complementary').locator('[data-section="active"]')
+  await activeThreads.locator(':scope > summary:not([aria-disabled="true"])').waitFor()
   if (!(await activeThreads.evaluate((section) => section.open)))
     await activeThreads.locator(':scope > summary').click()
   await selectSidebarItem('Thread', 'local thread')

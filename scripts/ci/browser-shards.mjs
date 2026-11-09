@@ -1,3 +1,6 @@
+import { readdirSync, existsSync } from 'node:fs'
+import { join, relative } from 'node:path'
+
 // Longest-first scheduling balances measured execution time, with deterministic
 // ties and a median estimate for newly registered suites. Every suite runs once.
 /**
@@ -36,4 +39,25 @@ export function browserChecks(script) {
         !/^pnpm (?:--filter [\w@/.*^-]+ )+(?:-r )?build$/.test(command),
     )
     .join(' && ')
+}
+
+/** Package-local browser regressions must be scheduled just like top-level checks. */
+export function unregisteredBrowserChecks(root, scripts) {
+  const files = readdirSync(join(root, 'scripts'))
+    .filter((file) => /^check-.*-browser\.mjs$/.test(file))
+    .map((file) => `scripts/${file}`)
+  for (const area of ['apps', 'packages'])
+    for (const workspace of readdirSync(join(root, area), { withFileTypes: true })) {
+      if (!workspace.isDirectory()) continue
+      const src = join(root, area, workspace.name, 'src')
+      if (!existsSync(src)) continue
+      for (const file of readdirSync(src, { recursive: true }))
+        if (file.endsWith('.browser.mjs'))
+          files.push(relative(root, join(src, file)).replaceAll('\\', '/'))
+    }
+  const referenced = Object.entries(scripts)
+    .filter(([name]) => /^test:.+:browser$/.test(name))
+    .map(([, script]) => script)
+    .join('\n')
+  return files.filter((file) => !referenced.includes(file)).sort()
 }
