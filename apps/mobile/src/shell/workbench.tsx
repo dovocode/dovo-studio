@@ -185,10 +185,13 @@ export function WorkbenchScene({ tab, sidebar = false }: { tab: Tab | 'scm'; sid
         },
       }}
     >
-      <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
+      <NativeSafeAreaView
+        // The expanded sidebar already consumes the top inset in TaskPaneLayout.
+        edges={{ top: !sidebar, left: true, right: true }}
+      >
         <WorkbenchNotices />
         {context.scenes[tab] ?? null}
-      </SafeAreaView>
+      </NativeSafeAreaView>
     </NavigationContext.Provider>
   )
 }
@@ -571,12 +574,10 @@ export function Workbench() {
             color={colors.accent}
           />
         ) : (
-          // Fixed controls and notices can precede a list. Consume the screen's
-          // remaining native insets instead of relying on ScrollView discovery.
-          // UIKit reports zero top inset when an opaque header already consumed it.
+          // Fixed controls can precede a list. Use the screen's bottom inset
+          // instead of relying on ScrollView discovery. WorkbenchScene owns top/sides.
           <NativeSafeAreaView
             edges={{
-              top: true,
               bottom: Platform.OS === 'ios' && !keyboard,
             }}
           >

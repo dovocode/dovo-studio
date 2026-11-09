@@ -32,7 +32,8 @@ const stubs = [
   {
     path: '../runtime/preferences/storage-notice',
     importer: workbench,
-    contents: 'export const PreferenceStorageNotice=()=>null;',
+    contents:
+      'export const PreferenceStorageNotice=()=>window.fixture.notice?<div role="alert">Saved settings need a retry</div>:null;',
   },
   {
     path: 'react-native',
@@ -194,9 +195,20 @@ try {
       .evaluateAll((nodes) => nodes.map((node) => JSON.parse(node.dataset.nativeSafeArea)))
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: true, bottom: true }],
+    [{ top: true, left: true, right: true }, { bottom: true }],
     'Collections consume remaining top and tab-bar insets before fixed controls',
   )
+  await page.evaluate(() => window.updateFixture({ notice: true }))
+  assert.equal(
+    await page
+      .getByRole('alert')
+      .evaluate(
+        (node) => JSON.parse(node.closest('[data-native-safe-area]').dataset.nativeSafeArea).top,
+      ),
+    true,
+    'Storage recovery notices stay below the navigation safe area too',
+  )
+  await page.evaluate(() => window.updateFixture({ notice: false }))
   const plus = page.getByRole('button', { name: 'New thread', exact: true })
   assert.equal(await page.locator('nav').getAttribute('data-prominent'), 'compose')
   assert.equal(await plus.getAttribute('data-role'), 'search')
@@ -229,7 +241,7 @@ try {
   await page.getByText('Collection content', { exact: true }).waitFor()
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: true, bottom: true }],
+    [{ top: true, left: true, right: true }, { bottom: true }],
     'Menu destinations outside tabs protect the navigation and home edges too',
   )
   await page.evaluate(() => window.updateFixture({ path: '/pulls' }))
@@ -254,7 +266,7 @@ try {
   await plus.waitFor({ state: 'hidden' })
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: true, bottom: false }],
+    [{ top: true, left: true, right: true }, { bottom: false }],
     'Keyboard avoidance owns the collection bottom while the keyboard is visible',
   )
   await page.evaluate(() => window.keyboardListeners.keyboardDidHide())
@@ -276,6 +288,16 @@ try {
   await plus.click()
   assert.equal(await page.evaluate(() => window.routes.length), 3)
   await page.evaluate(() => window.updateFixture({ sidebar: true, path: '/thread/a/old' }))
+  await page.waitForFunction(
+    () =>
+      JSON.parse(document.querySelector('[data-native-safe-area]').dataset.nativeSafeArea).top ===
+      false,
+  )
+  assert.deepEqual(
+    await nativeInsets(),
+    [{ top: false, left: true, right: true }, { bottom: false }],
+    'The expanded sidebar keeps the top inset already applied by its pane',
+  )
   await page.getByRole('button', { name: 'Open sidebar thread', exact: true }).click()
   assert.equal(await page.evaluate(() => window.routes.at(-1).method), 'replace')
   assert.deepEqual(await page.evaluate(() => window.routes.at(-1).args[0].params), {
