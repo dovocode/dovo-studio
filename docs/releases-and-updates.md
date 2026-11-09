@@ -132,6 +132,11 @@ and two seconds. After a GitHub download gateway error, retries use the public r
 the same release and file. No token is required. Each file must still match its pinned size and
 SHA-256 checksum. Other HTTP errors and checksum errors stop packaging.
 
+Electron preparation uses the same download fallback and the checksum in the locked Electron npm
+package. Run `node scripts/packaging/prepare-electron.mjs` to prepare its verified archive in
+Electron's cache. Native CI checks use that cache. Desktop packaging extracts the verified archive
+directly, so it does not need a second checksum download from GitHub.
+
 The signed macOS job uses macOS 26 and Xcode 26.2 for the Icon Composer asset. Its preflight
 compiles the real icon and verifies both `Assets.car` and the legacy `.icns` output; checking the
 compiler version alone does not detect incompatible host frameworks. `app-builder-lib@26.18.0`

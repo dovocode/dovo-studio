@@ -12,6 +12,7 @@ appendFileSync(
   env,
   [
     `ELECTRON_CACHE=${join(directory, 'electron')}`,
+    `electron_config_cache=${join(directory, 'electron')}`,
     `ELECTRON_BUILDER_CACHE=${join(directory, 'electron-builder')}`,
     `npm_package_config_node_gyp_devdir=${join(directory, 'node-gyp')}`,
     `PNPM_CONFIG_CACHE_DIR=${metadata}`,

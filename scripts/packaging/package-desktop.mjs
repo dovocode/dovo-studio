@@ -13,7 +13,8 @@ import { releaseVariant } from './release-variant.mjs'
 import { createTiming, timeMacSigning } from './release-timing.mjs'
 import { configureMacNotarization } from './mac-notarization.mjs'
 import { configureMacSigning } from './mac-parallel-signing.mjs'
-import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
+import { prepareElectron } from './prepare-electron.mjs'
+import { mkdtemp, cp, mkdir, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -54,9 +55,8 @@ const targets =
     : process.platform === 'win32'
       ? ['nsis']
       : ['deb', 'rpm', 'AppImage']
+const electron = await prepareElectron()
 const stage = await mkdtemp(join(tmpdir(), 'dovo-package-'))
-const require = createRequire(join(root, 'apps/desktop/package.json'))
-const electron = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'))
 const variant = await releaseVariant(root)
 const timing = createTiming()
 const restoreNotarization =
@@ -166,6 +166,7 @@ try {
       appId: variant.appId,
       productName: variant.productName,
       electronVersion: electron.version,
+      electronDist: electron.archive,
       protocols: [
         { name: 'Dovo Studio links', schemes: ['dovo-studio'], role: 'Viewer' },
         ...(process.platform === 'win32'

@@ -4,8 +4,8 @@ import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { dirname, join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { releaseDownloader } from './github-release-download.mjs'
 
 export const routerModel = {
   name: 'Dovo GLiClass run-09',
@@ -82,46 +82,9 @@ async function valid(file, expected) {
     throw error
   }
 }
-async function fetchModel(url, fallback) {
-  for (let attempt = 1; ; attempt++) {
-    const response = await fetch(url, {
-      headers: { Accept: url.includes('/releases/assets/') ? 'application/octet-stream' : '*/*' },
-      signal: AbortSignal.timeout(600_000),
-    })
-    if (attempt === 3 || ![502, 503, 504].includes(response.status)) return response
-    await response.body?.cancel()
-    console.warn(
-      `Workspace model download returned HTTP ${response.status}; retrying (${attempt}/3)`,
-    )
-    await delay(1000 * 2 ** (attempt - 1))
-    if (attempt === 1 && fallback) url = await fallback()
-  }
-}
 /** Build-time only. Release bundles contain verified weights; inference never downloads them. */
 export async function prepareWorkspaceRouterModel(directory, model = routerModel) {
-  const githubRelease = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/releases\/download\/([^/]+)$/.exec(
-    model.baseUrl,
-  )
-  const releaseApi = githubRelease
-    ? `https://api.github.com/repos/${githubRelease[1]}/releases/tags/${githubRelease[2]}`
-    : null
-  let assets
-  const fallbackUrl = async (name) => {
-    if (!releaseApi) return `${model.baseUrl}/${name}`
-    if (!assets) {
-      const response = await fetchModel(releaseApi)
-      if (!response.ok)
-        throw new Error(`Could not read workspace model release: HTTP ${response.status}`)
-      const release = await response.json()
-      if (!Array.isArray(release.assets))
-        throw new Error('Workspace model release has no asset list')
-      assets = release.assets
-    }
-    const asset = assets.find((asset) => asset?.name === name)
-    if (!Number.isSafeInteger(asset?.id) || asset.id <= 0)
-      throw new Error(`Workspace model release is missing asset: ${name}`)
-    return `https://api.github.com/repos/${githubRelease[1]}/releases/assets/${asset.id}`
-  }
+  const download = releaseDownloader(model.baseUrl)
   for (const file of model.files) {
     const destination = join(directory, file.name)
     if (await valid(destination, file)) continue
@@ -129,9 +92,7 @@ export async function prepareWorkspaceRouterModel(directory, model = routerModel
     const temporary = destination + '.' + randomUUID() + '.tmp'
     try {
       console.log(`Preparing bundled workspace router: ${file.name}`)
-      const response = await fetchModel(`${model.baseUrl}/${file.name}`, () =>
-        fallbackUrl(file.name),
-      )
+      const response = await download(file.name)
       if (!response.ok || !response.body)
         throw new Error(`Could not fetch workspace model ${file.name}: HTTP ${response.status}`)
       await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary, { flags: 'wx' }))
