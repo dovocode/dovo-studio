@@ -10,7 +10,7 @@ export const ScrollView=View;
 export const Pressable=({children,onPress,accessibilityLabel,disabled})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;
 export const Platform={OS:'ios'};export const Alert={alert(){}};
 export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
-export const StyleSheet={hairlineWidth:1};export const useWindowDimensions=()=>({width:390,fontScale:1});
+export const StyleSheet={hairlineWidth:1,create:styles=>styles};export const useWindowDimensions=()=>({width:390,fontScale:1});
 `
 const text = `export const Text=({children,accessibilityRole})=><span role={accessibilityRole==='header'?'heading':accessibilityRole}>{children}</span>;`
 const theme = `export const useTheme=()=>({styles:{},colors:{}});export const useSettingsTheme=useTheme;export const SettingsPage=({children})=><main>{children}</main>;`

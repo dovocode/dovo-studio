@@ -45,7 +45,6 @@ import {
 import { useApplicationState } from '../../runtime/state/application-state'
 import { TaskAgents } from './task-agents'
 import { NativeAgentThread } from './native-agent-thread'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrowserPane, DevicesPane } from '../preview/browser-pane'
 import { Conversation } from '../conversation/view'
 import { ConversationProvider } from '../conversation/state/provider'
@@ -223,7 +222,6 @@ function TaskDetailContent({
   const { colors, styles } = useTheme()
 
   const { focused, navigate } = useNavigation()
-  const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const panes = useTaskPanes()
   const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
@@ -624,15 +622,7 @@ function TaskDetailContent({
   }, [lifecycle.error, newSession.error])
   const viewed = useTaskViewed(task, !native && pane === 'chat' && !linkingProjects && !renaming)
   return (
-    <View
-      style={[
-        styles.screen,
-        (pane === 'browser' || pane === 'devices') &&
-          expandedPreview && {
-            paddingTop: insets.top,
-          },
-      ]}
-    >
+    <View style={styles.screen}>
       {native && nativeAgent && (
         <NativeAgentThread
           key={`${native.parentKey}:${native.taskId}:${nativeAgent.provider}:${nativeAgent.sessionId}:${nativeAgent.id}`}

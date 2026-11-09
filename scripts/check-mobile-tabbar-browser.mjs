@@ -46,7 +46,7 @@ export const Keyboard={dismiss(){},addListener:(name,callback)=>{window.keyboard
     path: 'expo-router',
     contents: `
 export const router={...Object.fromEntries(['push','replace','navigate','dismissTo','back'].map(method=>[method,(...args)=>window.routes.push({method,args})])),canGoBack:()=>!!window.fixture.canGoBack};
-function Stack(){const Scene=window.WorkbenchScene;const Tabs=window.WorkbenchTabs;return window.fixture.sidebar?<Scene tab="tasks" sidebar/>:window.fixture.path.startsWith('/settings')?<Scene tab="settings"/>:<Tabs/>}Stack.Screen=()=>null;export {Stack};
+function Stack(){const Scene=window.WorkbenchScene;const Tabs=window.WorkbenchTabs;const Detail=window.WorkbenchDetailRoute;return window.fixture.detail?<Detail tab="tasks" bottomInset={window.fixture.bottomInset}><input aria-label="Retained draft" defaultValue="Keep this text"/></Detail>:window.fixture.sidebar?<Scene tab="tasks" sidebar/>:window.fixture.path.startsWith('/settings')?<Scene tab="settings"/>:<Tabs/>}Stack.Screen=()=>null;export {Stack};
 export const usePathname=()=>window.fixture.path;export const useGlobalSearchParams=()=>({});export const useIsFocused=()=>true;`,
   },
   {
@@ -67,7 +67,8 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   },
   {
     path: 'react-native-screens/experimental',
-    contents: 'export const SafeAreaView=({children})=><div>{children}</div>;',
+    contents:
+      'export const SafeAreaView=({children,edges})=><div data-native-safe-area={JSON.stringify(edges)}>{children}</div>;',
   },
   {
     path: '../runtime/state/application-state',
@@ -144,9 +145,9 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
-import {Workbench,WorkbenchScene,WorkbenchTabs} from './apps/mobile/src/shell/workbench.tsx';
+import {Workbench,WorkbenchScene,WorkbenchTabs,WorkbenchDetailRoute} from './apps/mobile/src/shell/workbench.tsx';
 import {unstable_settings} from './apps/mobile/src/app/(tabs)/_layout.tsx';window.tabSettings=unstable_settings;
-window.WorkbenchScene=WorkbenchScene;window.WorkbenchTabs=WorkbenchTabs;window.routes=[];window.nativeSelections=[];window.keyboardListeners={};
+window.WorkbenchScene=WorkbenchScene;window.WorkbenchTabs=WorkbenchTabs;window.WorkbenchDetailRoute=WorkbenchDetailRoute;window.routes=[];window.nativeSelections=[];window.keyboardListeners={};
 window.fixture={path:'/pulls',platform:'ios',car:false,runtime:{ready:true,activeId:'a',profiles:[{id:'a'}],overviews:[{profile:{id:'a'},connected:true,snapshot:{artifactsEnabled:true}}]}};
 function App(){const [version,setVersion]=useState(0);window.updateFixture=changes=>{window.fixture={...window.fixture,...changes};setVersion(v=>v+1)};return <Workbench key={window.fixture.platform+':'+(window.fixture.mount??0)}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -187,6 +188,15 @@ try {
     'Native tabs must start on the thread list instead of the compose redirect',
   )
   await page.getByText('Collection content', { exact: true }).waitFor()
+  const nativeInsets = () =>
+    page
+      .locator('[data-native-safe-area]')
+      .evaluateAll((nodes) => nodes.map((node) => JSON.parse(node.dataset.nativeSafeArea)))
+  assert.deepEqual(
+    await nativeInsets(),
+    [{ top: true, bottom: true }],
+    'Collections consume remaining top and tab-bar insets before fixed controls',
+  )
   const plus = page.getByRole('button', { name: 'New thread', exact: true })
   assert.equal(await page.locator('nav').getAttribute('data-prominent'), 'compose')
   assert.equal(await plus.getAttribute('data-role'), 'search')
@@ -217,6 +227,11 @@ try {
   await page.locator('nav').waitFor({ state: 'detached' })
   assert.equal(await page.locator('nav').count(), 0, 'Settings opens outside the tab bar')
   await page.getByText('Collection content', { exact: true }).waitFor()
+  assert.deepEqual(
+    await nativeInsets(),
+    [{ top: true, bottom: true }],
+    'Menu destinations outside tabs protect the navigation and home edges too',
+  )
   await page.evaluate(() => window.updateFixture({ path: '/pulls' }))
   await plus.click()
   assert.equal(await page.evaluate(() => window.routes.length), 2)
@@ -237,6 +252,11 @@ try {
   )
   await page.evaluate(() => window.keyboardListeners.keyboardDidShow())
   await plus.waitFor({ state: 'hidden' })
+  assert.deepEqual(
+    await nativeInsets(),
+    [{ top: true, bottom: false }],
+    'Keyboard avoidance owns the collection bottom while the keyboard is visible',
+  )
   await page.evaluate(() => window.keyboardListeners.keyboardDidHide())
   await plus.waitFor({ state: 'visible' })
   await page.evaluate(() =>
@@ -301,6 +321,17 @@ try {
     await page.waitForFunction((reads) => window.launchReads > reads, reads)
     assert.deepEqual(await page.evaluate(() => window.routes), scenario.expected)
   }
+  await page.evaluate(() => window.updateFixture({ detail: true, bottomInset: true }))
+  const draft = page.getByRole('textbox', { name: 'Retained draft' })
+  await draft.fill('Unsaved draft')
+  assert.deepEqual(await nativeInsets(), [{ top: true, left: true, right: true, bottom: true }])
+  await page.evaluate(() => window.updateFixture({ bottomInset: false }))
+  assert.deepEqual(
+    await nativeInsets(),
+    [{ top: true, left: true, right: true, bottom: false }],
+    'Composer and preview routes own their bottom inset, including when the header hides',
+  )
+  assert.equal(await draft.inputValue(), 'Unsaved draft', 'Inset changes preserve the editor')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile New thread: trailing native action, preserved tab, offline guard, keyboard hiding, no More tab and Android floating action pass. Native controls use browser adapters.',

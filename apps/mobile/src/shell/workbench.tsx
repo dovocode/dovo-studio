@@ -217,6 +217,7 @@ export function WorkbenchDetailRoute({
     >
       <NativeSafeAreaView
         edges={{
+          top: true,
           left: true,
           right: true,
           bottom: bottomInset,
@@ -570,11 +571,12 @@ export function Workbench() {
             color={colors.accent}
           />
         ) : (
-          // Context and section controls can precede a list. Use the tab controller's
-          // measured bottom safe area rather than depending on ScrollView discovery.
-          // Detail screens own their composer/home inset when the tab bar is hidden.
+          // Fixed controls and notices can precede a list. Consume the screen's
+          // remaining native insets instead of relying on ScrollView discovery.
+          // UIKit reports zero top inset when an opaque header already consumed it.
           <NativeSafeAreaView
             edges={{
+              top: true,
               bottom: Platform.OS === 'ios' && !keyboard,
             }}
           >

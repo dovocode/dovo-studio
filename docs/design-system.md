@@ -89,6 +89,12 @@ use the known values on their first render. iOS Increase Contrast also enables t
 palette. Caller styles must not override the opaque fallback. Thread rows and scrolling content keep
 their existing solid surfaces.
 
+Collection and detail routes consume the remaining top safe area from their native screen. This
+protects fixed controls and notices under glass navigation bars. Do not add a second top inset in
+expanded previews. Collections also consume the native bottom inset while the keyboard is hidden.
+Detail routes keep their existing bottom owner: the route, composer or browser toolbar. Browser
+adapters check these edge choices and draft retention. Verify actual inset sizes on iOS.
+
 Thread info uses the resizable right pane shared by Files and Changes. Its header stays fixed while
 sections scroll. Compact web uses the whole pane. Closing Info preserves composer setting drafts.
 Customize replaces the pane content without changing its bounds. Text-only icon tips must not
@@ -104,6 +110,7 @@ node scripts/check-mobile-browser-toolbar-browser.mjs
 node scripts/check-mobile-settings-layout-browser.mjs
 node scripts/check-mobile-composer-actions-browser.mjs
 node scripts/check-mobile-workspace-browser.mjs
+node scripts/check-mobile-tabbar-browser.mjs
 ```
 
 These browser checks use native adapters. They check layout, fallback styles, actions and input
