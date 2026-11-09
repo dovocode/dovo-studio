@@ -1,13 +1,17 @@
 appId: com.dovo.studio
 ---
 - runFlow: open-devices.yaml
+- scrollUntilVisible:
+    element:
+      id: 'Computer (?!updates$).+|Connected computer|Connect a computer'
+    direction: DOWN
 - repeat:
     while:
       visible:
-        id: 'Computer .+|Connected computer'
+        id: 'Computer (?!updates$).+|Connected computer'
     commands:
       - tapOn:
-          id: 'Computer .+|Connected computer'
+          id: 'Computer (?!updates$).+|Connected computer'
           index: 0
       - scrollUntilVisible:
           element:
