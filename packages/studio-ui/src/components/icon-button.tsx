@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 export function IconButton({ label, ...props }: ComponentProps<typeof Button> & { label: string }) {
   return (
-    <Tooltip>
+    <Tooltip disableHoverableContent>
       <TooltipTrigger asChild>
         <Button
           variant={
@@ -16,7 +16,7 @@ export function IconButton({ label, ...props }: ComponentProps<typeof Button> & 
           {...props}
         />
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent className="studio-icon-tooltip">{label}</TooltipContent>
     </Tooltip>
   )
 }

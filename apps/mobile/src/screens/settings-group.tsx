@@ -1,3 +1,4 @@
+import { Glass } from '../ui/layout/glass'
 import { designTokens } from '@dovo/design'
 import { SettingsAnchor, SettingsSearchContext } from './settings-search'
 import {
@@ -33,7 +34,7 @@ export function SettingsGroup({
   footer?: string
   children: ReactNode
 }) {
-  const { colors, styles, highContrast } = useTheme()
+  const { colors, styles } = useTheme()
   const target = useContext(SettingsSearchContext)
   const searchMatch = !!target && (target === title || searchLabels.includes(target))
   const [expanded, setExpanded] = useState(searchMatch)
@@ -82,13 +83,11 @@ export function SettingsGroup({
         )}
         {description && <Text style={[styles.muted, { paddingHorizontal: 2 }]}>{description}</Text>}
         {open && (
-          <View
+          <Glass
+            testID="Settings group glass"
             style={{
-              backgroundColor: colors.surface,
               borderRadius: designTokens.radius.card,
               overflow: 'hidden',
-              borderWidth: highContrast ? 1 : StyleSheet.hairlineWidth,
-              borderColor: colors.border,
             }}
           >
             <GroupContext.Provider value>
@@ -108,7 +107,7 @@ export function SettingsGroup({
                 </View>
               ))}
             </GroupContext.Provider>
-          </View>
+          </Glass>
         )}
         {footer && <Text style={[styles.muted, { paddingHorizontal: 2 }]}>{footer}</Text>}
       </View>

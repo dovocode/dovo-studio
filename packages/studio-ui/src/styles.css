@@ -1200,6 +1200,10 @@ textarea {
   height: 2px;
   background: var(--primary);
 }
+/* Text-only icon tips must not block adjacent controls when focus restores. */
+[data-radix-popper-content-wrapper]:has(> .studio-icon-tooltip) {
+  pointer-events: none;
+}
 .studio-tooltip {
   transform-origin: var(--radix-tooltip-content-transform-origin);
 }
@@ -2661,10 +2665,6 @@ select:focus-visible,
 }
 
 /* Project controls follow the flat, grouped card used in the thread design. */
-.studio-project-popover {
-  width: min(320px, var(--radix-popover-content-available-width), calc(100vw - 64px));
-  max-height: min(480px, var(--radix-popover-content-available-height));
-}
 .studio-thread-info-scroll {
   scrollbar-width: thin;
   scrollbar-gutter: auto;
@@ -2751,7 +2751,7 @@ select:focus-visible,
   background: color-mix(in srgb, var(--background) 85%, var(--foreground) 3%);
   color: color-mix(in srgb, var(--foreground) 82%, var(--background));
 }
-.studio-project-popover .studio-project-card {
+.studio-thread-info-panel .studio-project-card {
   border: 0;
   border-radius: 0;
   background: transparent;

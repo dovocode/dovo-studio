@@ -57,7 +57,7 @@ import {
 } from '@dovo/studio-ui'
 import { TaskList } from './list/task-list'
 import { TaskProjectPanel } from './detail/task-project-panel'
-import { TaskProjectPanelRoot, TaskProjectPopover } from './detail/task-project-popover'
+import { TaskProjectPanelRoot, ThreadInfoPanel } from './detail/thread-info-panel'
 import { TaskLinkedPullPanel } from './detail/task-linked-pull-panel'
 import { taskPullLinks } from './detail/task-pull-links'
 import { TaskHeader, type TaskSurface } from './detail/task-header'
@@ -304,7 +304,8 @@ export default function TasksView({
     checkoutId?: string
     requestId: string
   }>()
-  const surface = threadSurfaces[threadKey] ?? 'chat'
+  const surface =
+    threadSurfaces[threadKey] ?? (storedTask && preferences.projectPanelOpen ? 'info' : 'chat')
   const [browserPlacements, setBrowserPlacements] = useState<Record<string, PreviewPlacement>>({})
   const browserPlacement = browserPlacements[threadKey] ?? 'inline'
   const browserDetached = surface === 'browser' && browserPlacement !== 'inline'
@@ -332,6 +333,8 @@ export default function TasksView({
   const lastToolSurface = useRef<TaskSurface>('files')
   const setSurface = useCommittedCallback((next: TaskSurface) => {
     setThreadSurfaces((current) => ({ ...current, [threadKey]: next }))
+    if (readAppPreferences().projectPanelOpen !== (next === 'info'))
+      updateAppPreferences({ projectPanelOpen: next === 'info' })
   })
   const [terminalVisited, setTerminalVisited] = useApplicationState(false)
   const [bottomTerminalTaskId, setBottomTerminalTaskId] = useApplicationState('')
@@ -353,6 +356,7 @@ export default function TasksView({
     'pull-preview': null,
     'linked-pulls': null,
     chat: null,
+    info: null,
     changes: null,
     files: null,
     terminal: null,
@@ -371,6 +375,7 @@ export default function TasksView({
       'pull-preview',
       'linked-pulls',
       'chat',
+      'info',
       'changes',
       'files',
       'terminal',
@@ -1028,17 +1033,14 @@ export default function TasksView({
             agent.sessionId === native.agent.sessionId,
         ) ??
         native.agent)
-    const projectPanelOpen = preferences.projectPanelOpen
+    const projectPanelOpen = surface === 'info'
     const pendingInsert =
       (composerInsert?.threadKey === threadKey ? composerInsert : null) ??
       handoffs.find((item) => item.threadKey === threadKey) ??
       null
     const setProjectPanelOpen = (open: boolean) => {
-      if (open && (compact || (fileViewer && viewerExpanded))) {
-        setViewerExpanded(false)
-        selectSurface('chat')
-      }
-      updateAppPreferences({ projectPanelOpen: open })
+      if (open) setViewerExpanded(false)
+      selectSurface(open ? 'info' : 'chat', !open)
     }
     return (
       <TaskProjectPanelRoot
@@ -1107,35 +1109,6 @@ export default function TasksView({
                 'hidden',
             )}
           >
-            <TaskProjectPopover title={task.title}>
-              {!temporary && projectPanelOpen && (
-                <TaskProjectPanel
-                  active={
-                    !native &&
-                    !listOpen &&
-                    !(fileViewer && viewerExpanded) &&
-                    (!compact || surface === 'chat')
-                  }
-                  key={taskCollectionKey(activeRuntimeId, task.id)}
-                  task={task}
-                  onPullLink={(url) => openPullPreview(task, url)}
-                  onTerminal={showTerminal}
-                  onBrowser={(url) => {
-                    setBrowserLink({
-                      taskId: task.id,
-                      id: randomUUID(),
-                      url,
-                      remote: true,
-                      runtimeId: activeRuntimeId,
-                    })
-                    selectSurface('browser')
-                  }}
-                  onSurface={(next) => {
-                    selectSurface(next)
-                  }}
-                />
-              )}
-            </TaskProjectPopover>
             <p
               role="status"
               aria-live="polite"
@@ -1302,6 +1275,46 @@ export default function TasksView({
                   : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[inherit]'
               }
             >
+              <div
+                ref={(element) => {
+                  panes.current.info = element
+                }}
+                tabIndex={-1}
+                className={cn(
+                  'flex min-h-0 min-w-0 flex-1 flex-col',
+                  surface !== 'info' && 'hidden',
+                )}
+              >
+                <ThreadInfoPanel title={task.title}>
+                  {!temporary && projectPanelOpen && (
+                    <TaskProjectPanel
+                      active={
+                        !native &&
+                        !listOpen &&
+                        !(fileViewer && viewerExpanded) &&
+                        surface === 'info'
+                      }
+                      key={taskCollectionKey(activeRuntimeId, task.id)}
+                      task={task}
+                      onPullLink={(url) => openPullPreview(task, url)}
+                      onTerminal={showTerminal}
+                      onBrowser={(url) => {
+                        setBrowserLink({
+                          taskId: task.id,
+                          id: randomUUID(),
+                          url,
+                          remote: true,
+                          runtimeId: activeRuntimeId,
+                        })
+                        selectSurface('browser')
+                      }}
+                      onSurface={(next) => {
+                        selectSurface(next)
+                      }}
+                    />
+                  )}
+                </ThreadInfoPanel>
+              </div>
               {surface === 'changes' && (
                 <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
                   <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />

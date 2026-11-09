@@ -78,14 +78,21 @@ existing opaque fallback. Native iOS pickers and switches keep their platform ap
 catalog's **Selection / Inset Glass Controls** story uses these production controls.
 
 Mobile uses native liquid glass for the composer, new-item input, browser toolbar, status capsules
-and inset settings save bar. Keep the checklist and queue above the composer. The browser toolbar
-shares one glass surface across its address and actions. Do not nest glass effects. Keep opaque
-fills off native glass and keep its React parent stable when accessibility settings change. Reduce
+and inset settings save bar. Settings groups and workspace mode controls also use native glass. On
+iOS, UIKit draws the navigation bar without a forced opaque background when accessibility settings
+permit transparency. Keep the checklist and queue above the composer. The browser toolbar shares one
+glass surface across its address and actions. Do not nest glass effects. Keep opaque fills off
+native glass and keep its React parent stable when accessibility settings change. Reduce
 Transparency, high contrast and devices without native glass use an opaque palette surface without a
 shadow. Read system glass preferences in the appearance provider above navigation. New controls must
 use the known values on their first render. iOS Increase Contrast also enables the accessible
 palette. Caller styles must not override the opaque fallback. Thread rows and scrolling content keep
 their existing solid surfaces.
+
+Thread info uses the resizable right pane shared by Files and Changes. Its header stays fixed while
+sections scroll. Compact web uses the whole pane. Closing Info preserves composer setting drafts.
+Customize replaces the pane content without changing its bounds. Text-only icon tips must not
+intercept clicks on adjacent controls.
 
 Check mobile glass changes with:
 

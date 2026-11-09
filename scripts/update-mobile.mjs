@@ -64,7 +64,7 @@ try {
       '-configuration',
       'Release',
       '-destination',
-      `id=${target.hardwareProperties?.udid ?? device}`,
+      'generic/platform=iOS',
       '-derivedDataPath',
       build,
       '-allowProvisioningUpdates',
@@ -77,6 +77,9 @@ try {
   )
   const application = join(build, 'Build/Products/Release-iphoneos/DovoStudio.app')
   if (!existsSync(application)) throw new Error('Xcode finished without the expected iPhone app.')
+  console.log(
+    `Signed iPhone app ready: ${application}. Connect and unlock the iPhone for installation.`,
+  )
   run('xcrun', [
     'devicectl',
     'device',

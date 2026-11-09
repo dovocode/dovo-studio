@@ -518,24 +518,45 @@ it('refuses an environment switch while owned tasks are running', async () => {
   await f.stopLocalRuntime()
 })
 
-it('checks idle tasks with a valid GET before stopping the runtime for an environment switch', async () => {
-  const f = await childFixture()
-  const starting = f.startLocalRuntime('/unused')
-  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
-  f.child.emit('message', { type: 'ready', port: 8787 })
-  const connection = await starting
-  const request = vi.fn<typeof fetch>(async (url, options) => {
-    const validated = new Request(url, options)
-    expect(validated.method).toBe('GET')
-    expect(validated.body).toBeNull()
-    expect(validated.headers.get('Authorization')).toBe(`Bearer ${connection.token}`)
-    return Response.json({ workspace: { tasks: [{ status: 'completed' }] } })
-  })
-  vi.stubGlobal('fetch', request)
-  await f.pauseLocalRuntime()
-  expect(request).toHaveBeenCalledOnce()
-  expect(f.kill).toHaveBeenCalledOnce()
-})
+it.each([false, true])(
+  'checks owned tasks before switching environments (running replica: %s)',
+  async (replica) => {
+    const f = await childFixture()
+    const starting = f.startLocalRuntime('/unused')
+    await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+    f.child.emit('message', { type: 'ready', port: 8787 })
+    const connection = await starting
+    const request = vi.fn<typeof fetch>(async (url, options) => {
+      const validated = new Request(url, options)
+      expect(validated.method).toBe('GET')
+      expect(validated.body).toBeNull()
+      expect(validated.headers.get('Authorization')).toBe(`Bearer ${connection.token}`)
+      return Response.json({
+        workspace: {
+          tasks: [
+            {
+              status: replica ? 'running' : 'completed',
+              ...(replica
+                ? {
+                    replica: {
+                      ownerRuntimeId: 'remote',
+                      threadId: 'remote-thread',
+                      ownerName: 'Remote',
+                      projectName: 'Project',
+                    },
+                  }
+                : {}),
+            },
+          ],
+        },
+      })
+    })
+    vi.stubGlobal('fetch', request)
+    await f.pauseLocalRuntime()
+    expect(request).toHaveBeenCalledOnce()
+    expect(f.kill).toHaveBeenCalledOnce()
+  },
+)
 it.each([undefined, '8787', '0'])(
   'isolates development ports and credentials from inherited production configuration (%s)',
   async (savedPort) => {

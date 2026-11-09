@@ -57,7 +57,7 @@ const built = await build({
       import {WorkspaceValueProvider,defaultTaskHarness} from '@dovo/studio-core';
       import {TooltipProvider,TaskDefaultSettings,Popover,IconButton} from '@dovo/studio-ui';
       import {Info} from 'lucide-react';
-      import {TaskProjectPanelRoot,TaskProjectPopover,ThreadInfoSettingsSlot} from '../extension-tasks/src/detail/task-project-popover';
+      import {TaskProjectPanelRoot,ThreadInfoPanel,ThreadInfoSettingsSlot} from '../extension-tasks/src/detail/thread-info-panel';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {TaskConversation} from '../extension-tasks/src/detail/task-conversation';
       import {ComposerActivity} from '../extension-tasks/src/chat/composer/composer-activity';
@@ -75,7 +75,7 @@ const built = await build({
       window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
       function Thread({task,workspaceControls,temporary,onSelectRemote,onStartBackground}){
         const [open,setOpen]=useState(false);
-        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New thread':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New thread':task.title}</span>{!temporary&&<IconButton label="Thread info" aria-expanded={open} onClick={()=>setOpen(value=>!value)} className="size-7"><Info className="size-4"/></IconButton>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div>{open&&<aside className="flex w-72 max-w-[48%] shrink-0"><ThreadInfoPanel><ThreadInfoSettingsSlot visible/></ThreadInfoPanel></aside>}</div></TaskProjectPanelRoot>;
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
@@ -172,7 +172,7 @@ try {
   const infoButton = page.getByRole('button', { name: 'Thread info', exact: true })
   const openInfo = async () => {
     if ((await infoButton.getAttribute('aria-expanded')) !== 'true') await infoButton.click()
-    await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
+    await page.getByRole('complementary', { name: 'Thread info', exact: true }).waitFor()
   }
   const closeInfo = async () => {
     if ((await infoButton.count()) && (await infoButton.getAttribute('aria-expanded')) === 'true')

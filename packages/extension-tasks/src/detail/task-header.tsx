@@ -34,25 +34,19 @@ import {
   Info,
   GitBranch,
 } from 'lucide-react'
-import {
-  HeaderContent,
-  Button,
-  IconButton,
-  ProjectIcon,
-  Popover,
-  DropdownMenu,
-  cn,
-} from '@dovo/studio-ui'
+import { HeaderContent, Button, IconButton, ProjectIcon, DropdownMenu, cn } from '@dovo/studio-ui'
 import { taskPresentation } from '../list/task-presentation'
 import { retainTaskOwner } from '../list/task-collection'
 import { TaskContextMenu } from './task-context-menu'
 import { TaskBranchMenu } from './task-branch-menu'
 import { TaskPullStatus } from './task-pull-status'
 import { taskPullLinks } from './task-pull-links'
+import { useThreadInfoContext } from './thread-info-context'
 export type TaskSurface =
   | 'pull-preview'
   | 'linked-pulls'
   | 'chat'
+  | 'info'
   | 'changes'
   | 'files'
   | 'terminal'
@@ -95,6 +89,7 @@ export function TaskHeader({
 }) {
   const { workspace, snapshot, connected, connection, runtimes, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
+  const threadInfo = useThreadInfoContext()
   const parent =
     parentThread ??
     taskParentReference(
@@ -237,11 +232,14 @@ export function TaskHeader({
       : task.checkoutBranch ||
         (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')
   const actions = (
-    <Popover.Trigger asChild>
+    <>
       {compact ? (
         <IconButton
           label={projectPanelOpen ? 'Hide thread info' : 'Show thread info'}
           aria-pressed={projectPanelOpen}
+          aria-expanded={projectPanelOpen}
+          aria-controls={threadInfo?.panelId}
+          onClick={onProjectPanel}
           className={cn('size-7', projectPanelOpen && 'bg-accent text-accent-foreground')}
         >
           <Info size={15} />
@@ -253,6 +251,9 @@ export function TaskHeader({
           aria-label={projectPanelOpen ? 'Hide thread info' : 'Show thread info'}
           aria-description={`${branch} · ${presentation.label}`}
           aria-pressed={projectPanelOpen}
+          aria-expanded={projectPanelOpen}
+          aria-controls={threadInfo?.panelId}
+          onClick={onProjectPanel}
           title={`${branch} · ${presentation.label} · Thread info`}
           data-thread-info-trigger
           className={cn(
@@ -277,7 +278,7 @@ export function TaskHeader({
           <ChevronDown size={12} className="shrink-0" aria-hidden="true" />
         </Button>
       )}
-    </Popover.Trigger>
+    </>
   )
   return (
     <>

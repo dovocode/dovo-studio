@@ -20,17 +20,19 @@ check reports the problem and keeps that channel selected.
 Source launches show **Dovo Studio (Dev)** in the window and menu. The update icon opens release
 notes and live download progress, including transferred bytes and speed. After download, choose
 **Restart and install** or **Later**. On Windows, confirming the restart installs the update
-silently and relaunches the app without the installer wizard. Installation checks the local runtime
-and waits if tasks or automations are running. Choosing Later does not install unexpectedly on quit.
-The updater checks active work, closes windows with the existing draft guards, then acquires a
-runtime restart lease before stopping the local runtime. The lease blocks new work from paired
-clients during shutdown. Cancelling a close prompt does not reserve a restart. An installation
-failure restores the runtime and cancels the restart lease. Remote runtimes are not restarted.
-Source builds explain how to update the checkout instead of attempting an installer update. Stable
-and Nightly have separate app identities and installers but use the same workspace and pairing data.
-Run one version's local runtime at a time; opening the other version connects to the existing
-compatible runtime without restarting it. Incompatible runtime protocol versions require a runtime
-update before the other app can connect.
+silently and relaunches the app without the installer wizard. Installation checks the local runtime.
+If work is running, choose **Restart and resume** to interrupt it and resume supported tasks, or
+**Later** to keep working. The download stays ready. Choosing Later does not install unexpectedly on
+quit. Remote updates require an explicit recovery choice before they interrupt active work. The
+updater checks active work, closes windows with the existing draft guards, then acquires a runtime
+restart lease before stopping the local runtime. The lease blocks new work from paired clients
+during shutdown. Cancelling a close prompt does not reserve a restart. An installation failure
+restores the runtime and cancels the restart lease. Remote runtimes are not restarted. Source builds
+explain how to update the checkout instead of attempting an installer update. Stable and Nightly
+have separate app identities and installers but use the same workspace and pairing data. Run one
+version's local runtime at a time; opening the other version connects to the existing compatible
+runtime without restarting it. Incompatible runtime protocol versions require a runtime update
+before the other app can connect.
 
 After an external macOS app replacement, Studio can refresh an older background runtime from the
 same app path and release channel. It checks the authenticated runtime, the launchd PID, the exact
@@ -215,6 +217,13 @@ over the existing application. It stops on errors and does not uninstall an old 
 `com.dovo.studio` and `com.dovo.studio.ExpoWidgetsTarget` need signing with the shared app group
 `group.com.dovo.studio`. Live Activities need a new native install; reloading JavaScript is
 insufficient.
+
+Compilation uses the generic iOS destination. A known iPhone can disconnect while the app builds.
+Installation still requires that same trusted iPhone to be connected and unlocked. The signed app
+stays in `work/mobile-update-build/Build/Products/Release-iphoneos/DovoStudio.app` if installation
+cannot finish. Install that file with
+`xcrun devicectl device install app --device YOUR_IPHONE_UDID PATH_TO_DovoStudio.app` after the
+phone reconnects.
 
 ## Live Activities
 

@@ -807,3 +807,105 @@ it('does not reserve a restart before an unsaved-edit close prompt is accepted',
   )
   expect(f.install).not.toHaveBeenCalled()
 })
+
+it.each([0, 1])('offers a local restart with work retained, choice %s', async (choice) => {
+  const request = vi.fn<typeof fetch>(async (input) =>
+    Response.json(
+      requestUrl(input).endsWith('/prepare-restart')
+        ? { id: 'restart-lease' }
+        : {
+            ...snapshot,
+            runs: [
+              {
+                id: 'run',
+                automationId: 'automation',
+                title: 'Running',
+                status: 'running',
+                agentId: 'agent',
+                createdAt: '',
+                messages: [],
+                completedNodes: [],
+                taskIds: [],
+              },
+            ],
+          },
+    ),
+  )
+  vi.stubGlobal('fetch', request)
+  // First choose Later after downloading. The downloaded action must then offer recovery.
+  f.message.mockResolvedValueOnce({ response: 1 })
+  const { registerUpdates } = await import('./updates')
+  const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>(
+    async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    },
+  )
+  const updates = registerUpdates('/unused', prepare)
+  await updates.install()
+  expect(updates.state().status).toBe('downloaded')
+  f.message.mockResolvedValueOnce({ response: choice })
+  await updates.install()
+  expect(f.message).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      buttons: ['Restart and resume', 'Later'],
+      defaultId: 1,
+      cancelId: 1,
+    }),
+  )
+  expect(f.install).toHaveBeenCalledTimes(choice === 0 ? 1 : 0)
+  expect(prepare).toHaveBeenCalledTimes(choice === 0 ? 1 : 0)
+  expect(
+    request.mock.calls
+      .filter(([input]) => requestUrl(input).endsWith('/prepare-restart'))
+      .map(([, init]) => init?.body),
+  ).toEqual(choice === 0 ? [JSON.stringify({ resumeInterrupted: true })] : [])
+  expect(updates.state().status).toBe(choice === 0 ? 'restarting' : 'downloaded')
+  expect(f.downloads).toHaveBeenCalledOnce()
+})
+
+it('does not treat a running replica from another computer as local work', async () => {
+  const replica = {
+    id: 'remote-copy',
+    title: 'Remote work',
+    repositoryId: 'repo',
+    agentId: '',
+    status: 'running',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+    execution: 'main',
+    turns: [],
+    replica: {
+      ownerRuntimeId: 'remote',
+      threadId: 'remote-thread',
+      ownerName: 'Remote',
+      projectName: 'Project',
+    },
+  }
+  const request = vi.fn<typeof fetch>(async (input) =>
+    Response.json(
+      requestUrl(input).endsWith('/prepare-restart')
+        ? { id: 'restart-lease' }
+        : { ...snapshot, workspace: { ...snapshot.workspace, tasks: [replica] } },
+    ),
+  )
+  vi.stubGlobal('fetch', request)
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
+  await updates.install()
+  expect(f.message).toHaveBeenCalledOnce()
+  expect(f.message).toHaveBeenCalledWith(
+    expect.objectContaining({ buttons: ['Restart and install', 'Later'] }),
+  )
+  expect(f.install).toHaveBeenCalledOnce()
+  expect(request).toHaveBeenCalledWith(
+    'http://fixture/api/runtime/prepare-restart',
+    expect.objectContaining({ body: '{}' }),
+  )
+})

@@ -1,4 +1,4 @@
-import { ThreadInfoSettingsSlot } from './task-project-popover'
+import { ThreadInfoSettingsSlot } from './thread-info-panel'
 import { ThreadInfoUsage } from './thread-info-usage'
 import { ThreadSharing } from '../chat/thread-sharing'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'

@@ -183,6 +183,7 @@ export function registerUpdates(
       return
     }
     busy = true
+    let resumeInterrupted = remote?.resumeInterrupted
     let restartPreparation: { address: string; token: string; id: string } | undefined
     try {
       if (
@@ -280,19 +281,23 @@ export function registerUpdates(
         )
       const snapshot = decode(snapshotSchema, await response.json())
       if (
-        remote?.resumeInterrupted === undefined &&
-        (snapshot.workspace.tasks.some((task) => task.status === 'running') ||
+        resumeInterrupted === undefined &&
+        (snapshot.workspace.tasks.some((task) => !task.replica && task.status === 'running') ||
           snapshot.runs.some((run) => run.status === 'running'))
       ) {
         if (remote)
           throw new Error('Finish running tasks and automations before restarting this desktop')
-        await dialog.showMessageBox({
-          type: 'info',
-          message: 'Finish running work first',
+        const answer = await dialog.showMessageBox({
+          type: 'question',
+          message: 'Restart with work in progress?',
           detail:
-            'Your update is downloaded. Use Check for Updates again after local tasks and automations finish.',
+            'The update is ready. Restarting interrupts local tasks and automations. Dovo saves their progress and resumes supported tasks after restart. You can also keep working and install later.',
+          buttons: ['Restart and resume', 'Later'],
+          cancelId: 1,
+          defaultId: 1,
         })
-        return
+        if (answer.response !== 0) return
+        resumeInterrupted = true
       }
       restoreRuntime = await prepareQuit(async () => {
         // Hold the runtime restart lease for local and remote installs. The earlier
@@ -303,7 +308,7 @@ export function registerUpdates(
             Authorization: `Bearer ${connection.token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ resumeInterrupted: remote?.resumeInterrupted }),
+          body: JSON.stringify({ resumeInterrupted }),
           signal: AbortSignal.timeout(5000),
         })
         if (!prepared.ok) throw new Error('Could not prepare interrupted threads for restart')
@@ -349,8 +354,7 @@ export function registerUpdates(
       }
       publish({
         ...state,
-        status:
-          remote && remote.action !== 'download' && state.progress === 100 ? 'downloaded' : 'error',
+        status: state.progress === 100 ? 'downloaded' : 'error',
         error: message,
       })
       if (remote) throw new Error(message)

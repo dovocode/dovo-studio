@@ -20,7 +20,7 @@ export function ThreadInfoCustomization() {
     <DropdownMenu.Root
       onOpenChange={(open) => {
         const button = trigger.current
-        const panel = button?.closest<HTMLElement>('.studio-project-popover')
+        const panel = button?.closest<HTMLElement>('.studio-thread-info-panel')
         if (open && button && panel) {
           const panelBounds = panel.getBoundingClientRect()
           const buttonBounds = button.getBoundingClientRect()
@@ -30,7 +30,7 @@ export function ThreadInfoCustomization() {
             alignOffset: buttonBounds.right - panelBounds.right,
             width: panelBounds.width,
             minHeight: panelBounds.height,
-            maxHeight: getComputedStyle(panel).maxHeight,
+            maxHeight: `${panelBounds.height}px`,
           })
         }
       }}

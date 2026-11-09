@@ -8,6 +8,7 @@ import { Icon, type IconName } from '../ui/controls/icon'
 import { Switch } from '../ui/controls/switch'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
+import { Glass } from '../ui/layout/glass'
 import { contentColumn } from '../ui/layout/content-column'
 
 export function WorkspaceModes({ mode }: { mode: 'tasks' | 'browser' | 'terminal' | 'workspace' }) {
@@ -71,14 +72,14 @@ export function WorkspaceModes({ mode }: { mode: 'tasks' | 'browser' | 'terminal
         </View>
       )}
       {!(unified && preferences.hideNormalWorkspaceModes) && (
-        <View
-          accessibilityLabel="Workspace modes"
+        <Glass
+          testID="Workspace modes glass"
+          interactive
           style={{
             flexDirection: 'row',
             gap: 3,
             padding: 3,
             borderRadius: 14,
-            backgroundColor: colors.surface,
           }}
         >
           {normal
@@ -119,7 +120,7 @@ export function WorkspaceModes({ mode }: { mode: 'tasks' | 'browser' | 'terminal
                 </Text>
               </Pressable>
             ))}
-        </View>
+        </Glass>
       )}
     </View>
   )
