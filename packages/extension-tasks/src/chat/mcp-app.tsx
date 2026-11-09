@@ -237,22 +237,6 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           }
           return {}
         }
-        if (value.method === 'ui/open-embedded') {
-          const url = object(value.params).url
-          if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol))
-            throw new Error('Unsupported app URL')
-          if (
-            !(await confirm({
-              title: 'Load external MCP UI?',
-              description: `Allow this app to load an external interface from ${new URL(url).origin}.`,
-              confirmLabel: 'Load interface',
-              details: url,
-            }))
-          )
-            throw new Error('External app declined')
-          assertCurrent()
-          return {}
-        }
         if (value.method === 'ui/open-link') {
           const url = object(value.params).url
           if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol))
@@ -261,13 +245,12 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           openLink(url, { origin: linkOrigin.current, signal: linkOperation.current?.signal })
           return {}
         }
-        if (value.method === 'ui/message' || value.method === 'ui/intent') {
-          const intent = value.method === 'ui/intent'
+        if (value.method === 'ui/message') {
           if (
             !(await confirm({
-              title: intent ? 'Send MCP App intent?' : 'Send MCP App message?',
-              description: `Review the complete ${intent ? 'intent' : 'message'} from “${reference.title}” before sending it to this thread.`,
-              confirmLabel: intent ? 'Send intent' : 'Send message',
+              title: 'Send MCP App message?',
+              description: `Review the complete message from “${reference.title}” before sending it to this thread.`,
+              confirmLabel: 'Send message',
               details: JSON.stringify(value.params, null, 2),
             }))
           )

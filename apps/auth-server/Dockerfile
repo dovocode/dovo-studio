@@ -1,4 +1,4 @@
-FROM node:24-slim AS build
+FROM node:26-slim AS build
 WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@12.3.4 --activate
 COPY . .
@@ -6,7 +6,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm --filter @dovo/auth-server... -r build
 RUN pnpm --filter @dovo/auth-server deploy --prod /out
 
-FROM node:24-slim
+FROM node:26-slim
 ENV NODE_ENV=production PORT=8080
 WORKDIR /app
 COPY --from=build --chown=node:node /out .

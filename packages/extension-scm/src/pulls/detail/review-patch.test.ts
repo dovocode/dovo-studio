@@ -3,7 +3,7 @@ import { parsePatchFiles } from '@pierre/diffs'
 import { pullFilePatch } from '@dovo/studio-core'
 import { reviewPatch } from './review-patch'
 const parse = (patch: string) =>
-  parsePatchFiles(pullFilePatch({ status: 'modified', patch }), undefined, true)[0].files[0]
+  parsePatchFiles(pullFilePatch({ status: 'modified', patch }), { throwOnError: true })[0].files[0]
 it('renders a truncated review excerpt with its original line coordinates', () => {
   const patch =
     '@@ -255,12 +255,14 @@ function Toast() {\n context\n-old comment\n+decision comment\n another line'

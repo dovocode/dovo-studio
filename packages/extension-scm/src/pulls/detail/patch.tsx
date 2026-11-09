@@ -122,8 +122,7 @@ export function PullPatch({
               }
             : draftFile,
         ),
-        undefined,
-        true,
+        { throwOnError: true },
       )[0]?.files[0]
       return {
         diff: diff

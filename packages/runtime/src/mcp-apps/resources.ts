@@ -15,7 +15,8 @@ export function visibleTo(tool: Tool, audience: 'model' | 'app') {
   const visibility = object(tool._meta?.ui).visibility
   return !Array.isArray(visibility) || visibility.includes(audience)
 }
-export function legacyResources(result: CallToolResult) {
+/** Keep UI payloads out of model context, including unsupported older formats. */
+export function embeddedUiResources(result: CallToolResult) {
   return result.content.flatMap((item) => {
     if (item.type !== 'resource') return []
     const resource = item.resource

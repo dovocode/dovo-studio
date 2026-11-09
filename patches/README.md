@@ -49,15 +49,16 @@ without checking the applied patch and its fixture.
 - **react-native-webview 14.0.1:** its declaration defaults extra props to `undefined`, making
   `WebViewProps & P` resolve to `never`. Default to `unknown` so normal props and typed refs work.
   The workspace mobile typecheck exercises the consumers; runtime behavior is unchanged.
-- **@mcp-ui/legacy:** keep the alias on client 5.17.3. Client 7 removed the legacy HTML/Remote DOM
-  renderer; modern MCP apps already use `@modelcontextprotocol/ext-apps`. Verify both formats with
-  `pnpm test:mcp-apps:browser`.
+- **prosemirror-markdown 1.13.9:** import `Token` from Markdown-it 15's bundled types. The workspace
+  override also upgrades its tokenizer. Verify with the rich composer unit and browser tests,
+  including exact draft round trips.
 - **iOS scenes:** use Expo 58's `ExpoAppSceneDelegate` for native startup and lifecycle forwarding.
   Dovo's scene plugin only seeds the cold-start quick-action URL before React starts. Run
   `expo prebuild --no-install --platform ios` to verify generated projects.
-- **Mobile React, AsyncStorage and gesture handler:** retain Expo 58's recommended versions (React
-  19.3.0, AsyncStorage 2.2.0, gesture handler ~3.3.0); `expo install --check` validates the native
-  dependency set. Desktop/web React can update independently.
+- **Mobile React, AsyncStorage and gesture handler:** use the latest stable packages with Expo 58.
+  AsyncStorage 3's default export retains access to the existing legacy store. Verify a native
+  simulator build when changing this set; Expo's version check reports differences from its tested
+  baseline.
 - **ACP SDK 2:** use its `/unstable` v1 entrypoint consistently to retain negotiated subagents and
   session features. The local callback boundary derives its request types from the SDK handler maps;
   no legacy SDK implementation interface is required.

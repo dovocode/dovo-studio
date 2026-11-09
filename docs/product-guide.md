@@ -27,7 +27,7 @@ interface.
 
 ## Run
 
-Requires Node 24.11+ and the repository's pinned pnpm version.
+Requires Node 26+ and the repository's pinned pnpm version.
 
 Install dependencies once with `pnpm install`, then choose a workflow:
 
@@ -219,7 +219,7 @@ owner identity across launches, supplies it through IPC, and keeps its database 
 by default. Saved connections stay alongside that database; Electron browser data uses the native
 application-data directory. Desktop and runtime preferences are in `~/.dovo/settings.json`.
 Development desktop uses `~/.dovo-dev` with a separate Electron profile and workspace. Provider
-authentication stays on the host. Packaged desktop builds include Node 24 and the complete runtime
+authentication stays on the host. Packaged desktop builds include Node 26 and the complete runtime
 dependency closure. Development builds can use `DOVO_NODE_PATH` when Node is absent from PATH.
 
 For browser access, serve the web frontend over your private network too. An HTTPS frontend needs an
@@ -445,7 +445,7 @@ node_modules directly.
 ### Desktop packaging
 
 ```sh
-# On an Apple Silicon Mac, using Node 24:
+# On an Apple Silicon Mac, using Node 26:
 pnpm package:desktop
 node scripts/packaging/verify-packaged.mjs
 ```

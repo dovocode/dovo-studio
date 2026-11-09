@@ -75,7 +75,7 @@ mobile.
 
 All code is in `apps/artifact-server` in `dovocode/dovo-studio`. Build from GitHub, using
 `apps/artifact-server/Dockerfile` and the repository root as Docker build context. The service uses
-Node 24 and a private SQLite database in `/data`. It is a standalone deployment and persistent
+Node 26 and a private SQLite database in `/data`. It is a standalone deployment and persistent
 volume, separate from Connect and runtime databases. Object storage/S3 is not required in this
 version.
 

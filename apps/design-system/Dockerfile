@@ -1,4 +1,4 @@
-FROM node:24-slim AS build
+FROM node:26-slim AS build
 WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@12.3.4 --activate
 COPY . .

@@ -35,7 +35,7 @@ account-authorized internet connections and relay fallback.
 
 ## Develop
 
-Requires Node 24.11+ and the pnpm version pinned in `package.json`.
+Requires Node 26+ and the pnpm version pinned in `package.json`.
 
 ```sh
 pnpm install

@@ -243,24 +243,6 @@ export const McpAppView = memo(function McpAppView({
               }
               return {}
             }
-            if (value.method === 'ui/open-embedded') {
-              const url = object(value.params).url
-              if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol))
-                throw new Error('Unsupported app URL')
-              const accepted = await new Promise<boolean>((resolve) =>
-                Alert.alert(
-                  'External MCP UI',
-                  `Load ${new URL(url).origin}?`,
-                  [
-                    { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                    { text: 'Load', onPress: () => resolve(true) },
-                  ],
-                  { cancelable: true, onDismiss: () => resolve(false) },
-                ),
-              )
-              if (!accepted) throw new Error('External app declined')
-              return {}
-            }
             if (value.method === 'ui/open-link') {
               const url = object(value.params).url
               if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol))
@@ -268,7 +250,7 @@ export const McpAppView = memo(function McpAppView({
               await openLink(url)
               return {}
             }
-            if (value.method === 'ui/message' || value.method === 'ui/intent') {
+            if (value.method === 'ui/message') {
               const accepted = await new Promise<boolean>((resolve) =>
                 Alert.alert(
                   'MCP App message',

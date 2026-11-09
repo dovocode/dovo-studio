@@ -4,7 +4,10 @@ import { view } from './storybook.requires'
 
 const colors = dovoColors.dark
 export default view.getStorybookUI({
-  storage: { getItem: AsyncStorage.getItem, setItem: AsyncStorage.setItem },
+  storage: {
+    getItem: (key) => AsyncStorage.getItem(key),
+    setItem: (key, value) => AsyncStorage.setItem(key, value),
+  },
   enableWebsockets: false,
   shouldPersistSelection: true,
   theme: {

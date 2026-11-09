@@ -1,16 +1,5 @@
-import { legacyLibrary, AppErrorBoundary } from './legacy-components'
 import { z } from 'zod'
 z.config({ jitless: true })
-import { createRoot, type Root } from 'react-dom/client'
-import {
-  UIResourceRenderer,
-  remoteCardDefinition,
-  remoteTextDefinition,
-  remoteButtonDefinition,
-  remoteStackDefinition,
-  remoteImageDefinition,
-  type UIActionResult,
-} from '@mcp-ui/legacy'
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge'
 import {
   CallToolResultSchema,
@@ -20,14 +9,13 @@ import {
   ListToolsResultSchema,
   ListPromptsResultSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { resourceCsp, csp, protectHtml, sources } from './security'
+import { resourceCsp, csp } from './security'
 import sandbox from './sandbox.json'
 import type { McpApp } from '@dovo/protocol'
 import { runtimeRequestTimeout } from '@dovo/protocol/request-timeout'
 const rootElement = document.getElementById('root')!
 const appCalls = new Map<string, AbortController>()
 let bridge: AppBridge | undefined
-let legacy: Root | undefined
 let frame: HTMLIFrameElement | undefined
 let proxyURL: string | undefined
 let nonce = ''
@@ -116,8 +104,6 @@ async function cleanup() {
     await bridge.close()
     bridge = undefined
   }
-  legacy?.unmount()
-  legacy = undefined
   frame?.remove()
   frame = undefined
   if (proxyURL) URL.revokeObjectURL(proxyURL)
@@ -129,6 +115,8 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   await cleanup()
   if (ticket !== loading) return
   nonce = nextNonce
+  if (app.format !== 'apps')
+    throw new Error('Legacy MCP UI is no longer supported. Update this server to MCP Apps.')
   document.documentElement.style.colorScheme = theme
   const resource = record(app.resource)
   const meta = record(resource._meta)
@@ -147,88 +135,7 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   hostPolicy.content = csp(policy)
     .replace("script-src 'unsafe-inline'", "script-src 'unsafe-inline' 'unsafe-eval'")
     .replace(/frame-src [^;]*;/, `frame-src about: data: blob: ${policy.frameDomains.join(' ')};`)
-  // Runtime content lives in child frames. This also confines legacy Remote DOM's sandbox.
-  if (resource.mimeType !== 'text/uri-list') document.head.append(hostPolicy)
-  if (app.format === 'legacy') {
-    let prepared = { ...resource }
-    if (
-      typeof resource.mimeType === 'string' &&
-      resource.mimeType.split(';')[0].trim() === 'text/html'
-    )
-      prepared = {
-        ...resource,
-        mimeType: 'text/html',
-        text: protectHtml(html, csp(policy)),
-        blob: undefined,
-      }
-    if (resource.mimeType === 'text/uri-list') {
-      const url = html
-        .split('\n')
-        .map((line) => line.trim())
-        .find((line) => line && !line.startsWith('#'))
-      if (
-        !url ||
-        !sources([new URL(url).origin]).length ||
-        new URL(url).username ||
-        new URL(url).password
-      )
-        throw new Error('Unsafe legacy UI URL')
-      const origin = new URL(url).origin
-      await rpc('ui/open-embedded', { url })
-      hostPolicy.content = hostPolicy.content.replace(
-        /frame-src [^;]*;/,
-        `frame-src about: data: blob: ${origin};`,
-      )
-      document.head.append(hostPolicy)
-      prepared = { ...resource, text: url }
-    }
-    if (
-      typeof resource.mimeType === 'string' &&
-      resource.mimeType.startsWith('application/vnd.mcp-ui.remote-dom')
-    )
-      prepared = { ...prepared, mimeType: 'application/vnd.mcp-ui.remote-dom;framework=react' }
-    legacy = createRoot(rootElement)
-    const action = (value: UIActionResult) => {
-      if (value.type === 'tool')
-        return rpc('tools/call', { name: value.payload.toolName, arguments: value.payload.params })
-      if (value.type === 'prompt')
-        return rpc('ui/message', {
-          role: 'user',
-          content: [{ type: 'text', text: value.payload.prompt }],
-        })
-      if (value.type === 'link') return rpc('ui/open-link', value.payload)
-      if (value.type === 'notify') {
-        post({ type: 'notice', message: value.payload.message })
-        return Promise.resolve({})
-      }
-      return rpc('ui/intent', value.payload)
-    }
-    legacy.render(
-      <AppErrorBoundary>
-        <UIResourceRenderer
-          resource={prepared}
-          onUIAction={action}
-          remoteDomProps={{
-            library: legacyLibrary,
-            remoteElements: [
-              remoteCardDefinition,
-              remoteTextDefinition,
-              remoteButtonDefinition,
-              remoteStackDefinition,
-              remoteImageDefinition,
-            ],
-          }}
-          htmlProps={{
-            sandboxPermissions: 'allow-scripts allow-forms',
-            autoResizeIframe: { height: true },
-            iframeRenderData: record(meta['mcpui.dev/ui-initial-render-data']),
-            style: { width: '100%', height: 420 },
-          }}
-        />
-      </AppErrorBoundary>,
-    )
-    return
-  }
+  document.head.append(hostPolicy)
   bridge = new AppBridge(
     null,
     { name: 'Dovo Studio', version: '1.0.0' },
@@ -414,10 +321,6 @@ window.dovoMcpNotify = notify
 window.addEventListener('pagehide', () => {
   void cleanup()
 })
-const observer = new ResizeObserver(() => {
-  if (legacy) post({ type: 'height', height: Math.min(1000, rootElement.scrollHeight) })
-})
-observer.observe(rootElement)
 post({ type: 'ready' })
 declare global {
   interface Window {

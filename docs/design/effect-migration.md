@@ -100,7 +100,7 @@ cycle remain unverified. Increment `RUNTIME_PROTOCOL_VERSION` for incompatible p
 
 All authored Expo application, entrypoint, terminal, configuration and config-plugin source is now
 TypeScript, included in its strict typecheck. Metro, Babel, Expo plugin introspection and Hermes
-export load the TypeScript files directly with the repository's Node 24 toolchain. Swift platform
+export load the TypeScript files directly with the repository's Node 26 toolchain. Swift platform
 files and generated bundles remain in their native formats.
 
 Expo screen workflows compose Effect 4 operations for transport, registry changes, offline cache,

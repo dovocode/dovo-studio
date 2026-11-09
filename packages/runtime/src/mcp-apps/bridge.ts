@@ -51,7 +51,7 @@ import {
   object,
   appUri,
   visibleTo,
-  legacyResources,
+  embeddedUiResources,
   htmlResource,
   isAppMime,
   MAX_APP_BYTES,
@@ -707,10 +707,15 @@ export class McpApps {
       )
       if (!ui) await this.capture(scope, session, tool, input.arguments ?? {}, result)
       // UI content is out-of-band, not model tokens or repeated sync payloads.
-      const embeddedApps = new Set(legacyResources(result))
+      const embeddedApps = new Set(embeddedUiResources(result))
       const content = result.content.filter(
         (item) => item.type !== 'resource' || !embeddedApps.has(item.resource),
       )
+      if ([...embeddedApps].some((resource) => !isAppMime(resource.mimeType)))
+        content.push({
+          type: 'text',
+          text: 'Legacy MCP UI is no longer supported. Update this server to MCP Apps (text/html;profile=mcp-app).',
+        })
       return ui
         ? result
         : {
@@ -792,9 +797,9 @@ export class McpApps {
     input: Record<string, unknown>,
     result: CallToolResult,
   ) {
-    const resources: Array<{ resource: unknown; format: 'apps' | 'legacy' }> = legacyResources(
-      result,
-    ).map((resource) => ({ resource, format: isAppMime(resource.mimeType) ? 'apps' : 'legacy' }))
+    const resources: Array<{ resource: unknown; format: 'apps' }> = embeddedUiResources(result)
+      .filter((resource) => isAppMime(resource.mimeType))
+      .map((resource) => ({ resource, format: 'apps' }))
     const uri = appUri(tool)
     if (uri) {
       try {
@@ -896,6 +901,11 @@ export class McpApps {
     if (typeof row.value !== 'string') throw new HttpError(404, 'MCP App not found in this thread')
     const raw: unknown = JSON.parse(row.value)
     const app = decode(mcpAppSchema, raw)
+    if (app.format !== 'apps')
+      throw new HttpError(
+        410,
+        'Legacy MCP UI is no longer supported. Update this server to MCP Apps.',
+      )
     const hash = object(raw).fingerprint
     if (typeof hash !== 'string') throw new HttpError(409, 'MCP App configuration is unavailable')
     const cwd = object(raw).cwd
@@ -919,7 +929,6 @@ export class McpApps {
     disconnected: () => void,
   ) {
     const app = this.saved(taskId, id)
-    if (app.format !== 'apps') throw new HttpError(400, 'Legacy apps do not expose tools')
     return this.views.attach(
       { taskId, appId: id, server: app.server, title: app.title },
       send,
@@ -960,7 +969,7 @@ export class McpApps {
     }
     if (this.actions.size >= 1000)
       throw new HttpError(429, 'MCP App action capacity reached; reopen the thread later')
-    const mutation = ['tools/call', 'ui/message', 'ui/intent'].includes(method)
+    const mutation = ['tools/call', 'ui/message'].includes(method)
     const persisted = mutation
       ? object(this.db.prepare('SELECT * FROM mcp_app_actions WHERE id=?').get(key))
       : {}
@@ -997,27 +1006,20 @@ export class McpApps {
           )
         return {}
       }
-      if (method === 'ui/message' || method === 'ui/intent') {
+      if (method === 'ui/message') {
         if (scope.permission === 'read-only')
           throw new HttpError(403, 'Messages from MCP Apps are disabled in read-only threads')
         const value = object(params)
         const content = Array.isArray(value.content) ? value.content : []
-        const text =
-          method === 'ui/intent'
-            ? JSON.stringify({ intent: value.intent, params: value.params })
-            : content
-                .map((part) => {
-                  const item = object(part)
-                  if (item.type !== 'text' || typeof item.text !== 'string')
-                    throw new HttpError(400, 'This host accepts text app messages')
-                  return item.text
-                })
-                .join('\n')
-        if (
-          !text.trim() ||
-          text.length > 32000 ||
-          (method === 'ui/message' && value.role !== 'user')
-        )
+        const text = content
+          .map((part) => {
+            const item = object(part)
+            if (item.type !== 'text' || typeof item.text !== 'string')
+              throw new HttpError(400, 'This host accepts text app messages')
+            return item.text
+          })
+          .join('\n')
+        if (!text.trim() || text.length > 32000 || value.role !== 'user')
           throw new HttpError(400, 'Invalid app message')
         if (!this.sendMessage) throw new HttpError(503, 'Thread messaging is unavailable')
         await this.sendMessage(taskId, randomUUID(), `[MCP App: ${app.title}]\n${text}`)

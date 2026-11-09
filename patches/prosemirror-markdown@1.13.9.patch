@@ -1,0 +1,24 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 0578fb27a1deb1db3b8ae056eb5a0f70a1150ed5..3aa95d3bf4542fd379c8bcb252606ac7e8a43285 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,6 +1,6 @@
+ import { Schema, Attrs, Node, Mark } from 'prosemirror-model';
+ import MarkdownIt from 'markdown-it';
+-import Token from 'markdown-it/lib/token.mjs';
++import type { Token } from 'markdown-it';
+ 
+ /**
+ Document schema for the data model used by CommonMark.
+diff --git a/src/from_markdown.ts b/src/from_markdown.ts
+index d29f9ac77eb18ed74ab374b5936c48c887de5219..55dcd010ef6ef30b9f98b3d7701aa04023e7c88b 100644
+--- a/src/from_markdown.ts
++++ b/src/from_markdown.ts
+@@ -1,6 +1,6 @@
+ // @ts-ignore
+ import MarkdownIt from "markdown-it"
+-import Token from "markdown-it/lib/token.mjs"
++import type { Token } from "markdown-it"
+ import {schema} from "./schema"
+ import {Mark, MarkType, Node, Attrs, Schema, NodeType} from "prosemirror-model"
+ 

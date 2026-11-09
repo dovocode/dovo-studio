@@ -12,5 +12,6 @@ for (const key of [
   'DOVO_OWNER_TOKEN',
   'DOVO_DATABASE_PATH',
   'DOVO_DATA_ROOT',
+  'DOVO_BROWSER_EXECUTABLE',
 ])
   delete process.env[key]

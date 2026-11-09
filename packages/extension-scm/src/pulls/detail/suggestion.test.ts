@@ -6,8 +6,7 @@ import { selectedPatchCode } from './selected-code'
 it('extracts multiline replacements using original patch coordinates and rejects missing context', () => {
   const diff = parsePatchFiles(
     pullFilePatch({ status: 'modified', patch: '@@ -20,2 +20,3 @@\n old\n-tail\n+first\n+second' }),
-    undefined,
-    true,
+    { throwOnError: true },
   )[0].files[0]
   expect(selectedPatchCode(diff, 21, 22)).toBe('first\nsecond')
   expect(selectedPatchCode(diff, 19, 22)).toBeUndefined()

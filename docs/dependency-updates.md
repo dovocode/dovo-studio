@@ -1,3 +1,85 @@
+# Dependency update — 2026-11-09
+
+This update includes stable major releases. Workspace manifests, the pnpm lockfile and the iOS
+Device Hub Cargo lockfile update together. Host-managed agent CLIs and user credentials stay intact.
+
+| Component                 | Previous | Updated |
+| ------------------------- | -------- | ------- |
+| Node                      | 24.22.2  | 26.13.0 |
+| pnpm                      | 12.16.1  | 12.18.0 |
+| Vite+                     | 1.4.0    | 1.5.0   |
+| Electron                  | 45.2.1   | 45.2.3  |
+| Claude Agent SDK          | 0.3.316  | 0.3.319 |
+| Cursor SDK                | 1.2.0    | 1.3.1   |
+| Copilot SDK               | 1.0.28   | 1.0.29  |
+| ACP SDK                   | 2.2.0    | 2.4.0   |
+| Effect and React bindings | 4.1.1    | 4.1.2   |
+| Expo                      | 58.0.22  | 58.0.23 |
+| Mobile React              | 19.3.0   | 19.3.1  |
+| AsyncStorage              | 2.2.0    | 3.1.1   |
+| Gesture handler           | 3.3.0    | 3.5.0   |
+| Markdown-it               | 14.3.3   | 15.0.3  |
+| ONNX Runtime              | 1.23.2   | 1.31.1  |
+| Playwright                | 1.64.1   | 1.65.0  |
+
+## Compatibility changes
+
+- Development, CI, Docker images and packaged server runtimes use Node 26. Install the exact
+  `.node-version` before running the commands below. Native server modules must be rebuilt for Node
+  26; do not copy the old Node 24 modules into a new package.
+- Only modern MCP Apps are supported. The old client alias and HTML, URL-list and Remote DOM
+  renderers are removed. Old saved cards show an upgrade error; saved history is retained. The
+  unrelated HTTP SSE transport fallback remains available. See [MCP Apps](mcp-apps.md).
+- Markdown-it 15 supplies its own types. ProseMirror's declaration patch uses those types, and an
+  override keeps its tokenizer on the same parser version as the rich composer. Diff parser calls
+  use the new options object and keep strict error handling.
+- AsyncStorage 3's default export opens the previous store through its legacy adapter. Dovo keeps
+  that import so settings, tabs and bookmarks remain available after a native rebuild.
+- Mobile packages use the latest stable versions. `expo install --check` reports differences from
+  Expo 58's tested baseline for React, AsyncStorage, gesture handler, SVG, view-shot and worklets.
+  Those warnings remain visible. A native build is required to verify this set; web mocks do not
+  establish native compatibility.
+- The autolinking patch moves to 58.0.17 and keeps its bounded 30-second module scan. The Device Hub
+  Rust dependencies update within their declared stable ranges. Its `idevice` pin remains at the
+  latest stable tag, v0.1.68.
+- Storybook's Vite+ peer range and Expo require-utils' TypeScript peer range lag the installed
+  versions. Peer checks remain enabled.
+
+## Verification commands
+
+```sh
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
+pnpm build
+pnpm typecheck
+pnpm check
+pnpm exec vp test --maxWorkers=4
+pnpm test:ci:scripts
+pnpm test:mcp-apps:browser
+node scripts/check-rich-composer-browser.mjs
+node scripts/check-diff-resize-browser.mjs
+node scripts/check-mobile-metro-modules.mjs
+node scripts/check-mobile-preference-storage-browser.mjs
+node scripts/check-mobile-clipboard-browser.mjs
+node scripts/check-clipboard-browser.mjs
+node scripts/check-file-drafts-native.mjs
+node scripts/check-workspace-router-model.mjs
+cargo check --locked --manifest-path packages/runtime/native/ios-device/Cargo.toml
+```
+
+Local checks pass for workspace types and builds, frozen installation, Rust compilation, MCP Apps,
+rich editing, diff resizing, mobile preference recovery and terminal clipboard behavior. The
+production dependency audit reports no advisories. The full unit run passed 7,353 tests; its seven
+failures pass on rerun after clearing the host browser override and using a test-only sandbox
+override for this Linux host. Production Chromium sandboxing remains enabled. Thirteen tests were
+skipped. The bundled model passes all 100 reference cases and all 32 workspace-selection cases.
+
+On macOS with Xcode and Maestro, run `node scripts/ci/mobile-native-smoke.mjs`. It builds and
+installs on its own disposable iPhone simulator. It never uses a physical phone. Android builds and
+physical iOS gestures, clipboard and upgrade behavior need separate device checks.
+
+---
+
 # Dependency update — 2026-11-02
 
 This update refreshes workspace dependencies and compatibility patches, then integrates the five

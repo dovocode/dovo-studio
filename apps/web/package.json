@@ -20,16 +20,16 @@
     "@dovo/studio-shell": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
     "@tanstack/react-router": "^1.170.46",
-    "@tanstack/react-start": "^1.169.4",
+    "@tanstack/react-start": "^1.169.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "srvx": "^1.0.8"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "vite": "catalog:"
   }
 }

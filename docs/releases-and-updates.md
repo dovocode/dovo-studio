@@ -40,7 +40,7 @@ release. The Release workflow produces:
 Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64. Windows checks,
 packaging and signing run on Windows x64; Windows ARM64 builds are disabled. Generated mise
 definitions include Windows when the release contains its server archive. Each desktop build uses
-its native runner and Node 24, packages its matching SQLite/PTY dependencies, and smoke-tests the
+its native runner and Node 26, packages its matching SQLite/PTY dependencies, and smoke-tests the
 bundled runtime and terminal. AppImage uses architecture-specific Linux update metadata. DEB/RPM
 users install a new package through their package manager; Check for Updates opens the release
 download page. Artifacts are not a promise of compatibility with every historical
@@ -119,7 +119,7 @@ archives, update metadata, Homebrew definitions, and a pinned mise config. The S
 remains an explicit review and publish step. When preparing the next Stable version, update the
 `version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base version.
 
-Use Node 24, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
+Use Node 26, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
 tools. Only macOS publishing with `--publish` requires a Developer ID identity and notarization
 credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
@@ -278,7 +278,7 @@ References: [Expo Widgets](https://docs.expo.dev/versions/latest/sdk/widgets/),
 ## Homebrew and mise
 
 The release workflow builds standalone server archives for macOS arm64, Linux arm64/x64 and Windows
-x64, with Node 24 and native dependencies included. Windows archives are ZIPs with a
+x64, with Node 26 and native dependencies included. Windows archives are ZIPs with a
 `bin/dovo-server.cmd` launcher; macOS/Linux use tar.gz. Linux archives are built on Ubuntu 24.04
 (glibc); Alpine/musl is not supported. Agent CLIs and Git remain host tools, so existing signed-in
 accounts and project directories work.
@@ -325,7 +325,7 @@ discovery. Use `mise lock` to lock alias downloads.
 
 Package-manager installs deliberately do not invoke the source checkout's `dovo-server update` flow
 or redirect to a previously staged source release. Their selected package controls the server
-version. Test a locally built archive with `pnpm run package:server` under Node 24. Generate
+version. Test a locally built archive with `pnpm run package:server` under Node 26. Generate
 tap/checksum metadata with
 `node scripts/packaging/generate-distribution.mjs release release/distribution VERSION`.
 

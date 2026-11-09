@@ -17,7 +17,7 @@ if (
   !['arm64', 'x64'].includes(process.arch)
 )
   throw new Error('Server archives support macOS/Linux/Windows arm64 and x64.')
-if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Package with Node 24.')
+if (Number(process.versions.node.split('.')[0]) !== 26) throw new Error('Package with Node 26.')
 const windows = process.platform === 'win32'
 const nodeName = windows ? 'node.exe' : 'node'
 const { version, nightly } = await releaseVariant(root)

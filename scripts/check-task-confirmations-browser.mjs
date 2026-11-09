@@ -246,17 +246,15 @@ try {
     params,
   )
   await page.evaluate(() => (window.calls = []))
-  await send('ui/intent', { action: 'create' })
-  await dialog('Send MCP App intent?').waitFor()
+  await send('ui/message', { role: 'user', content: [{ type: 'text', text: 'Create' }] })
+  await dialog('Send MCP App message?').waitFor()
   await page.evaluate(() => window.changeApp())
-  await dialog('Send MCP App intent?').waitFor({ state: 'hidden' })
+  await dialog('Send MCP App message?').waitFor({ state: 'hidden' })
   assert.equal(
     await page.evaluate(() => window.calls.filter((c) => c.path === '/api/mcp-apps/rpc').length),
     0,
   )
   await waitReady()
-  await send('ui/open-embedded', { url: 'http://external-ui/path' })
-  await decide('Load external MCP UI?', false)
   await send('ui/download-file', { contents: [{ type: 'text', text: 'file' }] })
   await decide('Download MCP App files?', false)
   assert.equal(
@@ -276,8 +274,6 @@ try {
   await decide('Download MCP App files?', true, 'Download files')
   await page.waitForFunction(() => window.downloads.length === 1)
   assert.deepEqual(await page.evaluate(() => window.downloads), ['report.txt'])
-  await send('ui/open-embedded', { url: 'http://external-ui/path' })
-  await decide('Load external MCP UI?', true, 'Load interface')
   await page.evaluate(() => {
     window.calls = []
     window.holdRead = true

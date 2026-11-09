@@ -289,27 +289,17 @@ try {
         ),
       resource,
     )
-    if (format === 'html') {
-      await legacyPage.frameLocator('iframe').locator('button').click()
-      await legacyPage.waitForFunction(() => window.reports.some((r) => r.type === 'request'))
-      const req = await legacyPage.evaluate(() => window.reports.find((r) => r.type === 'request'))
-      if (req.method !== 'tools/call') throw new Error('Legacy action not bridged')
-    } else if (format === 'url') {
-      await legacyPage.waitForFunction(() =>
-        window.reports.some((r) => r.method === 'ui/open-embedded'),
-      )
-      const req = await legacyPage.evaluate(() =>
-        window.reports.find((r) => r.method === 'ui/open-embedded'),
-      )
-      await legacyPage.evaluate(
-        (req) =>
-          window.dovoMcpReply({ nonce: 'legacy-nonce', requestId: req.requestId, result: {} }),
-        req,
-      )
-      await legacyPage.frameLocator('iframe').locator('h1').waitFor({ timeout: 3000 })
-    } else await legacyPage.getByText('Remote DOM works').waitFor({ timeout: 3000 })
+    await legacyPage.waitForFunction(() =>
+      window.reports.some(
+        (r) => r.type === 'error' && r.message.includes('Legacy MCP UI is no longer supported'),
+      ),
+    )
+    if (await legacyPage.locator('iframe').count())
+      throw new Error('Unsupported legacy app created a frame')
+    if (await legacyPage.evaluate(() => window.reports.some((r) => r.type === 'request')))
+      throw new Error('Unsupported legacy app sent a request')
     await legacyPage.close()
-    console.log('Legacy', format, 'passed')
+    console.log('Unsupported legacy', format, 'rejected')
   }
 } finally {
   await browser.close()

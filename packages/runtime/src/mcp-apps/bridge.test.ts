@@ -1,5 +1,6 @@
 import { McpApps, MCP_SESSION_IDLE_MS } from './bridge'
 import { HttpError } from '../errors'
+import { object } from './resources'
 import { runtimeIntegration } from '../testing/integration'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -217,7 +218,7 @@ it('closes MCP sessions and revokes proxy scopes when a thread is auto-settled',
   expect(bridge['resolved'].size).toBe(0)
   expect(bridge['sessions'].size).toBe(0)
 })
-it('captures MCP Apps and legacy resources once without putting HTML in sync', async () => {
+it('captures MCP Apps and rejects legacy resources without putting HTML in sync', async () => {
   const s = await setup(),
     bridge = s.runtime.services.mcpApps
   const listed = await bridge.proxy(s.token, 'tools/list', {})
@@ -234,20 +235,51 @@ it('captures MCP Apps and legacy resources once without putting HTML in sync', a
   )
   await bridge.proxy(s.token, 'tools/call', { name: 'chart', arguments: { city: 'Amsterdam' } })
   const result = await bridge.proxy(s.token, 'tools/call', { name: 'legacy' })
-  expect(result).toMatchObject({ content: [{ type: 'text' }] })
+  expect(result).toMatchObject({
+    content: [
+      { type: 'text', text: expect.stringContaining('Legacy MCP UI is no longer supported') },
+    ],
+  })
   const events = s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events
   const refs = recentTools(events).flatMap((event) => mcpAppReferences(event.payload))
-  expect(refs).toHaveLength(2)
+  expect(refs).toHaveLength(1)
   expect(JSON.stringify(events)).not.toContain('<h1>')
-  expect(refs.map((ref) => bridge.read(s.task.id, ref.id).format).sort()).toEqual([
-    'apps',
-    'legacy',
-  ])
+  expect(refs.map((ref) => bridge.read(s.task.id, ref.id).format)).toEqual(['apps'])
   expect(s.calls()).toBe(2)
   expect(s.resources()).toBe(1)
   expect(bridge.read(s.task.id, refs[0].id).connected).toBe(true)
   expect(() => bridge.read('another-thread', refs[0].id)).toThrow('Task')
   await expect(bridge.proxy('wrong-token', 'tools/list', {})).rejects.toThrow('credential')
+})
+it('rejects saved legacy cards without changing history or saved content', async () => {
+  const s = await setup(),
+    bridge = s.runtime.services.mcpApps
+  await bridge.proxy(s.token, 'tools/call', { name: 'chart' })
+  const history = s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events
+  const ref = recentTools(history).flatMap((event) => mcpAppReferences(event.payload))[0]
+  const db = s.runtime.services.db
+  const row = object(db.prepare('SELECT value FROM mcp_apps WHERE id=?').get(ref.id))
+  if (typeof row.value !== 'string') throw new Error('Missing saved app')
+  const saved = JSON.stringify({ ...object(JSON.parse(row.value)), format: 'legacy' })
+  db.prepare('UPDATE mcp_apps SET value=? WHERE id=?').run(saved, ref.id)
+  const unsupported = { status: 410, message: expect.stringContaining('no longer supported') }
+  expect(() => bridge.read(s.task.id, ref.id)).toThrow(expect.objectContaining(unsupported))
+  expect(() =>
+    bridge.attachView(
+      s.task.id,
+      ref.id,
+      () => {},
+      () => {},
+      () => {},
+    ),
+  ).toThrow(expect.objectContaining(unsupported))
+  await expect(bridge.action(s.task.id, ref.id, 'legacy', 'ui/message', {})).rejects.toMatchObject(
+    unsupported,
+  )
+  expect(db.prepare('SELECT value FROM mcp_apps WHERE id=?').get(ref.id)).toEqual({ value: saved })
+  expect(s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events).toEqual(
+    history,
+  )
 })
 it('requires UI approval and deduplicates calls, including persisted completed actions', async () => {
   const s = await setup(),

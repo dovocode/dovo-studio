@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: .node-version
       - name: Require passing checks for this exact source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -169,7 +169,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: .node-version
       - uses: actions/download-artifact@v8
         with:
           pattern: mobile-beta-*-${{ needs.prepare.outputs.build }}
