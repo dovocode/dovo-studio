@@ -57,23 +57,24 @@ appId: com.dovo.studio
     visible:
       id: Message
     timeout: 10000
-- tapOn: Folder
+- tapOn: Choose project
 - tapOn: Mobile fixture
-- extendedWaitUntil:
-    visible:
-      id: Checkout & branch
-    timeout: 10000
+- tapOn: Advanced
 - assertVisible: What would you like to work on?
 - tapOn:
     id: Message
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: Checkout & branch
+    timeout: 10000
 - assertVisible:
     id: Dismiss keyboard
     width: 44
     height: 44
     tolerance: 1
 - assertVisible:
-    id: Attach files
+    id: Add to draft
     width: 44
     height: 44
     tolerance: 1
@@ -87,7 +88,7 @@ appId: com.dovo.studio
     width: 44
     height: 44
     tolerance: 1
-- assertVisible: Model & access
+- assertVisible: Agent & model
 - assertVisible:
     id: Checkout & branch
 - takeScreenshot: dovo-mobile-new-draft-keyboard-empty

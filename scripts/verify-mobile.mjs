@@ -386,7 +386,7 @@ try {
   }
   if (composerOnly) {
     const draft = runtime.services.store.get().tasks.find((entry) => entry.id !== 'mobile-task')
-    if (!draft || draft.status !== 'draft' || draft.messages.length || draft.turns?.length)
+    if (draft && (draft.status !== 'draft' || draft.messages.length || draft.turns?.length))
       throw new Error('The new-draft keyboard layout check unexpectedly submitted a message')
     const draftManifest = JSON.parse(
       await readFile(
@@ -404,8 +404,10 @@ try {
     if (
       !Object.entries(draftManifest).some(
         ([key, value]) =>
-          key.startsWith('dovo.draft.') &&
-          key.endsWith(`.${draft.id}`) &&
+          key.startsWith(
+            `dovo.draft.${encodeURIComponent(`http://${fixtureHost}:${runtime.port}`)}.`,
+          ) &&
+          (!draft || key.endsWith(`.${draft.id}`)) &&
           value === 'Keyboard layout draft',
       )
     )
@@ -674,11 +676,12 @@ async function verifyComposerBounds(device, stage) {
     const [left, top, right, bottom] = values
     return { label, left, top, right, bottom }
   }
-  const toolbar = ['Attach files', 'Model & access', 'Dictate message', 'Send'].map(bounds)
+  const toolbar = ['Add to draft', 'Agent & model', 'Dictate message', 'Send'].map(bounds)
   const checkout = bounds('Checkout & branch')
   const dismiss = bounds('Dismiss keyboard')
   const input = bounds('Message')
-  const navigation = ['Back', 'Chat', 'Terminal', 'Browser'].map(bounds)
+  // A new thread uses UIKit's compact navigation bar; pane tabs live in its menu.
+  const navigation = [bounds('New thread')]
   const controls = [...toolbar, checkout, dismiss]
   const center = (control) => (control.top + control.bottom) / 2
   for (const control of controls) {

@@ -56,7 +56,7 @@ export function ScreenHeader({
   gestureEnabled?: boolean
   hidden?: boolean
 }) {
-  const { colors } = useTheme()
+  const { colors, mode } = useTheme()
 
   const title = appChannel ? `${screenTitle} · ${appChannel}` : screenTitle
   const navigation = useContext(NavigationContext)
@@ -89,7 +89,12 @@ export function ScreenHeader({
     if (hidden)
       return (
         <Stack.Screen
-          options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }}
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+            fullScreenGestureEnabled: false,
+            statusBarStyle: mode === 'dark' ? 'light' : 'dark',
+          }}
         />
       )
     return (
@@ -99,6 +104,7 @@ export function ScreenHeader({
             title,
             ...(heading ? { headerTitle: () => heading } : {}),
             headerShown: true,
+            statusBarStyle: mode === 'dark' ? 'light' : 'dark',
             headerBackVisible: !back,
             headerBackImageSource: iconAssets.back,
             gestureEnabled,

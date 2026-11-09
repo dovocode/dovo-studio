@@ -233,7 +233,7 @@ export function WorkbenchDetailRoute({
   )
 }
 export function Workbench() {
-  const { colors, styles } = useTheme()
+  const { colors, styles, mode } = useTheme()
 
   const runtime = useRuntime(),
     [extensions] = useApplicationState(createMobileExtensions)
@@ -684,7 +684,12 @@ export function Workbench() {
         >
           <TaskListViewProvider>
             <SceneContext.Provider value={sceneContext}>
-              <Stack screenOptions={{ headerShown: false }}>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  statusBarStyle: mode === 'dark' ? 'light' : 'dark',
+                }}
+              >
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="(more)" />
                 <Stack.Screen name="jobs" />
