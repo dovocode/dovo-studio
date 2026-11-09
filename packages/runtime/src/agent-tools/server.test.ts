@@ -250,6 +250,11 @@ function decodeToolText(result: Awaited<ReturnType<Client['callTool']>>) {
 it('keeps slow PR and multi-run pipeline registrations open through the MCP transport', async () => {
   const requests: Array<{ path: string; authorization?: string; agentAccess?: string }> = []
   const http = createServer(async (request, response) => {
+    // Concurrent port discovery can probe this listener. Only tool calls have JSON bodies.
+    if (request.method !== 'POST') {
+      response.writeHead(405).end()
+      return
+    }
     const chunks: Buffer[] = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
     const input = decode(
@@ -327,6 +332,11 @@ it('allows device discovery and preview opening to finish through the MCP transp
     agentAccess?: string
   }> = []
   const http = createServer(async (request, response) => {
+    // Concurrent port discovery can probe this listener. Only tool calls have JSON bodies.
+    if (request.method !== 'POST') {
+      response.writeHead(405).end()
+      return
+    }
     const chunks: Buffer[] = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
     const input: unknown = JSON.parse(Buffer.concat(chunks).toString())

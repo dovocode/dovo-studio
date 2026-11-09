@@ -73,7 +73,7 @@ for (const foreground of [false, true])
     async () => {
       const f = await fixture()
       const terminals = new Terminals()
-      const unrelated = createServer()
+      const unrelated = createServer((socket) => socket.destroy())
       let descendantPid: number | undefined
       let replacement: ReturnType<typeof createServer> | undefined
       try {
@@ -143,7 +143,7 @@ for (const foreground of [false, true])
         reattach()
         await terminals.close(session.id)
         await terminals.dispose()
-        replacement = createServer()
+        replacement = createServer((socket) => socket.destroy())
         await new Promise<void>((resolve, reject) => {
           replacement!.once('error', reject)
           replacement!.listen(port, '127.0.0.1', resolve)
