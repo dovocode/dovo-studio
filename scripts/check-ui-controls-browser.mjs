@@ -25,7 +25,7 @@ const built = await bundleBrowser(
       import {Button} from './src/components/ui/button';
       import {ChoicePicker} from './src/choice-picker';
       import {PageHeader} from './src/page-header';
-      import {SettingsGroup,Segmented} from './src/settings-layout';
+      import {SettingsGroup,SettingRow,Segmented} from './src/settings-layout';
       import {ChangeTypeFilters} from './src/review/change-types';
       import {Dialog,DialogTrigger,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './src/components/ui/dialog';
       import {Dialog as WebDialog,DialogTrigger as WebTrigger,DialogContent as WebContent,DialogTitle as WebTitle,DialogDescription as WebDescription} from '../web-ui/src/dialog';
@@ -58,6 +58,7 @@ const built = await bundleBrowser(
         <Dialog><DialogTrigger>Editor dialog</DialogTrigger><DialogContent className="flex h-[400px] flex-col gap-0 overflow-hidden p-0"><DialogTitle>Editor</DialogTitle><DialogDescription>Fixed editor layout</DialogDescription><div className="min-h-0 flex-1 overflow-y-auto">{Array.from({length:40},(_,i)=><p key={i}>Line {i}</p>)}</div></DialogContent></Dialog>
         <Dialog><DialogTrigger>Custom close dialog</DialogTrigger><DialogContent className="gap-0 [&_[data-dialog-close]]:hidden"><DialogTitle>Custom editor</DialogTitle><DialogDescription>Editor owns its close button</DialogDescription><DialogTrigger>Finish editing</DialogTrigger></DialogContent></Dialog>
         {['Confirmation','Header confirmation','Custom focus','Disabled cancel','Hidden cancel'].map(kind=><Confirmation key={kind} kind={kind}/>)}
+        <div className="studio-settings-page"><div className="studio-settings-content"><SettingsGroup title="Settings spacing"><SettingRow label="Project folder" description="Choose the initial folder for new projects."><Input aria-label="Project folder value" defaultValue="~/Code"/></SettingRow><SettingRow label="Show details" description="Keep labels and controls inside the rounded card."><input type="checkbox" aria-label="Show details" defaultChecked/></SettingRow></SettingsGroup></div></div>
         <SettingsGroup title="Display"><Segmented label="Density" value={density} options={[['comfortable','Comfortable'],['compact','Compact']]} onChange={setDensity}/></SettingsGroup>
         <SettingsGroup title="Advanced display" advanced description="Optional display settings"><Input aria-label="Advanced option"/></SettingsGroup>
         <ChangeTypeFilters files={[{path:'src/app.ts',changeKind:'normal'},{path:'app.test.ts',changeKind:'tests'},{path:'mock.ts',changeKind:'mocks'},{path:'README.md',changeKind:'docs'},{path:'generated.ts',changeKind:'generated'}]} value={filter} onChange={setFilter}/>
@@ -109,6 +110,22 @@ try {
       await page.addStyleTag({ content: readFileSync(assets + file, 'utf8') })
     }
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    const card = page.locator('[data-setting-label="Settings spacing"] [data-slot="card"]')
+    const cardBounds = await card.boundingBox()
+    for (const row of await card.locator('.studio-setting-row').all()) {
+      const copy = await row.locator('.studio-setting-copy').boundingBox()
+      const control = await row.locator('.studio-setting-control').boundingBox()
+      assert.ok(copy.x - cardBounds.x >= 16, 'Settings labels clear the card edge')
+      assert.ok(
+        cardBounds.x + cardBounds.width - control.x - control.width >= 16,
+        'Settings controls clear the card edge',
+      )
+      assert.equal(
+        await row.evaluate((node) => node.scrollWidth <= node.clientWidth),
+        true,
+        'Settings rows fit narrow panes',
+      )
+    }
     const primaryButton = page.getByRole('button', { name: 'default action', exact: true })
     await primaryButton.scrollIntoViewIfNeeded()
     const resting = await primaryButton.boundingBox()

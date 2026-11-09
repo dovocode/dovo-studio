@@ -68,6 +68,10 @@
   --studio-floating-fill: var(--popover);
   --studio-surface-filter: blur(24px) saturate(1.4);
   --studio-control-rim: inset 0 1px 0 #ffffff24, inset 0 -1px 3px #00000020;
+  --studio-inset-fill: color-mix(in srgb, var(--background) 70%, var(--card));
+  --studio-inset-shadow: inset 0 1px 3px #00000024, inset 0 -1px 0 #ffffff0d;
+  --studio-capsule-fill: color-mix(in srgb, var(--primary) 8%, var(--card));
+  --studio-capsule-shadow: var(--studio-control-rim), 0 1px 3px #00000024;
   color-scheme: dark;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -108,6 +112,8 @@
     inset 0.5px 1px 0 #fffffff0, inset -0.5px -0.5px 0 #ffffff80, inset 0 -2px 5px #00000006;
   --studio-surface-shadow: 0 3px 6px #0000000a, 0 18px 44px -12px #00000030;
   --studio-control-rim: inset 0 1px 0 #ffffffcc, inset 0 -1px 2px #00000008;
+  --studio-inset-shadow: inset 0 1px 3px #0000000d, inset 0 -1px 0 #ffffffb3;
+  --studio-capsule-shadow: var(--studio-control-rim), 0 1px 3px #00000012;
   color-scheme: light;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -183,6 +189,7 @@
   --studio-glow-strong: 0 0 0 transparent;
   --studio-glow-wide: 0 0 0 transparent;
   --studio-icon-glow: none;
+  --studio-capsule-shadow: none;
 }
 
 /* Dense lists use painted highlights. Only temporary surfaces blur the backdrop. */
@@ -197,6 +204,8 @@
   --studio-floating-fill: var(--popover);
   --studio-surface-filter: none;
   --studio-control-rim: none;
+  --studio-inset-shadow: none;
+  --studio-capsule-shadow: none;
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   :root:root {
@@ -205,6 +214,8 @@
     --studio-floating-fill: var(--popover);
     --studio-surface-filter: none;
     --studio-control-rim: none;
+    --studio-inset-shadow: none;
+    --studio-capsule-shadow: none;
   }
 }
 
@@ -394,13 +405,6 @@
       var(--studio-glow-strong);
   }
   :where(
-    [data-slot='checkbox'][data-state='checked'],
-    [data-slot='checkbox'][data-state='indeterminate'],
-    [data-slot='switch'][data-state='checked']
-  ) {
-    box-shadow: var(--studio-glow);
-  }
-  :where(
     [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']),
     [data-slot='badge']
   ) {
@@ -408,9 +412,21 @@
     box-shadow: var(--studio-control-rim);
   }
   :where([data-slot='switch-thumb']) {
+    background-image: var(--studio-surface-sheen);
     box-shadow:
       var(--studio-control-rim),
       0 1px 3px #00000030;
+  }
+  :where([data-slot='switch'], [data-slot='checkbox']) {
+    background-image: var(--studio-surface-sheen);
+    box-shadow: var(--studio-control-rim);
+  }
+  :where(
+    [data-slot='checkbox'][data-state='checked'],
+    [data-slot='checkbox'][data-state='indeterminate'],
+    [data-slot='switch'][data-state='checked']
+  ) {
+    box-shadow: var(--studio-control-rim), var(--studio-glow);
   }
   :root[data-theme-gradients='false'] :where([data-slot='button'][data-variant='default']) {
     background-image: none;

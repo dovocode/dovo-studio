@@ -10,7 +10,7 @@ export function PullTabs({
   items: Array<{ id: string; name: string }>
   onChange: (id: string) => void
 }) {
-  const { colors } = useTheme()
+  const { colors, highContrast } = useTheme()
 
   return (
     <ScrollView
@@ -24,9 +24,11 @@ export function PullTabs({
         accessibilityLabel="Pull request tabs"
         style={{
           flexDirection: 'row',
-          padding: 2,
-          borderRadius: 12,
-          backgroundColor: colors.surface,
+          padding: 3,
+          borderRadius: 26,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.background,
         }}
       >
         {items.map((item) => (
@@ -42,12 +44,19 @@ export function PullTabs({
               minHeight: 44,
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: 10,
+              borderRadius: 22,
+              borderWidth: 1,
+              borderColor:
+                item.id === value ? (highContrast ? colors.text : colors.border) : 'transparent',
               backgroundColor: pressed
                 ? colors.elevated
                 : item.id === value
-                  ? colors.selection
+                  ? colors.surface
                   : 'transparent',
+              shadowColor: '#000',
+              shadowOpacity: !highContrast && item.id === value ? 0.1 : 0,
+              shadowRadius: 3,
+              shadowOffset: { width: 0, height: 1 },
             })}
           >
             <Text

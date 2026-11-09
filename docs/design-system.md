@@ -55,6 +55,17 @@ the same painted highlights without a backdrop filter. This keeps the glass fini
 adding blur work to each thread row. Keep the Gradients, Glow, high-contrast and
 reduced-transparency preferences active.
 
+Grouped choices use a recessed capsule track and a raised selected capsule. Settings and composer
+tabs share this finish. Selection does not move or resize the control. Keep keyboard focus on the
+chosen option and use arrows, Home and End where the component supports them. Wrap settings choices
+at narrow widths and retain 44px touch targets. Browser addresses use the same recessed fill.
+Toolbars use painted highlights without backdrop blur. Native status pills use `Glass` with the
+existing opaque fallback. Native iOS pickers and switches keep their platform appearance. The
+catalog's **Selection / Inset Glass Controls** story uses these production controls.
+
+Settings rows keep 16px of space at both card edges and 12px above and below their content. Keep
+this inset when controls move below labels in a narrow pane. Dividers span the card width.
+
 Center **Scroll to latest message** in its conversation pane. Inline chat images show **Edit &
 attach** over the image on hover or keyboard focus. Touch screens keep this action visible with a
 44px minimum height. Revealing the action must not move the image or the conversation. A turn jump

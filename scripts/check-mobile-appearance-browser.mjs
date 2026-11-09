@@ -13,7 +13,7 @@ const mocks = {
   'expo-document-picker': `export const getDocumentAsync=async()=>window.themeFile?{canceled:false,assets:[{uri:'theme.jsonc',name:'native.jsonc'}]}:{canceled:true};`,
   'expo-file-system': `export class File{get size(){return window.themeFile.length}async text(){return window.themeFile}}`,
   'react-native': `
-    export const Text=({children,style})=><span style={style}>{children}</span>;
+    export const Text=({children,style})=><span style={style}>{children}</span>;export const ActivityIndicator=()=> <span role="progressbar"/>;
     import {useSyncExternalStore} from 'react';
     const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
     const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(result[key]!==undefined){for(const axis of axes)result[axis]=result[key];delete result[key]}}return result};
@@ -21,10 +21,10 @@ const mocks = {
     export const Platform={OS:'ios'};
     export const Linking={openURL:async()=>{}};
     export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
-    export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,isReduceTransparencyEnabled:async()=>false,addEventListener:(event,listener)=>{if(event==='reduceTransparencyChanged')window.setReduceTransparency=listener;return {remove(){}}}};
+    const transparencyListeners=new Set();window.setReduceTransparency=value=>transparencyListeners.forEach(listener=>listener(value));export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,isReduceTransparencyEnabled:async()=>false,addEventListener:(event,listener)=>{if(event==='reduceTransparencyChanged')transparencyListeners.add(listener);return {remove(){transparencyListeners.delete(listener)}}}};
     export const View=({children,style,testID})=><div data-testid={testID} style={{display:"flex",flexDirection:"column",flexShrink:0,...nativeStyle(style)}}>{children}</div>;
     export const ScrollView=({children,contentContainerStyle})=><div style={{display:"flex",flexDirection:"column",...nativeStyle(contentContainerStyle)}}>{children}</div>;
-    export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,accessibilityRole})=><button disabled={disabled} role={accessibilityRole} aria-label={accessibilityLabel} aria-checked={accessibilityState?.checked} style={{display:'flex',flexDirection:'column',flexShrink:0,border:0,background:'transparent',textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>;
+    export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,accessibilityRole})=><button disabled={disabled} role={accessibilityRole} aria-label={accessibilityLabel} aria-checked={accessibilityState?.checked} aria-selected={accessibilityRole==='tab'?accessibilityState?.selected:undefined} style={{display:'flex',flexDirection:'column',flexShrink:0,border:0,background:'transparent',textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>;
     let system='light',override='unspecified';const listeners=new Set();
     const publish=()=>listeners.forEach(listener=>listener());
     const subscribe=listener=>{listeners.add(listener);return ()=>listeners.delete(listener)};
@@ -56,6 +56,7 @@ const mocks = {
   `,
 }
 mocks['../content/text'] = mocks['../ui/content/text']
+mocks['./icon'] = mocks['../ui/controls/icon']
 const built = await build({
   stdin: {
     contents: `
@@ -64,6 +65,8 @@ const built = await build({
       import {MobileAppearance} from './src/ui/appearance';
       import {useTheme} from './src/ui/theme';
       import {Glass} from './src/ui/layout/glass';
+      import {Pill} from './src/ui/controls/pill';
+      import {PullTabs} from './src/scm/pulls/detail/pull-tabs.tsx';
       import AppearanceScreen from './src/screens/appearance';
       import {ComposerField} from './src/tasks/composer/composer-field';
       import {useDraft} from './src/tasks/draft/use-draft';
@@ -72,13 +75,13 @@ const built = await build({
       function Draft(){
         const {colors,mode,palette,code}=useTheme();
         const preferences=useMobilePreferences();const draft=useDraft('task','');
-        const [sending,setSending]=useState(false);
+        const [sending,setSending]=useState(false);const [tab,setTab]=useState('overview');
         useEffect(()=>{window.draftMounts++},[]);
         window.currentTheme={colors,mode,palette,code};window.preferences=preferences;
         window.configure=updateMobilePreferences;window.setSending=setSending;
         return <div id="draft" style={{background:colors.background,color:colors.text}}>
           <ComposerField value={sending?'':draft.text} revision={JSON.stringify([draft.revision,sending])} onChangeText={text=>draft.update(text,'keyboard')} onSelectionChange={()=>{}} editable={draft.ready&&!sending} showOptions trailingControlCount={0}/>
-          <span id="error" style={{color:colors.error}}>Send failed</span>
+          <div id="status-pill"><Pill label="Review changes" onPress={()=>window.pillPresses=(window.pillPresses||0)+1} onDismiss={()=>window.pillDismissed=true}/></div><PullTabs value={tab} items={[{id:"overview",name:"Overview"},{id:"files",name:"Files"}]} onChange={setTab}/><span id="error" style={{color:colors.error}}>Send failed</span>
         </div>;
       }
       createRoot(document.getElementById('app')).render(<MobileAppearance><Glass><Draft/></Glass><AppearanceScreen/></MobileAppearance>);
@@ -202,7 +205,11 @@ try {
     ),
     true,
   )
-  const glass = page.getByTestId('Native glass')
+  const glass = page.getByTestId('Native glass').first()
+  const pill = page.getByRole('button', { name: 'Review changes', exact: true })
+  await pill.evaluate((node) => {
+    window.originalPill = node
+  })
   await page.waitForFunction(
     () => document.querySelector('[data-testid="Native glass"]').dataset.glassEffect === 'regular',
   )
@@ -234,12 +241,30 @@ try {
       reduced,
     )
     assert.equal(
+      await pill.evaluate((node) => node === window.originalPill),
+      true,
+      'Transparency changes preserve the status action',
+    )
+    assert.equal(
+      await page.locator('#status-pill [data-glass-effect]').getAttribute('data-glass-effect'),
+      reduced ? 'none' : 'regular',
+    )
+    assert.equal(
       await input.evaluate((element) => element === window.originalInput),
       true,
       'Transparency changes preserve the draft input',
     )
   }
   assert.equal(await glass.getAttribute('data-glass-effect'), 'regular')
+  assert.ok((await pill.boundingBox()).height >= 44)
+  const filesTab = page.getByRole('tab', { name: 'Files', exact: true })
+  await filesTab.click()
+  assert.equal(await filesTab.getAttribute('aria-selected'), 'true')
+  assert.ok((await filesTab.boundingBox()).height >= 44)
+  await pill.click()
+  assert.equal(await page.evaluate(() => window.pillPresses), 1)
+  await page.getByRole('button', { name: 'Dismiss Review changes', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.pillDismissed), true)
   await page.evaluate(() => window.setSending(true))
   await page.waitForFunction(() => window.originalInput.disabled)
   await page.evaluate(() => window.configure({ themePalette: 'claude', theme: 'dark' }))

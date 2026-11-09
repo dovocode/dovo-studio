@@ -1660,8 +1660,8 @@ textarea {
   height: 40px;
   border: 1px solid color-mix(in srgb, var(--border) 80%, var(--foreground) 8%);
   border-radius: 24px;
-  background: color-mix(in srgb, var(--background) 50%, var(--card));
-  box-shadow: inset 0 1px 3px #0000000a;
+  background: var(--studio-inset-fill);
+  box-shadow: var(--studio-inset-shadow);
 }
 .studio-browser-address:focus-within {
   border-color: color-mix(in srgb, var(--primary) 65%, var(--border));
@@ -2023,6 +2023,8 @@ textarea {
 .studio-page-toolbar {
   padding: 12px 16px;
   background: color-mix(in srgb, var(--card) 40%, var(--background));
+  background-image: var(--studio-surface-sheen);
+  box-shadow: var(--studio-control-rim);
 }
 .studio-empty-icon {
   display: flex;
@@ -2179,28 +2181,53 @@ textarea {
   background: var(--accent);
 }
 .studio-filter-chip[aria-pressed='true'] {
-  background: var(--selection);
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+  background: var(--studio-capsule-fill);
   font-weight: 600;
   background-image: var(--studio-surface-sheen);
-  box-shadow: var(--studio-control-rim);
+  box-shadow: var(--studio-capsule-shadow);
 }
 .studio-search-field > input {
   border-radius: 999px;
   background-color: color-mix(in srgb, var(--foreground) 3%, var(--card));
 }
 .studio-segmented {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
-  padding: 2px;
+  border-radius: 24px;
+  background: var(--studio-inset-fill);
+  box-shadow: var(--studio-inset-shadow);
+  padding: 3px;
 }
-.studio-segmented > [role='tab'] {
+.studio-segmented > :is([role='tab'], [role='radio']) {
   border-radius: 999px;
 }
-.studio-segmented > [role='tab'][aria-selected='true'] {
-  background: var(--card);
-  box-shadow:
-    var(--studio-surface-rim),
-    0 1px 3px #00000018;
+.studio-segmented > :is([role='tab'][aria-selected='true'], [role='radio'][aria-checked='true']) {
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+  background-color: var(--studio-capsule-fill);
+  background-image: var(--studio-surface-sheen);
+  color: var(--foreground);
+  box-shadow: var(--studio-capsule-shadow);
+}
+[data-high-contrast='true'] .studio-segmented {
+  border: 1px solid var(--border);
+}
+[data-high-contrast='true']
+  .studio-segmented
+  > :is([role='tab'][aria-selected='true'], [role='radio'][aria-checked='true']) {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+@media (forced-colors: active) {
+  .studio-segmented {
+    border: 1px solid ButtonText;
+    background: Canvas;
+  }
+  .studio-segmented > :is([role='tab'][aria-selected='true'], [role='radio'][aria-checked='true']),
+  .studio-filter-chip[aria-pressed='true'] {
+    background: Highlight;
+    color: HighlightText;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 .studio-settings-group > [data-slot='card'] {
   border-color: color-mix(in srgb, var(--border) 85%, var(--foreground) 4%);
@@ -3226,6 +3253,8 @@ a.studio-project-row:hover {
   padding-block: 0.75rem;
   border-bottom: 1px solid var(--border);
   background: var(--background);
+  background-image: var(--studio-surface-sheen);
+  box-shadow: var(--studio-control-rim);
 }
 .studio-settings-target {
   position: relative;

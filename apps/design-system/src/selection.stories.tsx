@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import { ChoicePicker } from '../../../packages/studio-ui/src/choice-picker'
 import { Button } from '../../../packages/studio-ui/src/components/ui/button'
+import { Switch } from '../../../packages/studio-ui/src/components/ui/switch'
+import { Segmented } from '../../../packages/studio-ui/src/settings-layout'
 
 const meta = {
   title: 'Dovo/Selection',
@@ -72,3 +74,34 @@ function LongOptionsExample() {
   )
 }
 export const LongOptions: StoryObj = { render: () => <LongOptionsExample /> }
+
+function GlassControlsExample() {
+  const [density, setDensity] = useState('compact')
+  const [notifications, setNotifications] = useState(true)
+  return (
+    <section className="grid max-w-lg gap-5">
+      <h2 className="text-lg font-semibold">Inset controls</h2>
+      <div className="studio-page-toolbar grid gap-4 rounded-2xl border border-border">
+        <Segmented
+          label="Thread density"
+          value={density}
+          options={[
+            ['compact', 'Compact'],
+            ['comfortable', 'Comfortable'],
+            ['automatic', 'Automatic'],
+          ]}
+          onChange={setDensity}
+        />
+        <label className="flex items-center justify-between gap-4 text-sm">
+          Show notifications
+          <Switch checked={notifications} onCheckedChange={setNotifications} />
+        </label>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Use arrows, Home and End to choose a density. Selection keeps the track size and keyboard
+        focus. Narrow controls wrap. Touch controls keep a 44px target. These are local examples.
+      </p>
+    </section>
+  )
+}
+export const InsetGlassControls: StoryObj = { render: () => <GlassControlsExample /> }

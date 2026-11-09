@@ -11,6 +11,8 @@ const built = await bundleBrowser(
     stdin: {
       contents: `
       import {createRoot} from 'react-dom/client';
+      import {useState} from 'react';
+      import {Segmented} from './src/settings-layout';
       import {studioThemes} from '../studio-core/src/themes';
       import {accessibleThemeColors} from '../studio-core/src/accessibility';
       import {Button} from '../web-ui/src/button';
@@ -23,7 +25,8 @@ const built = await bundleBrowser(
       import {Checkbox} from './src/components/ui/checkbox';
       import {Switch} from './src/components/ui/switch';
       window.palettes=studioThemes;window.colors=accessibleThemeColors;
-      createRoot(document.getElementById('app')).render(<main className="p-6 space-y-4"><Card className="space-y-4"><div className="studio-menu-surface bg-transparent" data-test="menu-override">Custom surface</div><div className="flex gap-2"><Button>Save</Button><Button variant="ghost">Ghost</Button><Button size="icon" aria-label="Icon">+</Button><Button disabled>Disabled</Button></div><Input aria-label="Field"/><Input aria-label="Custom" className="bg-transparent"/><Input aria-label="Invalid" aria-invalid="true"/><Input aria-label="Rounded search" type="search" className="rounded-full" placeholder="Search"/><Input aria-label="Rounded URL" type="url" className="rounded-full" placeholder="http://localhost:3000"/><Textarea aria-label="Notes"/><Select defaultValue="one"><SelectTrigger aria-label="Choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem><SelectItem value="two">Two</SelectItem></SelectContent></Select><ChoicePicker aria-label="Computer" value="local" onValueChange={()=>{}}><option value="local">This computer</option></ChoicePicker><select aria-label="Native"><option>Native option</option></select><div className="flex gap-4"><Checkbox aria-label="Check" defaultChecked/><Switch aria-label="Switch" defaultChecked/></div><Dialog><DialogTrigger asChild><Button variant="outline">Open control dialog</Button></DialogTrigger><DialogContent><DialogTitle>Project settings</DialogTitle><DialogDescription>Shared controls in a production dialog.</DialogDescription><Input aria-label="Dialog name" defaultValue="Dovo Studio"/><Select defaultValue="one"><SelectTrigger aria-label="Dialog choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem></SelectContent></Select><div className="flex justify-end gap-2"><Button disabled>Unavailable action</Button><Button>Save project</Button></div></DialogContent></Dialog></Card></main>);
+      function Density(){const [value,setValue]=useState('compact');return <Segmented label="Density" value={value} options={[["compact","Compact"],["comfortable","Comfortable"],["automatic","Automatic"]]} onChange={setValue}/>;}
+      createRoot(document.getElementById('app')).render(<main className="p-6 space-y-4"><Card className="space-y-4"><Density/><div className="studio-menu-surface bg-transparent" data-test="menu-override">Custom surface</div><div className="flex flex-wrap gap-2"><Button>Save</Button><Button variant="ghost">Ghost</Button><Button size="icon" aria-label="Icon">+</Button><Button disabled>Disabled</Button></div><Input aria-label="Field"/><Input aria-label="Custom" className="bg-transparent"/><Input aria-label="Invalid" aria-invalid="true"/><Input aria-label="Rounded search" type="search" className="rounded-full" placeholder="Search"/><Input aria-label="Rounded URL" type="url" className="rounded-full" placeholder="http://localhost:3000"/><Textarea aria-label="Notes"/><Select defaultValue="one"><SelectTrigger aria-label="Choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem><SelectItem value="two">Two</SelectItem></SelectContent></Select><ChoicePicker aria-label="Computer" value="local" onValueChange={()=>{}}><option value="local">This computer</option></ChoicePicker><select aria-label="Native"><option>Native option</option></select><div className="flex gap-4"><Checkbox aria-label="Check" defaultChecked/><Switch aria-label="Switch" defaultChecked/></div><Dialog><DialogTrigger asChild><Button variant="outline">Open control dialog</Button></DialogTrigger><DialogContent><DialogTitle>Project settings</DialogTitle><DialogDescription>Shared controls in a production dialog.</DialogDescription><Input aria-label="Dialog name" defaultValue="Dovo Studio"/><Select defaultValue="one"><SelectTrigger aria-label="Dialog choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem></SelectContent></Select><div className="flex justify-end gap-2"><Button disabled>Unavailable action</Button><Button>Save project</Button></div></DialogContent></Dialog></Card></main>);
     `,
       resolveDir: root + 'packages/studio-ui',
       loader: 'tsx',
@@ -43,20 +46,43 @@ try {
     viewport: { width: 900, height: 1000 },
     reducedMotion: 'reduce',
   })
-  await page.route('http://localhost/**', (route) =>
-    route.fulfill({
-      contentType: 'text/html',
-      body: '<html><body><div id="app"></div></body></html>',
-    }),
-  )
-  await page.goto('http://localhost/')
-  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
-    file.endsWith('.css'),
-  ))
-    await page.addStyleTag({
-      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
-    })
-  await page.addScriptTag({ content: built.outputFiles[0].text })
+  const mount = async (page) => {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div></body></html>',
+      }),
+    )
+    await page.goto('http://localhost/')
+    for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+      file.endsWith('.css'),
+    ))
+      await page.addStyleTag({
+        content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+      })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+  }
+  await mount(page)
+  const compact = page.getByRole('radio', { name: 'Compact', exact: true })
+  await page.getByLabel('Notes').fill('Keep this draft')
+  await compact.focus()
+  const trackBounds = await page.getByRole('radiogroup', { name: 'Density' }).boundingBox()
+  for (const [key, name] of [
+    ['ArrowRight', 'Comfortable'],
+    ['End', 'Automatic'],
+    ['Home', 'Compact'],
+  ]) {
+    await page.keyboard.press(key)
+    const radio = page.getByRole('radio', { name, exact: true })
+    assert.equal(await radio.isChecked(), true)
+    assert.equal(await radio.evaluate((node) => node === document.activeElement), true)
+    assert.equal(await radio.evaluate((node) => getComputedStyle(node).outlineWidth), '2px')
+    assert.deepEqual(
+      await page.getByRole('radiogroup', { name: 'Density' }).boundingBox(),
+      trackBounds,
+      'Selection does not resize or move the track',
+    )
+  }
   for (const [palette, mode, effects, highContrast = false] of [
     ['dovo', 'dark', true],
     ['iris', 'dark', false],
@@ -88,6 +114,19 @@ try {
       document
         .getAnimations()
         .every((animation) => animation.playState !== 'running' && !animation.pending),
+    )
+    assert.equal(await page.getByLabel('Notes').inputValue(), 'Keep this draft')
+    const selection = await compact.evaluate((node) => {
+      const css = getComputedStyle(node)
+      return { image: css.backgroundImage, shadow: css.boxShadow, outline: css.outlineWidth }
+    })
+    assert.equal(selection.image === 'none', !effects || highContrast)
+    if (highContrast || !effects)
+      assert.equal(selection.shadow, 'none', `${palette} ${mode}: flat selection shadow`)
+    assert.equal(
+      await compact.evaluate((node) => getComputedStyle(node).backdropFilter),
+      'none',
+      'Permanent controls use painted glass',
     )
     const style = (selector, property) =>
       page
@@ -296,6 +335,8 @@ try {
     })
     assert.deepEqual(surface, { filter: 'none', image: 'none' }, `${mode}: reduced transparency`)
     await page.keyboard.press('Escape')
+    assert.equal(await compact.evaluate((node) => getComputedStyle(node).backgroundImage), 'none')
+    assert.equal(await compact.evaluate((node) => getComputedStyle(node).boxShadow), 'none')
   }
   await media.detach()
   await page.emulateMedia({ forcedColors: 'active' })
@@ -373,6 +414,35 @@ try {
       })
     }
   }
+  const touch = await browser.newContext({
+    viewport: { width: 320, height: 1100 },
+    hasTouch: true,
+    isMobile: true,
+    reducedMotion: 'reduce',
+  })
+  const phone = await touch.newPage()
+  await mount(phone)
+  for (const radio of await phone.getByRole('radio').all())
+    assert.ok((await radio.boundingBox()).height >= 44, 'Touch options keep a 44px target')
+  await phone.getByRole('radio', { name: 'Comfortable', exact: true }).tap()
+  assert.equal(
+    await phone.getByRole('radio', { name: 'Comfortable', exact: true }).isChecked(),
+    true,
+  )
+  assert.equal(
+    await phone
+      .getByRole('radiogroup', { name: 'Density' })
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+    true,
+    'Narrow controls wrap without horizontal overflow',
+  )
+  assert.equal(
+    await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    true,
+    'Touch fixture has no page overflow',
+  )
+  await phone.screenshot({ path: `${output}/touch-controls.png` })
+  await touch.close()
   console.log('Shared controls appearance checks passed')
 } finally {
   await browser.close()

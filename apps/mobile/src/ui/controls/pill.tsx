@@ -5,6 +5,7 @@ import { Text } from '../content/text'
 import { Icon, type IconName } from './icon'
 import { IconButton } from './icon-button'
 import { useTheme, type MobileColors } from '../theme'
+import { Glass } from '../layout/glass'
 
 const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
   flexDirection: 'row',
@@ -13,17 +14,10 @@ const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
   minHeight: designTokens.touchTarget,
   paddingHorizontal: 18,
   borderRadius: designTokens.touchTarget / 2,
-  backgroundColor: pressed ? colors.selection : colors.surface,
-  borderWidth: 1,
-  borderColor: colors.border,
-  // Lift off the conversation without a glow.
-  shadowColor: '#000',
-  shadowOpacity: 0.18,
-  shadowRadius: 12,
-  shadowOffset: { width: 0, height: 4 },
+  backgroundColor: pressed ? colors.selection : 'transparent',
 })
 
-/** Floating status capsule above the composer or tab bar: solid, hairline-bordered and short. */
+/** Floating status capsule. Native glass keeps an opaque accessibility fallback. */
 export function Pill({
   label,
   icon,
@@ -45,33 +39,45 @@ export function Pill({
   testID?: string
   children?: ReactNode
 }) {
-  const { colors } = useTheme()
+  const { colors, highContrast } = useTheme()
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
-      <Pressable
-        testID={testID}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityHint={accessibilityHint}
-        accessibilityState={{ busy }}
-        disabled={busy}
-        onPress={onPress}
-        onLongPress={onLongPress}
-        style={({ pressed }) => [pillStyle(pressed, colors), { flexShrink: 1 }]}
+      <Glass
+        interactive
+        style={{
+          flexShrink: 1,
+          borderRadius: designTokens.touchTarget / 2,
+          shadowColor: '#000',
+          shadowOpacity: highContrast ? 0 : 0.12,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 3 },
+        }}
       >
-        {busy ? (
-          <ActivityIndicator size="small" color={colors.text} />
-        ) : (
-          icon && <Icon name={icon} size={16} color={colors.text} />
-        )}
-        <Text
-          numberOfLines={1}
-          style={{ color: colors.text, fontSize: 16, lineHeight: 20, flexShrink: 1 }}
+        <Pressable
+          testID={testID}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityHint={accessibilityHint}
+          accessibilityState={{ busy }}
+          disabled={busy}
+          onPress={onPress}
+          onLongPress={onLongPress}
+          style={({ pressed }) => [pillStyle(pressed, colors), { flexShrink: 1 }]}
         >
-          {label}
-        </Text>
-        {children}
-      </Pressable>
+          {busy ? (
+            <ActivityIndicator size="small" color={colors.text} />
+          ) : (
+            icon && <Icon name={icon} size={16} color={colors.text} />
+          )}
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.text, fontSize: 16, lineHeight: 20, flexShrink: 1 }}
+          >
+            {label}
+          </Text>
+          {children}
+        </Pressable>
+      </Glass>
       {onDismiss && <IconButton icon="close" label={`Dismiss ${label}`} onPress={onDismiss} />}
     </View>
   )

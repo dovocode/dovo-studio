@@ -243,7 +243,7 @@ export function SettingRow({
     <div
       data-setting-label={label}
       tabIndex={-1}
-      className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring"
+      className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring"
     >
       <div className="studio-setting-copy min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5">
@@ -478,7 +478,7 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border/50 bg-background/60 p-1"
+      className="studio-segmented inline-flex max-w-full flex-wrap gap-1 border border-border/50"
     >
       {options.map(([id, name], index) => (
         <button
@@ -514,9 +514,9 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={value === id}
           onClick={() => onChange(id)}
-          className={`min-h-7 rounded-md border px-3 py-1 text-xs transition-colors pointer-coarse:min-h-11 ${
+          className={`min-h-7 border px-3 py-1 text-xs pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
             value === id
-              ? 'studio-selected-surface font-medium'
+              ? 'font-medium'
               : 'border-transparent text-muted-foreground hover:bg-background/50 hover:text-foreground'
           }`}
         >
