@@ -303,7 +303,7 @@ export function BrowserTabRow({
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content className="studio-browser-tab-menu z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+        <ContextMenu.Content className="studio-menu-surface studio-browser-tab-menu z-50 min-w-48 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground">
           <ContextMenu.Label className="max-w-64 truncate px-2 py-1.5 text-xs text-muted-foreground">
             {title}
           </ContextMenu.Label>
@@ -385,7 +385,7 @@ export function BrowserTabRow({
                     <ArrowUpRight size={13} className="ml-auto" />
                   </ContextMenu.SubTrigger>
                   <ContextMenu.Portal>
-                    <ContextMenu.SubContent className="studio-browser-tab-menu z-50 min-w-44 rounded-lg border bg-popover p-1 shadow-xl">
+                    <ContextMenu.SubContent className="studio-menu-surface studio-browser-tab-menu z-50 min-w-44 rounded-2xl border bg-[var(--studio-floating-fill)] p-1">
                       {windows.map((window) => (
                         <ContextMenu.Item
                           key={window.id}

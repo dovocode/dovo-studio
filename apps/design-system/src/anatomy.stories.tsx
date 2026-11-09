@@ -109,13 +109,13 @@ export const SurfaceLayers: StoryObj = {
         <div className="mt-6 rounded-xl border bg-card p-6">
           <h3 className="font-medium">2. Grouped content</h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            A quiet one-pixel divider and 12px card radius group related settings.
+            A quiet divider and {designTokens.radius.card}px card radius group related settings.
           </p>
-          <div className="mt-4 rounded-md border bg-popover p-4">
+          <div className="studio-menu-surface mt-4 rounded-2xl border p-4">
             <strong className="text-sm">3. Elevated surface</strong>
             <p className="mt-2 text-sm text-muted-foreground">
-              Menus use the popover surface and appropriate stacking. A blue glow is never
-              elevation.
+              Menus use a frosted surface with soft edge highlights. High contrast keeps the surface
+              opaque.
             </p>
           </div>
         </div>

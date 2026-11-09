@@ -9,6 +9,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise native input identity and imperative updates; RN Web replacements are covered by Storybook.
 const mocks = {
   'react-native-reanimated': `import {View} from 'react-native';const transition={duration:()=>transition,easing:()=>transition,reduceMotion:()=>transition};export const Easing={bezier:()=>undefined},LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View};`,
+  'expo-glass-effect': `import {StyleSheet} from 'react-native';export const isGlassEffectAPIAvailable=()=>true,isLiquidGlassAvailable=()=>true;export const GlassView=({children,glassEffectStyle,style})=><div data-testid="Native glass" data-glass-effect={glassEffectStyle} style={StyleSheet.flatten(style)}>{children}</div>;`,
   'expo-document-picker': `export const getDocumentAsync=async()=>window.themeFile?{canceled:false,assets:[{uri:'theme.jsonc',name:'native.jsonc'}]}:{canceled:true};`,
   'expo-file-system': `export class File{get size(){return window.themeFile.length}async text(){return window.themeFile}}`,
   'react-native': `
@@ -20,7 +21,7 @@ const mocks = {
     export const Platform={OS:'ios'};
     export const Linking={openURL:async()=>{}};
     export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
-    export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,addEventListener:()=>({remove(){}})};
+    export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,isReduceTransparencyEnabled:async()=>false,addEventListener:(event,listener)=>{if(event==='reduceTransparencyChanged')window.setReduceTransparency=listener;return {remove(){}}}};
     export const View=({children,style,testID})=><div data-testid={testID} style={{display:"flex",flexDirection:"column",flexShrink:0,...nativeStyle(style)}}>{children}</div>;
     export const ScrollView=({children,contentContainerStyle})=><div style={{display:"flex",flexDirection:"column",...nativeStyle(contentContainerStyle)}}>{children}</div>;
     export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,accessibilityRole})=><button disabled={disabled} role={accessibilityRole} aria-label={accessibilityLabel} aria-checked={accessibilityState?.checked} style={{display:'flex',flexDirection:'column',flexShrink:0,border:0,background:'transparent',textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>;
@@ -62,6 +63,7 @@ const built = await build({
       import {createRoot} from 'react-dom/client';
       import {MobileAppearance} from './src/ui/appearance';
       import {useTheme} from './src/ui/theme';
+      import {Glass} from './src/ui/layout/glass';
       import AppearanceScreen from './src/screens/appearance';
       import {ComposerField} from './src/tasks/composer/composer-field';
       import {useDraft} from './src/tasks/draft/use-draft';
@@ -79,7 +81,7 @@ const built = await build({
           <span id="error" style={{color:colors.error}}>Send failed</span>
         </div>;
       }
-      createRoot(document.getElementById('app')).render(<MobileAppearance><Draft/><AppearanceScreen/></MobileAppearance>);
+      createRoot(document.getElementById('app')).render(<MobileAppearance><Glass><Draft/></Glass><AppearanceScreen/></MobileAppearance>);
     `,
     resolveDir: root + 'apps/mobile/',
     loader: 'tsx',
@@ -200,6 +202,44 @@ try {
     ),
     true,
   )
+  const glass = page.getByTestId('Native glass')
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="Native glass"]').dataset.glassEffect === 'regular',
+  )
+  for (const highContrast of [true, false]) {
+    await page.evaluate((highContrast) => window.configure({ highContrast }), highContrast)
+    await page.waitForFunction(
+      (highContrast) =>
+        document.querySelector('[data-testid="Native glass"]').dataset.glassEffect ===
+        (highContrast ? 'none' : 'regular'),
+      highContrast,
+    )
+    assert.equal(
+      await input.evaluate(
+        (element) =>
+          element === window.originalInput &&
+          document.activeElement === element &&
+          element.selectionStart === 6,
+      ),
+      true,
+      'Changing native glass preserves the input, focus and caret',
+    )
+  }
+  for (const reduced of [true, false]) {
+    await page.evaluate((reduced) => window.setReduceTransparency(reduced), reduced)
+    await page.waitForFunction(
+      (reduced) =>
+        document.querySelector('[data-testid="Native glass"]').dataset.glassEffect ===
+        (reduced ? 'none' : 'regular'),
+      reduced,
+    )
+    assert.equal(
+      await input.evaluate((element) => element === window.originalInput),
+      true,
+      'Transparency changes preserve the draft input',
+    )
+  }
+  assert.equal(await glass.getAttribute('data-glass-effect'), 'regular')
   await page.evaluate(() => window.setSending(true))
   await page.waitForFunction(() => window.originalInput.disabled)
   await page.evaluate(() => window.configure({ themePalette: 'claude', theme: 'dark' }))

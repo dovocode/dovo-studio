@@ -1156,8 +1156,9 @@ try {
     assert.ok(rowBox && inputBox && rowBox.y + rowBox.height <= inputBox.y)
     assert.ok(activityBox && shellBox)
     assert.ok(
-      Math.abs(shellBox.y - (activityBox.y + activityBox.height)) < 1,
-      'The activity panel meets the composer without a gap',
+      Math.abs(shellBox.y - (activityBox.y + activityBox.height) - 12) < 1,
+      'The activity panel leaves a gap above the rounded composer: ' +
+        JSON.stringify({ activityBox, shellBox }),
     )
     assert.ok(Math.abs(activityBox.x - shellBox.x - 20) < 1)
     assert.ok(Math.abs(shellBox.width - activityBox.width - 40) < 1)

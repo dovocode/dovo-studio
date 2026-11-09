@@ -289,6 +289,8 @@ export function IconButton(props: IconButtonProps) {
               : prominent && !disabled
                 ? colors.action
                 : colors.surface,
+        borderWidth: variant === 'glass' ? 1 : 0,
+        borderColor: colors.border,
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >

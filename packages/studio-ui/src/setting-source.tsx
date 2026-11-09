@@ -33,7 +33,7 @@ export type SettingOrigin = {
   overridden: boolean
 }
 const popoverClassName =
-  'studio-menu-surface z-50 max-h-[min(480px,70vh)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border bg-popover p-3 text-popover-foreground'
+  'studio-menu-surface z-50 max-h-[min(480px,70vh)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-2xl border bg-[var(--studio-floating-fill)] p-3 text-popover-foreground'
 const overrideName = (entry: SettingOverride) =>
   [entry.project, entry.computer].filter(Boolean).join(' on ')
 

@@ -241,7 +241,7 @@ export function ActivityBar({
               <Popover.Content
                 side="right"
                 sideOffset={10}
-                className="studio-menu-surface z-50 w-80 max-w-[calc(100vw-4rem)] rounded-lg border bg-popover p-4 text-popover-foreground"
+                className="studio-menu-surface z-50 w-80 max-w-[calc(100vw-4rem)] rounded-2xl border bg-[var(--studio-floating-fill)] p-4 text-popover-foreground"
                 aria-label="Desktop update"
                 onOpenAutoFocus={(event) => {
                   if (update?.status === 'downloading' || update?.status === 'restarting')

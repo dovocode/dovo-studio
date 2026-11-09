@@ -73,7 +73,7 @@ function TextAction({
         paddingVertical: 10,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 12,
+        borderRadius: 999,
         borderWidth: variant === 'outline' ? 1 : 0,
         borderColor: colors.border,
         backgroundColor: filled

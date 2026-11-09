@@ -20,8 +20,8 @@ export const Language: StoryObj = {
         Quiet surfaces. Clear controls.
       </h1>
       <p>
-        Graphite surfaces, blue accents, neutral primary actions. Color signals state rather than
-        decorating every container. No ambient focus glows.
+        Opaline surface highlights, frosted menus and rounded actions. Thread rows stay compact.
+        Keep the selected palette, clear state colors and visible keyboard focus.
       </p>
       <h2>One source of truth</h2>
       <p>

@@ -17,7 +17,7 @@ export function Glass({
   interactive?: boolean
   tinted?: boolean
 }) {
-  const { colors, mode: appearanceMode } = useTheme()
+  const { colors, mode: appearanceMode, highContrast } = useTheme()
 
   const [reduced, setReduced] = useApplicationState(true)
   useEffect(() => {
@@ -50,16 +50,17 @@ export function Glass({
     borderWidth: 1,
     borderColor: colors.border,
   }
+  const opaque = reduced || highContrast
   // Keep the same native parent when the accessibility preference resolves or changes.
   // Swapping View for GlassView remounts its children, dropping an active input's focus.
   if (Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable())
     return (
       <GlassView
         colorScheme={appearanceMode}
-        glassEffectStyle={reduced ? 'none' : 'regular'}
+        glassEffectStyle={opaque ? 'none' : 'regular'}
         isInteractive={interactive}
         tintColor={tinted ? `${colors.accent}55` : undefined}
-        style={[reduced && opaqueStyle, style]}
+        style={[opaque && opaqueStyle, style]}
       >
         {children}
       </GlassView>

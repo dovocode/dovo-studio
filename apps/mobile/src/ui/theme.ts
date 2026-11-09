@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { accessibleThemeColors, statusColors } from '@dovo/studio-core/accessibility'
 import { nativeCodeColors, type resolveCodeTheme } from '@dovo/studio-core/code-themes'
 import { StyleSheet } from 'react-native'
@@ -83,10 +84,11 @@ function createStyles(colors: MobileColors, highContrast: boolean) {
     row: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
     card: {
       backgroundColor: colors.surface,
-      borderRadius: 12,
+      borderRadius: designTokens.radius.card,
       padding: 12,
       borderWidth: highContrast ? 1 : StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      boxShadow: highContrast ? 'none' : '0 1px 3px #0000000a',
       gap: 8,
     },
     title: { color: colors.text, fontSize: 19, fontWeight: '700', letterSpacing: -0.3 },
@@ -116,7 +118,7 @@ function createStyles(colors: MobileColors, highContrast: boolean) {
       color: colors.text,
       borderColor: colors.border,
       borderWidth: 1,
-      borderRadius: 10,
+      borderRadius: designTokens.radius.control,
       paddingHorizontal: 10,
       paddingVertical: 8,
       fontSize: 16,

@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { NativeIcon, NativeIconLabel } from './native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Button, Host, HStack, Menu, Spacer, Text } from '@expo/ui/swift-ui'
@@ -33,7 +34,7 @@ export function ChoiceMenu(props: ChoiceProps) {
       style={{
         minWidth: 0,
         minHeight: 44,
-        borderRadius: 12,
+        borderRadius: designTokens.radius.control,
         backgroundColor: props.compact || props.quiet ? 'transparent' : colors.surface,
         opacity: props.disabled ? 0.45 : 1,
       }}

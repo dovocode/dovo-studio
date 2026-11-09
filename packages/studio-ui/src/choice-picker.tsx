@@ -109,7 +109,10 @@ export function ChoicePicker({
           aria-describedby={`${id}-value`}
           data-value={value}
           data-choice-picker=""
-          className={cn('h-9 w-full min-w-0 justify-between text-xs font-normal', className)}
+          className={cn(
+            'h-9 w-full min-w-0 justify-between rounded-md text-xs font-normal',
+            className,
+          )}
         >
           {icons?.[value] && (
             <span className="shrink-0" aria-hidden="true">

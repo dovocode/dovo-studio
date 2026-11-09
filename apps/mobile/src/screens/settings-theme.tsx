@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
 import { contentColumn } from '../ui/layout/content-column'
 import { ValidationFields } from '../ui/controls/validation-fields'
@@ -45,7 +46,7 @@ export function useSettingsTheme() {
           ...theme.styles.card,
           backgroundColor: colors.surface,
           borderWidth: theme.highContrast ? 1 : StyleSheet.hairlineWidth,
-          borderRadius: 12,
+          borderRadius: designTokens.radius.card,
           padding: 12,
           gap: 10,
         },
@@ -56,7 +57,7 @@ export function useSettingsTheme() {
           ...theme.styles.input,
           backgroundColor: colors.background,
           borderWidth: 1,
-          borderRadius: 8,
+          borderRadius: designTokens.radius.control,
           paddingHorizontal: 12,
           paddingVertical: 10,
           minHeight: 44,

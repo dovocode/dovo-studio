@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { FieldValidationContext } from './validation-fields'
 import { Pressable, TextInput, View, type TextInputProps } from 'react-native'
 import { Text } from '../content/text'
@@ -29,7 +30,7 @@ export function SearchField({
         paddingRight: 0,
         minHeight: 44,
         backgroundColor: colors.surface,
-        borderRadius: 12,
+        borderRadius: designTokens.touchTarget / 2,
         borderWidth: 1,
         borderColor: colors.border,
       }}

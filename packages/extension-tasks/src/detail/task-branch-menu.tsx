@@ -138,7 +138,7 @@ export function TaskBranchMenu({
         <DropdownMenu.Content
           sideOffset={4}
           align="start"
-          className="studio-menu-surface z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground"
+          className="studio-menu-surface z-50 min-w-48 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground"
         >
           {inWorktree && (task.checkoutBranch || task.existingWorktreePath) && (
             <>

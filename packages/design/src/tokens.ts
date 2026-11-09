@@ -124,7 +124,7 @@ export const designTokens = {
     meta: { size: 12, line: 16, weight: 400 },
     machine: { size: 12, line: 16, weight: 400 },
   },
-  radius: { control: 8, card: 12, composer: 16 },
+  radius: { control: 10, card: 16, composer: 16 },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, section: 32 },
   touchTarget: 44,
   focusWidth: 2,

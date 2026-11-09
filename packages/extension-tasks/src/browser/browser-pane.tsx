@@ -2170,7 +2170,7 @@ function BrowserContent({
         <DropdownMenu.Content
           align="end"
           collisionPadding={8}
-          className="studio-browser-tab-menu z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-lg border bg-popover p-1 text-sm shadow-lg"
+          className="studio-menu-surface studio-browser-tab-menu z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-sm"
         >
           <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
             New tab
@@ -2284,7 +2284,7 @@ function BrowserContent({
           onCloseAutoFocus={(event) => {
             if (findOpen) event.preventDefault()
           }}
-          className="studio-browser-settings z-50 flex max-h-[var(--radix-popover-content-available-height)] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto border bg-popover text-popover-foreground"
+          className="studio-menu-surface studio-browser-settings z-50 flex max-h-[var(--radix-popover-content-available-height)] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto border bg-[var(--studio-floating-fill)] text-popover-foreground"
         >
           <div className="studio-browser-settings-heading">
             <span className="studio-browser-settings-icon" aria-hidden="true">

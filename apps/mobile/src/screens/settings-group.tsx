@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { SettingsAnchor, SettingsSearchContext } from './settings-search'
 import {
   Children,
@@ -84,7 +85,7 @@ export function SettingsGroup({
           <View
             style={{
               backgroundColor: colors.surface,
-              borderRadius: 12,
+              borderRadius: designTokens.radius.card,
               overflow: 'hidden',
               borderWidth: highContrast ? 1 : StyleSheet.hairlineWidth,
               borderColor: colors.border,

@@ -80,7 +80,7 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
           collisionBoundary={anchor?.parentElement ?? undefined}
           collisionPadding={32}
           style={{ maxHeight, maxWidth }}
-          className="studio-project-popover studio-menu-surface z-40 flex flex-col overflow-hidden rounded-2xl border bg-popover text-popover-foreground outline-none"
+          className="studio-project-popover studio-menu-surface z-40 flex flex-col overflow-hidden rounded-2xl border bg-[var(--studio-floating-fill)] text-popover-foreground outline-none"
         >
           <header className="z-10 flex h-10 shrink-0 items-center justify-between gap-2 border-b bg-popover px-3">
             <div className="min-w-0 space-y-1">

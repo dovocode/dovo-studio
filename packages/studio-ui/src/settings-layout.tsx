@@ -395,7 +395,7 @@ export function SettingsSaveBar({
                 side="top"
                 align="end"
                 sideOffset={8}
-                className="studio-menu-surface z-50 w-64 rounded-lg border bg-popover p-2 text-popover-foreground shadow-lg"
+                className="studio-menu-surface z-50 w-64 rounded-2xl border bg-[var(--studio-floating-fill)] p-2 text-popover-foreground"
               >
                 {children}
               </Popover.Content>

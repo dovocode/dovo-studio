@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { useEffect, useRef } from 'react'
 import { FullWindowOverlay } from 'react-native-screens'
 import {
@@ -114,7 +115,7 @@ export function ActionMenu({
           width,
           maxHeight: height,
           paddingVertical: 4,
-          borderRadius: 14,
+          borderRadius: designTokens.radius.card,
           backgroundColor: colors.surface,
           borderWidth: 1,
           borderColor: colors.border,

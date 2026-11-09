@@ -111,7 +111,7 @@ export function TaskProjectActions({
             <DropdownMenu.Content
               sideOffset={4}
               align="end"
-              className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground"
+              className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground"
             >
               <DropdownMenu.Group aria-labelledby={runActionsLabel}>
                 <DropdownMenu.Label

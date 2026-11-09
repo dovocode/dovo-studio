@@ -389,7 +389,7 @@ export function TaskProjectPanel({
               <DropdownMenu.Content
                 align="end"
                 sideOffset={6}
-                className="studio-menu-surface z-50 min-w-56 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
+                className="studio-menu-surface z-50 min-w-56 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-xs text-popover-foreground"
               >
                 {gitState?.dirty && (
                   <>
@@ -564,7 +564,7 @@ export function TaskProjectPanel({
                     <DropdownMenu.Content
                       align="end"
                       sideOffset={6}
-                      className="studio-menu-surface z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
+                      className="studio-menu-surface z-50 min-w-40 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-xs text-popover-foreground"
                     >
                       <RepositoryOpenItems
                         itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"

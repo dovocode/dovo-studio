@@ -107,7 +107,7 @@ try {
       '[aria-label="Choice"]',
       '[aria-label="Computer"]',
     ])
-      assert.equal(await style(selector, 'borderRadius'), '8px', `${selector}: control radius`)
+      assert.equal(await style(selector, 'borderRadius'), '10px', `${selector}: control radius`)
     for (const label of ['Rounded search', 'Rounded URL'])
       assert.ok(
         parseFloat(await style(`[aria-label="${label}"]`, 'borderRadius')) > 32,
@@ -244,6 +244,11 @@ try {
     assert.ok(parseFloat(await toggle.evaluate((el) => getComputedStyle(el).outlineWidth)) >= 2)
     await page.getByRole('combobox', { name: 'Choice' }).click()
     assert.equal(
+      (await style('[data-slot="select-content"]', 'backdropFilter')) !== 'none',
+      !highContrast,
+      'High contrast keeps popup surfaces opaque without blur',
+    )
+    assert.equal(
       await page
         .locator('[data-slot="select-content"]')
         .evaluate((el) => el.classList.contains('studio-menu-surface')),
@@ -268,12 +273,31 @@ try {
     await page.getByRole('button', { name: 'Open control dialog' }).click()
     await assertUnavailable('Unavailable action', 'Save project')
     for (const label of ['Dialog name', 'Dialog choice'])
-      assert.equal(await style(`[aria-label="${label}"]`, 'borderRadius'), '8px')
+      assert.equal(await style(`[aria-label="${label}"]`, 'borderRadius'), '10px')
     await page.screenshot({
       path: `${output}/${palette}-${mode}-${highContrast ? 'contrast' : effects ? 'effects' : 'flat'}-dialog.png`,
     })
     await page.keyboard.press('Escape')
   }
+  const media = await page.context().newCDPSession(page)
+  for (const mode of ['light', 'dark']) {
+    await page.evaluate((mode) => {
+      document.documentElement.dataset.theme = mode
+      document.documentElement.dataset.highContrast = 'false'
+      document.documentElement.dataset.themeGradients = 'true'
+    }, mode)
+    await media.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+    })
+    await page.getByRole('button', { name: 'Open control dialog' }).click()
+    const surface = await page.getByRole('dialog').evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { filter: style.backdropFilter, image: style.backgroundImage }
+    })
+    assert.deepEqual(surface, { filter: 'none', image: 'none' }, `${mode}: reduced transparency`)
+    await page.keyboard.press('Escape')
+  }
+  await media.detach()
   await page.emulateMedia({ forcedColors: 'active' })
   const systemDisabledColor = await page.evaluate(() => {
     const probe = document.createElement('span')

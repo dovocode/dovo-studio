@@ -300,7 +300,7 @@ try {
         const probe = document.createElement('span')
         probe.style.backgroundColor = 'var(--studio-selected-fill)'
         probe.style.backgroundImage = 'var(--studio-selected-gradient)'
-        probe.style.boxShadow = 'var(--studio-glow)'
+        probe.style.boxShadow = 'var(--studio-surface-rim), var(--studio-glow)'
         document.body.append(probe)
         const expected = getComputedStyle(probe)
         const neutralFill = expected.backgroundColor
@@ -440,7 +440,7 @@ try {
           JSON.stringify(effects.navigationMarkers),
       )
       assert.ok(effects.sectionsMatch, id + ' ' + scheme + ' browser sections match threads')
-      assert.equal(effects.dialog, 'none', 'Dialogs keep a calm, flat surface with effects enabled')
+      assert.match(effects.dialog, /linear-gradient/, 'Dialogs use the shared surface highlight')
       const actual = await page.evaluate(() => {
         const color = (value) => {
           const div = document.createElement('div')

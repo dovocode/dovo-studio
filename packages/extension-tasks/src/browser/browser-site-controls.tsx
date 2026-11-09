@@ -117,7 +117,7 @@ export function BrowserSiteControls({
           align="start"
           sideOffset={8}
           aria-label="Website permissions"
-          className="studio-browser-site-controls z-50 max-h-[calc(100vh-6rem)] overflow-y-auto w-80 max-w-[calc(100vw-1rem)] space-y-4 rounded-xl border bg-popover p-4 text-popover-foreground shadow-xl"
+          className="studio-menu-surface studio-browser-site-controls z-50 max-h-[calc(100vh-6rem)] overflow-y-auto w-80 max-w-[calc(100vw-1rem)] space-y-4 rounded-2xl border bg-[var(--studio-floating-fill)] p-4 text-popover-foreground"
         >
           <div>
             <h2 className="truncate text-sm font-medium">{page?.host}</h2>

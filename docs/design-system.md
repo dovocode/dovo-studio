@@ -34,17 +34,38 @@ narrow viewports before shipping component changes.
 
 ## Visual language
 
-Graphite surfaces, restrained blue accent, neutral filled actions, quiet one-pixel borders, 6px
-control corners, 12px cards/composer and a 4px spacing scale. Typography uses the shared sans-serif
-stack and monospace for codes. Avoid accent-colored glows and gradients on controls or service
-chrome. Marketing illustrations may use restrained depth while keeping interactive controls flat and
-legible. Use color for interaction, state and selection. User-selected Studio themes remain
-supported.
+Studio takes its surface styling from [Opaline](https://opaline.buildlab.in/installation/): soft
+edge highlights, frosted menus and dialogs, rounded actions and restrained depth. Keep the selected
+Studio palette. Shared tokens use 10px field corners, 16px cards and a 4px spacing scale. Text
+actions use capsule shapes. Keep thread rows, including pinned threads, at their current compact
+height and spacing. Pinned browser tabs retain their small cards.
+
+`packages/web-ui/src/theme.css` owns the shared surface finish. Use it for settings, navigation and
+controls. Apply backdrop blur only to temporary menus and dialogs. Keep scrolling lists and code
+surfaces free of backdrop filters. Browsers without backdrop blur use opaque surfaces. High contrast
+and reduced transparency use opaque surfaces without decorative highlights. The Gradients and Glow
+preferences still control their respective effects. Native mobile uses the same geometry and palette
+with platform controls and opaque surfaces. No refraction engine or pointer tracking runs on thread
+rows. Hosted service chrome keeps its plain presentation.
+
+Typography uses the shared sans-serif stack and monospace for codes. Use color for interaction,
+state and selection. User-selected Studio themes remain supported.
 
 Keyboard focus must remain visible: use a crisp two-pixel indicator on individual controls. The
 composer uses a single focused border, not nested rings around both the container and text area.
 Toolbar controls retain their own focus indicator. Never fix a glow by removing all focus feedback.
 Respect reduced motion, light mode, high contrast and native dynamic type.
+
+Verify shared surface changes with:
+
+```sh
+pnpm --filter @dovo/design --filter @dovo/web-ui build
+pnpm --filter @dovo/desktop build
+pnpm exec playwright install chromium
+node scripts/check-shared-controls-appearance-browser.mjs
+node scripts/check-unified-workspace-browser.mjs
+node scripts/check-mobile-settings-layout-browser.mjs
+```
 
 Keep primary actions, danger actions, disabled states, empty states and errors explicit. Dense
 mouse-oriented desktop controls may be smaller, while coarse-pointer controls need larger targets.

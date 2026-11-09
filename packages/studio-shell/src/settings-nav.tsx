@@ -489,7 +489,7 @@ export function SettingsNav({
                                   side="right"
                                   align="start"
                                   sideOffset={8}
-                                  className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
+                                  className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-2xl border bg-[var(--studio-floating-fill)] p-3 text-xs text-popover-foreground"
                                 >
                                   <p className="font-semibold">
                                     {view.title} · {label}

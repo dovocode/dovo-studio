@@ -12,14 +12,14 @@ const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
   gap: 10,
   minHeight: designTokens.touchTarget,
   paddingHorizontal: 18,
-  borderRadius: 19,
+  borderRadius: designTokens.touchTarget / 2,
   backgroundColor: pressed ? colors.selection : colors.surface,
   borderWidth: 1,
   borderColor: colors.border,
   // Lift off the conversation without a glow.
   shadowColor: '#000',
-  shadowOpacity: 0.35,
-  shadowRadius: 10,
+  shadowOpacity: 0.18,
+  shadowRadius: 12,
   shadowOffset: { width: 0, height: 4 },
 })
 

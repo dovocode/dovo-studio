@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Icon, type IconName } from './icon'
 import { Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native'
@@ -119,7 +120,7 @@ export function Choice({
                 flexDirection: horizontal ? 'row' : 'column',
                 alignItems: horizontal ? 'center' : 'stretch',
                 backgroundColor: colors.surface,
-                borderRadius: 12,
+                borderRadius: designTokens.radius.control,
                 paddingLeft: 14,
                 paddingRight: 8,
                 paddingTop: horizontal ? 0 : 10,
@@ -175,7 +176,7 @@ export function Choice({
           ) : (
             <View
               style={{
-                borderRadius: 12,
+                borderRadius: designTokens.radius.control,
                 backgroundColor: compactControl || quiet ? undefined : colors.surface,
                 opacity: disabled ? 0.45 : 1,
               }}
@@ -203,7 +204,7 @@ export function Choice({
                     paddingVertical: compactControl || quiet ? 8 : 12,
                     minHeight: 44,
                     flexWrap: 'nowrap',
-                    borderRadius: 12,
+                    borderRadius: designTokens.radius.control,
                     backgroundColor: pressed ? colors.selection : 'transparent',
                   },
                 ]}
