@@ -110,7 +110,7 @@ window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateLi
 const localPages={appearance:Appearance,notifications:Notifications,shortcuts:Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,diffs:Diffs,usage:Usage,'task-list-settings':TaskList};
 const views=[appSettingsExtension,agentsExtension,runtimeExtension,scmExtension,tasksExtension].flatMap(extension=>extension.views).filter(view=>view.navigationGroup==='settings');
 function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=async id=>{if(id===view)return true;if(!(await confirm()))return false;setView(id);return true};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/><main data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">{view==='task-behavior'?<TaskBehavior/>:Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</main></div>}
-createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider></StudioConfirmationProvider>);`,
+function App(){const [collapsed,setCollapsed]=useState(false);return <StudioConfirmationProvider><SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider></StudioConfirmationProvider>}createRoot(document.getElementById('app')).render(<App/>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -184,6 +184,33 @@ try {
   }, !!process.env.DOVO_HEADER_SCREENSHOTS)
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('heading', { name: 'General', exact: true }).waitFor()
+  const hideSidebar = page.getByRole('button', { name: 'Hide sidebar', exact: true })
+  await hideSidebar.waitFor()
+  const overlay = await hideSidebar.evaluate((button) => {
+    const row = button.closest('.studio-sidebar-brand-row').getBoundingClientRect()
+    const bounds = button.getBoundingClientRect()
+    return {
+      position: getComputedStyle(button).position,
+      inset: row.right - bounds.right,
+      width: bounds.width,
+      top: bounds.top - row.top,
+    }
+  })
+  assert.deepEqual(overlay, { position: 'absolute', inset: 10, width: 32, top: 10 })
+  await hideSidebar.focus()
+  await page.keyboard.press('Enter')
+  const showSidebar = page.getByRole('button', { name: 'Show sidebar', exact: true })
+  await showSidebar.waitFor()
+  assert.equal(await showSidebar.getAttribute('aria-expanded'), 'false')
+  assert.equal(await showSidebar.evaluate((button) => button === document.activeElement), true)
+  await page.keyboard.press('Enter')
+  await hideSidebar.waitFor()
+  assert.equal(await hideSidebar.getAttribute('aria-expanded'), 'true')
+  assert.equal(await hideSidebar.evaluate((button) => button === document.activeElement), true)
+  await page.setViewportSize({ width: 390, height: 900 })
+  await hideSidebar.waitFor({ state: 'detached' })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await hideSidebar.waitFor()
   assert.equal(
     await page.getByLabel('Settings inheritance').count(),
     0,

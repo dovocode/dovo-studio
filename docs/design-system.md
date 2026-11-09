@@ -55,6 +55,11 @@ the same painted highlights without a backdrop filter. This keeps the glass fini
 adding blur work to each thread row. Keep the Gradients, Glow, high-contrast and
 reduced-transparency preferences active.
 
+Desktop sidebars have a floating glass toggle over their brand row. The toggle stays available in
+the window header when the sidebar is hidden. Keyboard focus follows it during collapse and restore.
+The button uses the shared opaque fallback and leaves thread rows unchanged. Compact layouts retain
+their existing navigation.
+
 Grouped choices use a recessed capsule track and a raised selected capsule. Settings and composer
 tabs share this finish. Selection does not move or resize the control. Keep keyboard focus on the
 chosen option and use arrows, Home and End where the component supports them. Wrap settings choices

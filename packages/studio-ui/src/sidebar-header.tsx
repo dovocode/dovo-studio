@@ -7,11 +7,15 @@ import {
   useLayoutEffect,
   useMemo,
   useState,
+  useRef,
+  type RefObject,
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCompactLayout } from './use-compact-layout'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Button } from './components/ui/button'
 
 const HeaderContext = createContext<{
   brand: ReactNode
@@ -20,6 +24,8 @@ const HeaderContext = createContext<{
   setCollapsed?: Dispatch<SetStateAction<boolean>>
   inline: boolean
   compact: boolean
+  hasSidebar: boolean
+  toggleFocus: RefObject<boolean>
   target: HTMLDivElement | null
   setTarget: (target: HTMLDivElement | null) => void
   register: () => () => void
@@ -42,6 +48,7 @@ export function SidebarHeaderLayout({
   const compact = useCompactLayout()
   const [sidebars, setSidebars] = useState(0)
   const [target, setTarget] = useState<HTMLDivElement | null>(null)
+  const toggleFocus = useRef(false)
   const register = useMemo(
     () => () => {
       setSidebars((count) => count + 1)
@@ -57,6 +64,8 @@ export function SidebarHeaderLayout({
       setCollapsed: onCollapsedChange,
       inline: !compact && !collapsed && sidebars > 0,
       compact,
+      hasSidebar: sidebars > 0,
+      toggleFocus,
       target,
       setTarget,
       register,
@@ -84,12 +93,63 @@ export function SidebarHeader({ enabled = true }: { enabled?: boolean }) {
   useLayoutEffect(() => {
     if (enabled && !compact && register) return register()
   }, [enabled, compact, register])
-  return enabled && context && !compact && !context.collapsed ? context.brand : null
+  return enabled && context?.brand && !compact && !context.collapsed ? (
+    <div className="studio-sidebar-brand-row">
+      {context.brand}
+      <SidebarToggle />
+    </div>
+  ) : null
 }
 
 export function HeaderFallback({ children }: { children: ReactNode }) {
   const context = useContext(HeaderContext)
-  return context?.inline ? null : children
+  return context?.inline ? null : (
+    <>
+      {children}
+      <SidebarToggle fallback />
+    </>
+  )
+}
+
+/** Float above the sidebar surface without taking a row from its list. */
+function SidebarToggle({ fallback = false }: { fallback?: boolean }) {
+  const context = useContext(HeaderContext)
+  const button = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    if (context?.toggleFocus.current && button.current) {
+      button.current.focus({ preventScroll: true })
+      context.toggleFocus.current = false
+    }
+  }, [context?.collapsed])
+  if (
+    !context ||
+    !context.brand ||
+    context.compact ||
+    !context.collapsible ||
+    !context.hasSidebar ||
+    !context.setCollapsed
+  )
+    return null
+  const label = context.collapsed ? 'Show sidebar' : 'Hide sidebar'
+  const Icon = context.collapsed ? PanelLeftOpen : PanelLeftClose
+  return (
+    <Button
+      ref={button}
+      variant="ghost"
+      size="icon"
+      className="studio-sidebar-toggle"
+      data-fallback={fallback || undefined}
+      aria-label={label}
+      title={label}
+      aria-expanded={!context.collapsed}
+      onClick={(event) => {
+        context.toggleFocus.current = document.activeElement === event.currentTarget
+        context.setCollapsed?.((value) => !value)
+      }}
+    >
+      <Icon size={16} aria-hidden="true" />
+    </Button>
+  )
 }
 
 /** Pages without a sidebar share the fallback row with the application brand. */
