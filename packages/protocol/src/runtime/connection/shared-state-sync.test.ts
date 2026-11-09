@@ -77,13 +77,14 @@ function harness(
   initial: SharedSettingsEntry[],
   request: SharedStateSyncOptions['request'],
   storage: StateStorage = memory(),
+  createReplicaId = () => 'app:one',
 ) {
   let shared = initial
   const error = vi.fn<(message: string) => void>()
   const refreshed = vi.fn<NonNullable<SharedStateSyncOptions['refreshed']>>(async () => {})
   const synchronization = new SharedStateSynchronization({
     storage,
-    createReplicaId: () => 'app:one',
+    createReplicaId,
     readShared: () => shared,
     publish: (next) => {
       shared = mergeSharedSettings(shared, next)
@@ -408,4 +409,36 @@ it('ignores unrelated streamed snapshots and fetches changed settings through ra
   h.synchronization.update([target('runtime', [entry('global', 200, 'changed')])], true)
   await flush()
   expect(h.shared()[0]?.value.taskDefaults?.setupCommand).toBe('changed')
+})
+
+it('recovers a rolled-back app actor without clearing settings or paired-runtime state', async () => {
+  vi.useFakeTimers()
+  const runtime = await peer()
+  const storage = memory()
+  const request = vi.fn<SharedStateSyncOptions['request']>((_profile, _path, input) =>
+    runtime.exchange(input),
+  )
+  const first = harness([entry('global', 1, 'first')], request, storage)
+  first.synchronization.update([target('runtime')], true)
+  await flush()
+  const backup = storage.load()
+  first.edit(entry('global', 2, 'newer'))
+  first.synchronization.retry()
+  await flush()
+  expect(runtime.history('global')).toHaveLength(2)
+  await first.synchronization.stop()
+  storage.save(backup)
+  request.mockClear()
+  const restored = harness([], request, storage, () => 'app:recovered')
+  restored.synchronization.update([target('runtime')], true)
+  await flush()
+  expect(restored.shared()).toEqual([entry('global', 2, 'newer')])
+  expect(restored.error).toHaveBeenLastCalledWith('')
+  expect(storage.load()).toMatchObject({ replicaId: 'app:recovered' })
+  expect(runtime.history('global')).toHaveLength(2)
+  restored.edit(entry('global', 3, 'after recovery'))
+  restored.synchronization.retry()
+  await flush()
+  expect(runtime.get('global')?.taskDefaults?.setupCommand).toBe('after recovery')
+  expect(runtime.history('global')).toHaveLength(3)
 })

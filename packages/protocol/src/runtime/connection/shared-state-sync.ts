@@ -83,6 +83,7 @@ export class SharedStateSynchronization {
       channel: 'shared-settings:v1',
       storage: this.options.storage,
       createReplicaId: () => this.options.createReplicaId(),
+      forkOnDivergence: true,
       decode: (value) => decode(scopedSettingsValueSchema, value),
       validateVersion: (entry) => {
         if (

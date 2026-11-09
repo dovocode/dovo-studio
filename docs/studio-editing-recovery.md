@@ -116,13 +116,24 @@ stored summaries. A replay from an old client cannot remove a restored parent li
 An active sender resends retained history after a committed repair, even if its peer already
 acknowledged every journal entry. A receiver that detects an incomplete copy returns its retained
 complete history. Clients drain these replay pages with the page cursor, even when a saved receipt
-is already further ahead. Receipts and version counts do not need a reset.
+is already further ahead. A repair generation commits with the repaired values. Peers replay a
+missed generation from sequence zero, including after the sender reopens. Older peers without repair
+receipts receive one bounded replay per connection. Idle connections do not repeat it. Receipts and
+version counts do not need a reset.
 
 If an older peer rejects the damaged outgoing record before it returns its complete copy, the
 updated client pulls the peer's retained history, then tries the push again. This replay includes
 pages that were already acknowledged. It uses the existing reconnect backoff if the error remains.
-It does not reset storage or pairings. Different parent links and other data conflicts remain
-visible. Automatic recovery does not choose between competing user edits.
+One open journal keeps a recovery budget for each paired peer. Dropping and recreating a connection
+does not repeat a failed full recovery. Retry permits another attempt. A new repair also permits
+another attempt. It does not reset storage or pairings. Different parent links and other data
+conflicts remain visible. Automatic recovery does not choose between competing user edits.
+
+App journals opt into actor recovery after a file or device restore. A peer must prove that the
+retained actor went backwards or reused a sequence. The app then commits one fresh journal actor and
+replays its retained versions. Version IDs, history, checkpoints and paired runtime identities stay
+intact. Pairing tokens stay in their existing storage. True immutable-value conflicts remain
+visible. The app does not choose between different user edits.
 
 Thread catch-up publishes one settled UI refresh after its batches complete. Receipt-only changes do
 not trigger another content exchange or refresh. A failed background snapshot read keeps a healthy
@@ -173,3 +184,8 @@ A local CPU benchmark with 2,000 replica summaries measured a median of 0.014 ms
 after an unrelated local message update. The previous implementation measured 24.3 ms for the same
 workload. This excludes message writes, screen rendering, network traffic, and the first projection
 after a metadata change.
+
+The app journal string adapter reuses encoded text for immutable retained entries. A local CPU
+benchmark with 5,000 messages (9.77 MiB of message text) measured a median metadata edit of 6.1 ms,
+compared with 37.1 ms before this change. This excludes device disk I/O, networking and UI
+rendering.

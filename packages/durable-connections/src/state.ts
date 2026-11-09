@@ -22,6 +22,11 @@ export interface StateBatch<T> {
   through: number
   changes: StateChange<T>[]
   more: boolean
+  /** Historical repair generation of the source. Present when its channel recovers versions. */
+  repairs?: number
+  /** Repair generation which this page finishes delivering: it ends an unbroken replay
+   * from sequence zero. The receiver stores it, so a later repair is replayed in full. */
+  replayed?: number
 }
 export interface StateRequest<T> {
   batch: StateBatch<T>
@@ -29,13 +34,16 @@ export interface StateRequest<T> {
 }
 export interface StateResponse<T> {
   batch: StateBatch<T>
-  accepted: { source: string; through: number }
+  /** repairs is the repair generation of the request source which the receiver holds. */
+  accepted: { source: string; through: number; repairs?: number }
 }
 export interface StateSnapshot<T> {
   protocol: 1
   channel: string
   replicaId: string
   journal: StateChange<T>[]
+  /** Receive progress by source actor. Keys with the reserved `@repairs` prefix hold
+   * repair generations: the local count, and the generation received from each source. */
   checkpoints: Record<string, number>
   /** Stable paired peer IDs mapped to their last accepted journal actor. */
   sources?: Record<string, string>
@@ -97,6 +105,14 @@ export interface DurableStateOptions<T> {
 export class StateProtocolError extends Error {
   override name = 'StateProtocolError'
 }
+/** A peer acknowledged more of this actor's journal than the journal holds. The stored
+ * journal returned to an earlier point, or two installations share one actor. */
+export class StateRollbackError extends StateProtocolError {
+  override name = 'StateRollbackError'
+  constructor() {
+    super('State acknowledgement is ahead of the source')
+  }
+}
 export class StateGapError extends StateProtocolError {
   override name = 'StateGapError'
   constructor(readonly expected: number) {
@@ -113,6 +129,16 @@ function text(value: unknown): string {
     ? value
     : fail('Invalid state identifier')
 }
+// Every storage adapter commits the checkpoint map atomically with the journal. Reserved
+// keys keep repair progress in that map, so no adapter or stored format has to change.
+const REPAIRS = '@repairs'
+const receivedRepairs = (source: string) => `${REPAIRS}:${source}`
+function actor(value: unknown): string {
+  const id = text(value)
+  return id.startsWith(REPAIRS) ? fail('Invalid state identifier') : id
+}
+const progress = (checkpoints: Readonly<Record<string, number>>, key: string) =>
+  Object.hasOwn(checkpoints, key) ? checkpoints[key] : 0
 function counter(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
     ? value
@@ -152,38 +178,25 @@ export class DurableState<T> {
   private closePromise?: Promise<void>
   private readonly batchSize: number
   private readonly maxBatchBytes: number
-  private readonly batchOverhead: number
+  private batchOverhead: number
+  private createReplicaId?: () => string
   private readonly listeners = new Set<() => void>()
   private storedKey: unknown
   private known = new Map<string, StateVersion<T>>()
   private winners = new Map<string, StateVersion<T>>()
   private clock = 0
   private contentRevision = 0
-  private repairedRevision = 0
 
   private constructor(private options: DurableStateOptions<T>) {
     text(options.channel)
-    text(options.replicaId)
+    actor(options.replicaId)
     this.batchSize = options.batchSize ?? 128
     this.maxBatchBytes = options.maxBatchBytes ?? STATE_MAX_BATCH_BYTES
     if (!Number.isSafeInteger(this.batchSize) || this.batchSize < 1 || this.batchSize > 10000)
       fail('Invalid state batch size')
     if (!Number.isSafeInteger(this.maxBatchBytes) || this.maxBatchBytes < 4096)
       fail('Invalid state batch byte limit')
-    this.batchOverhead =
-      byteLength(
-        json({
-          protocol: 1,
-          channel: options.channel,
-          source: options.replicaId,
-          after: Number.MAX_SAFE_INTEGER,
-          through: Number.MAX_SAFE_INTEGER,
-          changes: [],
-          more: false,
-        }),
-      ) + 1
-    if (this.batchOverhead >= this.maxBatchBytes)
-      fail('State identifiers exceed the batch byte limit')
+    this.batchOverhead = this.measure(options.replicaId)
     if (
       !!options.storage.readChanges !== !!options.storage.append ||
       (options.storage.append && options.storage.update)
@@ -198,6 +211,26 @@ export class DurableState<T> {
     }
   }
 
+  private measure(replicaId: string) {
+    const overhead =
+      byteLength(
+        json({
+          protocol: 1,
+          channel: this.options.channel,
+          source: replicaId,
+          after: Number.MAX_SAFE_INTEGER,
+          through: Number.MAX_SAFE_INTEGER,
+          changes: [],
+          more: false,
+          ...(this.options.recoverVersion
+            ? { repairs: Number.MAX_SAFE_INTEGER, replayed: Number.MAX_SAFE_INTEGER }
+            : {}),
+        }),
+      ) + 1
+    if (overhead >= this.maxBatchBytes) fail('State identifiers exceed the batch byte limit')
+    return overhead
+  }
+
   static async open<T>(options: DurableStateOptions<T>) {
     const state = new DurableState(options)
     const stored = await options.storage.load()
@@ -208,14 +241,23 @@ export class DurableState<T> {
 
   /** Atomically initializes and retains an actor identity with its journal. */
   static async openPersisted<T>(
-    options: Omit<DurableStateOptions<T>, 'replicaId'> & { createReplicaId(): string },
+    options: Omit<DurableStateOptions<T>, 'replicaId'> & {
+      createReplicaId(): string
+      /** Give the retained journal a new actor identity when a peer proves that the stored
+       * journal returned to an earlier point or was cloned. Use this for app stores which a
+       * file or profile restore can roll back. Do not use it where the host has its own
+       * restore generation. Not available with append storage. */
+      forkOnDivergence?: boolean
+    },
   ) {
+    if (options.forkOnDivergence && options.storage.append)
+      return fail('Append state storage cannot fork its replica identity')
     const initialize = (current: unknown) => {
       if (current !== undefined && current !== null) return current
       return {
         protocol: 1,
         channel: options.channel,
-        replicaId: text(options.createReplicaId()),
+        replicaId: actor(options.createReplicaId()),
         journal: [],
         checkpoints: {},
       }
@@ -229,6 +271,7 @@ export class DurableState<T> {
     }
     if (!object(stored)) return fail('Invalid stored state identity')
     const state = new DurableState({ ...options, replicaId: text(stored.replicaId) })
+    if (options.forkOnDivergence) state.createReplicaId = () => options.createReplicaId()
     state.restore(stored)
     state.storedKey = options.storage.contentKey?.(stored)
     return state
@@ -274,11 +317,15 @@ export class DurableState<T> {
       !object(value) ||
       value.protocol !== 1 ||
       value.channel !== this.options.channel ||
-      value.replicaId !== this.options.replicaId ||
+      // Another owner of a forking store can replace the actor identity.
+      (this.createReplicaId
+        ? typeof value.replicaId !== 'string'
+        : value.replicaId !== this.replicaId) ||
       !Array.isArray(value.journal) ||
       !object(value.checkpoints)
     )
       return fail('Stored state does not match this channel and replica')
+    const replicaId = actor(value.replicaId)
     const seen = new Set<string>()
     const journal = value.journal.map((change, index) => {
       if (!object(change) || change.sequence !== index + 1) return fail('Invalid stored state log')
@@ -299,7 +346,7 @@ export class DurableState<T> {
     return {
       protocol: 1,
       channel: this.channel,
-      replicaId: this.replicaId,
+      replicaId,
       journal,
       checkpoints,
       ...(sources ? { sources } : {}),
@@ -365,6 +412,7 @@ export class DurableState<T> {
       return fail('Durable state storage checkpoints changed')
     if (
       !repaired &&
+      current.replicaId === this.replicaId &&
       current.journal.length === this.revision &&
       json(current.checkpoints) === json(this.snapshot.checkpoints) &&
       json(current.sources ?? {}) === json(this.snapshot.sources ?? {})
@@ -474,7 +522,7 @@ export class DurableState<T> {
 
   private async commit(
     edit: (base: StateSnapshot<T>) => readonly StateVersion<T>[],
-    checkpoint?: { source: string; through: number },
+    checkpoint?: { source: string; through: number; replayed?: number },
     peer?: string,
   ) {
     let repairs: StateVersionRepair<T>[] = []
@@ -519,7 +567,16 @@ export class DurableState<T> {
         checkpoint &&
         peer !== undefined &&
         (!Object.hasOwn(base.sources ?? {}, peer) || base.sources?.[peer] !== checkpoint.source)
-      if (!appended.length && !repairs.length && !changedCheckpoint && !changedSource) return base
+      const replayedKey = checkpoint && receivedRepairs(checkpoint.source)
+      const replayed =
+        replayedKey !== undefined &&
+        replayedKey.length <= 1000 &&
+        checkpoint?.replayed !== undefined &&
+        progress(base.checkpoints, replayedKey) < checkpoint.replayed
+          ? { [replayedKey]: checkpoint.replayed }
+          : undefined
+      if (!appended.length && !repairs.length && !changedCheckpoint && !changedSource && !replayed)
+        return base
       this.options.validateState?.(mergeLatest([...known.values()], [...pending.values()]))
       const restored = new Map(repairs.map(({ version }) => [identity(version), version]))
       const journal = repairs.length
@@ -531,12 +588,27 @@ export class DurableState<T> {
       return {
         ...base,
         journal: appended.length ? [...journal, ...appended] : journal,
-        checkpoints: changedCheckpoint
-          ? { ...base.checkpoints, [checkpoint.source]: checkpoint.through }
-          : base.checkpoints,
+        checkpoints:
+          changedCheckpoint || replayed || repairs.length
+            ? {
+                ...base.checkpoints,
+                ...(changedCheckpoint ? { [checkpoint.source]: checkpoint.through } : {}),
+                ...replayed,
+                // The repair generation commits with the repair. Peers compare it with the
+                // generation they hold, also after a disconnect or a process restart.
+                ...(repairs.length ? { [REPAIRS]: progress(base.checkpoints, REPAIRS) + 1 } : {}),
+              }
+            : base.checkpoints,
         ...(changedSource ? { sources: { ...base.sources, [peer]: checkpoint.source } } : {}),
       }
     }
+    await this.persist(build, () => repairs)
+  }
+
+  private async persist(
+    build: (base: StateSnapshot<T>) => StateSnapshot<T>,
+    repairs: () => readonly StateVersionRepair<T>[] = () => [],
+  ) {
     let next: StateSnapshot<T>
     if (this.options.storage.update) {
       let built: StateSnapshot<T> | undefined
@@ -557,7 +629,7 @@ export class DurableState<T> {
           next.journal.slice(this.revision),
           next.checkpoints,
           next.sources,
-          repairs,
+          repairs(),
         )
       else {
         const stored: unknown = JSON.parse(json(next))
@@ -570,21 +642,16 @@ export class DurableState<T> {
 
   private publish(next: StateSnapshot<T>) {
     const contentChanged = next.journal !== this.snapshot.journal
-    if (
-      contentChanged &&
-      this.snapshot.journal.some(
-        (change, index) =>
-          change !== next.journal[index] && json(change) !== json(next.journal[index]),
-      )
-    )
-      this.repairedRevision++
+    const actorChanged = next.replicaId !== this.snapshot.replicaId
     if (contentChanged) this.contentRevision++
+    if (actorChanged) this.batchOverhead = this.measure(next.replicaId)
     if (next.journal.length >= this.revision && next.journal[0] === this.snapshot.journal[0])
       this.indexChanges(next.journal.slice(this.revision))
     else this.index(next)
     this.snapshot = next
     // Receipts are durable progress, not new content to broadcast back to every peer.
-    if (!contentChanged) return
+    // A new actor identity wakes each session, which then resends the retained journal.
+    if (!contentChanged && !actorChanged) return
     for (const listener of [...this.listeners]) {
       try {
         listener()
@@ -600,7 +667,7 @@ export class DurableState<T> {
   }
 
   get replicaId() {
-    return this.options.replicaId
+    return this.snapshot.replicaId
   }
   get channel() {
     return this.options.channel
@@ -612,9 +679,11 @@ export class DurableState<T> {
   get dataRevision() {
     return this.contentRevision
   }
-  /** Local generation of committed historical repairs; sessions must resend their prefix. */
+  /** Durable generation of committed historical repairs, or zero when the channel does not
+   * recover versions. A peer which holds a lower generation needs a replay from sequence
+   * zero. The generation starts at one, so stores from before this record replay once. */
   get repairRevision() {
-    return this.repairedRevision
+    return this.options.recoverVersion ? progress(this.snapshot.checkpoints, REPAIRS) + 1 : 0
   }
   get supportsVersionRecovery() {
     return this.options.recoverVersion !== undefined
@@ -673,7 +742,7 @@ export class DurableState<T> {
         written = this.decodeVersion({
           key,
           updatedAt,
-          changeId: `${this.replicaId}:${updatedAt}`,
+          changeId: `${base.replicaId}:${updatedAt}`,
           value: detached,
           deleted,
         })
@@ -694,7 +763,10 @@ export class DurableState<T> {
     return decoded.deleted ? this.delete(decoded.key) : this.set(decoded.key, decoded.value)
   }
 
-  batch(after = 0): StateBatch<T> {
+  /** replayed is the repair generation at the start of an unbroken replay from sequence
+   * zero. The final page carries it. A page which starts at zero and ends the journal
+   * carries the current generation without it. */
+  batch(after = 0, replayed?: number): StateBatch<T> {
     counter(after)
     if (after > this.revision) return fail('State cursor is ahead of the source')
     const changes: StateChange<T>[] = []
@@ -706,6 +778,9 @@ export class DurableState<T> {
       changes.push(change)
     }
     const through = changes.at(-1)?.sequence ?? after
+    const more = through < this.revision
+    const repairs = this.repairRevision
+    const complete = more ? undefined : after === 0 ? repairs : replayed
     return {
       protocol: 1,
       channel: this.channel,
@@ -716,7 +791,9 @@ export class DurableState<T> {
         sequence: change.sequence,
         version: this.decodeVersion(change.version),
       })),
-      more: through < this.revision,
+      more,
+      ...(repairs ? { repairs } : {}),
+      ...(repairs && complete !== undefined ? { replayed: Math.min(complete, repairs) } : {}),
     }
   }
 
@@ -731,9 +808,13 @@ export class DurableState<T> {
       return fail('Invalid state batch or channel')
     if (value.changes.length > 10000 || byteLength(json(value)) > this.maxBatchBytes)
       return fail('State batch exceeds transport limits')
-    const source = text(value.source),
+    const source = actor(value.source),
       after = counter(value.after),
-      through = counter(value.through)
+      through = counter(value.through),
+      repairs = value.repairs === undefined ? undefined : counter(value.repairs),
+      replayed = value.replayed === undefined ? undefined : counter(value.replayed)
+    if (replayed !== undefined && (repairs === undefined || replayed > repairs || value.more))
+      return fail('Invalid state repair replay')
     if (through !== after + value.changes.length) return fail('State batch is not contiguous')
     if (value.more && through === after) return fail('State batch makes no progress')
     const changes = value.changes.map((change, index) => {
@@ -741,11 +822,24 @@ export class DurableState<T> {
         return fail('State batch is not contiguous')
       return { sequence: change.sequence, version: this.decodeVersion(change.version) }
     })
-    return { protocol: 1, channel: this.channel, source, after, through, changes, more: value.more }
+    return {
+      protocol: 1,
+      channel: this.channel,
+      source,
+      after,
+      through,
+      changes,
+      more: value.more,
+      ...(repairs === undefined ? {} : { repairs }),
+      ...(replayed === undefined ? {} : { replayed }),
+    }
   }
 
   receive(value: unknown, peer?: string) {
     const batch = this.decodeBatch(value)
+    return this.take(batch, peer, batch.replayed)
+  }
+  private take(batch: StateBatch<T>, peer: string | undefined, replayed: number | undefined) {
     if (peer !== undefined) text(peer)
     return this.enqueue(async () => {
       if (batch.source === this.replicaId) return fail('Replicas must have unique identities')
@@ -783,17 +877,28 @@ export class DurableState<T> {
               : []
           return [...accepted.map((change) => change.version), ...extra]
         },
-        { source: batch.source, through: batch.through },
+        {
+          source: batch.source,
+          through: batch.through,
+          // Only the page which ends the journal completes a replay.
+          replayed: batch.more ? undefined : replayed,
+        },
         peer,
       )
-      return { source: batch.source, through: this.checkpoint(batch.source) }
+      return {
+        source: batch.source,
+        through: this.checkpoint(batch.source),
+        ...(batch.repairs === undefined
+          ? {}
+          : { repairs: this.checkpoint(receivedRepairs(batch.source)) }),
+      }
     })
   }
 
-  request(peer?: string, sentThrough = 0): StateRequest<T> {
+  request(peer?: string, sentThrough = 0, replayed?: number): StateRequest<T> {
     const source = peer === undefined ? undefined : this.sourceFor(peer)
     return {
-      batch: this.batch(sentThrough),
+      batch: this.batch(sentThrough, replayed),
       pull: { source, after: source ? this.checkpoint(source) : 0 },
     }
   }
@@ -821,21 +926,54 @@ export class DurableState<T> {
     const accepted = await this.receive(batch)
     return { accepted, batch: this.batch(!replay && source === this.replicaId ? after : 0) }
   }
-  async accept(input: unknown, peer?: string) {
+  /** run identifies an unbroken pull from sequence zero: the cursor of the expected page,
+   * and the repair generation of the first page. The final page records that generation. */
+  async accept(input: unknown, peer?: string, run?: { after: number; repairs: number }) {
     if (this.options.storage.update) await this.refresh()
     if (!object(input) || !object(input.accepted) || input.accepted.source !== this.replicaId)
       return fail('Invalid state acknowledgement')
     const through = counter(input.accepted.through)
-    if (through > this.revision) return fail('State acknowledgement is ahead of the source')
+    if (through > this.revision) throw new StateRollbackError()
+    const sentRepairs =
+      input.accepted.repairs === undefined ? undefined : counter(input.accepted.repairs)
     const batch = this.decodeBatch(input.batch)
-    await this.receive(batch, peer)
+    const replayed =
+      batch.replayed ??
+      (run && run.after === batch.after && batch.repairs !== undefined
+        ? Math.min(run.repairs, batch.repairs)
+        : undefined)
+    const received = await this.take(batch, peer, replayed)
     return {
       peer: batch.source,
       sentThrough: through,
+      /** Repair generation of this replica which the peer holds; undefined for an older peer. */
+      sentRepairs,
+      receivedAfter: batch.after,
       receivedMore: batch.more,
       receivedThrough: batch.through,
+      receivedRepairs: batch.repairs,
+      /** The peer repaired history which this replica has not replayed from sequence zero. */
+      repairsPending:
+        this.supportsVersionRecovery &&
+        batch.repairs !== undefined &&
+        (received.repairs ?? 0) < batch.repairs,
       more: batch.more || through < this.revision,
     }
+  }
+  /** Replace a diverged actor identity and keep the journal, receive checkpoints and peer
+   * sources. Peers then accept the retained journal as a new source and deduplicate the
+   * versions they hold. Resolves false when openPersisted did not enable forkOnDivergence.
+   * Resolves true when the identity differs from the diverged one, also when another
+   * storage owner replaced it first. */
+  forkReplica(diverged: string) {
+    return this.enqueue(async () => {
+      const create = this.createReplicaId
+      if (!create) return false
+      await this.persist((base) =>
+        base.replicaId === diverged ? { ...base, replicaId: actor(create()) } : base,
+      )
+      return this.replicaId !== diverged
+    })
   }
   close() {
     this.closing = true

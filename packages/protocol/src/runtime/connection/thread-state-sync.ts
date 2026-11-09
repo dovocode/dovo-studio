@@ -56,6 +56,7 @@ export class ThreadStateSynchronization {
       channel: threadReplicationChannel,
       storage: this.options.storage,
       createReplicaId: () => this.options.createReplicaId(),
+      forkOnDivergence: true,
       decode: decodeThreadRecord,
       validateVersion: validateThreadVersion,
       recoverVersion: recoverThreadParentVersion,

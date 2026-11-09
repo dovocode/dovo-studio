@@ -29,7 +29,7 @@ const built = await build({
   stdin: {
     resolveDir: root,
     contents: `
-import {DurableState,jsonStateStorage} from './packages/durable-connections/src/index.ts';
+import {DurableState,jsonStateStorage,startReplication} from './packages/durable-connections/src/index.ts';
 import {browserSharedStateStorage,browserThreadStateStorage} from './packages/studio-core/src/runtime/shared-state-storage.ts';
 import React from 'react';
 import {createRoot} from 'react-dom/client';
@@ -62,6 +62,30 @@ window.openSharedReplica=async id=>{
 };
 window.bareThread=(()=>{const value={kind:'thread',ownerRuntimeId:'owner',threadId:'child',ownerName:'Owner',projectName:'Project',createdAt:'2026-01-01',status:'done',historyRevision:0,removed:false};return {key:threadRecordKey(value),updatedAt:100,changeId:'owner:100',deleted:false,value}})();
 window.richThread={...window.bareThread,value:{...window.bareThread.value,parent:{runtimeId:'owner',threadId:'parent'}}};
+window.checkPagedParentReplay=async()=>{
+  const open=id=>DurableState.openPersisted({channel:threadReplicationChannel,createReplicaId:()=>id,
+    storage:jsonStateStorage({read:()=>localStorage.getItem(id),write:value=>localStorage.setItem(id,value)}),
+    decode:decodeThreadRecord,validateVersion:validateThreadVersion,recoverVersion:recoverThreadParentVersion});
+  let source=await open('paged-source');const target=await open('paged-target');let worker;
+  try{
+    const prefix=Array.from({length:128},(_,i)=>{const value={kind:'title',ownerRuntimeId:'owner',threadId:'prefix-'+i,value:'Retain '+i};
+      return {key:threadRecordKey(value),updatedAt:i+1,changeId:'prefix:'+i,deleted:false,value};});
+    await source.importVersions([...prefix,window.bareThread]);
+    let after=0;
+    do{const batch=source.batch(after);await target.receive(batch);after=batch.through;}while(after<source.revision);
+    await source.importVersions([window.richThread]);
+    await source.close();source=await open('paged-source');
+    const errors=[];
+    worker=startReplication({state:source,peerId:'paged-target',intervalMs:null,
+      exchange:request=>target.exchange(request),onError:error=>errors.push(error.message)});
+    const deadline=Date.now()+5000;
+    while(!target.get(window.bareThread.key)?.parent&&Date.now()<deadline&&!errors.length)
+      await new Promise(resolve=>setTimeout(resolve,10));
+    if(errors.length)throw Error(errors.join('; '));
+    if(target.get(window.bareThread.key)?.parent?.threadId!=='parent')throw Error('Repaired page two did not reach a caught-up peer after reopening');
+    if(source.revision!==129||target.revision!==129)throw Error('Repair changed retained history counts');
+  }finally{await worker?.stop();await source.close();await target.close();}
+};
 window.openThreadReplica=async(id,recover=true)=>{
   await window.state?.close?.();
   window.state=await DurableState.openPersisted({channel:threadReplicationChannel,createReplicaId:()=>id,
@@ -223,9 +247,10 @@ try {
   await a.reload()
   await a.evaluate(() => window.openThreadReplica('unused-after-reload'))
   assert.deepEqual(await a.evaluate(() => window.state.versions()), repairedJournal)
+  await a.evaluate(() => window.checkPagedParentReplay())
   assert.deepEqual(errors, [])
   console.log(
-    'Durable browser state: offline reload, two-way sync, replay, recovery, storage failure, concurrent IndexedDB journals, safe thread-parent repair across windows, and mobile draft scopes passed.',
+    'Durable browser state: offline reload, two-way sync, replay, recovery, storage failure, concurrent IndexedDB journals, parent repair across windows and after page one/reopen, and mobile draft scopes passed.',
   )
 } finally {
   await browser.close()

@@ -9,6 +9,7 @@ export {
   DurableState,
   StateProtocolError,
   StateGapError,
+  StateRollbackError,
   STATE_MAX_BATCH_BYTES,
   STATE_MAX_EXCHANGE_BYTES,
 } from './state.js'
