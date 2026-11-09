@@ -92,6 +92,15 @@ retry arbitrary commands or external side effects: it replicates state only. Sch
 validation run before persistence; applications can also supply `validateVersion` for key-specific
 rules. Subscriber errors are reported separately from committed writes.
 
+`decode` must preserve the JSON data of an existing version. A schema that strips unknown fields,
+adds defaults or changes values can otherwise forward different data under the same version ID. The
+engine rejects such a schema before it imports, receives or reopens the version. Version validators
+must also preserve the complete version, including its identity. Failed batches leave stored
+records, receive checkpoints and learned peer identities intact. After an app upgrade, the same
+batch can retry without clearing local drafts or creating duplicate versions. Update connected apps
+and runtimes together. Use a compatible decoder or a new channel with a data migration for schema
+changes. Do not remove the version collision check or clear a replica to hide a conflict.
+
 Local commits wake replication immediately. `connection.wake()` also checks for remote changes
 without discarding its session cursors; `restart()` cancels an in-flight request or retry delay. Set
 `intervalMs: null` to keep a caught-up session idle until a state change or explicit wake. Offline

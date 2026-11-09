@@ -1,4 +1,5 @@
 import { expect, it, vi, afterEach } from 'vite-plus/test'
+import { Schema } from 'effect'
 import {
   DurableState,
   StateGapError,
@@ -572,6 +573,159 @@ it('adapts string stores and structured schemas without native/browser-specific 
     decode: decodeObject,
   })
   expect(restarted.get('draft')).toEqual({ title: 'Original' })
+})
+
+it.each(['receive', 'import', 'open'] as const)(
+  'rejects lossy schema decoding during %s before it can corrupt an immutable version',
+  async (operation) => {
+    const decodeDocument = (value: unknown) => {
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('title' in value) ||
+        typeof value.title !== 'string'
+      )
+        throw new Error('Expected document')
+      Reflect.deleteProperty(value, 'parent')
+      return { title: value.title }
+    }
+    const version = {
+      key: 'subagent',
+      updatedAt: 100,
+      changeId: 'owner:100',
+      deleted: false as const,
+      value: { title: 'Subagent', parent: { runtimeId: 'owner', threadId: 'parent' } },
+    }
+    const storage = memory()
+    const snapshot = {
+      protocol: 1,
+      channel: 'documents',
+      replicaId: 'legacy',
+      journal: [{ sequence: 1, version }],
+      checkpoints: {},
+    }
+    if (operation === 'open') storage.save(snapshot)
+    storage.save.mockClear()
+    const storedBefore = storage.load()
+    const options = {
+      channel: 'documents',
+      replicaId: 'legacy',
+      storage,
+      decode: decodeDocument,
+    }
+    const state = operation === 'open' ? undefined : await DurableState.open(options)
+    try {
+      await expect(
+        (async () => {
+          if (operation === 'open') await DurableState.open(options)
+          else if (operation === 'import') await state?.importVersions([version])
+          else
+            await state?.receive({
+              protocol: 1,
+              channel: 'documents',
+              source: 'owner',
+              after: 0,
+              through: 1,
+              more: false,
+              changes: snapshot.journal,
+            })
+        })(),
+      ).rejects.toThrow('State schema would change immutable version data')
+      expect(storage.save).not.toHaveBeenCalled()
+      expect(state?.revision ?? 0).toBe(0)
+      expect(state?.checkpoint('owner') ?? 0).toBe(0)
+      expect(version.value.parent).toEqual({ runtimeId: 'owner', threadId: 'parent' })
+      expect(storage.load()).toEqual(storedBefore)
+    } finally {
+      await state?.close()
+    }
+  },
+)
+
+it('rejects a validator that rewrites version identity without poisoning a later valid import', async () => {
+  const storage = memory()
+  let changeIdentity = true
+  const state = await DurableState.open({
+    channel: 'test',
+    replicaId: 'receiver',
+    storage,
+    decode,
+    validateVersion: (version) => {
+      if (changeIdentity) version.changeId = 'rewritten'
+    },
+  })
+  const version = {
+    key: 'retained',
+    updatedAt: 100,
+    changeId: 'owner:100',
+    deleted: false as const,
+    value: 'Original',
+  }
+  try {
+    await expect(async () => state.importVersions([version])).rejects.toThrow(
+      'State schema would change immutable version data',
+    )
+    expect(version.changeId).toBe('owner:100')
+    expect(state.revision).toBe(0)
+    expect(storage.save).not.toHaveBeenCalled()
+    changeIdentity = false
+    await state.importVersions([version])
+    expect(state.history('retained')).toEqual([version])
+  } finally {
+    await state.close()
+  }
+})
+
+it('retries a rejected batch after a schema upgrade, retaining drafts, parent metadata and one copy per version', async () => {
+  const legacySchema = Schema.Struct({ title: Schema.String })
+  const currentSchema = Schema.Struct({
+    title: Schema.String,
+    parent: Schema.optional(Schema.Struct({ runtimeId: Schema.String, threadId: Schema.String })),
+  })
+  const options = {
+    channel: 'documents',
+    storage: memory(),
+    decode: Schema.decodeUnknownSync(currentSchema),
+  }
+  const owner = await DurableState.open({ ...options, replicaId: 'owner' })
+  const storage = memory()
+  const appOptions = { ...options, replicaId: 'app', storage }
+  const legacy = await DurableState.open({
+    ...appOptions,
+    decode: Schema.decodeUnknownSync(legacySchema),
+  })
+  let upgraded: DurableState<Schema.Schema.Type<typeof currentSchema>> | undefined
+  try {
+    await legacy.set('draft', { title: 'Keep this offline draft' })
+    await owner.set('ordinary', { title: 'Ordinary thread' })
+    const subagent = {
+      title: 'Subagent',
+      parent: { runtimeId: 'owner', threadId: 'parent' },
+    }
+    await owner.set('subagent', subagent)
+    const batch = owner.batch()
+    const before = storage.load()
+    await expect(async () => legacy.receive(batch, 'paired-owner')).rejects.toThrow(
+      'State schema would change immutable version data',
+    )
+    expect(storage.load()).toEqual(before)
+    expect(legacy.get('ordinary')).toBeUndefined()
+    expect(legacy.checkpoint('owner')).toBe(0)
+    expect(legacy.sourceFor('paired-owner')).toBe('paired-owner')
+    await legacy.close()
+    upgraded = await DurableState.open(appOptions)
+    await upgraded.receive(batch, 'paired-owner')
+    await upgraded.receive(batch, 'paired-owner')
+    await owner.accept(await upgraded.exchange(owner.request()))
+    expect(upgraded.get('draft')).toEqual({ title: 'Keep this offline draft' })
+    expect(upgraded.get('subagent')).toEqual(subagent)
+    expect(upgraded.history('subagent')).toHaveLength(1)
+    expect(upgraded.checkpoint('owner')).toBe(2)
+    expect(upgraded.sourceFor('paired-owner')).toBe('owner')
+    expect(upgraded.latest()).toEqual(owner.latest())
+  } finally {
+    await Promise.all([owner.close(), legacy.close(), upgraded?.close()])
+  }
 })
 
 it('bounds UTF-8 batch sizes and rejects values that could never leave the replica', async () => {

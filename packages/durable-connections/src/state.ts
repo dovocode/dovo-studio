@@ -62,7 +62,10 @@ export interface DurableStateOptions<T> {
   channel: string
   replicaId: string
   storage: StateStorage
+  /** Validate JSON without adding, removing or changing data in an existing version.
+   * Schema changes need a compatible decoder or a channel migration. */
   decode(value: unknown): T
+  /** Validate without changing the version, including its identity. */
   validateVersion?: (version: StateVersion<T>) => void
   validateState?: (latest: readonly StateVersion<T>[]) => void
   /** Ignore echoed records which this replica cannot accept as authoritative. They still
@@ -224,17 +227,25 @@ export class DurableState<T> {
       updatedAt: counter(value.updatedAt),
       changeId: text(value.changeId),
     }
+    if (value.deleted !== false && (value.deleted !== true || value.value !== null))
+      return fail('Invalid state deletion')
+    const original = json({ ...stamp, deleted: value.deleted, value: value.value })
     let version: StateVersion<T>
-    if (value.deleted === true && value.value === null) {
+    if (value.deleted === true) {
       version = { ...stamp, deleted: true, value: null }
     } else {
-      if (value.deleted !== false) return fail('Invalid state deletion')
       // Decode into caller types, then detach and normalize optional properties for transport.
-      const decoded = this.options.decode(value.value)
+      const detached: unknown = JSON.parse(original)
+      if (!object(detached)) return fail('Invalid state version')
+      const decoded = this.options.decode(detached.value)
       const normalized: unknown = JSON.parse(json(decoded))
       version = { ...stamp, deleted: false, value: this.options.decode(normalized) }
     }
     this.options.validateVersion?.(version)
+    if (json(version) !== original)
+      return fail(
+        'State schema would change immutable version data. Update connected apps and runtimes before syncing this data.',
+      )
     // Every stored record must fit a batch, including after reopening with different limits.
     if (
       this.batchOverhead + byteLength(json({ sequence: Number.MAX_SAFE_INTEGER, version })) >
