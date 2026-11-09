@@ -18,7 +18,7 @@ const mocks = {
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
   '@dovo/web-ui/conversation': `export * from '${root}packages/web-ui/src/conversation.tsx';`,
   '../chat/thread/use-task-viewed': `export const useTaskViewed=()=>({});`,
-  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationRail,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';export function ChatThread({task,onReadingHistory,active}){const indices=Array.from({length:window.turnCount??20},(_,index)=>index);return <Conversation><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content className="studio-conversation-content mx-auto w-full" style={{paddingBlock:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{indices.map(index=><section id={task.id+'-'+index} key={index} style={{contentVisibility:window.staticTurns?"visible":"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-deferred-'+index} pinned={window.staticTurns||index>=indices.length-2}>{()=> <div style={{height:350}}>Turn {task.id} {index+1}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div></ConversationContent></ConversationHistory><ConversationRail items={indices.map(index=>({id:task.id+'-'+index,label:'Turn '+(index+1),preview:'Request and response for this turn'}))}/><ConversationScrollButton/></Conversation>}`,
+  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationRail,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';import {useStickToBottomContext} from 'use-stick-to-bottom';function FollowProbe(){window.followProbe=useStickToBottomContext();return null}export function ChatThread({task,onReadingHistory,active}){const indices=Array.from({length:window.turnCount??20},(_,index)=>index);return <Conversation><FollowProbe/><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content className="studio-conversation-content mx-auto w-full" style={{paddingBlock:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{indices.map(index=><section id={task.id+'-'+index} key={index} style={{contentVisibility:window.staticTurns?"visible":"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-deferred-'+index} pinned={window.staticTurns||index>=indices.length-2}>{()=> <div style={{height:350}}>Turn {task.id} {index+1}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div></ConversationContent></ConversationHistory><ConversationRail items={indices.map(index=>({id:task.id+'-'+index,label:'Turn '+(index+1),preview:'Request and response for this turn'}))}/><ConversationScrollButton/></Conversation>}`,
   '../chat/composer/composer': `export function Composer({collapsed}){return <div className="task-composer"><form data-collapsed={collapsed} style={{height:collapsed?48:150,maxWidth:'var(--chat-max)',marginInline:'auto'}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form></div>}`,
 }
 for (const [path, name] of [
@@ -122,6 +122,59 @@ try {
   await content.waitFor({ state: 'visible' })
   assert.equal(await content.evaluate((e) => e.style.visibility), '')
   await uncollapsed()
+  // Explicit navigation must release a follow action that ignores passive scroll events.
+  await page.evaluate(() => {
+    void window.followProbe.scrollToBottom({
+      animation: 'instant',
+      ignoreEscapes: true,
+      duration: 1000,
+    })
+  })
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+  const stopped = await page.evaluate(() => {
+    window.followProbe.stopScroll()
+    const root = document.querySelector('[role=log] > div')
+    const expected = root.scrollTop - 200
+    root.scrollTo({ top: expected, behavior: 'instant' })
+    root.dispatchEvent(new Event('scroll'))
+    return { expected, animationReleased: window.followProbe.state.animation === undefined }
+  })
+  assert.equal(
+    stopped.animationReleased,
+    true,
+    'Stop releases an in-flight follow action immediately',
+  )
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page.locator('[role=log] > div').evaluate((node) => node.scrollTop),
+    stopped.expected,
+    'An old follow action cannot undo explicit navigation',
+  )
+  await page.evaluate(() => window.followProbe.scrollToBottom({ animation: 'instant' }))
+  await bottom()
+  // A shrinking transcript must not resume following after an explicit stop.
+  await page.evaluate(() => window.resizeHistory(0, 300))
+  await bottom()
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  await page.evaluate(() => {
+    window.followProbe.stopScroll()
+    window.flushSync(() => window.resizeHistory(0, 200))
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page.evaluate(() => window.followProbe.state.isAtBottom),
+    false,
+    'A negative resize cannot cancel an explicit stop near the latest message',
+  )
+  await page.evaluate(() => window.followProbe.scrollToBottom({ animation: 'instant' }))
+  await page.evaluate(() => window.resizeHistory(0, 0))
+  await bottom()
   // Opening another sidebar thread starts at the latest turn, including deferred layout.
   await page.evaluate(() => window.openThread('second'))
   await page.waitForSelector('[data-task-conversation=second]')

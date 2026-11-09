@@ -1,5 +1,5 @@
 diff --git a/dist/useStickToBottom.js b/dist/useStickToBottom.js
-index 7d659edace3f497dc867d3ce24d31180e18cf909..c0d092a2be3b669f1586c400f76c14638cd33613 100644
+index 7d659edace3f497dc867d3ce24d31180e18cf909..867ac19485c378b2bbc981b0e4139ae0da85149a 100644
 --- a/dist/useStickToBottom.js
 +++ b/dist/useStickToBottom.js
 @@ -128,11 +128,13 @@ export const useStickToBottom = (options = {}) => {
@@ -16,7 +16,18 @@ index 7d659edace3f497dc867d3ce24d31180e18cf909..c0d092a2be3b669f1586c400f76c1463
              setIsAtBottom(true);
          }
          const waitElapsed = Date.now() + (Number(scrollOptions.wait) || 0);
-@@ -230,6 +232,7 @@ export const useStickToBottom = (options = {}) => {
+@@ -223,13 +225,17 @@ export const useStickToBottom = (options = {}) => {
+         return next();
+     }, [setIsAtBottom, isSelecting, state]);
+     const stopScroll = useCallback(() => {
++        // Cancel queued follow events and release ignoreEscapes before native turn scrolling.
++        followRequest.current += 1;
++        state.animation = undefined;
+         setEscapedFromLock(true);
+         setIsAtBottom(false);
+-    }, [setEscapedFromLock, setIsAtBottom]);
++    }, [setEscapedFromLock, setIsAtBottom, state]);
+     const handleScroll = useCallback(({ target }) => {
          if (target !== scrollRef.current) {
              return;
          }
@@ -24,7 +35,7 @@ index 7d659edace3f497dc867d3ce24d31180e18cf909..c0d092a2be3b669f1586c400f76c1463
          const { scrollTop, ignoreScrollToTop } = state;
          let { lastScrollTop = scrollTop } = state;
          state.lastScrollTop = scrollTop;
-@@ -251,6 +254,8 @@ export const useStickToBottom = (options = {}) => {
+@@ -251,6 +257,8 @@ export const useStickToBottom = (options = {}) => {
           * @see https://github.com/WICG/resize-observer/issues/25#issuecomment-248757228
           */
          setTimeout(() => {
@@ -33,3 +44,14 @@ index 7d659edace3f497dc867d3ce24d31180e18cf909..c0d092a2be3b669f1586c400f76c1463
              /**
               * When theres a resize difference ignore the resize event.
               */
+@@ -347,7 +355,9 @@ export const useStickToBottom = (options = {}) => {
+                  * if we are want to un-escape from the lock, because the resize
+                  * could have caused the container to be at the bottom.
+                  */
+-                if (state.isNearBottom) {
++                // A turn jump or reader gesture can stop following before deferred content
++                // shrinks. Do not let that resize restart the old follow animation.
++                if (state.isNearBottom && !state.escapedFromLock) {
+                     setEscapedFromLock(false);
+                     setIsAtBottom(true);
+                 }
