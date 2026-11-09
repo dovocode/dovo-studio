@@ -210,7 +210,7 @@ function TaskRowView({
   const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !owner.online && !!owner.runtimeId
   const hideReviewStatus = !offline && presentation.state === 'Review'
-  const visibleStatus = offline ? 'Offline' : presentation.compactLabel
+  const statusTime = presentation.time.replace(' ago', '')
   const StatusIcon = hideReviewStatus
     ? undefined
     : offline
@@ -339,6 +339,7 @@ function TaskRowView({
                         data-thread-copy=""
                         data-tone={statusTone}
                         data-thread-state={offline ? 'Offline' : presentation.state}
+                        aria-label={status}
                         title={status}
                       >
                         {StatusIcon && (
@@ -347,7 +348,7 @@ function TaskRowView({
                             aria-hidden="true"
                           />
                         )}
-                        {visibleStatus}
+                        {statusTime && <span className="tabular-nums">{statusTime}</span>}
                       </span>
                     )}
                   </span>
@@ -368,13 +369,14 @@ function TaskRowView({
                 </span>
                 {compact && StatusIcon && (
                   <span
-                    className="studio-thread-status shrink-0"
+                    className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
                     data-tone={statusTone}
                     data-thread-state={offline ? 'Offline' : presentation.state}
-                    aria-label={visibleStatus}
+                    aria-label={status}
                     title={status}
                   >
                     <StatusIcon className="studio-thread-status-icon size-3.5" aria-hidden="true" />
+                    {statusTime && <span className="tabular-nums">{statusTime}</span>}
                   </span>
                 )}
                 {!compact && !general && (

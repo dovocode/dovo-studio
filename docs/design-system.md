@@ -38,9 +38,13 @@ Studio takes its surface styling from [Opaline](https://opaline.buildlab.in/inst
 edge highlights, frosted menus and dialogs, rounded actions and restrained depth. Keep the selected
 Studio palette. Shared tokens use 10px field corners, 16px cards and a 4px spacing scale. Text
 actions use capsule shapes. Keep thread rows, including pinned threads, at their current compact
-height and spacing. Pinned browser tabs use 56px cards and a 24px favicon at the exact center.
-Status and activity stay in the corners. Computer and profile details stay in the tooltip and
-accessible name. Do not add an identity badge row to the cards.
+height and spacing. Desktop and mobile thread rows show a status icon and time without a visible
+status label. Keep the full status in the accessible name and desktop tooltip. Read review rows stay
+quiet.
+
+Pinned browser tabs use 56px cards and a 24px favicon at the exact center. Status and activity stay
+in the corners. Computer and profile details stay in the tooltip and accessible name. Do not add an
+identity badge row to the cards.
 
 `packages/web-ui/src/theme.css` owns the shared surface finish. Use it for settings, navigation and
 controls. Apply backdrop blur only to temporary menus and dialogs. Keep scrolling lists and code

@@ -216,7 +216,6 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
         density={preferences.threadDensity}
         showDevice={runtime.profiles.length > 1}
         showTypeIndicator
-        hideStatusLabel={item.section === 'working' || item.section === 'waiting'}
       />
     ) : null
   }

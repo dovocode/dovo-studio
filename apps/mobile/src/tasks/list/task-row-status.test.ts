@@ -54,7 +54,7 @@ describe('mobile thread status', () => {
     ).toBe('Stopped · 4m')
   })
   it('prioritizes input requests and marks cached working state', () => {
-    expect(taskRowStatus(task, true, true, now)).toBe('Needs input')
+    expect(taskRowStatus(task, true, true, now)).toBe('Needs input · 4m')
     expect(
       taskRowStatus(
         {
@@ -167,7 +167,7 @@ it('presents finished watched threads as Waiting while preserving input priority
   const waiting = { ...task, waitingForFeedback: true, lastViewedTurnId: undefined }
   expect(taskRowStatus(waiting, false, true, now)).toBe('Waiting · 4m')
   expect(showTaskDone(waiting, false, now)).toBe(false)
-  expect(taskRowStatus(waiting, true, true, now)).toBe('Needs input')
+  expect(taskRowStatus(waiting, true, true, now)).toBe('Needs input · 4m')
 })
 
 it('keeps an idle parent Working until its native child finishes, with input taking priority', () => {

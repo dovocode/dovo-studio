@@ -211,7 +211,7 @@ try {
         continue
       }
       const project = await row.getByText('Audit project', { exact: true }).boundingBox()
-      const status = await row.getByText('Draft', { exact: true }).boundingBox()
+      const status = await row.locator('[data-thread-state="Draft"]').boundingBox()
       const provider = row.locator('[data-agent-avatar]')
       assert.equal(await provider.count(), 1)
       assert.equal(

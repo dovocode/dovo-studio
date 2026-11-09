@@ -949,7 +949,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             >
               <TaskListRow
                 density={preferences.threadDensity ?? 'compact'}
-                hideStatusLabel={item.section === 'working' || item.section === 'waiting'}
                 row={rowData.get(item.entry.key)!.row}
                 needsInput={item.entry.needsInput}
                 thread={tree.nodes.get(item.entry.key)}

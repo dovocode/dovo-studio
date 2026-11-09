@@ -409,7 +409,7 @@ try {
           if (id === 'task-3') {
             assert.equal(await row.getByLabel('Draft', { exact: true }).count(), 1)
             assert.ok(
-              (await row.getByLabel('Draft', { exact: true }).boundingBox()).x <
+              (await row.getByLabel('Draft', { exact: true }).boundingBox()).x >
                 (await row.getByText('Project', { exact: true }).boundingBox()).x,
             )
             assert.equal(
@@ -939,9 +939,9 @@ try {
       },
     }),
   )
-  await page.getByTestId('Task parent').getByText('Needs input', { exact: true }).waitFor()
+  await page.getByTestId('Task parent').getByLabel('Needs input', { exact: true }).waitFor()
   await page.evaluate(() => window.publish({ parent: { threadWatches: [] } }))
-  await page.getByTestId('Task parent').getByText('Working', { exact: true }).waitFor()
+  await page.getByTestId('Task parent').getByLabel('Working', { exact: true }).waitFor()
   await page.evaluate(() => {
     const parent = window.snapshot.workspace.tasks.find((task) => task.id === 'parent')
     window.publish({
@@ -955,7 +955,7 @@ try {
       child: { status: 'done' },
     })
   })
-  await page.getByTestId('Task parent').getByText('Finished', { exact: true }).waitFor()
+  await page.getByTestId('Task parent').getByLabel('Finished', { exact: true }).waitFor()
   await page.getByTestId('Task task-2').dispatchEvent('contextmenu')
   await page.getByTestId('Task task-3').click()
   await page.getByText('2 selected', { exact: true }).waitFor()
@@ -1081,7 +1081,8 @@ try {
   await settled.waitFor()
   assert.equal(await settled.getByText('Project', { exact: true }).count(), 0)
   assert.match(await settled.getAttribute('aria-label'), /Project/)
-  assert.equal(await settled.getByText('Settled', { exact: true }).count(), 1)
+  assert.equal(await settled.getByText('Settled', { exact: true }).count(), 0)
+  assert.equal(await settled.getByLabel('Settled', { exact: true }).count(), 1)
   assert.equal(await settled.getByText('Task 1', { exact: true }).count(), 1)
   assert.equal(await page.getByTestId('Task task-1 actions').count(), 0)
   assert.equal(
@@ -1404,7 +1405,7 @@ try {
     ),
     true,
   )
-  assert.match(
+  assert.doesNotMatch(
     await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
     /Working/,
   )
@@ -1412,7 +1413,7 @@ try {
   assert.doesNotMatch(await waitingStatus.innerText(), /Waiting/)
   assert.match(await waitingStatus.innerText(), /\d+m/)
   await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
-  assert.match(
+  assert.doesNotMatch(
     await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
     /Working/,
   )
@@ -1522,6 +1523,57 @@ try {
         true,
       )
     }
+  }
+  await page.evaluate(() => {
+    const base = window.snapshot.workspace.tasks[0]
+    const finishedAt = new Date(Date.now() - 300000).toISOString()
+    window.setListPreferences({ workingSection: false, collapsedThreadSections: [] })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: ['done', 'failed', 'cancelled', 'draft', 'running'].map((status) => ({
+          ...base,
+          id: 'status-' + status,
+          title: 'Status ' + status,
+          status,
+          pinned: true,
+          subagents: [],
+          lastViewedTurnId: 'status-turn',
+          turns:
+            status === 'draft'
+              ? []
+              : [
+                  {
+                    id: 'status-turn',
+                    assistantId: 'status-reply',
+                    agentId: 'agent',
+                    model: 'fixture',
+                    provider: 'codex',
+                    status: status === 'running' ? 'running' : 'completed',
+                    startedAt: new Date(Date.now() - 600000).toISOString(),
+                    ...(status === 'running' ? {} : { finishedAt }),
+                  },
+                ],
+        })),
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  for (const [status, state] of [
+    ['done', 'Finished'],
+    ['failed', 'Failed'],
+    ['cancelled', 'Stopped'],
+    ['draft', 'Draft'],
+    ['running', 'Working'],
+  ]) {
+    const indicator = page.getByTestId('Task status-' + status).getByTestId('Thread status')
+    await indicator.waitFor()
+    assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
+    assert.equal(await indicator.locator('svg').count(), 1)
+    if (status === 'draft') assert.equal(await indicator.innerText(), '')
+    else assert.match(await indicator.innerText(), /^\d+[mhd]$/)
   }
   assert.deepEqual(errors, [])
   console.log(

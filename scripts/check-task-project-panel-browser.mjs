@@ -1126,8 +1126,8 @@ try {
         await page.locator('.studio-thread-card-context > span.flex[data-tone="success"]').count(),
         4,
       )
-      // Unread completions say Done; read completions remain explicit as Finished.
-      // Both retain a quiet success icon, with age available in the tooltip.
+      // Unread and read completions keep distinct accessible status and a success icon.
+      // Rows show time without status text.
       for (const [project, unread] of [
         ['Project', true],
         ['Mobile app', false],
@@ -1139,8 +1139,8 @@ try {
         })
         const status = context.locator(':scope > span.flex')
         assert.equal(await status.count(), 1)
-        assert.equal(await status.getByText('Done', { exact: true }).count(), Number(unread))
-        assert.equal(await status.getByText('Finished', { exact: true }).count(), Number(!unread))
+        assert.match(await status.getAttribute('aria-label'), unread ? /^Done/ : /^Finished/)
+        assert.doesNotMatch(await status.innerText(), /Done|Finished/)
         assert.equal(await status.locator('svg').count(), 1)
         assert.equal(await status.getAttribute('data-tone'), 'success')
       }

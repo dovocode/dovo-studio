@@ -58,9 +58,11 @@ import { useTaskListUndo } from './task-list-undo'
 import { taskListActionHandlers } from './task-list-action'
 
 const statusIcons: Record<string, LucideIcon> = {
+  Draft: FilePenLine,
   Working: CircleDashed,
   'Was working': CloudOff,
   Done: CircleCheck,
+  Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -90,12 +92,10 @@ function TaskListRowView({
   current = false,
   showDevice = true,
   density,
-  hideStatusLabel = false,
   showTypeIndicator = false,
 }: {
   /** Which computer ran a task is noise when only one computer is saved. */
   showDevice?: boolean
-  hideStatusLabel?: boolean
   showTypeIndicator?: boolean
   density: MobilePreferences['threadDensity']
   row: RuntimeTask
@@ -197,7 +197,7 @@ function TaskListRowView({
     (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
     'Project checkout'
   const icon = projectIcon(displayProject)
-  const StatusIcon = statusIcons[state]
+  const StatusIcon = statusIcons[state] ?? CircleDashed
   const settled = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !settled
   const childRows = useMemo(() => (thread ? threadChildRows(thread) : []), [thread])
@@ -389,12 +389,10 @@ function TaskListRowView({
     </Text>
   )
 
-  const groupedStatus =
-    hideStatusLabel && row.online && (state === 'Working' || state === 'Waiting')
   const statusIndicator = state !== 'Review' && (
     <View
       testID="Thread status"
-      accessibilityLabel={groupedStatus ? status : undefined}
+      accessibilityLabel={status}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -403,22 +401,20 @@ function TaskListRowView({
         maxWidth: '45%',
       }}
     >
-      {StatusIcon && <StatusIcon size={12} color={stateColor} />}
-      <Text
-        numberOfLines={1}
-        style={{
-          color: stateColor,
-          flexShrink: 1,
-          ...contextText,
-          opacity: stateColor === colors.muted ? metadataText.opacity : 1,
-        }}
-      >
-        {groupedStatus
-          ? age
-          : working || state === 'Waiting' || needsInput || done || failed
-            ? `${state}${age ? ` ${age}` : ''}`
-            : age || state}
-      </Text>
+      <StatusIcon size={12} color={stateColor} />
+      {!!age && (
+        <Text
+          numberOfLines={1}
+          style={{
+            color: stateColor,
+            flexShrink: 1,
+            ...contextText,
+            opacity: stateColor === colors.muted ? metadataText.opacity : 1,
+          }}
+        >
+          {age}
+        </Text>
+      )}
     </View>
   )
 
@@ -568,9 +564,6 @@ function TaskListRowView({
                   paddingRight: car ? 0 : 32,
                 }}
               >
-                {draft && (
-                  <FilePenLine accessibilityLabel="Draft" size={12} color={colors.warning} />
-                )}
                 <View testID="Thread project icon" style={{ width: badgeSize, flexShrink: 0 }}>
                   {projectBadge}
                 </View>

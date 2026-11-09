@@ -59,5 +59,5 @@ export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, 
       : task.status === 'running' && task.runPhase !== 'finalizing'
         ? turn?.startedAt
         : turn?.finishedAt
-  return date && !needsInput ? `${state} · ${age(date, now)}` : state
+  return date ? `${state} · ${age(date, now)}` : state
 }

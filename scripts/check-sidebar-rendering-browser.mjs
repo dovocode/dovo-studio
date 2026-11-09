@@ -664,7 +664,7 @@ try {
     assert.equal(
       await status.evaluate((el) => getComputedStyle(el).color),
       await status.locator('svg').evaluate((el) => getComputedStyle(el).color),
-      'Status label inherits the same semantic color as its icon',
+      'Status time inherits the same semantic color as its icon',
     )
     assert.equal(await status.evaluate((el) => getComputedStyle(el).opacity), '1')
   }
@@ -707,17 +707,22 @@ try {
   await compactTitle.waitFor()
   await compactTitle
     .locator('xpath=ancestor::button[1]')
-    .getByLabel('Settled', { exact: true })
+    .getByLabel(/^Settled/)
     .waitFor()
   assert.equal(
     await compactTitle
       .locator('xpath=ancestor::button[1]')
-      .getByLabel('Settled', { exact: true })
+      .getByLabel(/^Settled/)
       .getAttribute('data-tone'),
     'success',
   )
   const compactBox = await compactTitle.locator('xpath=ancestor::button[1]').boundingBox()
   const settledCard = compactTitle.locator('xpath=ancestor::button[1]')
+  assert.doesNotMatch(await settledCard.locator('.studio-thread-status').innerText(), /Settled/)
+  assert.match(
+    await settledCard.locator('.studio-thread-status').innerText(),
+    /^(\d+[mhd]|just now)/,
+  )
   const settledIcon = settledCard.locator('.studio-thread-project-icon')
   await page.mouse.move(1100, 650)
   assert.equal(await settledIcon.evaluate((el) => getComputedStyle(el).filter), 'grayscale(1)')
@@ -753,7 +758,8 @@ try {
       (await projectless.getByText('No Project', { exact: true }).boundingBox()).x,
     'Draft status sits after the project name with the other row statuses',
   )
-  assert.equal(await draftStatus.innerText(), 'Draft')
+  assert.equal(await draftStatus.innerText(), '')
+  assert.equal(await draftStatus.getAttribute('aria-label'), 'Draft')
   const draftProjectBox = await projectless.getByText('No Project', { exact: true }).boundingBox()
   const draftStatusBox = await draftStatus.boundingBox()
   assert.ok(
@@ -850,20 +856,21 @@ try {
     const indicator = row.locator('.studio-thread-status')
     await indicator.waitFor()
     const text = await indicator.innerText()
-    assert.match(text, new RegExp('^' + state), `${state} rows keep their status label`)
+    assert.doesNotMatch(text, /Working|Waiting/, 'Rows show no status label')
+    assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
     if (state === 'Working')
-      assert.match(text, /^Working \d+[smh]/, 'Grouped working rows keep their elapsed time')
+      assert.match(text, /^\d+[smh]/, 'Grouped working rows keep their elapsed time')
     assert.equal(await indicator.locator('svg').count(), 1)
     await assertStatusColors(indicator, state === 'Working' ? 'active' : 'neutral')
   }
-  assert.match(
+  assert.doesNotMatch(
     await page
       .getByRole('button', { name: /Pinned working thread/ })
       .first()
       .innerText(),
     /Working/,
   )
-  assert.match(
+  assert.doesNotMatch(
     await page
       .getByRole('button', { name: /Saving thread/ })
       .first()
@@ -871,8 +878,9 @@ try {
     /Saving changes/,
   )
   await page.evaluate(() => window.setListPreferences({ workingSection: false }))
-  assert.match(await workingRow.innerText(), /Working/, 'Ungrouped working rows keep their label')
-  assert.equal(await waitingRow.locator('.studio-thread-status').innerText(), 'Waiting')
+  assert.doesNotMatch(await workingRow.innerText(), /Working/, 'Ungrouped rows show no label')
+  assert.match(await workingRow.locator('.studio-thread-status').innerText(), /^\d+[smh]/)
+  assert.doesNotMatch(await waitingRow.locator('.studio-thread-status').innerText(), /Waiting/)
 
   // A provider shell is activity, but is not an agent. Keep it in Open and expose its icon.
   await page.evaluate(() => {
@@ -932,7 +940,7 @@ try {
   await terminalRow.waitFor()
   assert.equal(await terminalRow.getByLabel('1 active terminal', { exact: true }).count(), 0)
 
-  // Real rows keep states explicit while sharing the presentation's visual semantics.
+  // Real rows keep semantic icons and accessible status, with only time as visible text.
   await page.evaluate(() => {
     window.setRemoteTasks([])
     window.setListPreferences({
@@ -984,7 +992,10 @@ try {
     await indicator.waitFor()
     assert.equal(await indicator.getAttribute('data-thread-state'), state)
     assert.equal(await indicator.getAttribute('data-tone'), tone)
-    assert.match(await indicator.innerText(), new RegExp('^' + state))
+    assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
+    assert.match(await indicator.getAttribute('title'), new RegExp('^' + state))
+    if (status === 'draft') assert.equal(await indicator.innerText(), '')
+    else assert.match(await indicator.innerText(), /^\d+[smh]/)
     assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
     assert.equal(
       await row
