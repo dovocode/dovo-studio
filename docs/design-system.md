@@ -74,8 +74,8 @@ this inset when controls move below labels in a narrow pane. Dividers span the c
 Center **Scroll to latest message** in its conversation pane. Inline chat images show **Edit &
 attach** over the image on hover or keyboard focus. Touch screens keep this action visible with a
 44px minimum height. Revealing the action must not move the image or the conversation. A turn jump
-or reader gesture stops following. Shrinking deferred content must not restart it. An explicit
-**Scroll to latest message** action resumes following.
+or reader gesture stops following. Shrinking deferred content and queued native scroll events must
+not restart it. An explicit **Scroll to latest message** action resumes following.
 
 Typography uses the shared sans-serif stack and monospace for codes. Use color for interaction,
 state and selection. User-selected Studio themes remain supported.

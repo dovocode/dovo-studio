@@ -124,6 +124,13 @@ try {
   assert.equal(await content.evaluate((e) => e.style.visibility), '')
   await uncollapsed()
   // Explicit navigation must release a follow action that ignores passive scroll events.
+  // Isolate controller cancellation from deferred mounts: native scroll anchoring
+  // can correctly change scrollTop when a placeholder above the reader grows.
+  await page.evaluate(() => {
+    window.staticTurns = true
+    window.flushSync(() => window.resizeHistory(0, 0))
+  })
+  await bottom()
   await page.evaluate(() => {
     void window.followProbe.scrollToBottom({
       animation: 'instant',
@@ -155,6 +162,25 @@ try {
   )
   await page.evaluate(() => window.followProbe.scrollToBottom({ animation: 'instant' }))
   await bottom()
+  // Returning to latest can leave its native scroll event queued after Stop.
+  await page.evaluate(() => {
+    const root = document.querySelector('[role=log] > div')
+    root.scrollTop -= 100
+    root.dispatchEvent(new Event('scroll'))
+    root.scrollTop = root.scrollHeight
+    window.followProbe.stopScroll()
+    root.dispatchEvent(new Event('scroll'))
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page.evaluate(() => window.followProbe.state.isAtBottom),
+    false,
+    'A queued native scroll cannot undo explicit navigation',
+  )
+  await page.evaluate(() => window.followProbe.scrollToBottom({ animation: 'instant' }))
+  await bottom()
   // A shrinking transcript must not resume following after an explicit stop.
   await page.evaluate(() => window.resizeHistory(0, 300))
   await bottom()
@@ -177,7 +203,10 @@ try {
   await page.evaluate(() => window.resizeHistory(0, 0))
   await bottom()
   // Opening another sidebar thread starts at the latest turn, including deferred layout.
-  await page.evaluate(() => window.openThread('second'))
+  await page.evaluate(() => {
+    window.staticTurns = false
+    window.openThread('second')
+  })
   await page.waitForSelector('[data-task-conversation=second]')
   await bottom()
   await uncollapsed()

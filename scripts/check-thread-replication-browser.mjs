@@ -149,6 +149,9 @@ function App(){const[task,setTask]=useState(project(selected,undefined,false));c
     )
     assert.equal(await page.getByRole('button', { name: /^(Run|Resume|Send|Stop)$/ }).count(), 0)
     await page.evaluate(() => window.setConnection(false))
+    await page.waitForFunction(
+      () => document.querySelector('input[aria-label="Thread title"]')?.disabled === true,
+    )
     assert.equal(await page.getByLabel('Thread title', { exact: true }).isDisabled(), true)
     if (!mobile) await page.locator('article').last().scrollIntoViewIfNeeded()
     await page.getByText('first message 84', { exact: true }).waitFor()
