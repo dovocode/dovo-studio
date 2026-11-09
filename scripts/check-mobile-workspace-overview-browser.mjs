@@ -7,7 +7,7 @@ const workspace = root + 'apps/mobile/src/workspace/'
 const controls = `
 import {forwardRef,useImperativeHandle} from 'react';
 export const View=({children,testID})=><div data-testid={testID}>{children}</div>;
-export const Image=()=>null;
+export const Glass=View;export const Image=()=>null;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const Pressable=({children,onPress,onLongPress,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} onClick={onPress} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{children}</button>;
 export const FlatList=forwardRef(({data,renderItem,keyExtractor,ListEmptyComponent},ref)=>{useImperativeHandle(ref,()=>({scrollToOffset(){}}));return <main>{data.length?data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>):ListEmptyComponent}</main>});
@@ -91,6 +91,7 @@ for (const path of [
   '../ui/controls/action',
   '../ui/controls/switch',
   '../ui/layout/sheet',
+  '../ui/layout/glass',
   '../ui/layout/screen-header',
   '../ui/theme',
 ])
@@ -155,7 +156,7 @@ try {
     ]),
   )
   const resourceOrder = await page
-    .locator('[data-testid^="Workspace "]')
+    .getByTestId(/^Workspace (?:browser|thread|terminal) /)
     .evaluateAll((items) => items.map((item) => item.dataset.testid))
   assert.deepEqual(resourceOrder, [
     'Workspace browser Page A',

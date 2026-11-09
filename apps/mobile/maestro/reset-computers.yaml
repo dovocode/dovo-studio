@@ -3,10 +3,11 @@ appId: com.dovo.studio
 - runFlow: open-devices.yaml
 - repeat:
     while:
-      visible: 'Manage .+'
+      visible:
+        id: 'Computer .+|Connected computer'
     commands:
       - tapOn:
-          text: 'Manage .+'
+          id: 'Computer .+|Connected computer'
           index: 0
       - scrollUntilVisible:
           element:

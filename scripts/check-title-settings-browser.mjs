@@ -135,6 +135,7 @@ try {
     '../ui/content/text': `export const Text=({children,accessibilityRole})=><div role={accessibilityRole}>{children}</div>;`,
     'react-native': `export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children,accessibilityRole})=><div role={accessibilityRole}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(_title,_message,buttons)=>{if(!window.cancelAlert)buttons.at(-1).onPress()}};`,
     '../ui/theme': `const styles={};export const useTheme=()=>({styles,colors:{background:'#fff',border:'#ddd'}});`,
+    '../ui/layout/glass': `export const Glass=({children})=><div>{children}</div>;`,
     '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../runtime/preferences/settings-target': `export const useSettingsDraft=(dirty)=>{window.hasDraft=dirty};`,

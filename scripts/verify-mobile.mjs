@@ -11,7 +11,8 @@ import { createServer, request as httpRequest } from 'node:http'
 const device = process.argv[2]
 const releaseSmoke = process.argv.includes('--release-smoke')
 const terminalOnly = process.argv.includes('--terminal-only')
-const composerOnly = process.argv.includes('--composer-only')
+const composerLayoutOnly = process.argv.includes('--composer-layout-only')
+const composerOnly = process.argv.includes('--composer-only') || composerLayoutOnly
 const navigationOnly = process.argv.includes('--navigation-only')
 const conversationOnly = process.argv.includes('--conversation-only')
 const dictationOnly = process.argv.includes('--dictation-only')
@@ -364,7 +365,7 @@ try {
     await runFlow(resolve('apps/mobile/maestro/composer-layout-typed.yaml'))
     await verifyComposerBounds(device, 'typed')
   }
-  await runFlow(flowPath)
+  if (!composerLayoutOnly) await runFlow(flowPath)
   if (
     !releaseSmoke &&
     !composerOnly &&
@@ -409,16 +410,18 @@ try {
       )
     )
       throw new Error('The keyboard layout draft was not retained in native client storage')
-    const task = runtime.services.store.task('mobile-task')
-    if (
-      composerMessageAttempts.length !== 1 ||
-      composerRetryAttempts.length !== 2 ||
-      new Set(composerRetryAttempts).size !== 1 ||
-      task.messages.filter((message) => message.text === 'Native first').length !== 1
-    )
-      throw new Error('Reopening the thread lost retry identity or retried a confirmed message')
-    if (task.turns?.[0]?.status !== 'cancelled' || task.queue?.length)
-      throw new Error('Composer stop and queue changes were not retained')
+    if (!composerLayoutOnly) {
+      const task = runtime.services.store.task('mobile-task')
+      if (
+        composerMessageAttempts.length !== 1 ||
+        composerRetryAttempts.length !== 2 ||
+        new Set(composerRetryAttempts).size !== 1 ||
+        task.messages.filter((message) => message.text === 'Native first').length !== 1
+      )
+        throw new Error('Reopening the thread lost retry identity or retried a confirmed message')
+      if (task.turns?.[0]?.status !== 'cancelled' || task.queue?.length)
+        throw new Error('Composer stop and queue changes were not retained')
+    }
   }
   if (navigationOnly) {
     const task = runtime.services.store.task('mobile-task')
@@ -620,7 +623,9 @@ try {
                 : navigationOnly
                   ? 'Mobile native tabs, Projects, task details and cold Shortcut navigation verified.'
                   : composerOnly
-                    ? 'Mobile new-draft keyboard geometry, pane state, idempotent retry, attachments, queue, stop and keyboard verified.'
+                    ? composerLayoutOnly
+                      ? 'Mobile new-draft keyboard geometry and saved draft verified.'
+                      : 'Mobile new-draft keyboard geometry, pane state, idempotent retry, attachments, queue, stop and keyboard verified.'
                     : terminalOnly
                       ? 'Mobile terminal keyboard, command execution and session lifecycle verified.'
                       : 'Mobile pairing, relaunch, native diff, terminal, queued follow-ups, agent questions, attachments, branch switching, task settings, cold Shortcut task and activity retention verified.',
@@ -670,7 +675,7 @@ async function verifyComposerBounds(device, stage) {
     return { label, left, top, right, bottom }
   }
   const toolbar = ['Attach files', 'Model & access', 'Dictate message', 'Send'].map(bounds)
-  const checkout = bounds('Project & checkout')
+  const checkout = bounds('Checkout & branch')
   const dismiss = bounds('Dismiss keyboard')
   const input = bounds('Message')
   const navigation = ['Back', 'Chat', 'Terminal', 'Browser'].map(bounds)

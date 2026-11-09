@@ -13,7 +13,7 @@ const mocks = {
     const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style??{};
     const css=style=>{const value=flat(style);return {...value,paddingLeft:value.paddingHorizontal,paddingRight:value.paddingHorizontal,paddingTop:value.paddingVertical,paddingBottom:value.paddingVertical}};
     export const View=({children,testID,style})=><div data-testid={testID} style={{display:'flex',flexDirection:'column',flexShrink:0,boxSizing:'border-box',...css(style)}}>{children}</div>;
-    export const StyleSheet={hairlineWidth:1};
+    export const StyleSheet={hairlineWidth:1,create:styles=>styles};
     export const useWindowDimensions=()=>({width:innerWidth,fontScale:window.fontScale??1});
     export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button disabled={disabled} aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
     export const Image=View;export const Platform={OS:"web"};
@@ -28,6 +28,7 @@ const mocks = {
   '../ui/content/text': `export const Text=({children,accessibilityRole,style})=><span role={accessibilityRole} style={{fontSize:17*(window.fontScale??1),...(Array.isArray(style)?Object.assign({},...style):style)}}>{children}</span>;`,
   '../ui/controls/icon': `export const Icon=()=>null;`,
   '../ui/theme': `export const useTheme=()=>({styles:{},colors:{}});`,
+  '../ui/layout/glass': `export {View as Glass} from 'react-native';`,
   '../ui/layout/screen-header': `export const ScreenHeader=({title})=><h1>{title}</h1>;`,
   '../ui/controls/switch': `export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`,
   './settings-theme': `export const useSettingsTheme=()=>({styles:{},colors:{surface:'#fff',border:'#ddd'}});export const SettingsPage=({children})=>children;export const SettingsSheet=({children,onClose})=><div>{children}<button onClick={onClose}>Close actions</button></div>;`,

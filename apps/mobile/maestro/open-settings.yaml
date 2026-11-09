@@ -1,12 +1,9 @@
 appId: com.dovo.studio
 ---
 - tapOn:
-    id: Tab More
+    text: More actions
 - tapOn: Settings
-- runFlow:
-    when:
-      visible:
-        text: Back
-    commands:
-      - tapOn:
-          text: Back
+- extendedWaitUntil:
+    visible:
+      id: Search settings
+    timeout: 10000

@@ -93,7 +93,9 @@ Collection and detail routes consume the remaining top safe area from their nati
 protects fixed controls and notices under glass navigation bars. Do not add a second top inset in
 expanded previews. Collections also consume the native bottom inset while the keyboard is hidden.
 Detail routes keep their existing bottom owner: the route, composer or browser toolbar. Browser
-adapters check these edge choices and draft retention. Verify actual inset sizes on iOS.
+adapters check these edge choices and draft retention. Check native keyboard controls on a
+disposable simulator with `node scripts/verify-mobile.mjs <simulator-id> --composer-layout-only`.
+Use the selected theme for status-bar text. Verify actual inset sizes on iOS.
 
 Thread info uses the resizable right pane shared by Files and Changes. Its header stays fixed while
 sections scroll. Compact web uses the whole pane. Closing Info preserves composer setting drafts.
@@ -126,7 +128,8 @@ Center **Scroll to latest message** in its conversation pane. Inline chat images
 attach** over the image on hover or keyboard focus. Touch screens keep this action visible with a
 44px minimum height. Revealing the action must not move the image or the conversation. A turn jump
 or reader gesture stops following. Shrinking deferred content and queued native scroll events must
-not restart it. An explicit **Scroll to latest message** action resumes following.
+not restart it. Keep following paused through deferred layout changes until a turn jump settles. An
+explicit **Scroll to latest message** action resumes following.
 
 Typography uses the shared sans-serif stack and monospace for codes. Use color for interaction,
 state and selection. User-selected Studio themes remain supported.

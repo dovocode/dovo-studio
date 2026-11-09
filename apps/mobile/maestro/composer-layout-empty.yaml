@@ -1,9 +1,10 @@
 appId: com.dovo.studio
 ---
-- launchApp
+- launchApp:
+    stopApp: true
 - extendedWaitUntil:
     visible:
-      id: Tab More
+      text: More actions
     timeout: 15000
 - runFlow: reset-computers.yaml
 - tapOn:
@@ -57,7 +58,7 @@ appId: com.dovo.studio
       id: Message
     timeout: 10000
 - tapOn: Folder
-- tapOn: developer-platform/mobile-and-desktop-runtime-connections
+- tapOn: Mobile fixture
 - extendedWaitUntil:
     visible:
       id: Checkout & branch

@@ -342,6 +342,7 @@ export function ConversationRail({
                     if (quietFrame !== undefined) cancelAnimationFrame(quietFrame)
                     resize?.disconnect()
                     mutations?.disconnect()
+                    root.removeEventListener('scroll', stopScroll)
                     root.removeEventListener('scrollend', settle)
                     for (const event of events) interactionRoot.removeEventListener(event, cancel)
                     if (cancelJump.current === cancel) cancelJump.current = undefined
@@ -385,6 +386,9 @@ export function ConversationRail({
                     schedule()
                   }
                   cancelJump.current = cancel
+                  // Deferred layout can move the viewport down during an upward jump.
+                  // Keep following paused until this navigation settles or the reader acts.
+                  root.addEventListener('scroll', stopScroll, { passive: true })
                   for (const event of events)
                     interactionRoot.addEventListener(event, cancel, { passive: true })
                   const instant = reducedMotion()

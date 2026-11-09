@@ -3,7 +3,7 @@ import { Platform } from 'react-native'
 import { useTheme } from '../theme'
 
 export function NavigationStack({ title }: { title: string }) {
-  const { colors, highContrast, reduceTransparency } = useTheme()
+  const { colors, mode, highContrast, reduceTransparency } = useTheme()
 
   return (
     <Stack
@@ -12,6 +12,7 @@ export function NavigationStack({ title }: { title: string }) {
         headerShown: Platform.OS === 'ios',
         headerBackButtonDisplayMode: 'minimal',
         headerTintColor: colors.text,
+        statusBarStyle: mode === 'dark' ? 'light' : 'dark',
         // Let UIKit render its native glass bar. Keep an opaque accessibility fallback.
         headerStyle:
           Platform.OS === 'ios' && !highContrast && !reduceTransparency
