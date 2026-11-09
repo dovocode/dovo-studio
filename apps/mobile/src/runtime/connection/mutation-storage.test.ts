@@ -5,6 +5,8 @@ const fs = vi.hoisted(() => ({
   directories: new Set<string>(),
   writes: [] as string[],
   failMove: false,
+  moves: 0,
+  failMoveAt: undefined as number | undefined,
   failWrite: false,
   writeGate: undefined as Promise<void> | undefined,
 }))
@@ -50,10 +52,16 @@ vi.mock('expo-file-system', () => {
       if (fs.failWrite) throw new Error('Write interrupted')
       fs.files.set(this.uri, value)
     }
-    async move(target: File) {
-      if (fs.failMove) throw new Error('Move interrupted')
+    async move(target: File, options: { overwrite?: boolean } = {}) {
+      fs.moves++
+      if (target.exists) {
+        if (!options.overwrite) throw new Error('Destination exists')
+        fs.files.delete(target.uri)
+      }
+      if (fs.failMove || fs.moves === fs.failMoveAt) throw new Error('Move interrupted')
       fs.files.set(target.uri, await this.text())
       fs.files.delete(this.uri)
+      this.uri = target.uri
     }
     delete() {
       fs.files.delete(this.uri)
@@ -89,6 +97,8 @@ beforeEach(() => {
   fs.directories.clear()
   fs.writes = []
   fs.failMove = false
+  fs.moves = 0
+  fs.failMoveAt = undefined
   fs.failWrite = false
   fs.writeGate = undefined
 })
@@ -141,10 +151,17 @@ it('waits for asynchronous mutation writes before committing and allows clearing
   } satisfies MutationOutbox[number]
   const pending = mobileMutationStorage.update(connection, () => [mutation])
   await vi.waitFor(() => expect(fs.writes).toHaveLength(1))
-  expect(await mobileMutationStorage.read(connection)).toEqual([])
+  let readFinished = false
+  const read = mobileMutationStorage.read(connection).then((value) => {
+    readFinished = true
+    return value
+  })
+  await Promise.resolve()
+  expect(readFinished).toBe(false)
   const cleared = mobileMutationStorage.clear(connection)
   finish()
   expect(await pending).toEqual([mutation])
+  expect(await read).toEqual([mutation])
   await cleared
   expect(await mobileMutationStorage.read(connection)).toEqual([])
 })
@@ -182,4 +199,44 @@ it('retains legacy recoveries if an asynchronous migration write fails', async (
   fs.failWrite = false
   expect(await mobileMutationStorage.workspaceRecoveries!(connection)).toEqual([edit('old')])
   expect(fs.files.has(legacy)).toBe(false)
+})
+
+it('recovers the committed queue after failure between rotation and final move', async () => {
+  const first = {
+    id: 'first',
+    path: '/api/tasks/message',
+    method: 'POST',
+    input: { messageId: 'first' },
+  } satisfies MutationOutbox[number]
+  const second = { ...first, id: 'second' }
+  await mobileMutationStorage.update(connection, () => [first])
+  fs.failMoveAt = fs.moves + 2
+  await expect(
+    mobileMutationStorage.update(connection, (pending) => [...pending, second]),
+  ).rejects.toThrow('Move interrupted')
+  expect(await mobileMutationStorage.read(connection)).toEqual([first])
+  fs.failMoveAt = undefined
+  expect(await mobileMutationStorage.update(connection, (pending) => [...pending, second])).toEqual(
+    [first, second],
+  )
+  await mobileMutationStorage.update(connection, () => [])
+  expect(await mobileMutationStorage.read(connection)).toEqual([])
+  expect([...fs.files.keys()].some((key) => key.endsWith('.backup'))).toBe(false)
+  await mobileMutationStorage.clear(connection)
+  expect(await mobileMutationStorage.read(connection)).toEqual([])
+})
+it('retains the previous committed queue if an empty-queue commit is interrupted', async () => {
+  const item = {
+    id: 'saved',
+    path: '/api/tasks/message',
+    method: 'POST',
+    input: { messageId: 'saved' },
+  } satisfies MutationOutbox[number]
+  await mobileMutationStorage.update(connection, () => [item])
+  fs.failMoveAt = fs.moves + 2
+  await expect(mobileMutationStorage.clear(connection)).rejects.toThrow('Move interrupted')
+  expect(await mobileMutationStorage.read(connection)).toEqual([item])
+  fs.failMoveAt = undefined
+  await mobileMutationStorage.clear(connection)
+  expect(await mobileMutationStorage.read(connection)).toEqual([])
 })

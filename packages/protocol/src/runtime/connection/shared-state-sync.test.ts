@@ -5,6 +5,7 @@ import { scopedSettingsValueSchema, type SharedSettingsEntry } from '../../works
 import { runtimeProfile, type RuntimeOverview } from './runtime-fleet.js'
 import { snapshotSchema } from './runtime.js'
 import { mergeSharedSettings } from './scoped-settings.js'
+import { sharedSettingsVersions } from './shared-state-values.js'
 import { SharedStateSynchronization, type SharedStateSyncOptions } from './shared-state-sync.js'
 
 const controllers: SharedStateSynchronization[] = []
@@ -109,7 +110,7 @@ async function flush() {
   }
 }
 
-it('migrates existing settings, retains competing snapshot versions, and bridges paired runtimes', async () => {
+it('migrates existing settings, receives full remote versions, and bridges paired runtimes', async () => {
   vi.useFakeTimers()
   const a = await peer('a'),
     b = await peer('b')
@@ -121,6 +122,7 @@ it('migrates existing settings, retains competing snapshot versions, and bridges
   })
   const local = entry('global', 1, 'local'),
     remote = entry('global', 2, 'remote')
+  await a.importVersions(sharedSettingsVersions([remote]))
   const h = harness([local], request, storage)
   h.synchronization.update([target('a', [remote]), target('b')], true)
   await flush()
@@ -159,7 +161,41 @@ it('retries an unchanged edit after an offline failure without another form save
   expect(h.error).toHaveBeenLastCalledWith('')
 })
 
-it('uses the legacy endpoint for older runtimes and recovers lost-response errors from snapshots', async () => {
+it('does not import a reduced snapshot before receiving the full immutable version', async () => {
+  vi.useFakeTimers()
+  const runtime = await peer()
+  const full = {
+    ...entry('global', 2, 'remote'),
+    value: { taskDefaults: { setupCommand: 'remote' }, projectPinned: true },
+  }
+  await runtime.importVersions(sharedSettingsVersions([full]))
+  const h = harness([], (_profile, _path, input) => runtime.exchange(input))
+  h.synchronization.update([target('runtime', [entry('global', 2, 'remote')])], true)
+  await flush()
+  expect(h.shared()).toEqual([full])
+  expect(h.error).toHaveBeenLastCalledWith('')
+  expect(runtime.history('global')).toHaveLength(1)
+})
+
+it('isolates an incompatible legacy response while another runtime keeps syncing', async () => {
+  vi.useFakeTimers()
+  const healthy = await peer('healthy')
+  await healthy.importVersions(sharedSettingsVersions([entry('global', 3, 'healthy')]))
+  const h = harness([], (profile, _path, input) =>
+    profile.connection.runtimeId === 'legacy'
+      ? Promise.resolve({
+          shared: [{ ...entry('global', 4, 'future'), value: { futureCategory: true } }],
+        })
+      : healthy.exchange(input),
+  )
+  h.synchronization.update([target('legacy', [], false), target('healthy')], true)
+  await flush()
+  expect(h.shared()).toEqual([entry('global', 3, 'healthy')])
+  expect(h.error).toHaveBeenLastCalledWith(expect.stringContaining('compatible app'))
+  expect(healthy.history('global')).toHaveLength(1)
+})
+
+it('uses the legacy endpoint for older runtimes and confirms a lost response with a raw read', async () => {
   vi.useFakeTimers()
   const edit = entry('global', 1, 'compatible')
   const request = vi.fn<SharedStateSyncOptions['request']>(async (_profile, path) => {
@@ -171,10 +207,11 @@ it('uses the legacy endpoint for older runtimes and recovers lost-response error
   await flush()
   expect(request).toHaveBeenCalledTimes(1)
   expect(h.error).toHaveBeenLastCalledWith(expect.stringContaining('Response lost'))
+  request.mockResolvedValue({ shared: [edit] })
   h.synchronization.update([target('legacy', [edit], false)], true)
   await flush()
   expect(h.error).toHaveBeenLastCalledWith('')
-  expect(request).toHaveBeenCalledTimes(1)
+  expect(request).toHaveBeenCalledTimes(2)
   const next = entry('global', 2, 'new edit')
   h.edit(next)
   request.mockResolvedValue({ shared: [next] })
@@ -349,7 +386,7 @@ it('restores committed app state and identity when preferences are absent after 
   expect(runtime.history('global')).toHaveLength(1)
 })
 
-it('ignores unrelated streamed snapshots while still importing changed shared settings', async () => {
+it('ignores unrelated streamed snapshots and fetches changed settings through raw exchange', async () => {
   vi.useFakeTimers()
   const runtime = await peer()
   const storage = memory()
@@ -367,6 +404,7 @@ it('ignores unrelated streamed snapshots while still importing changed shared se
     await flush()
   }
   expect(load).toHaveBeenCalledTimes(reads)
+  await runtime.importVersions(sharedSettingsVersions([entry('global', 200, 'changed')]))
   h.synchronization.update([target('runtime', [entry('global', 200, 'changed')])], true)
   await flush()
   expect(h.shared()[0]?.value.taskDefaults?.setupCommand).toBe('changed')

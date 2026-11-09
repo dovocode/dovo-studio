@@ -9,7 +9,7 @@ import {
   startReplication,
   type StateStorage,
 } from '@dovo/durable-connections'
-import { Effect, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import { decode } from '../../shared/schema.js'
 import { isRuntimeStateSource } from './replication-identity.js'
 import {
@@ -34,6 +34,7 @@ type Session = {
   known: SharedSettingsEntry[]
   error: string
   fingerprint: string
+  received: boolean
   worker?: Worker
 }
 export interface SharedStateSyncOptions {
@@ -165,14 +166,9 @@ export class SharedStateSynchronization {
     if (!current()) return
     await state.refresh()
     if (!current()) return
-    await state.importVersions(
-      sharedSettingsVersions([
-        ...this.options.readShared(),
-        ...[...this.targets.values()]
-          .filter((target) => target.connected)
-          .flatMap((target) => target.snapshot?.defaults?.scopedSettings?.shared ?? []),
-      ]),
-    )
+    // Snapshots are decoded presentation values. Older clients can omit fields, so
+    // only the raw exchange may supply another replica's immutable versions.
+    await state.importVersions(sharedSettingsVersions(this.options.readShared()))
     if (!current()) return
     this.publish(state)
     this.fatal = ''
@@ -203,6 +199,7 @@ export class SharedStateSynchronization {
         error: '',
         known: target.snapshot.defaults?.scopedSettings?.shared ?? [],
         fingerprint: '',
+        received: false,
       }
       this.sessions.set(id, session)
       const valid = () =>
@@ -277,7 +274,7 @@ export class SharedStateSynchronization {
                   ? []
                   : projectOrganizationCategories,
               )
-              if (!pending.length) {
+              if (!pending.length && session.received) {
                 if (valid()) {
                   session.error = ''
                   this.report()
@@ -291,9 +288,16 @@ export class SharedStateSynchronization {
                 signal,
               )
               if (signal.aborted || !valid()) return
-              const result = decode(sharedSettingsSyncSchema, raw)
-              await state.importVersions(sharedSettingsVersions(result.shared))
-              session.known = mergeSharedSettings(session.known, result.shared)
+              const result = Schema.decodeUnknownResult(sharedSettingsSyncSchema, {
+                onExcessProperty: 'error',
+              })(raw)
+              if (Result.isFailure(result))
+                throw new Error(
+                  'Shared settings require a compatible app version; saved data was kept',
+                )
+              await state.importVersions(sharedSettingsVersions(result.success.shared))
+              session.received = true
+              session.known = mergeSharedSettings(session.known, result.success.shared)
               await publish()
             },
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),

@@ -1,4 +1,10 @@
-import { decode, workspaceSchema, defaultTaskHarness, resolveTaskAgent } from '@dovo/protocol'
+import {
+  workspaceDraftHash,
+  decode,
+  workspaceSchema,
+  defaultTaskHarness,
+  resolveTaskAgent,
+} from '@dovo/protocol'
 import { expect, it, vi } from 'vite-plus/test'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
@@ -904,6 +910,7 @@ it('accepts the next draft after sending consumed its baseline, but protects com
     const store = new WorkspaceStore(db)
     const task: Task = {
       id: 'sent-draft',
+      draftConsumption: { messageId: 'sent', textHash: workspaceDraftHash('Already sent') },
       title: 'Draft race',
       agentId: '',
       repositoryId: '',
@@ -931,7 +938,13 @@ it('accepts the next draft after sending consumed its baseline, but protects com
     expect(store.recoveredEdits()).toHaveLength(2)
     store.update((w) => ({
       ...w,
-      tasks: [{ ...task, queue: [{ id: 'queued', role: 'user', text: 'Queued', createdAt: '' }] }],
+      tasks: [
+        {
+          ...task,
+          draftConsumption: { messageId: 'queued', textHash: workspaceDraftHash('Queued') },
+          queue: [{ id: 'queued', role: 'user', text: 'Queued', createdAt: '' }],
+        },
+      ],
     }))
     edit('Queued', 'Following queued message')
     expect(store.task(task.id).draft).toBe('Following queued message')
@@ -1540,6 +1553,37 @@ it('persists Scope preferences on drafts and locks them once input is submitted'
         changes: { autoProjectExecution: { before: 'worktree', after: 'main' } },
       }),
     ).toThrow('before sending the first message')
+  } finally {
+    db.close()
+  }
+})
+
+it('preserves a discarded repeated draft against an old matching history message', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const task: Task = {
+      id: 'repeat',
+      title: 'Repeat',
+      agentId: '',
+      repositoryId: '',
+      status: 'review',
+      createdAt: '',
+      draft: '',
+      files: [],
+      example: false,
+      messages: [{ id: 'old', role: 'user', text: 'continue' }],
+      draftConsumption: { messageId: 'old', textHash: workspaceDraftHash('continue') },
+    }
+    store.update((w) => ({ ...w, tasks: [task] }))
+    const edit = (before: string, after: string) =>
+      store.patch({ collection: 'tasks', id: task.id, changes: { draft: { before, after } } })
+    edit('', 'continue')
+    expect(store.task(task.id).draftConsumption).toBeUndefined()
+    edit('continue', '')
+    expect(edit('continue', 'continue with deployment').reconciled).toBe(true)
+    expect(store.task(task.id).draft).toBe('')
+    expect(store.recoveredEdits()).toHaveLength(1)
   } finally {
     db.close()
   }

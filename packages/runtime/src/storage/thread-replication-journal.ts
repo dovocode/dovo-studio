@@ -148,7 +148,7 @@ export class ThreadReplicationJournal {
         .prepare('SELECT value FROM thread_versions WHERE identity=?')
         .get(this.identity(version)),
     )
-    if (existing && existing.value !== encoded)
+    if (existing && !isDeepStrictEqual(JSON.parse(existing.value), JSON.parse(encoded)))
       throw new Error('A replicated thread revision was reused')
     this.db
       .prepare('INSERT OR IGNORE INTO thread_versions(identity,value) VALUES (?,?)')

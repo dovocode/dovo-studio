@@ -12,6 +12,21 @@ blocks writes until it can read the saved document again. **Retry saving setting
 document before it merges pending edits. It does not replace unread settings with defaults. The
 service URL form clears its save error when that retry succeeds.
 
+Settings replication reads full versions from the raw exchange. It does not import decoded snapshots
+as immutable versions. Legacy connections read their settings endpoint and reject unknown fields
+before import. A version mismatch stops that connection and keeps saved data. Other paired computers
+can still sync.
+
+The iOS offline action queue rotates the committed file to a backup before it replaces the file.
+Reads wait for writes and use the backup if a replacement did not finish. Empty queues use the same
+commit path. A successful clear cannot restore old actions from a backup. These checks use the
+native file API contract with injected failures; they do not simulate a physical power loss.
+
+The runtime records a message ID and a draft text hash when a user send consumes its draft. Later
+draft edits, including an explicit empty draft, clear that marker. Reconciliation uses this proof to
+keep text typed just after a send. Old matching conversation text does not prove consumption. If the
+proof is absent, Studio keeps the host draft and retains a competing edit for recovery.
+
 Mobile detail forms keep up to 40 drafts per form type in memory. The cache removes clean entries
 first. At capacity, it keeps unsaved text and allows edits to existing drafts. It blocks edits to a
 new item and shows **Draft limit reached**. Save or discard an existing draft of that type, then
@@ -129,6 +144,8 @@ pnpm --filter @dovo/runtime... --filter @dovo/api... -r build
 pnpm --filter @dovo/desktop build
 pnpm exec vp test packages/studio-core/src/preferences.test.ts apps/mobile/src/runtime/state/detail-drafts.test.ts packages/extension-tasks/src/list/thread-tree.test.ts packages/runtime/src/storage/thread-replication-journal.test.ts packages/runtime/src/storage/thread-replication.test.ts packages/runtime/src/http/diagnostics.test.ts packages/runtime/src/http/browser.test.ts packages/runtime/src/previews/browser-do-not-track.test.ts packages/runtime/src/previews/browser-session-cookies.test.ts apps/desktop/electron/main.test.ts
 pnpm exec vp test packages/extension-tasks/src/list/task-collection.test.ts apps/mobile/src/tasks/list/task-list-projection.test.ts apps/mobile/src/workspace/workspace-items.test.ts
+pnpm exec vp test packages/durable-connections/src apps/mobile/src/runtime/connection/mutation-storage.test.ts packages/protocol/src/runtime/connection/shared-state-sync.test.ts packages/protocol/src/runtime/connection/shared-state-values.test.ts packages/protocol/src/runtime/connection/workspace-reconciliation.test.ts packages/runtime/src/storage/workspace.test.ts packages/runtime/src/agents/tasks/task-queue.test.ts
+pnpm test:durable-connections:browser
 pnpm test:preference-storage:browser
 pnpm test:file-drafts:browser
 pnpm test:browser-profile-settings:browser

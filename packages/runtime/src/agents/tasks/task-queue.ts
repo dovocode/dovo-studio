@@ -1,5 +1,6 @@
 import {
   MAX_ATTACHMENTS,
+  workspaceDraftHash,
   nextQueuedMessage,
   sameTurnSettings,
   turnSettingsKey,
@@ -175,6 +176,10 @@ export class TaskQueue {
         ...(consumesDraft
           ? {
               draft: t.draft.trim() === text.trim() ? '' : t.draft,
+              draftConsumption:
+                !t.draft.trim() || t.draft.trim() === text.trim()
+                  ? { messageId, textHash: workspaceDraftHash(text) }
+                  : t.draftConsumption,
               draftTurnSettings:
                 (!t.draft.trim() || t.draft.trim() === text.trim()) &&
                 sameTurnSettings(t.draftTurnSettings, options.turnSettings)

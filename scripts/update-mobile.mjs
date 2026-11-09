@@ -35,11 +35,13 @@ try {
     throw new Error('The requested iPhone is unavailable. Connect and unlock it, then try again.')
   // Build metadata can survive copied/restored checkouts with stale dist files.
   // Always emit the workspace dependencies used by the release bundle.
-  for (const name of ['protocol', 'client-runtime'])
+  for (const name of ['durable-connections', 'protocol', 'client-runtime'])
     rmSync(join(root, 'packages', name, 'tsconfig.build.tsbuildinfo'), { force: true })
   run('pnpm', [
     '--filter',
     '@dovo/design',
+    '--filter',
+    '@dovo/durable-connections',
     '--filter',
     '@dovo/protocol',
     '--filter',

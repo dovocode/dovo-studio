@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { decodeResult } from '../../shared/schema.js'
 import { workspaceSchema, type Workspace } from '../../workspace.js'
 import type { WorkspacePatch } from './runtime.js'
@@ -61,21 +63,17 @@ export function reconcileWorkspaceEdit(
   return { value: host, conflicted: true }
 }
 
-/** Sending clears a draft outside workspace PATCH; the next draft is independent. */
+/** The runtime records a send, rather than inferring it from old conversation text. */
+export const workspaceDraftHash = (text: string) => bytesToHex(sha256(utf8ToBytes(text.trim())))
 export function workspaceDraftConsumed(host: unknown, before: unknown): boolean {
-  if (!object(host) || host.draft !== '' || typeof before !== 'string' || !before.trim())
-    return false
-  const historyText = object(host.history) ? host.history.latestUserText : undefined
-  const lastQueued = Array.isArray(host.queue) ? host.queue.at(-1) : undefined
-  const queuedText = object(lastQueued) ? lastQueued.text : undefined
-  const lastUser = Array.isArray(host.messages)
-    ? [...host.messages]
-        .reverse()
-        .find((message: unknown) => object(message) && message.role === 'user')
-    : undefined
-  const messageText = object(lastUser) ? lastUser.text : undefined
-  return [historyText, queuedText, messageText].some(
-    (text) => typeof text === 'string' && text.trim() === before.trim(),
+  return (
+    object(host) &&
+    host.draft === '' &&
+    typeof before === 'string' &&
+    !!before.trim() &&
+    object(host.draftConsumption) &&
+    typeof host.draftConsumption.messageId === 'string' &&
+    host.draftConsumption.textHash === workspaceDraftHash(before)
   )
 }
 
@@ -100,6 +98,10 @@ export function projectWorkspaceEdits(
         key === 'draft' && workspaceDraftConsumed(record, change.before)
           ? { value: change.after, conflicted: false }
           : reconcileWorkspaceEdit(change.before ?? null, change.after ?? null, hostValue ?? null)
+      if (key === 'draft' && !merged.conflicted && record.draftConsumption !== undefined) {
+        delete record.draftConsumption
+        changed = true
+      }
       if (sameWorkspaceEditValue(hostValue ?? null, merged.value ?? null)) continue
       if (merged.value === null || merged.value === undefined) delete record[key]
       else

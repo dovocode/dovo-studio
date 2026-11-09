@@ -1,7 +1,8 @@
 import type { StateVersion } from '@dovo/durable-connections'
-import { Struct } from 'effect'
+import { Result, Schema, Struct } from 'effect'
 import {
   scopedSettingsValueSchema,
+  sharedSettingsSchema,
   type ScopedSettingsValue,
   type SharedSettingsEntry,
 } from '../../workspace.js'
@@ -13,6 +14,14 @@ const categories = Struct.keys(scopedSettingsValueSchema.fields)
 export function sharedSettingsVersions(
   entries: readonly SharedSettingsEntry[],
 ): StateVersion<ScopedSettingsValue>[] {
+  if (
+    Result.isFailure(
+      Schema.decodeUnknownResult(sharedSettingsSchema, {
+        onExcessProperty: 'error',
+      })(entries),
+    )
+  )
+    throw new Error('Shared settings require a compatible app version; saved data was kept')
   return entries.flatMap((entry): StateVersion<ScopedSettingsValue>[] =>
     entry.revisions
       ? categories.flatMap((category) => {

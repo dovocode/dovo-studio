@@ -4,12 +4,63 @@ import {
   agentTurnSettings,
   defaultTaskHarness,
   resolveTaskAgent,
+  workspaceDraftHash,
   type TaskHarness,
 } from '@dovo/protocol'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
 import { Activity } from '../../storage/activity'
 import { TaskQueue } from './task-queue'
+
+it('records actual user draft consumption, preserves the next draft, and invalidates discarded text', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Draft',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'continue',
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    queue.add('task', 'sent', 'continue')
+    const marker = { messageId: 'sent', textHash: workspaceDraftHash('continue') }
+    expect(store.task('task')).toMatchObject({ draft: '', draftConsumption: marker })
+    store.updateTask('task', (task) => ({ ...task, title: 'Renamed' }))
+    expect(new WorkspaceStore(db).task('task').draftConsumption).toEqual(marker)
+    // A client may already be typing the next draft before it receives the send-clear.
+    store.patch({
+      collection: 'tasks',
+      id: 'task',
+      changes: { draft: { before: 'continue', after: 'next message' } },
+    })
+    expect(store.task('task').draft).toBe('next message')
+    expect(store.task('task').draftConsumption).toBeUndefined()
+    queue.add('task', 'sent-next', 'next message')
+    store.patch({ collection: 'tasks', id: 'task', changes: { draft: { before: '', after: '' } } })
+    expect(store.task('task').draftConsumption).toBeUndefined()
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: 'task',
+        changes: { draftConsumption: { before: null, after: marker } },
+      }),
+    ).toThrow('Cannot edit draftConsumption')
+  } finally {
+    db.close()
+  }
+})
 it('keeps the checkout locked when the first queued message is removed before running', () => {
   const db = openDatabase(':memory:')
   try {

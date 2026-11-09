@@ -935,6 +935,10 @@ export const taskSchema = mutableStruct({
   fileReviewVersion: Schema.optional(reviewVersionSchema),
   fileReviewVersions: Schema.optional(Schema.Record(Schema.String, reviewVersionSchema)),
   draft: Schema.String,
+  /** Runtime-owned proof of the last composer send; cleared by subsequent draft edits. */
+  draftConsumption: Schema.optional(
+    mutableStruct({ messageId: Schema.String, textHash: Schema.String }),
+  ),
   draftTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
   /** The next composer message asks for a read-only plan turn. */
   draftPlan: Schema.optional(Schema.Boolean),

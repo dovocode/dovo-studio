@@ -834,6 +834,12 @@ export class WorkspaceStore {
         .filter((task) => !task.example)
         .map((task) => {
           const previous = previousTasks.get(task.id)
+          if (
+            previous &&
+            task.draft !== previous.draft &&
+            isDeepStrictEqual(task.draftConsumption, previous.draftConsumption)
+          )
+            task = { ...task, draftConsumption: undefined }
           if (task.status === 'failed') {
             if (!task.failureVersion || (previous && previous.status !== 'failed'))
               task = { ...task, failureVersion: randomUUID() }
@@ -1463,6 +1469,7 @@ export class WorkspaceStore {
           record.watchCounts !== undefined ||
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
+          record.draftConsumption !== undefined ||
           record.fileReviewVersion !== undefined ||
           record.fileReviewVersions !== undefined ||
           record.turns !== undefined ||
@@ -1616,7 +1623,13 @@ export class WorkspaceStore {
       if (key === 'id' || (allowed && !allowed.has(key)))
         throw new HttpError(400, `Cannot edit ${key}`)
       // A response can be lost after committing. Retrying that value is a no-op.
-      if (isDeepStrictEqual(current[key] ?? null, change.after ?? null)) continue
+      if (isDeepStrictEqual(current[key] ?? null, change.after ?? null)) {
+        if (key === 'draft' && current.draftConsumption !== undefined) {
+          current.draftConsumption = undefined
+          changed = true
+        }
+        continue
+      }
       // Sending consumes the old draft outside workspace PATCH. Typing the next
       // message before its clear arrives remains an ordinary edit.
       const consumedDraft =

@@ -6,7 +6,7 @@ import { WorkspaceStore } from './workspace.js'
 
 function fixture() {
   const db = openDatabase(':memory:')
-  new WorkspaceStore(db)
+  const store = new WorkspaceStore(db)
   const journal = new ThreadReplicationJournal(db, 'local')
   const identity = { ownerRuntimeId: 'owner', threadId: 'thread' }
   journal.record({
@@ -20,8 +20,30 @@ function fixture() {
     removed: false,
   })
   journal.record({ ...identity, kind: 'title', value: 'Shared conversation' })
-  return { db, journal, identity }
+  return { db, journal, identity, store }
 }
+
+it('accepts equivalent JSON property order and rejects a genuinely reused revision atomically', async () => {
+  const { db, journal, store } = fixture()
+  try {
+    const version = journal.current().find((item) => !item.deleted && item.value.kind === 'title')
+    if (!version || version.deleted || version.value.kind !== 'title')
+      throw new Error('Missing title fixture')
+    const reordered = Object.fromEntries(Object.entries(version).reverse())
+    db.prepare('UPDATE thread_versions SET value=? WHERE identity=?').run(
+      JSON.stringify(reordered),
+      JSON.stringify([version.key, version.updatedAt, version.changeId]),
+    )
+    // Use the actual storage append path that imports versions after an exchange.
+    const storage = journal.storage(store)
+    await storage.append!(0, [{ sequence: 1, version }], {}, {})
+    const changed = { ...version, value: { ...version.value, value: 'Conflicting title' } }
+    expect(() => storage.append!(1, [{ sequence: 2, version: changed }], {}, {})).toThrow('reused')
+    expect(journal.thread('owner', 'thread')).toContainEqual(version)
+  } finally {
+    db.close()
+  }
+})
 
 it('reuses committed summaries and unchanged identities without caching rolled-back projections', () => {
   const { db, journal, identity } = fixture()

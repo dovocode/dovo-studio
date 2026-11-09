@@ -99,3 +99,21 @@ it('rejects unknown categories and unrelated values before publishing them', () 
     'category',
   )
 })
+
+it('rejects future settings and category revisions before projecting immutable versions', () => {
+  const base = { key: 'global', updatedAt: 1, changeId: 'old', value: {} }
+  const futureValue = { ...base, value: { projectPinned: true, futureCategory: true } }
+  const futureRevision = {
+    ...base,
+    revisions: {
+      projectPinned: { updatedAt: 1, changeId: 'old' },
+      futureCategory: { updatedAt: 1, changeId: 'old' },
+    },
+  }
+  const futureField = {
+    ...base,
+    value: { taskDefaults: { setupCommand: 'safe', futureField: true } },
+  }
+  for (const value of [futureValue, futureRevision, futureField])
+    expect(() => sharedSettingsVersions([value])).toThrow('compatible app')
+})

@@ -6,6 +6,7 @@ import {
   mutationOutboxSchema,
   workspaceRecoveriesSchema,
   type MutationStorage,
+  type MutationOutbox,
   type RuntimeConnection,
 } from '@dovo/protocol'
 async function fileFor(connection: RuntimeConnection, suffix = '') {
@@ -52,6 +53,25 @@ const storageOperation = <A>(run: () => Promise<A>) =>
       )
       .pipe(Effect.uninterruptible),
   )
+async function readOutbox(connection: RuntimeConnection) {
+  const { directory, file } = await fileFor(connection)
+  const backup = new File(directory, `${file.name}.backup`)
+  const committed = file.exists ? file : backup.exists ? backup : undefined
+  return committed ? decode(mutationOutboxSchema, JSON.parse(await committed.text())) : []
+}
+async function writeOutbox(connection: RuntimeConnection, pending: MutationOutbox) {
+  const { directory, file } = await fileFor(connection)
+  const name = file.name
+  const backup = new File(directory, `${name}.backup`)
+  const temporary = new File(directory, `${name}.tmp`)
+  directory.create({ intermediates: true, idempotent: true })
+  // Empty queues are committed too. A crash during clear must never restore an old queue.
+  await temporary.write(JSON.stringify(pending))
+  if (file.exists) await file.move(backup, { overwrite: true })
+  // Expo overwrite deletes its destination first; this destination must not exist.
+  await temporary.move(new File(directory, name))
+  if (backup.exists) backup.delete()
+}
 export const mobileMutationStorage: MutationStorage = {
   workspaceRecoveries(connection) {
     return storageOperation(async () => {
@@ -68,30 +88,16 @@ export const mobileMutationStorage: MutationStorage = {
     return storageOperation(async () => writeRecoveryEntry(await recoveryEntries(connection), edit))
   },
   id: randomUUID,
-  async read(connection) {
-    const { file } = await fileFor(connection)
-    return file.exists ? decode(mutationOutboxSchema, JSON.parse(await file.text())) : []
+  read(connection) {
+    return storageOperation(() => readOutbox(connection))
   },
   clear(connection) {
-    return storageOperation(async () => {
-      const { file } = await fileFor(connection)
-      if (file.exists) file.delete()
-    })
+    return storageOperation(() => writeOutbox(connection, []))
   },
   update(connection, change) {
     return storageOperation(async () => {
-      const { directory, file } = await fileFor(connection)
-      const pending = change(
-        file.exists ? decode(mutationOutboxSchema, JSON.parse(await file.text())) : [],
-      )
-      if (!pending.length) {
-        if (file.exists) file.delete()
-        return pending
-      }
-      directory.create({ intermediates: true, idempotent: true })
-      const temporary = new File(directory, `${file.name}.tmp`)
-      await temporary.write(JSON.stringify(pending))
-      await temporary.move(file, { overwrite: true })
+      const pending = change(await readOutbox(connection))
+      await writeOutbox(connection, pending)
       return pending
     })
   },

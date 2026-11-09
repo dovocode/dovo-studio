@@ -4,6 +4,7 @@ import { workspaceSchema } from '../../workspace.js'
 import {
   projectWorkspaceEdits,
   workspaceDraftConsumed,
+  workspaceDraftHash,
   reconcileWorkspaceEdit,
 } from './workspace-reconciliation'
 it('merges independent nested leaves and keeps the runtime on competing leaves', () => {
@@ -87,12 +88,31 @@ it('projects safe pending fields without hiding runtime conflicts or recreating 
 
 it('retains the next draft when the runtime consumed the previous one', () => {
   expect(
-    workspaceDraftConsumed({ draft: '', history: { latestUserText: 'Sent draft' } }, 'Sent draft'),
+    workspaceDraftConsumed(
+      {
+        draft: '',
+        draftConsumption: { messageId: 'sent', textHash: workspaceDraftHash('Sent draft') },
+      },
+      'Sent draft',
+    ),
   ).toBe(true)
   expect(
     workspaceDraftConsumed(
       { draft: '', history: { latestUserText: 'Other message' } },
       'Sent draft',
+    ),
+  ).toBe(false)
+})
+
+it('does not treat an old matching history message as proof that a discarded draft was sent', () => {
+  expect(
+    workspaceDraftConsumed(
+      {
+        draft: '',
+        history: { latestUserText: 'continue' },
+        messages: [{ role: 'user', text: 'continue' }],
+      },
+      'continue',
     ),
   ).toBe(false)
 })
