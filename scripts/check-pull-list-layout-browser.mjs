@@ -525,6 +525,7 @@ try {
       assert.deepEqual(errors, [])
       if (!isMobile && width === 1280) {
         await first.click()
+        await first.and(page.locator('[aria-current="true"]')).waitFor()
         assert.equal(
           await first.getAttribute('aria-current'),
           'true',

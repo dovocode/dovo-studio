@@ -127,6 +127,11 @@ environment. Keep `DOVO_RELEASE_VERSION` and `DOVO_RELEASE_CHANNEL` consistent a
 The prepared runtime is checked against compiled inputs, release version, Node, OS and architecture;
 it is private staging within one build, rather than a persistent dependency cache.
 
+Model downloads use at most three attempts for HTTP 502, 503 and 504 responses, with waits of one
+and two seconds. After a GitHub download gateway error, retries use the public release asset API for
+the same release and file. No token is required. Each file must still match its pinned size and
+SHA-256 checksum. Other HTTP errors and checksum errors stop packaging.
+
 The signed macOS job uses macOS 26 and Xcode 26.2 for the Icon Composer asset. Its preflight
 compiles the real icon and verifies both `Assets.car` and the legacy `.icns` output; checking the
 compiler version alone does not detect incompatible host frameworks. `app-builder-lib@26.18.0`
