@@ -1767,6 +1767,7 @@ export function Composer({
           taskId={task.id}
           input={input}
           resources={resources}
+          provider={agent?.provider}
           prompts={prompts}
           onCommand={
             !editing && (task.messages.length || task.queue?.length || task.turns?.length)

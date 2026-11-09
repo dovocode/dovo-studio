@@ -17,10 +17,10 @@ import {FileMentions} from '${mobile}src/tasks/conversation/components/file-ment
 window.requests=[];
 const call=(path,input)=>new Promise((resolve,reject)=>window.requests.push({input,resolve,reject}));
 function App(){
-  const [state,setState]=useState({text:'@old',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},call});
+  const [state,setState]=useState({text:'@old',provider:'codex',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},call});
   window.update=changes=>setState(previous=>({...previous,...changes}));
   window.runtime=state;
-  return <FileMentions taskId={state.taskId} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
+  return <FileMentions provider={state.provider} taskId={state.taskId} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
 }
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
@@ -131,7 +131,19 @@ try {
     await page.getByRole('button', { name: 'Command sidechat: Start an agent side chat' }).count(),
     0,
   )
-  console.log('Mobile file mention request races and resource details passed')
+  for (const provider of ['claude', 'codex']) {
+    await update({ text: '/go', provider })
+    await page
+      .getByRole('button', { name: 'Command goal: Set, view or clear a native agent goal' })
+      .click()
+    assert.equal(await page.evaluate(() => window.runtime.text), '/goal ')
+  }
+  await update({ text: '/go', provider: 'acp' })
+  assert.equal(await page.getByRole('button', { name: /^Command goal:/ }).count(), 0)
+  assert.deepEqual(errors, [])
+  console.log(
+    'Mobile file mention request races, resource details and native goal insertion passed',
+  )
 } finally {
   await browser.close()
 }

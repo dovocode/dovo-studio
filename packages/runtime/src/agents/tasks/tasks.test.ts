@@ -368,6 +368,53 @@ it('streams, resumes a task and starts a fresh session when its configuration ch
   expect(runs[3].sessionId).toBeUndefined()
   expect(runs[3].agent.reasoning).toBe('high')
 })
+it.each(['codex', 'claude'] as const)(
+  'dispatches native %s goals without a history wrapper and retains the session',
+  async (provider) => {
+    const s = await setup()
+    s.store.update((state) => ({
+      ...state,
+      agents: state.agents.map((agent) => ({ ...agent, provider })),
+    }))
+    const runs: AgentRun[] = []
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        runs.push(run)
+        run.onSession('goal-session')
+        run.onText('Native response')
+      },
+    })
+    const task = s.tasks.create({
+      title: 'Goal',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '/goal Fix tests',
+    })
+    await (
+      await s.tasks.start(task.id)
+    ).done
+    expect(runs[0]).toMatchObject({
+      goal: { action: 'set', objective: 'Fix tests' },
+      prompt: '/goal Fix tests',
+    })
+    s.store.updateTaskHistory(task.id, (current) => ({
+      ...current,
+      contextUsage: { used: 100, limit: 100, updatedAt: new Date().toISOString() },
+      messages: [...current.messages, { id: 'view-goal', role: 'user', text: '/goal' }],
+    }))
+    await (
+      await s.tasks.start(task.id)
+    ).done
+    expect(runs[1]).toMatchObject({
+      goal: { action: 'get' },
+      prompt: '/goal',
+      sessionId: 'goal-session',
+    })
+    expect(s.store.task(task.id).messages.some((message) => message.id === 'view-goal')).toBe(true)
+  },
+)
+
 it('records a provider-confirmed manual compaction on the resumed session', async () => {
   const s = await setup()
   const runs: AgentRun[] = []

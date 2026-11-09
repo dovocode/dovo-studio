@@ -1043,6 +1043,7 @@ export function Composer({
           {focused && !composerHistory.active && (
             <FileMentions
               taskId={task.id}
+              provider={composerAgent?.provider}
               text={draft.text}
               caret={caret}
               resources={taskResources(

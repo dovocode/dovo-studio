@@ -21,13 +21,14 @@ const history = () => messages;
 const command = id => window.commands.push(id);
 const alternative = () => window.alternatives++;
 function Composer() {
+  const [provider,setProvider] = useState('codex'); window.setGoalProvider = setProvider;
   const [menu, setMenu] = useState(false); window.setMenuMode = setMenu;
   const [tick, setTick] = useState(0); window.runtimeTick = () => setTick(value => value + 1);
   const input = useRef(null);
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   return <form data-runtime-tick={tick} onSubmit={event => { event.preventDefault(); window.submits.push(controller.text) }}>
     <ComposerModeToggle input={input} menu={menu} />
-    <ComposerEditor controller={controller} taskId="task" input={input} resources={resources}
+    <ComposerEditor provider={provider} controller={controller} taskId="task" input={input} resources={resources}
       messages={history} onCommand={command} onAlternativeSubmit={alternative}
       autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
     <button type="submit" disabled={!hasText}>Send</button>
@@ -219,6 +220,18 @@ try {
   assert.equal(await text(), 'Before')
   // Choosing with Enter does not also send.
   assert.equal(await page.evaluate(() => window.submits.length), 2)
+
+  for (const provider of ['codex', 'claude']) {
+    await page.evaluate((value) => window.setGoalProvider(value), provider)
+    await setDraft('/go')
+    await editor.click()
+    await page.keyboard.press('End')
+    await page.getByRole('listbox', { name: 'Commands and skills' }).waitFor()
+    await page.keyboard.press('Enter')
+    assert.equal(await text(), '/goal ')
+    assert.deepEqual(await page.evaluate(() => window.commands), ['compact'])
+    assert.equal(await page.evaluate(() => window.submits.length), 2)
+  }
 
   // Plain-text paste stays literal, with single newlines kept as line breaks.
   await setDraft('')

@@ -227,7 +227,7 @@ try {
             fill: style.backgroundColor,
           }
         })
-        assert.equal(style.radius, '6px')
+        assert.equal(style.radius, '10px')
         assert.equal(style.shadow, 'none')
         assert.equal(style.fill, 'rgba(0, 0, 0, 0)')
         assert.notEqual(
@@ -715,9 +715,10 @@ try {
       }, scheme)
       assert.equal(
         colors.cue,
-        colors.surface,
-        `${scheme} Git continuation matches its dialog surface`,
+        'rgba(0, 0, 0, 0)',
+        `${scheme} Git continuation uses the shared dialog surface without a second fill`,
       )
+      assert.notEqual(colors.surface, 'rgba(0, 0, 0, 0)')
     }
     await gitScroll.evaluate((element) => {
       element.scrollTop = element.scrollHeight

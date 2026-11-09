@@ -1,5 +1,5 @@
 import { isAbsolute, relative, sep } from 'node:path'
-import { taskInputOwner, planModeAgent, planModeRequested } from '@dovo/protocol'
+import { taskInputOwner, planModeAgent, planModeRequested, goalCommand } from '@dovo/protocol'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
 import { requireImportedPiSession } from '../providers/pi/session-import.js'
 import {
@@ -1586,6 +1586,8 @@ export class Tasks {
         return null
       if (this.steering.has(id))
         throw new HttpError(409, 'A steering request is already being applied')
+      if (goalCommand(text))
+        throw new HttpError(409, 'Queue /goal as a separate turn, or stop the current turn first.')
       const run = this.running.get(id)
       if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
       if (expectedRunId !== undefined && run.id !== expectedRunId)

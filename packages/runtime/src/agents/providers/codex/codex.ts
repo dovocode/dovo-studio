@@ -26,6 +26,7 @@ import { readCodexThread } from './codex-thread.js'
 import { nativeWait } from '../shared/native.js'
 import { isContextRejection } from '../../execution/handover.js'
 import { codexRateLimitUpdates } from './codex-rate-limits.js'
+import { codexGoal } from './codex-goal.js'
 import { CUA_SERVER_NAME } from '../../../computer-use/cua.js'
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
   {
@@ -758,6 +759,16 @@ export function createCodexAdapter(): AgentAdapter {
             daybreakEnabled: !!program && program !== 'standard',
           })
         clearTimeout(timeout)
+        let goalPrompt: string | undefined
+        if (run.goal) {
+          goalPrompt = await codexGoal(request, thread.id, run.goal, acceptPrompt, run.onText)
+          if (!goalPrompt) {
+            resolveTurn()
+            succeeded = true
+            return
+          }
+          run.onTextBoundary?.()
+        }
         if (run.compact) {
           await request('thread/compact/start', { threadId: thread.id })
           compactStarted = true
@@ -819,7 +830,7 @@ export function createCodexAdapter(): AgentAdapter {
                 cyberAccessProgram: program,
               }
             : {}),
-          input: turnInput(run),
+          input: turnInput(goalPrompt ? { ...run, prompt: goalPrompt } : run),
         })
         acceptPrompt()
         const turn = decodeResult(

@@ -1,3 +1,4 @@
+import { goalCommand, goalCommandText } from '@dovo/protocol'
 import { skillContext } from './skill-context.js'
 import { HookEvents, type HookTool } from './hook-events.js'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
@@ -443,11 +444,30 @@ export class TaskTurnRunner {
         const compactRequested =
           currentMessages.filter((message) => !previouslyConsumedIds.has(message.id)).length ===
             1 && currentMessages.at(-1)?.text.trim() === '/compact'
+        const pendingInput = currentMessages.filter(
+          (message) => !previouslyConsumedIds.has(message.id),
+        )
+        const goalInputs = pendingInput.filter(
+          (message) => message.role === 'user' && goalCommand(message.text),
+        )
+        if (goalInputs.length && pendingInput.length !== 1)
+          throw new HttpError(
+            409,
+            'Send /goal as a separate message after pending messages finish.',
+          )
+        const goal = goalInputs.length ? goalCommand(goalInputs[0].text) : undefined
+        if (goal && !['claude', 'codex'].includes(agent.provider))
+          throw new HttpError(400, '/goal is supported for Claude and Codex threads.')
+        if (goal && goalInputs[0].attachments?.length)
+          throw new HttpError(400, 'Send attachments as a separate message before /goal.')
+        if (goal && goal.action !== 'set' && !resumeId)
+          throw new HttpError(409, 'Set a goal in this agent session with /goal <objective> first.')
         // Only act on occupancy belonging to this exact native session. A model change
         // starts with a conservative replay budget instead of inheriting the old limit.
         const exhausted =
           !!resumeId &&
           !compactRequested &&
+          !goal &&
           task.contextUsage?.used !== undefined &&
           task.contextUsage.limit !== undefined &&
           task.contextUsage.used >= task.contextUsage.limit
@@ -1074,7 +1094,7 @@ export class TaskTurnRunner {
             )
             return { ...replay, attachments: attachmentsFor(replay.messages) }
           }
-          if (!sessionId && currentMessages.length > 1) {
+          if (!goal && !sessionId && currentMessages.length > 1) {
             const replay = yield* runtimeOperation(() => recoveryPrompt())
             prompt = replay.prompt
             attachments = replay.attachments
@@ -1150,8 +1170,9 @@ export class TaskTurnRunner {
                       })),
                     }
                   : {}),
-                prompt: compact ? '/compact' : prompt,
+                prompt: goal ? goalCommandText(goal) : compact ? '/compact' : prompt,
                 compact,
+                goal,
                 attachments,
                 sessionId,
                 signal: controller.signal,

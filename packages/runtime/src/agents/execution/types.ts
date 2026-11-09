@@ -36,6 +36,8 @@ export interface AgentRun {
   prompt: string
   /** Request the provider's native compaction, without treating the command as a model prompt. */
   compact?: boolean
+  /** Execute a user-authored native goal command, without the conversation wrapper. */
+  goal?: import('@dovo/protocol').GoalCommand
   sessionId?: string
   signal: AbortSignal
   /** Request a text-only utility turn. Adapters disable tools where supported. */

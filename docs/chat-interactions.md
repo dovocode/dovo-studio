@@ -1,5 +1,50 @@
 # Queue, steer and agent questions
 
+## Native goals
+
+Claude and Codex threads support these commands on desktop, web and mobile:
+
+| Command                  | Action                                               |
+| ------------------------ | ---------------------------------------------------- |
+| `/goal <objective>`      | Set a goal and start work.                           |
+| `/goal`                  | Show the goal saved in the current provider session. |
+| `/goal edit <objective>` | Replace the objective and start work.                |
+| `/goal clear`            | Remove the goal without starting model work.         |
+| `/goal pause`            | Pause a Codex goal without starting model work.      |
+| `/goal resume`           | Resume a Codex goal and start work.                  |
+
+Objectives can contain up to 4,000 characters. Select `/goal` in the command menu to insert it, then
+type the objective. Selecting the command does not send the draft. Send attachments in a separate
+message. Queue goal commands as separate turns; they cannot steer a running turn.
+
+The provider saves the goal with its session. Studio does not copy goals between providers or start
+a separate goal loop. **Start fresh**, a provider change, or a session replacement creates a new
+session; it does not move the old goal. Use `/goal` to inspect the current session. The provider
+controls its goal checks, usage limits, and continuation. Stop interrupts the turn. Claude has no
+native pause/resume command; send a message to continue its session or use `/goal clear` to remove
+the goal.
+
+Update Codex or Claude Code on the thread computer if native goals are unavailable. Studio checks
+Claude's built-in command catalog before it sends the command. Codex uses the native app-server goal
+API. Errors remain visible in the thread; Studio does not send unsupported commands as ordinary
+prompts. Goal commands do not replace an exhausted session during context recovery.
+
+Run the command and provider checks with:
+
+```sh
+pnpm exec vp test packages/protocol/src/conversation/workflow/goal-command.test.ts packages/runtime/src/agents/providers/codex/codex-goal.test.ts packages/runtime/src/agents/providers/codex/codex-lifecycle.test.ts packages/runtime/src/agents/providers/claude/claude.test.ts packages/runtime/src/agents/execution/handover.test.ts packages/runtime/src/agents/tasks/tasks.test.ts
+pnpm exec playwright install chromium
+node scripts/check-rich-composer-browser.mjs
+node scripts/check-mobile-file-mentions-browser.mjs
+```
+
+The browser checks use actual composer components with mocked network/native controls. Local native
+checks used Codex 0.167.0 for goal persistence across process restarts, pause and clear, and Claude
+Code 2.1.319 for built-in command discovery and local goal output. These checks do not establish
+physical iOS behavior or completion of an autonomous goal against a live model.
+
+## Attachments and queues
+
 Images in chat can be edited and attached to the active composer on desktop and mobile. Use **Edit &
 attach** on a sent attachment, or the edit icon in an image preview on mobile. This also works for
 tool screenshots, generated images and inline images. Saving creates a new attachment; the original

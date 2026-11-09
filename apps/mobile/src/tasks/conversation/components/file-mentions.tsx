@@ -25,7 +25,7 @@ type Suggestion = {
   detail: string
   muted?: boolean
 }
-export type ComposerCommandId = ReturnType<typeof commandSuggestions>[number]['id']
+export type ComposerCommandId = Exclude<ReturnType<typeof commandSuggestions>[number]['id'], 'goal'>
 
 /** Mention suggestions above the composer: "@" files and MCP servers, "$" skills, and "/"
  * skills at the start of a line. Tap one to insert it. */
@@ -34,6 +34,7 @@ export function FileMentions({
   text,
   caret,
   resources,
+  provider,
   onChange,
   onCommand,
   onSideChat,
@@ -43,6 +44,7 @@ export function FileMentions({
   text: string
   caret: number
   resources: ResourceSettings
+  provider?: string
   onChange: (text: string) => void
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
@@ -102,12 +104,14 @@ export function FileMentions({
     ...(mention.trigger === '/' && onSideChat && 'sidechat'.startsWith(mention.query.toLowerCase())
       ? [{ kind: 'command' as const, value: 'sidechat', detail: 'Start an agent side chat' }]
       : []),
-    ...(mention.trigger === '/' && onCommand
-      ? commandSuggestions(mention.query).map((command) => ({
-          kind: 'command' as const,
-          value: command.id,
-          detail: command.description,
-        }))
+    ...(mention.trigger === '/'
+      ? commandSuggestions(mention.query, provider)
+          .filter((item) => item.id === 'goal' || onCommand)
+          .map((command) => ({
+            kind: 'command' as const,
+            value: command.id,
+            detail: command.description,
+          }))
       : []),
     ...resourceSuggestions(resources, mention.trigger, mention.query).map((item) => ({
       kind: item.kind,
@@ -165,6 +169,11 @@ export function FileMentions({
                 const prompt = prompts.find((entry) => entry.id === item.value)
                 if (prompt) onChange(insertPrompt(text, mention.start, caret, prompt.text).text)
               } else if (item.kind === 'command') {
+                if (item.value === 'goal') {
+                  onChange(insertMention(text, mention.start, caret, 'goal', '/').text)
+                  setLookup(undefined)
+                  return
+                }
                 const remaining = text.slice(0, mention.start) + text.slice(caret)
                 onChange(remaining)
                 if (item.value === 'sidechat') onSideChat?.(remaining)

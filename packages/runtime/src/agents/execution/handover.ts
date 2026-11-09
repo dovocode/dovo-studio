@@ -125,6 +125,7 @@ export function recoverContext(
         if (
           !input.sessionId ||
           input.compact ||
+          input.goal ||
           accepted ||
           input.signal.aborted ||
           !isContextRejection(error)

@@ -4,7 +4,7 @@ import { taskToolsServer } from '../../../agent-tools/config.js'
 import * as warmProcesses from '../../execution/warm-processes.js'
 import { expect, it, vi } from 'vite-plus/test'
 import type { AgentRun } from '../../execution/types.js'
-import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, SDKUserMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 
 const mocks = vi.hoisted(() => ({
   prewarm: vi.fn<(input: unknown) => Promise<unknown>>(async () => {
@@ -22,6 +22,63 @@ vi.mock('../../configuration/claude-command.js', () => ({
 }))
 
 import { claudeAdapter, createClaudeAdapter } from './claude.js'
+
+it('checks native goal support before sending the command and renders local output', async () => {
+  const submitted: SDKUserMessage[] = []
+  const commands = vi.fn<() => Promise<SlashCommand[]>>(async () => [
+    { name: 'goal', description: 'Native goal', argumentHint: '', builtin: true },
+  ])
+  mocks.query.mockImplementation(({ prompt }) => ({
+    supportedCommands: commands,
+    async *[Symbol.asyncIterator]() {
+      if (typeof prompt !== 'string') for await (const message of prompt) submitted.push(message)
+      yield {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        local_command: 'goal',
+        result: 'Goal active: Fix tests',
+        session_id: 'session',
+      }
+    },
+    close: vi.fn<() => void>(),
+  }))
+  const text = vi.fn<AgentRun['onText']>()
+  const run: AgentRun = {
+    agent: {
+      id: 'agent',
+      name: 'Claude',
+      provider: 'claude',
+      endpoint: '',
+      model: '',
+      instructions: '',
+      permission: 'ask',
+    },
+    cwd: '/tmp',
+    prompt: 'user: /goal',
+    goal: { action: 'get' },
+    sessionId: 'session',
+    signal: new AbortController().signal,
+    onSession: () => {},
+    onActivity: () => {},
+    onText: text,
+    approve: async () => 'deny',
+    ask: async () => null,
+  }
+  await claudeAdapter.run(run)
+  expect(commands).toHaveBeenCalledOnce()
+  expect(submitted[0].message.content).toEqual([{ type: 'text', text: '/goal' }])
+  expect(text).toHaveBeenCalledExactlyOnceWith('Goal active: Fix tests')
+  submitted.length = 0
+  commands.mockResolvedValue([])
+  await expect(claudeAdapter.run(run)).rejects.toThrow('does not support native goals')
+  expect(submitted).toHaveLength(0)
+  await expect(claudeAdapter.run({ ...run, goal: { action: 'pause' } })).rejects.toThrow(
+    'Claude supports',
+  )
+  expect(submitted).toHaveLength(0)
+  mocks.query.mockReset()
+})
 
 it('runs the Claude compact command and reports its boundary', async () => {
   mocks.query.mockImplementation(() => ({

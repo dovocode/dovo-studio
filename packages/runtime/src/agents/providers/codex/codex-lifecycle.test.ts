@@ -29,15 +29,26 @@ function fixture() {
   const spawn = vi.mocked(processes.spawn).mockReturnValue(child)
   const send = (value: object) => output.write(JSON.stringify(value) + '\n')
   const started = vi.fn<() => void>()
+  const requests: Array<{ method: string; params: unknown }> = []
   input.on('data', (data: Buffer) => {
-    const message = JSON.parse(data.toString()) as { id?: number; method: string }
+    const message = JSON.parse(data.toString()) as { id?: number; method: string; params: unknown }
     if (message.id === undefined || !message.method) return
+    requests.push(message)
     const result =
       message.method === 'thread/start' || message.method === 'thread/resume'
         ? { thread: { id: 'thread' } }
         : message.method === 'turn/start'
           ? { turn: { id: 'turn', status: 'inProgress' } }
-          : {}
+          : message.method === 'thread/goal/get' || message.method === 'thread/goal/set'
+            ? {
+                goal: {
+                  objective: 'Fix tests',
+                  status: 'active',
+                  tokensUsed: 23,
+                  timeUsedSeconds: 1,
+                },
+              }
+            : {}
     send({ id: message.id, result })
     if (message.method === 'turn/start') started()
   })
@@ -64,8 +75,37 @@ function fixture() {
   }
   const adapter = createCodexAdapter()
   adapters.push(adapter)
-  return { child, input, output, stop, spawn, send, started, controller, run, adapter }
+  return { child, input, output, stop, spawn, send, started, controller, run, adapter, requests }
 }
+
+it.each(['get', 'clear', 'pause'] as const)(
+  'executes native goal %s without starting a model turn',
+  async (action) => {
+    const f = fixture()
+    await f.adapter.run({ ...f.run, sessionId: 'thread', goal: { action } })
+    expect(f.started).not.toHaveBeenCalled()
+    expect(f.requests.some((request) => request.method.startsWith('thread/goal/'))).toBe(true)
+    expect(f.run.onText).toHaveBeenCalled()
+  },
+)
+
+it('sets a native goal before starting work and uses its objective as the prompt', async () => {
+  const f = fixture()
+  const result = f.adapter.run({ ...f.run, goal: { action: 'set', objective: 'Fix tests' } })
+  await vi.waitFor(() => expect(f.started).toHaveBeenCalledOnce())
+  const set = f.requests.findIndex((request) => request.method === 'thread/goal/set')
+  const start = f.requests.findIndex((request) => request.method === 'turn/start')
+  expect(set).toBeGreaterThan(-1)
+  expect(start).toBeGreaterThan(set)
+  expect(f.requests[start].params).toMatchObject({
+    input: [{ type: 'text', text: 'Continue working toward this goal: Fix tests' }],
+  })
+  f.send({
+    method: 'turn/completed',
+    params: { threadId: 'thread', turn: { id: 'turn', status: 'completed' } },
+  })
+  await result
+})
 
 it.each(['eof', 'read-error', 'write-error', 'write-close'] as const)(
   'fails an active completed wait after %s while the child remains alive',

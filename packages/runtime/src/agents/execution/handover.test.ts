@@ -140,12 +140,14 @@ it.each([
   'tool',
   'steer',
   'compact',
+  'goal',
   'fresh',
   'abort',
   'unrelated',
 ] as const)('never replays after %s', async (kind) => {
   const run = input()
   if (kind === 'compact') run.compact = true
+  if (kind === 'goal') run.goal = { action: 'get' }
   if (kind === 'fresh') run.sessionId = undefined
   if (kind === 'abort') run.signal = AbortSignal.abort()
   if (kind === 'steer')

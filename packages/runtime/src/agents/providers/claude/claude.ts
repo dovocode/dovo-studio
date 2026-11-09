@@ -2,7 +2,8 @@ import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-po
 import { randomUUID } from 'node:crypto'
 import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
 import { claudeAuthenticated, claudeCommand } from '../../configuration/claude-command.js'
-import { decode } from '@dovo/protocol'
+import { decode, goalCommandText } from '@dovo/protocol'
+import { requireClaudeGoal } from './claude-goal.js'
 import { claudeMcpConfigFile, claudeMcpServers } from '../../configuration/mcp-settings.js'
 import { claudeInput, claudeMessage } from './claude-input.js'
 import { Schema } from 'effect'
@@ -294,6 +295,13 @@ function handleMessage(
   )
     run.onPromptAccepted?.()
   run.onEvent?.(message.type, message)
+  if (
+    run.goal &&
+    message.type === 'result' &&
+    message.subtype === 'success' &&
+    message.local_command === 'goal'
+  )
+    run.onText(message.result)
   if (message.session_id) run.onSession(message.session_id)
   if (
     message.type === 'stream_event' &&
@@ -728,6 +736,7 @@ export function createClaudeAdapter(): AgentAdapter {
               )
             session.mcpBinding = mcpBinding
           }
+          await requireClaudeGoal(session.stream, run)
           run.signal.throwIfAborted()
           session.input.push(claudeMessage(run))
           if (!run.compact)
@@ -786,6 +795,7 @@ export function createClaudeAdapter(): AgentAdapter {
     }),
     async run(run) {
       run = checkedPolicyRun(run, 'claude')
+      if (run.goal) run = { ...run, prompt: goalCommandText(run.goal) }
       const command = await claudeCommand(run.agent.endpoint, run.agent.env)
       if (run.taskId && run.tools !== 'none') return runWarm(run, command)
       const controller = new AbortController(),
@@ -800,8 +810,9 @@ export function createClaudeAdapter(): AgentAdapter {
       let stream: ReturnType<typeof query> | undefined
       const capabilities = { unanswered: false }
       try {
+        const goalInput = run.goal ? new MessageQueue() : undefined
         stream = query({
-          prompt: run.attachments?.length ? claudeInput(run) : run.prompt,
+          prompt: goalInput ?? (run.attachments?.length ? claudeInput(run) : run.prompt),
           options: claudeOptions(
             run,
             controller,
@@ -810,6 +821,11 @@ export function createClaudeAdapter(): AgentAdapter {
             configFile.path,
           ),
         })
+        if (goalInput) {
+          await requireClaudeGoal(stream, run)
+          goalInput.push(claudeMessage(run))
+          goalInput.close()
+        }
         let compacted = false
         for await (const message of stream) {
           if (message.type === 'system' && message.subtype === 'init')

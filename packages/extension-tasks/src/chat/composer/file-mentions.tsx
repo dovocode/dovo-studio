@@ -28,7 +28,7 @@ type Suggestion = {
   detail?: string
   muted?: boolean
 }
-export type ComposerCommandId = ReturnType<typeof commandSuggestions>[number]['id']
+export type ComposerCommandId = Exclude<ReturnType<typeof commandSuggestions>[number]['id'], 'goal'>
 const icons = { file: FileText, skill: Sparkles, mcp: Plug, command: SquareSlash, prompt: Hash }
 type MentionKey = {
   key: string
@@ -48,6 +48,7 @@ export function useFileMentions({
   input,
   rich,
   resources,
+  provider,
   onCommand,
   onSideChat,
   prompts = [],
@@ -60,6 +61,7 @@ export function useFileMentions({
   /** In rich mode, mentions use the text before the caret in the current block. */
   rich?: RefObject<RichComposerHandle | null> | null
   resources: ResourceSettings
+  provider?: string
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
   onSideChat?: () => void
@@ -101,9 +103,11 @@ export function useFileMentions({
         }))
     : []
   const commandItems: Suggestion[] =
-    mention?.trigger === '/' && (onCommand || onSideChat)
+    mention?.trigger === '/'
       ? [
-          ...(onCommand ? commandSuggestions(mention.query) : []),
+          ...commandSuggestions(mention.query, provider).filter(
+            (item) => item.id === 'goal' || onCommand,
+          ),
           ...(onSideChat && 'sidechat'.startsWith(mention.query.toLowerCase())
             ? [
                 {
@@ -226,6 +230,10 @@ export function useFileMentions({
     }
     if (item.kind === 'command') {
       setLookup(undefined)
+      if (item.value === 'goal') {
+        apply(insertMention(source, mention.start, caret, 'goal', '/'))
+        return
+      }
       apply({
         text: source.slice(0, mention.start) + source.slice(caret),
         caret: mention.start,
