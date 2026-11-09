@@ -596,6 +596,10 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       focusedWindowId?: number
       windows?: { id: number; title: string }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]
+      /** Pinned shortcuts in this window whose page lives in a detached window. */
+      detachedTabs?: string[]
+      /** Browser-section attention, including pages in detached pinned windows. */
+      browserIndicator?: 'unread' | 'attention'
       /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */
       openedLinks?: string[]
       /**

@@ -91,7 +91,12 @@ it('excludes draft releases visible to authenticated GitHub users', async () => 
     return Response.json(
       url.endsWith('/latest')
         ? release('1.2.3')
-        : [release('9.0.0', true), release('9.0.0-nightly.999', true), release('1.2.3-nightly.42')],
+        : [
+            release('9.0.0', true),
+            release('9.0.0-nightly.999', true),
+            { ...release('8.0.0'), prerelease: true },
+            release('1.2.3-nightly.42'),
+          ],
     )
   })
   const releases = await fetchRuntimeReleases(authenticated)

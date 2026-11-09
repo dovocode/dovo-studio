@@ -124,7 +124,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.remoteVisibility=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport);if(event.data.visibility!==undefined)window.remoteVisibility.push(event.data.visibility)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -3589,7 +3589,10 @@ try {
   const pinBounds = await Promise.all([0, 1, 2, 3].map((index) => pins.nth(index).boundingBox()))
   assert.equal(pinBounds[0].y, pinBounds[1].y)
   assert.equal(pinBounds[1].y, pinBounds[2].y)
-  assert.ok(pinBounds[3].y > pinBounds[0].y, 'Exactly three pins share a row')
+  assert.ok(
+    pinBounds[3].y > pinBounds[0].y,
+    'Three compact cards share a row at this sidebar width',
+  )
   assert.equal(
     await pins.first().getByText('Website 0', { exact: true }).count(),
     0,
@@ -3647,8 +3650,8 @@ try {
     )
   const idlePinGeometry = await pinnedGeometry()
   assert.ok(
-    idlePinGeometry.every((tile) => tile.height === 64),
-    'Pins keep a compact fixed height',
+    idlePinGeometry.every((tile) => tile.height === 80),
+    'Pinned cards keep a fixed height',
   )
   await controlsPage.evaluate(async () => {
     window.tabActivityStates = [
@@ -3701,8 +3704,8 @@ try {
     identityBounds.y >= faviconBounds.y + faviconBounds.height,
     'Device/profile badges sit below the favicon without overlapping it',
   )
-  assert.equal(faviconBounds.width, 24, 'Pinned favicons keep the compact tab icon size')
-  assert.equal(identityBounds.height, 10, 'Identity badges remain small')
+  assert.equal(faviconBounds.width, 28, 'Pinned cards use a large centered favicon')
+  assert.equal(identityBounds.height, 14, 'Device and profile use separate pills below the favicon')
   const selectedBeforeMute = await controlsPage.evaluate(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
   )
@@ -3719,10 +3722,22 @@ try {
   await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
   const tileBounds = await firstTile.boundingBox()
   const activityBounds = await firstTile.getByLabel('Tab activity', { exact: true }).boundingBox()
-  assert.ok(activityBounds.height === 28, 'Pinned activity uses a compact fixed two-row strip')
+  assert.ok(activityBounds.height === 22, 'Pinned activity uses a compact fixed two-row strip')
+  for (const icon of await firstTile.locator('.studio-browser-tab-activity svg').all()) {
+    const bounds = await icon.boundingBox()
+    assert.equal(bounds.width, 8, 'Pinned activity icons stay small enough for narrow cards')
+    assert.equal(bounds.height, 8)
+    assert.ok(
+      bounds.x >= activityBounds.x &&
+        bounds.y >= activityBounds.y &&
+        bounds.x + bounds.width <= activityBounds.x + activityBounds.width &&
+        bounds.y + bounds.height <= activityBounds.y + activityBounds.height,
+      'Each activity icon fits inside its control panel',
+    )
+  }
   assert.ok(
-    activityBounds.y >= identityBounds.y + identityBounds.height,
-    'Pinned activity sits below the icon and its identity badges',
+    activityBounds.y + activityBounds.height <= faviconBounds.y,
+    'Pinned activity sits at the top right above the favicon',
   )
   assert.ok(
     activityBounds.x >= tileBounds.x &&
@@ -3738,7 +3753,7 @@ try {
       Math.abs(regularIdentity.x - regularTitle.x) < 1,
     'Regular tab identity badges sit below and align with the title',
   )
-  assert.equal(regularFavicon.width, 24, 'Regular and pinned tabs use consistent favicon sizes')
+  assert.equal(regularFavicon.width, 24, 'Regular tabs retain their compact favicon size')
   assert.equal(
     await regularTab.locator('.studio-browser-tab-source .studio-browser-tab-profile').count(),
     0,
@@ -3786,8 +3801,8 @@ try {
   const awakeIcon = await pins.first().getByLabel('Kept awake').boundingBox()
   const faviconIcon = await pins.first().locator('img').boundingBox()
   assert.ok(
-    Math.abs(awakeIcon.y - faviconIcon.y) < 20,
-    'Keep-awake sits on the favicon instead of taking a row',
+    awakeIcon.y < faviconIcon.y && awakeIcon.x < faviconIcon.x,
+    'The status dot sits above and left of the favicon',
   )
   const separator = controlsPage.getByRole('separator', { name: 'Resize Browser tabs' })
   await separator.focus()
@@ -4019,9 +4034,70 @@ try {
   assert.equal(await controlsPage.evaluate(() => window.transferredTab.targetWindowId), undefined)
   await controlsPage.waitForFunction(
     () =>
-      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
+      JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
         (tab) => tab.id === 'compact-2',
-      ),
+      )?.detached === window.transferredTab.key,
+  )
+  const detachedPin = compactSidebar.locator('[data-browser-tab-id="compact-2"]')
+  assert.equal(await detachedPin.getAttribute('data-detached'), 'true')
+  const beforeFocus = await controlsPage.evaluate(() => window.calls.length)
+  await detachedPin.getByRole('button', { name: /Open in detached window/ }).click()
+  await controlsPage.waitForFunction(() =>
+    window.calls.some(
+      (command) =>
+        command.action === 'focus-detached-browser' && command.key === window.transferredTab.key,
+    ),
+  )
+  assert.equal(
+    await controlsPage.evaluate(
+      (start) =>
+        window.calls
+          .slice(start)
+          .some(
+            (command) => command.action === 'show' && command.key === window.transferredTab.key,
+          ),
+      beforeFocus,
+    ),
+    false,
+    'A detached shortcut focuses the live window without creating another page',
+  )
+  assert.equal(
+    await controlsPage.evaluate(() =>
+      window.calls
+        .findLast((command) => command.action === 'sync-tabs')
+        .tabs.some((item) => item.tab.id === 'compact-2'),
+    ),
+    false,
+    'The source does not claim ownership of the detached page',
+  )
+  const pinOrder = await compactSidebar
+    .locator('[data-pinned]')
+    .evaluateAll((rows) => rows.map((row) => row.dataset.browserTabId))
+  const returningPin = await controlsPage.evaluate(() => window.transferredTab)
+  await controlsPage.evaluate(async (transferred) => {
+    window.detachedTabs = window.detachedTabs.filter((key) => key !== transferred.key)
+    window.movedTabs.push({
+      key: transferred.key,
+      tab: { ...transferred.tab, title: 'Returned pinned page', url: 'http://lan.local/returned' },
+    })
+    await window.pollBrowser()
+  }, returningPin)
+  await controlsPage.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (tab) => tab.id === 'compact-2',
+      )?.detached,
+  )
+  assert.deepEqual(
+    await compactSidebar
+      .locator('[data-pinned]')
+      .evaluateAll((rows) => rows.map((row) => row.dataset.browserTabId)),
+    pinOrder,
+    'Returning replaces the shortcut without changing pinned order',
+  )
+  assert.equal(
+    await compactSidebar.locator('[data-browser-tab-id="compact-2"]').getAttribute('data-detached'),
+    null,
   )
   await compactSidebar.getByRole('button', { name: /^Website 1 Local/ }).click({ button: 'right' })
   await controlsPage.getByRole('menuitem', { name: 'Move to another window', exact: false }).hover()
@@ -4111,6 +4187,70 @@ try {
     'compact-0',
     'Close never selects another tab',
   )
+  await compactSidebar.locator('[data-browser-tab-id="compact-2"]').click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Detach to new window', exact: true }).click()
+  await controlsPage.waitForFunction(
+    () =>
+      !!JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (tab) => tab.id === 'compact-2',
+      )?.detached,
+  )
+  const localIds = await controlsPage.evaluate(() =>
+    JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+      .tabs.filter((tab) => !tab.detached)
+      .map((tab) => tab.id),
+  )
+  for (const id of localIds) {
+    const row = compactSidebar.locator(`[data-browser-tab-id="${id}"]`)
+    if ((await row.getAttribute('data-pinned')) !== null) {
+      await row.click({ button: 'right' })
+      await controlsPage.getByRole('menuitem', { name: 'Unpin tab', exact: true }).click()
+    }
+    await row.click({ button: 'right' })
+    await controlsPage.getByRole('menuitem', { name: 'Close tab', exact: true }).click()
+  }
+  await controlsPage.waitForFunction(() => {
+    const saved = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    return (
+      saved.tabs.length === 2 && saved.tabs.some((tab) => !tab.detached && tab.id === saved.active)
+    )
+  })
+  // Native page closure must also leave a usable source page beside the shortcut.
+  await controlsPage.evaluate(async () => {
+    const local = window.calls.findLast((command) => command.action === 'sync-tabs').tabs[0]
+    window.closedTabs.push(local.key)
+    window.closedFallbackId = local.tab.id
+    await window.pollBrowser()
+  })
+  await controlsPage.waitForFunction(() => {
+    const saved = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    return (
+      saved.tabs.length === 2 &&
+      saved.tabs.some(
+        (tab) => !tab.detached && tab.id === saved.active && tab.id !== window.closedFallbackId,
+      )
+    )
+  })
+  await controlsPage.evaluate(() => {
+    window.fixtureActivityBar = true
+    window.renderBrowser()
+  })
+  await controlsPage
+    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('button', { name: 'Browser', exact: true })
+    .click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Detach browser', exact: true }).click()
+  await controlsPage.waitForFunction(() => {
+    const saved = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    const detached = window.calls.findLast((command) => command.action === 'detach-tabs')
+    return (
+      detached &&
+      detached.tabs.every((item) => !item.tab.detached) &&
+      saved.tabs.length === 2 &&
+      saved.tabs.some((tab) => tab.detached) &&
+      saved.tabs.some((tab) => !tab.detached && tab.id === saved.active)
+    )
+  })
   await controlsPage.close()
 
   const orderPage = await browser.newPage({ viewport: { width: 1200, height: 800 } })

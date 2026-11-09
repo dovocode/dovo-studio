@@ -349,19 +349,33 @@ try {
     await idle.waitFor()
     await finishLayout()
     const idleBounds = await form.boundingBox()
+    const idleEditorBounds = await input.boundingBox()
     if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
-      assert.ok(idleBounds.height <= 48, `${name} starts as a single idle row`)
+      const narrow = await form.evaluate((surface) => {
+        const container = surface.closest('.task-composer')
+        const style = getComputedStyle(container)
+        return (
+          innerWidth >= 768 &&
+          container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) <=
+            576
+        )
+      })
+      assert.ok(
+        idleBounds.height <= (narrow ? 90 : 48),
+        `${name} uses ${narrow ? 'two compact rows in a narrow pane' : 'a single idle row'}`,
+      )
       const editor = await input.boundingBox()
       const action = await form.locator('[data-composer-actions]').boundingBox()
       assert.ok(editor.width > 70, 'The idle editor leaves space for the placeholder')
-      assert.ok(Math.abs(editor.y + editor.height / 2 - (action.y + action.height / 2)) < 2)
+      if (narrow) assert.ok(editor.y + editor.height <= action.y)
+      else assert.ok(Math.abs(editor.y + editor.height / 2 - (action.y + action.height / 2)) < 2)
     }
     await input.focus()
     await expanded.waitFor()
     await finishLayout()
     if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
       assert.ok(
-        (await form.boundingBox()).height > idleBounds.height + 20,
+        (await input.boundingBox()).height > idleEditorBounds.height,
         'Focus expands the editor',
       )
       await page.screenshot({
@@ -466,7 +480,7 @@ try {
   assert.deepEqual(
     await pinnedPages.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
     ['Page: Docs', 'Page: Issues', 'Page: Metrics', 'Page: Notes', 'Page: Preview'],
-    'Pinned browser pages keep their own compact grid',
+    'Pinned browser pages keep their own card grid',
   )
   assert.deepEqual(
     await pinnedSection
@@ -523,7 +537,7 @@ try {
       )
     const idleUnifiedPins = await unifiedPinGeometry()
     assert.ok(
-      idleUnifiedPins.every((tile) => tile.height === 64),
+      idleUnifiedPins.every((tile) => tile.height === 80),
       'Unified pins match browser density',
     )
     await page.evaluate(() =>
@@ -728,15 +742,12 @@ try {
       .locator('[data-workspace-kind="thread"]')
       .first()
       .boundingBox()
-    assert.ok(
-      tileBounds.width >= 48 && tileBounds.width < 70,
-      'Uses Browser workspace compact tile width',
-    )
+    assert.ok(tileBounds.width >= 56 && tileBounds.width < 100, 'Uses Browser workspace card width')
     assert.equal(
       await tile
         .locator('[data-browser-tab-select]')
         .evaluate((button) => button.getBoundingClientRect().height),
-      34,
+      78,
     )
     assert.ok(nextGridRow.y > tileBounds.y, 'Five fixture pages wrap in the compact grid')
     assert.ok(
@@ -1142,7 +1153,7 @@ try {
     if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
       await header.hover()
       const hoveredSurface = await header.evaluate(
-        (element) => getComputedStyle(element).backgroundImage,
+        (element) => getComputedStyle(element).backgroundColor,
       )
       await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
       const style = await header.evaluate((element) => {
@@ -1151,15 +1162,13 @@ try {
           uppercase: style.textTransform,
           border: style.borderTopWidth,
           background: style.backgroundImage,
+          color: style.backgroundColor,
         }
       })
-      assert.equal(style.uppercase, 'uppercase', `${name} uses the thread section typography`)
+      assert.equal(style.uppercase, 'none', `${name} uses the thread section typography`)
       assert.equal(style.border, '1px', `${name} uses the shared bordered header`)
-      assert.ok(
-        style.background.includes('linear-gradient'),
-        `${name} uses the shared gradient surface`,
-      )
-      assert.notEqual(style.background, hoveredSurface, `${name} uses the shared hover surface`)
+      assert.equal(style.background, 'none', `${name} uses the shared flat surface`)
+      assert.notEqual(style.color, hoveredSurface, `${name} uses the shared hover surface`)
     }
   }
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {

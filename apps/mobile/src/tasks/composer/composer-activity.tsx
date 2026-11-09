@@ -197,18 +197,14 @@ export function ComposerActivity({
       accessibilityLabel="Composer activity"
       style={{
         marginHorizontal: inComposer ? 20 : 12,
-        // Cancel the composer's 4-point gap so the panel meets the input's top border.
-        marginBottom: inComposer ? -4 : 8,
+        marginBottom: 8,
       }}
     >
       <Glass
         style={{
           borderRadius: 12,
-          borderBottomLeftRadius: inComposer ? 0 : 12,
-          borderBottomRightRadius: inComposer ? 0 : 12,
           overflow: 'hidden',
           borderWidth: 1,
-          borderBottomWidth: inComposer ? 0 : 1,
           borderColor: colors.border,
         }}
       >

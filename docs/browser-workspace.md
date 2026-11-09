@@ -60,11 +60,19 @@ thread opens for you to review and send the draft. Empty selections produce feed
 On desktop, use the tab-list **+** menu → **New browser window** for another window with its own
 tabs, or **Detach browser** to move the current workspace, including pinned and sleeping tabs, to a
 separate window. Native pages keep their document, navigation history, sign-in and live media.
-Closing an extra Browser window returns its remaining tabs to the main window, preserving pinning,
-profiles, order and selection. If the main window has reached its 100-tab limit, the extra window
-stays open and reports the problem. These actions require the desktop window bridge. Browser opened
-from a pop-out thread uses a separate session identity and does not overwrite the main window's
-tabs.
+Closing an extra Browser workspace window returns its remaining tabs to the main window, preserving
+pinning, profiles, order and selection. If the main window has reached its 100-tab limit, the extra
+window stays open and reports the problem. These actions require the desktop window bridge. Browser
+opened from a pop-out thread uses a separate session identity and does not overwrite the main
+window's tabs.
+
+Detach a pinned tab with **Detach to new window** in its context menu. Its icon stays in the
+original slot. Click the icon to focus the detached window. You can still reorder the pinned icons.
+Closing the detached window returns the live page to that slot. Reloading a window keeps the link to
+the detached page. Moving a tab to an existing window still removes it from the source list. The
+Browser section icon shows a dot for unread page badges or pending sharing requests. This includes
+badges from detached pinned pages. The dot clears when the website clears its badge or the sharing
+request is resolved.
 
 Tabs, active tab, recent order, computer, profile and recently closed tabs are isolated per window.
 Main-window tabs persist in localStorage. Extra windows use sessionStorage for reloads. On window

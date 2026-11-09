@@ -1,4 +1,4 @@
-import { runtimeComputerName, taskInputOwner } from '@dovo/protocol'
+import { hasUnviewedTaskCompletion, runtimeComputerName, taskInputOwner } from '@dovo/protocol'
 import type { InputPreviewBridge, InputPreviewItem } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { readAppPreferences, useAppPreferences, useWorkspace } from '@dovo/studio-core'
@@ -163,6 +163,21 @@ export function taskNotificationEvents(
 
 export type TaskNotice = { title: string; target: NotificationTarget }
 
+/** Derive section dots from existing read state and pending human requests. */
+export function taskSectionIndicators(
+  entries: readonly RuntimeOverview[],
+  notices: readonly TaskNotice[] = [],
+) {
+  const indicators: Record<string, 'unread' | 'attention'> = {}
+  for (const notice of notices) indicators[notice.target.viewId] = 'unread'
+  for (const entry of entries)
+    if (entry.snapshot?.workspace.tasks.some(hasUnviewedTaskCompletion)) indicators.tasks = 'unread'
+  for (const state of taskNotificationStates(entries).values())
+    if (state.needsInput) indicators[state.target.viewId] = 'attention'
+  if (indicators.tasks) indicators.workspace = indicators.tasks
+  return indicators
+}
+
 export function enqueueTaskNotices(
   pending: readonly TaskNotice[],
   events: ReturnType<typeof taskNotificationEvents>,
@@ -313,6 +328,7 @@ export function useTaskNotifications(
   return {
     notice,
     pendingCount: notices.length,
+    sectionIndicators: taskSectionIndicators(runtimes, notices),
     dismiss: () => setNotices((pending) => pending.slice(1)),
   }
 }

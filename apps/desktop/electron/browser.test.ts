@@ -2349,6 +2349,7 @@ it('routes media answers, stop requests and window media status through trusted 
     forward: false,
     ...snapshot,
     callTabs: [],
+    browserIndicator: 'attention',
   })
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject(snapshot)
   await expect(call(event, { action: 'status', key: 'gone' })).resolves.toMatchObject(snapshot)
@@ -3178,6 +3179,9 @@ it('reports background tab activity, validates frame reports, and mutes without 
   const main = { senderFrame: mocks.contents.mainFrame }
   devices(main, { camera: true, microphone: true, screenSharing: true })
   badge(main, 7)
+  expect(await call(event, { action: 'media-status', key: 'studio-media' })).toMatchObject({
+    browserIndicator: 'unread',
+  })
   devices({ senderFrame: {} }, { camera: false, microphone: false, screenSharing: false })
   badge({ senderFrame: {} }, 99)
   mocks.contents.isCurrentlyAudible.mockReturnValue(true)
@@ -3207,6 +3211,9 @@ it('reports background tab activity, validates frame reports, and mutes without 
   expect(mocks.window.focus).not.toHaveBeenCalled()
   devices(main, { camera: false, microphone: false, screenSharing: false })
   badge(main, null)
+  expect(await call(event, { action: 'media-status', key: 'studio-media' })).not.toHaveProperty(
+    'browserIndicator',
+  )
   expect(await call(event, { action: 'status', key: 'workspace', tabCount: 1 })).toMatchObject({
     tabStates: [
       expect.objectContaining({
@@ -3427,12 +3434,13 @@ it.each(['web', 'remote'] as const)(
 )
 
 it.each([
-  ['web', false],
-  ['remote', false],
-  ['web', true],
+  ['web', false, false],
+  ['remote', false, false],
+  ['web', true, false],
+  ['web', false, true],
 ] as const)(
-  'returns only the detached pinned %s tab (source closed: %s)',
-  async (kind, sourceClosed) => {
+  'returns only the detached pinned %s tab (source closed: %s, reloaded: %s)',
+  async (kind, sourceClosed, sourceReloaded) => {
     const source = workspaceTarget(3)
     const target = workspaceTarget(2)
     const main = vi.fn<() => Promise<import('electron').BrowserWindow>>(
@@ -3483,7 +3491,52 @@ it.each([
       activeId: 'pinned',
     })
     if (kind === 'web') await call(event, { ...workspaceShow, url: pinned.tab.url })
-    await call(event, { action: 'move-tab', key: pinned.key, tab: pinned.tab })
+    expect(
+      await call(event, { action: 'move-tab', key: pinned.key, tab: pinned.tab }),
+    ).toMatchObject({ detachedTabs: [pinned.key] })
+    mocks.contents.setAudioMuted.mockClear()
+    target.focus.mockClear()
+    await call(event, { action: 'set-audio-muted', key: pinned.key, muted: true })
+    expect(mocks.contents.setAudioMuted.mock.calls).toEqual(kind === 'web' ? [[true]] : [])
+    expect(target.focus).not.toHaveBeenCalled()
+    // A save already in flight and background Keep awake must not reclaim the live page.
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: [pinned, other],
+      activeId: 'other',
+    })
+    expect(await call(event, { action: 'status', key: 'other', tabCount: 1 })).toMatchObject({
+      detachedTabs: [pinned.key],
+    })
+    const viewsBefore = mocks.media.moveTab.mock.calls.length
+    await call(event, {
+      action: 'keep-awake',
+      key: pinned.key,
+      url: pinned.tab.url,
+      profileId: pinned.tab.profileId,
+      enabled: true,
+    })
+    expect(mocks.media.moveTab).toHaveBeenCalledTimes(viewsBefore)
+    expect(await call(event, { action: 'focus-detached-browser', key: pinned.key })).toMatchObject({
+      focusedWindowId: target.id,
+    })
+    expect(target.focus).toHaveBeenCalled()
+    if (sourceReloaded) {
+      source.webContents.on.mock.calls.find(([name]) => name === 'did-start-navigation')![1]({
+        isMainFrame: true,
+        isSameDocument: false,
+      })
+      await call(event, {
+        action: 'sync-tabs',
+        key: 'workspace',
+        tabs: [pinned, other],
+        activeId: 'other',
+      })
+    }
+    expect(await call(event, { action: 'status', key: 'other', tabCount: 1 })).toMatchObject({
+      detachedTabs: [pinned.key],
+    })
     mocks.windowFor = target
     await call(event, {
       action: 'sync-tabs',
@@ -3491,6 +3544,29 @@ it.each([
       tabs: [pinned, { ...other, key: 'extra', tab: { ...other.tab, id: 'extra' } }],
       activeId: 'extra',
     })
+    await call(event, { action: 'status', key: 'empty-key', tabCount: 2 })
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: [{ ...pinned, tab: { ...pinned.tab, title: '(2) Pinned' } }, other],
+      activeId: 'other',
+    })
+    mocks.windowFor = source
+    expect(await call(event, { action: 'media-status', key: 'studio-media' })).toMatchObject({
+      browserIndicator: 'unread',
+    })
+    mocks.windowFor = target
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: [pinned, other],
+      activeId: 'other',
+    })
+    mocks.windowFor = source
+    expect(await call(event, { action: 'media-status', key: 'studio-media' })).not.toHaveProperty(
+      'browserIndicator',
+    )
+    mocks.windowFor = target
     vi.spyOn(source, 'isDestroyed').mockReturnValue(sourceClosed)
     const destination = sourceClosed ? mocks.window : source
     const returning = bridge.returnWindowTabs(target as never)
@@ -3517,6 +3593,7 @@ it.each([
         tab: expect.objectContaining({ id: 'pinned', pinned: true, homeUrl: pinned.tab.homeUrl }),
       }),
     ])
+    expect(status).toHaveProperty('detachedTabs', [])
     expect(main).toHaveBeenCalledTimes(sourceClosed ? 1 : 0)
     expect(mocks.contents.close).not.toHaveBeenCalled()
   },

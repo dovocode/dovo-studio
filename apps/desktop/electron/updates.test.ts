@@ -3,7 +3,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { decode, managedPolicySchema } from '@dovo/protocol'
 const f = vi.hoisted(() => ({
-  token: vi.fn<() => Promise<string | undefined>>(async () => undefined),
   githubFetch: vi.fn<typeof fetch>(async (input, init) => fetch(input, init)),
   open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
   listeners: new Map<
@@ -28,7 +27,6 @@ const f = vi.hoisted(() => ({
   states: [] as unknown[],
 }))
 vi.mock('@dovo/protocol/github-release-auth', () => ({
-  githubReleaseToken: f.token,
   fetchGitHubRelease: f.githubFetch,
 }))
 vi.mock('@dovo/protocol/local-settings', () => ({
@@ -93,13 +91,24 @@ beforeEach(() => {
   // Generic updater tests describe an auto-updatable installation on every host.
   // The package-manager cases below explicitly clear APPIMAGE.
   vi.stubEnv('APPIMAGE', '/fixture/Dovo.AppImage')
+  f.githubFetch.mockImplementation(async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (url.includes('/releases/tags/')) return fetch(input, init)
+    const release = (version: string) => ({
+      tag_name: `v${version}`,
+      html_url: `https://github.com/dovocode/dovo-studio/releases/tag/v${version}`,
+      draft: false,
+    })
+    return Response.json(
+      url.endsWith('/latest') ? release('0.0.9') : [release('0.0.9'), release('0.0.9-nightly.43')],
+    )
+  })
 })
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
   vi.clearAllMocks()
-  f.token.mockResolvedValue(undefined)
   vi.mocked(readLocalSettingsSection).mockReturnValue(undefined)
   f.listeners.clear()
   f.next = 'next'
@@ -214,22 +223,18 @@ it('loads release notes from the release when updater metadata omits them', asyn
   const updates = registerUpdates('/unused', async () => async () => {})
   await updates.refresh()
   await vi.waitFor(() => expect(updates.state().notes).toBe('New release changes'))
-  expect(f.githubFetch).toHaveBeenCalledOnce()
+  expect(f.githubFetch).toHaveBeenCalledTimes(3)
 })
 
-it('uses authenticated release discovery without sending a token to updater downloads', async () => {
-  f.token.mockResolvedValue('gh_fixture')
+it('resolves the published release on every check without adding credentials to the download feed', async () => {
   const metadata = {
     tag_name: 'v0.0.9',
     html_url: 'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.9',
   }
-  vi.stubGlobal(
-    'fetch',
-    vi.fn<typeof fetch>(async (input) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      return Response.json(url.endsWith('/latest') ? metadata : [metadata])
-    }),
-  )
+  f.githubFetch.mockImplementation(async (input) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    return Response.json(url.endsWith('/latest') ? metadata : [metadata])
+  })
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async () => async () => {})
   await updates.refresh()
@@ -238,10 +243,61 @@ it('uses authenticated release discovery without sending a token to updater down
     provider: 'generic',
     url: 'https://github.com/dovocode/dovo-studio/releases/download/v0.0.9/',
   })
-  // Continue resolving each new version after the CLI login has been removed.
-  f.token.mockResolvedValue(undefined)
   await updates.refresh()
   expect(f.githubFetch).toHaveBeenCalledTimes(4)
+})
+it.each(['stable', 'nightly'] as const)(
+  'uses only published %s releases and follows channel changes on the next check',
+  async (channel) => {
+    const other = channel === 'stable' ? 'nightly' : 'stable'
+    vi.mocked(readLocalSettingsSection).mockReturnValue(channel)
+    f.version = other === 'nightly' ? '0.0.8-nightly.1' : '0.0.8'
+    const release = (version: string, draft = false, prerelease = false) => ({
+      tag_name: `v${version}`,
+      html_url: `https://github.com/dovocode/dovo-studio/releases/tag/v${version}`,
+      draft,
+      prerelease,
+    })
+    f.githubFetch.mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      return Response.json(
+        url.endsWith('/latest')
+          ? release('0.0.8')
+          : [
+              release('9.0.0', true),
+              release('9.0.0-nightly.999', true, true),
+              release('8.0.0', false, true),
+              release('0.0.9'),
+              release('0.0.9-nightly.43', false, true),
+            ],
+      )
+    })
+    const versions = { stable: '0.0.9', nightly: '0.0.9-nightly.43' }
+    const { registerUpdates } = await import('./updates')
+    const updates = registerUpdates('/unused', async () => async () => {})
+    await updates.refresh()
+    expect(f.feed).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: `https://github.com/dovocode/dovo-studio/releases/download/v${versions[channel]}/`,
+    })
+    await updates.setChannel(other)
+    expect(f.feed).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: `https://github.com/dovocode/dovo-studio/releases/download/v${versions[other]}/`,
+    })
+    expect(updates.state().channel).toBe(other)
+    expect(f.githubFetch).toHaveBeenCalledTimes(4)
+  },
+)
+it('reports a missing published channel instead of checking another channel', async () => {
+  vi.mocked(readLocalSettingsSection).mockReturnValue('nightly')
+  f.githubFetch.mockImplementation(async () => Response.json([]))
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await expect(updates.refresh()).rejects.toThrow('No nightly desktop release is published')
+  expect(updates.state()).toEqual({ status: 'error', channel: 'nightly' })
+  expect(f.checks).not.toHaveBeenCalled()
+  expect(f.feed).not.toHaveBeenCalled()
 })
 it('asks again after the download before restarting', async () => {
   vi.stubGlobal(
@@ -459,20 +515,17 @@ it('keeps a downloaded update on its selected channel until installation', async
 it('uses the architecture-specific feed when checking Windows ARM nightly releases', async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
   vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64')
-  vi.stubGlobal(
-    'fetch',
-    vi.fn<typeof fetch>(async (input) =>
-      (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith(
-        '/latest',
-      )
-        ? new Response(null, { status: 404 })
-        : Response.json([
-            {
-              tag_name: 'v0.0.7-nightly.43',
-              html_url: 'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.7-nightly.43',
-            },
-          ]),
-    ),
+  f.githubFetch.mockImplementation(async (input) =>
+    (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith(
+      '/latest',
+    )
+      ? new Response(null, { status: 404 })
+      : Response.json([
+          {
+            tag_name: 'v0.0.7-nightly.43',
+            html_url: 'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.7-nightly.43',
+          },
+        ]),
   )
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater

@@ -17,6 +17,10 @@ export type BrowserTab = BrowserTabLifecycle & {
   favicon?: string
   visitedAt?: number
   pinned?: boolean
+  /** Native key of the live page in another window; retain this pinned slot on reload. */
+  detached?: string
+  /** A moved page retains its native identity when this renderer reloads. */
+  nativeKey?: string
   homeUrl?: string
   /** Temporary page opened by a link; promotion keeps this exact page identity. */
   previewOf?: string
@@ -33,6 +37,8 @@ const tabSchema = Schema.Struct({
   favicon: Schema.optional(Schema.String),
   visitedAt: Schema.optional(Schema.Number),
   pinned: Schema.optional(Schema.Boolean),
+  detached: Schema.optional(Schema.String),
+  nativeKey: Schema.optional(Schema.String),
   homeUrl: Schema.optional(Schema.String),
   thread: Schema.optional(
     Schema.Struct({ id: Schema.String, runtimeId: Schema.NullOr(Schema.String) }),

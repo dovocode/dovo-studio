@@ -41,6 +41,27 @@ it('keeps standalone Threads, Browser and Terminals together with or without uni
   ])
 })
 
+it('shows accessible section dots without changing the navigation label', () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(ActivityBar, {
+        views: standalone,
+        activeId: 'browser',
+        onSelect: () => {},
+        indicators: { tasks: 'attention', browser: 'unread' },
+      }),
+    ),
+  )
+  expect(html).toContain(
+    'aria-label="Threads" aria-description="Needs input" data-notification="attention"',
+  )
+  expect(html).toContain('aria-label="Threads: Needs input"')
+  expect(html).toContain('aria-label="Browser: Unread notifications"')
+  expect(html.match(/class="studio-navigation-notification"/g)).toHaveLength(2)
+})
+
 it('hides only the normal modes, and only while unified is on', () => {
   const all = [
     view('workspace', 'Workspace', 'workspace'),

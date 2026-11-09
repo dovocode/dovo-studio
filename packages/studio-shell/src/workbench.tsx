@@ -696,6 +696,13 @@ function WorkbenchContent({
     !threadWindow && !browserWindowId,
     target.viewId === 'browser',
   )
+  const [browserIndicator, setBrowserIndicator] = useState<'unread' | 'attention'>()
+  const sectionIndicators: Record<string, 'unread' | 'attention' | undefined> = {
+    ...taskNotice.sectionIndicators,
+    browser: browserIndicator,
+  }
+  if (browserIndicator && sectionIndicators.workspace !== 'attention')
+    sectionIndicators.workspace = browserIndicator
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
   const [commandVersion, refreshCommands] = useApplicationState(0)
@@ -980,6 +987,7 @@ function WorkbenchContent({
           <div className="studio-body">
             {!browserWindowId && (
               <ActivityBar
+                indicators={sectionIndicators}
                 onDetachBrowser={browser && openBrowserWindow ? detachBrowser : undefined}
                 update={update}
                 onUpdate={updates ? () => void updates.install() : undefined}
@@ -1035,7 +1043,7 @@ function WorkbenchContent({
                 />
               )}
               {(browserWorkspaceEnabled || unifiedWorkspaceEnabled) && browser && (
-                <BrowserMediaControls />
+                <BrowserMediaControls onIndicatorChange={setBrowserIndicator} />
               )}
               {/* Settings get a grouped sidebar with search; other views use the full area. */}
               <div

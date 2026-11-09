@@ -10,6 +10,7 @@ import {
   taskNotificationEvents,
   taskNotificationStates,
   enqueueTaskNotices,
+  taskSectionIndicators,
   type TaskState,
 } from './task-notifications'
 
@@ -131,6 +132,61 @@ function fixture() {
   }
   return { runtime, snapshot, profile }
 }
+
+it('marks sections for unread completed messages and clears them when read', () => {
+  const { runtime, snapshot } = fixture()
+  const task = snapshot.workspace.tasks[0]!
+  task.status = 'review'
+  task.turns = [
+    {
+      id: 'turn',
+      status: 'completed',
+      assistantId: 'assistant',
+      agentId: '',
+      provider: 'codex',
+      model: '',
+      startedAt: '',
+      finishedAt: '',
+    },
+  ]
+  expect(taskSectionIndicators([runtime])).toEqual({ tasks: 'unread', workspace: 'unread' })
+  task.lastViewedTurnId = 'turn'
+  expect(taskSectionIndicators([runtime])).toEqual({})
+  task.lastViewedTurnId = undefined
+  task.archivedAt = '2026-11-09T00:00:00Z'
+  expect(taskSectionIndicators([runtime])).toEqual({})
+})
+
+it('marks human requests as attention, keeps them after visiting, and clears on resolution', () => {
+  const { runtime, snapshot } = fixture()
+  const question = decode(pendingQuestionSchema, {
+    id: 'question',
+    taskId: 'child',
+    routing: 'parent',
+    createdAt: '',
+    prompt: {
+      title: 'Choose',
+      questions: [{ id: 'choice', header: 'Choice', question: 'Which pattern?' }],
+    },
+  })
+  snapshot.questions.push(question)
+  expect(taskSectionIndicators([runtime])).toEqual({})
+  question.routing = 'human'
+  expect(taskSectionIndicators([runtime])).toEqual({ tasks: 'attention', workspace: 'attention' })
+  snapshot.questions = []
+  expect(taskSectionIndicators([runtime])).toEqual({})
+  expect(
+    taskSectionIndicators(
+      [runtime],
+      [
+        {
+          title: 'Finished',
+          target: { runtimeId: runtime.profile.id, viewId: 'jobs', entityId: 'run' },
+        },
+      ],
+    ),
+  ).toEqual({ jobs: 'unread' })
+})
 
 it('notifies in the main conversation for child approvals and waits for question escalation', () => {
   const { runtime, snapshot, profile } = fixture()

@@ -27,7 +27,11 @@ const sourceTypes = [
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
 
 /** Outside the Browser view: sharing remains visible when the user switches to a thread. */
-export function BrowserMediaControls() {
+export function BrowserMediaControls({
+  onIndicatorChange,
+}: {
+  onIndicatorChange?: (indicator: 'unread' | 'attention' | undefined) => void
+}) {
   const { browser } = useStudioHost()
   const { runtimes } = useWorkspace()
   const threads = useMemo(
@@ -58,6 +62,7 @@ export function BrowserMediaControls() {
     const sequence = ++refreshSequence.current
     const result = await browser({ action: 'media-status', key: 'studio-media' })
     if (sequence !== refreshSequence.current) return
+    onIndicatorChange?.(result?.browserIndicator)
     const next = {
       requests: result?.mediaRequests ?? [],
       captures: result?.captures ?? [],
@@ -68,7 +73,7 @@ export function BrowserMediaControls() {
       setSnapshot(next)
     }
     setPollError('')
-  }, [browser])
+  }, [browser, onIndicatorChange])
   useEffect(() => {
     if (!browser) return
     const polling = startPolling(Effect.tryPromise({ try: refresh, catch: message }), {

@@ -4,6 +4,7 @@ import {
   Check,
   GitBranch,
   FolderOpen,
+  ExternalLink,
   Globe2,
   MessageSquare,
   Pin,
@@ -13,7 +14,12 @@ import {
 import type { Task } from '@dovo/studio-core'
 import { cn } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import type { BrowserTabState, RuntimeSnapshot } from '@dovo/protocol'
+import {
+  browserTabBadge,
+  browserTabKeepsAwake,
+  type BrowserTabState,
+  type RuntimeSnapshot,
+} from '@dovo/protocol'
 import { BrowserTabActivity } from '../browser/browser-tab-activity'
 import { TaskRow } from '../list/task-row'
 import type { TaskOwner } from '../list/task-collection'
@@ -187,6 +193,7 @@ export function WorkspacePageRow({
           .join('')
       : profile.slice(0, 2)
   ).toUpperCase()
+  const badge = activity?.badge ?? browserTabBadge(page.title)
   return (
     <RowFrame
       kind="Page"
@@ -199,6 +206,7 @@ export function WorkspacePageRow({
         <div
           data-browser-tab-id={page.id}
           data-pinned
+          data-detached={!!page.detached || undefined}
           data-active={selected || undefined}
           className={cn(
             'studio-browser-tab relative flex min-w-0 flex-col overflow-hidden rounded-xl border pb-6 transition-colors',
@@ -212,14 +220,38 @@ export function WorkspacePageRow({
             data-browser-tab-select
             disabled={disabled}
             aria-current={selected ? 'page' : undefined}
-            aria-label={`${title} · ${computer} · ${profile}`}
-            title={`${title}\n${page.url}\n${computer} · ${profile}`}
+            aria-label={`${title} · ${computer} · ${profile}${page.detached ? ' · Open in detached window' : ''}`}
+            title={`${title}\n${page.url}\n${computer} · ${profile}${page.detached ? '\nOpen in detached window' : ''}`}
             onClick={onSelect}
             className="studio-browser-tab-select flex h-14 w-full min-w-0 flex-none items-center justify-center px-2 py-2 text-left text-xs"
           >
+            <span
+              className="studio-browser-pin-status"
+              data-awake={!!activity || browserTabKeepsAwake(page) || undefined}
+              aria-label={
+                browserTabKeepsAwake(page)
+                  ? 'Kept awake'
+                  : activity
+                    ? 'Page loaded'
+                    : 'Page sleeping'
+              }
+            />
             <span className="studio-browser-tab-source relative inline-flex h-10 w-8 shrink-0 items-start justify-center">
               <span className="studio-browser-tab-favicon relative inline-flex size-8 items-center justify-center">
                 <BrowserFavicon tab={page} />
+                {badge !== undefined && (
+                  <span
+                    aria-label={badge === 'unread' ? 'Unread activity' : `${badge} unread`}
+                    className={cn(
+                      'studio-browser-tab-badge absolute -right-1 -top-1 rounded-full bg-primary text-primary-foreground ring-2 ring-sidebar',
+                      badge === 'unread'
+                        ? 'size-2'
+                        : 'min-w-3.5 px-1 text-center text-[9px] font-semibold leading-3.5',
+                    )}
+                  >
+                    {badge === 'unread' ? null : badge > 99 ? '99+' : badge}
+                  </span>
+                )}
                 {status !== 'active' && (
                   <span className="absolute -right-1 -top-0.5 rounded-full bg-sidebar">
                     <LifecycleMark status={status} />
@@ -245,6 +277,13 @@ export function WorkspacePageRow({
             </span>
           </button>
           <BrowserTabActivity state={activity} title={title} pinned onMute={onMute} />
+          {page.detached && (
+            <ExternalLink
+              size={10}
+              aria-hidden
+              className="pointer-events-none absolute bottom-1 right-1 text-muted-foreground"
+            />
+          )}
         </div>
       ) : (
         <div

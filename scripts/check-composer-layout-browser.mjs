@@ -79,7 +79,7 @@ const built = await build({
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
-        const [rail,setRail]=useState(false);window.setRail=setRail;
+        const [rail,setRail]=useState(false);window.setRail=setRail;const [indicators,setIndicators]=useState({});window.setIndicators=setIndicators;
         const [activeView,setActiveView]=useState('tasks');window.setActiveView=setActiveView;
         const views=[['tasks','Threads','tasks'],['browser','Browser','browser'],['artifacts','Artifacts','artifacts'],['issues','Issues','issues'],['jira','Jira','jira'],['pulls','Pull requests','pulls'],['jobs','Automations','jobs']].map(([id,title,icon])=>({id,title,icon})).concat([{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]);
         const [id,setId]=useState(null);
@@ -109,7 +109,7 @@ const built = await build({
         };
         const value={workspace,setWorkspace,snapshot:{workspace,defaults,promptQueueStagingSupported:queueStaging,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
         const renderThread=(task,workspaceControls,temporary,onSelectRemote,onStartBackground)=><Thread task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} onStartBackground={onStartBackground??(window.testBackground?()=>{}:undefined)}/>;
-        return <WorkspaceValueProvider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-row bg-background text-foreground">{rail&&<ActivityBar views={views} activeId={activeView} onSelect={setActiveView} onCheckUpdates={()=>{}}/>}<section className="flex min-h-0 min-w-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</WorkspaceValueProvider>
+        return <WorkspaceValueProvider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-row bg-background text-foreground">{rail&&<ActivityBar indicators={indicators} views={views} activeId={activeView} onSelect={setActiveView} onCheckUpdates={()=>{}}/>}<section className="flex min-h-0 min-w-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
     `,
@@ -944,12 +944,23 @@ try {
     assert.ok(compact.y + compact.height <= queue.y)
     assert.ok(queue.height <= 32, JSON.stringify(queue))
     assert.ok(
-      Math.abs(queueStrip.x - composer.x) < 1 && Math.abs(queueStrip.width - composer.width) < 1,
+      Math.abs(queueStrip.x - composer.x - 12) < 1 &&
+        Math.abs(queueStrip.width - composer.width + 24) < 1,
       JSON.stringify({ queueStrip, composer }),
     )
     assert.ok(
-      Math.abs(queueStrip.y + queueStrip.height - composer.y) < 2,
+      Math.abs(queueStrip.y + queueStrip.height + 8 - composer.y) < 2,
       JSON.stringify({ queue, composer }),
+    )
+    assert.ok(
+      await page.locator('.studio-composer').evaluate((element) => {
+        const style = getComputedStyle(element)
+        return (
+          parseFloat(style.borderTopLeftRadius) >= 20 &&
+          parseFloat(style.borderTopRightRadius) >= 20
+        )
+      }),
+      'The composer keeps its rounded top corners below the checklist and queue',
     )
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
@@ -1271,6 +1282,47 @@ try {
     await rail.screenshot({ path: screenshots + '/sidebar-detail.png', scale: 'css' })
     await page.evaluate(() => window.setRail(false))
   }
+  await page.evaluate(() => {
+    window.setRail(true)
+    window.setIndicators({ tasks: 'attention', browser: 'unread', jobs: 'attention' })
+  })
+  const notificationRail = page.getByRole('navigation', { name: 'Main navigation', exact: true })
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await notificationRail
+      .getByRole('status', { name: 'Threads: Needs input', exact: true })
+      .waitFor()
+    assert.equal(
+      await notificationRail
+        .getByRole('button', { name: 'Browser', exact: true })
+        .getAttribute('aria-description'),
+      'Unread notifications',
+    )
+    const dots = await notificationRail
+      .locator('.studio-navigation-notification')
+      .evaluateAll((elements) =>
+        elements.map((element) => {
+          const dot = element.getBoundingClientRect(),
+            button = element.closest('button').getBoundingClientRect()
+          return {
+            visible: dot.width > 0 && dot.height > 0,
+            inside:
+              dot.left >= button.left &&
+              dot.right <= button.right &&
+              dot.top >= button.top &&
+              dot.bottom <= button.bottom,
+          }
+        }),
+      )
+    assert.equal(dots.length, 3)
+    assert.ok(
+      dots.every((dot) => dot.visible && dot.inside),
+      JSON.stringify(dots),
+    )
+  }
+  await page.evaluate(() => window.setIndicators({}))
+  await notificationRail.locator('.studio-navigation-notification').waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setRail(false))
   // Keep counts, status indicators and collapse reachable in the narrow header.
   await page.evaluate(() => window.setActivity(true))
   for (const width of [320, 390, 1440]) {

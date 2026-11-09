@@ -25,6 +25,7 @@ import {
   browserElementSnapshotSchema,
   browserElementSchema,
   browserDefaultKeepAwake,
+  browserTabBadge,
   browserProfilesResultSchema,
   decodeResult,
   isPrivateBrowserProfile,
@@ -249,7 +250,9 @@ export function registerBrowser(
   const detachedWindows = new Map<number, BrowserWindow>()
   // A detached workspace returns even if its source window was closed or reloaded.
   const detachedWorkspaces = new WeakSet<BrowserWindow>()
-  const detachedPinnedTabs = new WeakMap<BrowserWindow, { key: string; source: BrowserWindow }>()
+  const detachedPinnedTabs = new Map<string, { source: BrowserWindow; target: BrowserWindow }>()
+  const detachedTabKeys = (windowId: number) =>
+    [...detachedPinnedTabs].flatMap(([key, owner]) => (owner.source.id === windowId ? [key] : []))
   const workspaceWaiters = new Map<number, Set<() => void>>()
   const adoptionWaiters = new Map<number, Set<{ keys: Set<string>; done: () => void }>>()
   const persistedKeys = new Map<number, Set<string>>()
@@ -390,7 +393,13 @@ export function registerBrowser(
     )
   const tabStates = (windowId: number): BrowserTabState[] =>
     [...views.values()].flatMap((entry) => {
-      if (entry.windowId !== windowId || !entry.workspace || entry.contents.isDestroyed()) return []
+      if (
+        (entry.windowId !== windowId &&
+          detachedPinnedTabs.get(entry.key)?.source.id !== windowId) ||
+        !entry.workspace ||
+        entry.contents.isDestroyed()
+      )
+        return []
       const state = entry.activity?.()
       const pip =
         entry.documentPipContents && !entry.documentPipContents.isDestroyed()
@@ -476,6 +485,7 @@ export function registerBrowser(
     if (movedTabs.length && !workspaceStates.has(windowId))
       tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
     return {
+      ...(consumeMoves ? { detachedTabs: detachedTabKeys(windowId) } : {}),
       ...(createdTabs.length ? { createdTabs } : {}),
       ...(closedTabs.length ? { closedTabs } : {}),
       ...(movedTabs.length ? { movedTabs } : {}),
@@ -642,6 +652,9 @@ export function registerBrowser(
   const reap = setInterval(prune, 30_000)
   reap.unref()
   const releaseWindow = (window: BrowserWindow, detach: boolean) => {
+    if (!detach)
+      for (const [key, owner] of detachedPinnedTabs)
+        if (owner.target === window) detachedPinnedTabs.delete(key)
     workspaces.delete(window)
     detachedWindows.delete(window.id)
     for (const [source, target] of detachedWindows)
@@ -1711,6 +1724,11 @@ export function registerBrowser(
       const entry = views.get(viewKey)
       if (entry) moveEntry(entry, target)
       const item = movedTab(key, tab, entry)
+      const owner = detachedPinnedTabs.get(key)
+      if (owner) {
+        if (owner.source === target) detachedPinnedTabs.delete(key)
+        else owner.target = target
+      }
       transferred.push(item)
       tabEvents(target.id).moved.push(item)
     }
@@ -1780,7 +1798,9 @@ export function registerBrowser(
     const command = decode(browserCommandSchema, raw)
     if (command.action === 'sync-tabs' || command.action === 'detach-tabs') {
       validateWorkspaceState(command)
-      const keys = new Set(command.tabs.map(({ key }) => key))
+      // In-flight renderer saves must not reclaim a page that just moved to another window.
+      const owned = command.tabs.filter(({ key }) => detachedPinnedTabs.get(key)?.source !== window)
+      const keys = new Set(owned.map(({ key }) => key))
       if (command.persisted) {
         persistedKeys.set(window.id, keys)
         for (const waiter of adoptionWaiters.get(window.id) ?? [])
@@ -1788,18 +1808,20 @@ export function registerBrowser(
       }
       const pending = (windowTabs.get(window.id)?.moved ?? []).filter(({ key }) => !keys.has(key))
       workspaceStates.set(window.id, {
-        tabs: [...command.tabs, ...pending],
-        activeId: command.activeId,
+        tabs: [...owned, ...pending],
+        activeId: owned.some(({ tab }) => tab.id === command.activeId)
+          ? command.activeId
+          : (owned[0]?.tab.id ?? ''),
       })
       for (const ready of workspaceWaiters.get(window.id) ?? []) ready()
       workspaces.add(window)
-      tabCounts.set(window.id, command.tabs.length)
+      tabCounts.set(window.id, owned.length)
       if (command.action === 'detach-tabs') {
         const target = await browserWindows?.create()
         if (!target) throw new Error('A separate browser window is unavailable.')
         await waitForWorkspace(target)
         if (window.isDestroyed()) return
-        moveWorkspace(window, target, command)
+        moveWorkspace(window, target, { tabs: owned, activeId: command.activeId })
         detachedWindows.set(window.id, target)
         detachedWorkspaces.add(target)
       }
@@ -1837,6 +1859,16 @@ export function registerBrowser(
     }
     const viewKey = JSON.stringify([window.id, command.key])
     let entry = views.get(viewKey)
+    const detachedPin = detachedPinnedTabs.get(command.key)
+    if (detachedPin?.source === window && command.action === 'set-audio-muted')
+      entry = views.get(JSON.stringify([detachedPin.target.id, command.key]))
+    if (
+      detachedPin?.source === window &&
+      command.action !== 'status' &&
+      command.action !== 'set-audio-muted' &&
+      command.action !== 'focus-detached-browser'
+    )
+      return
     if (command.action === 'keep-awake') {
       const request = {}
       awakeRequests.set(viewKey, request)
@@ -1875,10 +1907,15 @@ export function registerBrowser(
     if (command.action === 'status' && command.tabCount !== undefined)
       tabCounts.set(window.id, command.tabCount)
     if (command.action === 'focus-detached-browser') {
-      const target = detachedWindows.get(window.id)
+      const target =
+        detachedPin?.source === window ? detachedPin.target : detachedWindows.get(window.id)
       if (!target || target.isDestroyed()) {
         detachedWindows.delete(window.id)
         return { url: '', back: false, forward: false }
+      }
+      if (detachedPin?.source === window) {
+        focusedTabs.set(target.id, command.key)
+        target.webContents.send('browser:focus-workspace')
       }
       if (target.isMinimized()) target.restore()
       target.show()
@@ -1934,17 +1971,23 @@ export function registerBrowser(
         tabs: destination.tabs.filter(({ tab }) => !emptyPlaceholder(tab)),
         activeId: command.tab.id,
       })
-      if (command.targetWindowId === undefined && command.tab.pinned)
-        detachedPinnedTabs.set(target, { key: command.key, source: window })
+      const owner = detachedPinnedTabs.get(command.key)
+      if (owner) {
+        if (owner.source === target) detachedPinnedTabs.delete(command.key)
+        else owner.target = target
+      } else if (command.targetWindowId === undefined && command.tab.pinned)
+        detachedPinnedTabs.set(command.key, { source: window, target })
       const sourceState = workspaceStates.get(window.id)
       if (sourceState) sourceState.tabs = sourceState.tabs.filter(({ key }) => key !== command.key)
       if (target.isMinimized()) target.restore()
       target.webContents.send('browser:focus-workspace')
       target.show()
       target.focus()
-      return
+      return { url: '', back: false, forward: false, detachedTabs: detachedTabKeys(window.id) }
     }
     if (command.action === 'close') {
+      if (detachedPinnedTabs.get(command.key)?.target === window)
+        detachedPinnedTabs.delete(command.key)
       awakeRequests.delete(viewKey)
       if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry) {
@@ -2150,14 +2193,34 @@ export function registerBrowser(
     if (command.action === 'remote-media-sources')
       return media.setRemoteSources(window.id, command.sources)
     if (command.action === 'media') return media.decide(window.id, command)
-    if (command.action === 'media-status')
+    if (command.action === 'media-status') {
+      const snapshot = media.snapshot(window.id)
+      const states = tabStates(window.id)
+      const titles = workspaceState(window).tabs.map(({ tab }) => tab.title)
+      for (const [key, owner] of detachedPinnedTabs)
+        if (owner.source === window) {
+          titles.push(
+            ...workspaceState(owner.target)
+              .tabs.filter((item) => item.key === key)
+              .map(({ tab }) => tab.title),
+          )
+        }
+      const unread =
+        states.some((tab) => tab.badge || browserTabBadge(tab.title)) ||
+        titles.some((title) => browserTabBadge(title))
       return {
         url: '',
         back: false,
         forward: false,
-        ...media.snapshot(window.id),
+        ...snapshot,
         callTabs: callTabs(window.id),
+        ...(snapshot.mediaRequests?.length
+          ? { browserIndicator: 'attention' as const }
+          : unread
+            ? { browserIndicator: 'unread' as const }
+            : {}),
       }
+    }
     if (command.action === 'tab-activity') {
       const snapshot = media.snapshot(window.id)
       const protectedKeys = [...views.values()]
@@ -2436,8 +2499,9 @@ export function registerBrowser(
   return {
     /** Detached workspaces return all tabs; pinned-tab windows return only their original tab. */
     returnWindowTabs: (window: BrowserWindow) => {
-      const pinned = detachedPinnedTabs.get(window)
-      if (!detachedWorkspaces.has(window) && !pinned) return Promise.resolve()
+      const pinned = [...detachedPinnedTabs].filter(([, owner]) => owner.target === window)
+      if (!detachedWorkspaces.has(window) && !pinned.length && !pendingReturns.has(window.id))
+        return Promise.resolve()
       const existing = returnOperations.get(window.id)
       if (existing) return existing
       const operation = (async () => {
@@ -2445,30 +2509,39 @@ export function registerBrowser(
         if (pending) {
           await waitForAdoption(pending.target, pending.keys)
           pendingReturns.delete(window.id)
-          return
         }
         const returningState = () => {
           const state = workspaceState(window)
-          return pinned
+          return !detachedWorkspaces.has(window)
             ? {
-                tabs: state.tabs.filter(({ key }) => key === pinned.key),
-                activeId: state.tabs.find(({ key }) => key === pinned.key)?.tab.id ?? '',
+                tabs: state.tabs.filter(({ key }) => pinned.some(([pin]) => pin === key)),
+                activeId: state.activeId,
               }
             : state
         }
         if (!returningState().tabs.some(({ tab }) => !emptyPlaceholder(tab))) return
-        const target =
-          pinned && !pinned.source.isDestroyed() ? pinned.source : await browserWindows?.main?.()
-        if (!target) throw new Error('The main window is unavailable. Browser tabs were kept here.')
-        await waitForWorkspace(target)
-        const state = returningState()
-        if (!state.tabs.length) return
-        moveWorkspace(window, target, state)
-        if (detachedWindows.get(target.id) === window) detachedWindows.delete(target.id)
-        const keys = new Set(state.tabs.map(({ key }) => key))
-        pendingReturns.set(window.id, { target, keys })
-        await waitForAdoption(target, keys)
-        pendingReturns.delete(window.id)
+        const groups = new Map<BrowserWindow, BrowserWorkspaceState['tabs']>()
+        for (const item of returningState().tabs) {
+          const source = detachedPinnedTabs.get(item.key)?.source
+          const target = source && !source.isDestroyed() ? source : await browserWindows?.main?.()
+          if (!target)
+            throw new Error('The main window is unavailable. Browser tabs were kept here.')
+          const tabs = groups.get(target) ?? []
+          tabs.push(item)
+          groups.set(target, tabs)
+        }
+        for (const [target, tabs] of groups) {
+          await waitForWorkspace(target)
+          const state = returningState()
+          const keys = new Set(tabs.map(({ key }) => key))
+          const incoming = state.tabs.filter(({ key }) => keys.has(key))
+          if (!incoming.length) continue
+          moveWorkspace(window, target, { tabs: incoming, activeId: state.activeId })
+          if (detachedWindows.get(target.id) === window) detachedWindows.delete(target.id)
+          pendingReturns.set(window.id, { target, keys })
+          await waitForAdoption(target, keys)
+          pendingReturns.delete(window.id)
+        }
       })().finally(() => returnOperations.delete(window.id))
       returnOperations.set(window.id, operation)
       return operation
@@ -2525,6 +2598,7 @@ export function registerBrowser(
       windowTabs.clear()
       workspaceStates.clear()
       detachedWindows.clear()
+      detachedPinnedTabs.clear()
       persistedKeys.clear()
       pendingReturns.clear()
       profileWindows.clear()

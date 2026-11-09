@@ -320,6 +320,30 @@ it('persists manual drags without altering identity, lifecycle or the active tab
   expect(readSharedBrowserTabs().state?.active).toBe(local.id)
   expect(tabs).toEqual([local, preview, remote])
 })
+it('keeps detached pinned shortcuts in their manual slots across reload and reorder', () => {
+  storage()
+  const first = { ...local, id: 'first', pinned: true }
+  const detached = {
+    ...remote,
+    id: 'detached',
+    pinned: true,
+    detached: 'original-native-key',
+    nativeKey: 'original-native-key',
+  }
+  const last = { ...local, id: 'last', pinned: true }
+  saveSharedBrowserTabs({ tabs: [first, detached, last, local], active: local.id })
+  const restored = readSharedBrowserTabs().state!
+  expect(restored.tabs[1]).toMatchObject(detached)
+  expect(recentBrowserTabs(restored.tabs).map((tab) => tab.id)).toEqual([
+    'first',
+    'detached',
+    'last',
+    'local',
+  ])
+  const reordered = reorderBrowserTabs(restored.tabs, 'detached', 'first', 'before', true)
+  saveSharedBrowserTabs({ tabs: reordered, active: local.id })
+  expect(readSharedBrowserTabs().state?.tabs[0]).toMatchObject(detached)
+})
 it('reorders pinned tabs even in activity mode and rejects cross-group, hidden and automatic moves', () => {
   const first = { ...local, id: 'pin-a', pinned: true },
     second = { ...remote, id: 'pin-b', pinned: true }

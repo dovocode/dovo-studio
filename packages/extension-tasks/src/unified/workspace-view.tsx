@@ -376,13 +376,26 @@ function WorkspaceContent() {
     store.switchRuntime,
     switchAttempt,
   ])
-  const open = useCallback((tab: WorkspaceTab) => {
-    if (tab.kind === 'browser')
-      setBrowserTabs((previous) =>
-        previous?.map((page) => (page.id === tab.id ? wakeBrowserTab(page) : page)),
-      )
-    setState((previous) => openWorkspaceTab(previous, tab))
-  }, [])
+  const open = useCallback(
+    (tab: WorkspaceTab) => {
+      const page =
+        tab.kind === 'browser' ? browserTabs?.find((page) => page.id === tab.id) : undefined
+      if (page?.detached && host.browser) {
+        void host
+          .browser({ action: 'focus-detached-browser', key: page.detached })
+          .catch((cause) =>
+            setLifecycleError(cause instanceof Error ? cause.message : String(cause)),
+          )
+        return
+      }
+      if (tab.kind === 'browser')
+        setBrowserTabs((previous) =>
+          previous?.map((page) => (page.id === tab.id ? wakeBrowserTab(page) : page)),
+        )
+      setState((previous) => openWorkspaceTab(previous, tab))
+    },
+    [browserTabs, host.browser],
+  )
   const openBrowser = useCallback(
     (id: string) => open({ kind: 'browser', runtimeId: '', id }),
     [open],
@@ -730,7 +743,11 @@ function WorkspaceContent() {
           pinned={resource.pinned}
           settled={resource.status === 'settled'}
           snoozedUntil={resource.snoozedUntil}
-          disabled={pendingActions.has(key) || resource.offline}
+          disabled={
+            pendingActions.has(key) ||
+            resource.offline ||
+            (resource.row.kind === 'browser' && !!resource.row.page.detached)
+          }
           settleDisabled={resource.settleDisabled}
           onPin={() => runLifecycle(resource.tab, resource.pin)}
           onSettle={() => runLifecycle(resource.tab, resource.settle)}
@@ -1027,7 +1044,7 @@ function WorkspaceContent() {
                                   <div
                                     role="group"
                                     aria-label="Pinned browser tabs"
-                                    className="studio-browser-pins mb-1.5 grid grid-cols-[repeat(auto-fill,minmax(3rem,1fr))] gap-1.5"
+                                    className="studio-browser-pins studio-browser-pin-grid mb-1.5"
                                   >
                                     {section.items
                                       .filter((item) => item.tab.kind === 'browser')

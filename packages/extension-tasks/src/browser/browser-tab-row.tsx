@@ -146,6 +146,7 @@ export function BrowserTabRow({
           data-browser-tab-id={tab.id}
           data-active={active || undefined}
           data-pinned={tab.pinned || undefined}
+          data-detached={!!tab.detached || undefined}
           draggable={!!reorder}
           onDragStart={reorder?.onDragStart}
           onDragOver={reorder?.onDragOver}
@@ -202,11 +203,28 @@ export function BrowserTabRow({
               )
             }}
             aria-current={active ? 'page' : undefined}
-            aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
+            aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}${tab.detached ? ' · Open in detached window' : ''}`}
             onClick={onSelect}
-            title={`${title}\n${tab.url}\n${computer} · ${profile}${studioId ? `\nStudio ID: ${studioId}` : ''}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
+            title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.detached ? '\nOpen in detached window' : ''}${studioId ? `\nStudio ID: ${studioId}` : ''}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
             className={`studio-browser-tab-select min-w-0 text-left text-xs ${tab.pinned ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
           >
+            {tab.pinned && (
+              <span
+                className="studio-browser-pin-status"
+                data-awake={
+                  !!state || keepsAwake || (tab.kind === 'remote' && owner?.connected) || undefined
+                }
+                aria-label={
+                  keepsAwake
+                    ? 'Kept awake'
+                    : state
+                      ? 'Page loaded'
+                      : tab.kind === 'remote' && owner?.connected
+                        ? 'Computer online'
+                        : 'Page sleeping'
+                }
+              />
+            )}
             <span
               className={cn(
                 'studio-browser-tab-source relative inline-flex shrink-0 justify-center',
@@ -233,7 +251,7 @@ export function BrowserTabRow({
                     {badge === 'unread' ? null : badge > 99 ? '99+' : badge}
                   </span>
                 )}
-                {keepsAwake && (
+                {keepsAwake && !tab.pinned && (
                   <span
                     aria-label="Kept awake"
                     title="Keep awake is on"
@@ -250,6 +268,13 @@ export function BrowserTabRow({
               </>
             )}
           </button>
+          {tab.detached && (
+            <ExternalLink
+              size={10}
+              aria-hidden
+              className="pointer-events-none absolute bottom-1 right-1 text-muted-foreground"
+            />
+          )}
           <BrowserTabActivity state={state} title={title} pinned={tab.pinned} onMute={onMute} />
           {!tab.pinned && (
             <div className="studio-browser-tab-actions flex shrink-0 items-center gap-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">

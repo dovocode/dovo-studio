@@ -5,7 +5,7 @@ import { nativeTodoSummary, responses, type PendingMessage, type Task } from '@d
 import { MessageQueue } from '../thread/message-queue'
 import { NativeTodos } from '../thread/native-todos'
 
-/** Keep progress and queued follow-ups attached to the input, with one visible panel. */
+/** Keep progress and queued follow-ups above the input, with one visible panel. */
 export function ComposerActivity({
   task,
   pending,
@@ -57,7 +57,7 @@ export function ComposerActivity({
     <section
       ref={section}
       aria-label="Composer activity"
-      className="relative mx-auto mb-0 w-full max-w-[var(--chat-max)] overflow-hidden rounded-t-xl border border-b-0 border-border/70 bg-card text-[0.8125rem]"
+      className="relative mx-auto mb-2 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-24px)] overflow-hidden rounded-xl border border-border/70 bg-card text-[0.8125rem]"
     >
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {`${task.queue?.length ?? 0} queued ${(task.queue?.length ?? 0) === 1 ? 'message' : 'messages'}${pausedCount ? `, ${pausedCount} paused` : ''}`}

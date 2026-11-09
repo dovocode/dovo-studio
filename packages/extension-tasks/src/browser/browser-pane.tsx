@@ -488,7 +488,12 @@ function BrowserContent({
         : Promise.reject(new Error('This tab’s computer is offline or no longer paired.'))
       : request(path, input, schema, method)
   const profileId = selectedTab.profileId ?? 'default'
-  const nativeKey = (id: string) => nativeTabKeys.get(`${scope}:${id}`) ?? `${scope}:${id}`
+  const nativeKey = (id: string) => {
+    const tab = currentTabs.current.find((tab) => tab.id === id)
+    return (
+      tab?.detached ?? tab?.nativeKey ?? nativeTabKeys.get(`${scope}:${id}`) ?? `${scope}:${id}`
+    )
+  }
   const routingProfiles = useRef(profiles)
   routingProfiles.current = profiles
   const awakeCommands = useRef(new Map<string, string>())
@@ -496,7 +501,7 @@ function BrowserContent({
   useEffect(() => {
     if (!shared || !browser) return
     for (const tab of tabs) {
-      if (tab.kind !== 'web' || !/^https?:\/\//i.test(tab.url)) continue
+      if (tab.detached || tab.kind !== 'web' || !/^https?:\/\//i.test(tab.url)) continue
       const key = nativeKey(tab.id)
       const sleeping = browserTabCategory(tab) !== 'active'
       if (!sleeping && !browserTabKeepsAwake(tab) && !awakeCommands.current.has(key)) continue
@@ -541,7 +546,8 @@ function BrowserContent({
     if (!browser || !shared) return
     const sources = tabs.flatMap((tab) => {
       const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
-      return tab.kind === 'remote' &&
+      return !tab.detached &&
+        tab.kind === 'remote' &&
         owner?.connected &&
         owner.profile.connection &&
         /^https?:\/\//i.test(tab.url)
@@ -630,6 +636,12 @@ function BrowserContent({
     if (tab) selectTab(tab, false)
   }, [workspaceControl?.focusTabId])
   const selectTab = (tab: BrowserTab, notify = true) => {
+    if (tab.detached && browser) {
+      void browser({ action: 'focus-detached-browser', key: tab.detached }).catch((cause) =>
+        setError(`Could not focus the detached tab: ${String(cause)}`),
+      )
+      return
+    }
     // A hidden pane may follow native/agent focus, but never pulls the owner to the browser.
     if (notify && paneVisible) workspaceControl?.onSelect(tab.id)
     previewRequest.current++
@@ -856,10 +868,12 @@ function BrowserContent({
       }).catch((cause) => setError(`Could not sync browser tabs: ${String(cause)}`))
   }, [shared, tabs, activeTab, closed, storageWindowId, browser, activeRuntimeId, scope])
   const workspaceTabs = (snapshot = currentTabs.current) =>
-    snapshot.map((tab) => ({
-      key: nativeKey(tab.id),
-      tab: { ...tab, title: tab.title.slice(0, 4096) },
-    }))
+    snapshot
+      .filter((tab) => !tab.detached)
+      .map((tab) => ({
+        key: nativeKey(tab.id),
+        tab: { ...tab, title: tab.title.slice(0, 4096) },
+      }))
   const lastLibrary = useRef({ bookmarks, visits })
   useEffect(() => {
     if (!shared) return
@@ -998,24 +1012,21 @@ function BrowserContent({
       const ids = new Set(moving.map(({ tab }) => tab.id))
       for (const id of ids) nativeTabKeys.delete(`${scope}:${id}`)
       const remaining = currentTabs.current.filter((tab) => !ids.has(tab.id))
-      const next = remaining.length
-        ? remaining
-        : [
-            {
-              id: randomUUID(),
-              url: '',
-              title: '',
-              kind: 'web' as const,
-              profileId: 'default',
-              runtimeId: store.localRuntimeId ?? undefined,
-            },
-          ]
+      const fallback = remaining.find((tab) => !tab.detached) ?? {
+        id: randomUUID(),
+        url: '',
+        title: '',
+        kind: 'web' as const,
+        profileId: 'default',
+        runtimeId: store.localRuntimeId ?? undefined,
+      }
+      const next = remaining.includes(fallback) ? remaining : [...remaining, fallback]
       // Commit and persist the source workspace before navigation unmounts it.
       // Otherwise its saved tab list still contains pages owned by the new window.
       flushSync(() => {
         currentTabs.current = next
         setTabs(next)
-        selectTab(next[0])
+        selectTab(fallback)
       })
       if (!browserWindowId) navigateStudio({ viewId: 'tasks' })
     })
@@ -1180,19 +1191,35 @@ function BrowserContent({
             const remaining = currentTabs.current.filter(
               (tab) => !closedIds.has(tab.id) && !placeholder(tab),
             )
-            const incoming = (state.movedTabs ?? [])
-              .map(({ key, tab }) => {
-                nativeTabKeys.set(`${scope}:${tab.id}`, key)
+            const incoming = (state.movedTabs ?? []).map(({ key, tab }) => {
+              nativeTabKeys.set(`${scope}:${tab.id}`, key)
+              return { ...tab, nativeKey: key }
+            })
+            // A returned pinned page replaces its shortcut at the same position.
+            const merge = (kept: BrowserTab[]) => {
+              const next = kept.map((tab) => {
+                const returned = incoming.find((item) => item.id === tab.id)
+                if (returned) return { ...returned, detached: undefined }
+                if (
+                  tab.detached &&
+                  state.detachedTabs &&
+                  !state.detachedTabs.includes(tab.detached)
+                )
+                  return { ...tab, detached: undefined }
                 return tab
               })
-              .filter((tab) => !remaining.some((item) => item.id === tab.id))
+              return [
+                ...next,
+                ...incoming.filter((tab) => !next.some((item) => item.id === tab.id)),
+              ]
+            }
             const additions = (state.createdTabs ?? []).filter(
               (tab) =>
                 !tab.url ||
                 /^https?:\/\//i.test(tab.url) ||
                 /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
             )
-            const capacity = Math.max(0, 100 - remaining.length - incoming.length)
+            const capacity = Math.max(0, 100 - merge(remaining).length)
             const identities = new Map(
               additions.slice(0, capacity).map((tab) => [tab.key, randomUUID()]),
             )
@@ -1224,7 +1251,15 @@ function BrowserContent({
                 setError(`Could not close an extra extension tab: ${String(cause)}`),
               )
             if (rejected.length) setError('Close a tab before opening more extension tabs.')
-            if (closedKeys.size || adopted.length || incoming.length) {
+            if (
+              closedKeys.size ||
+              adopted.length ||
+              incoming.length ||
+              currentTabs.current.some(
+                (tab) =>
+                  tab.detached && state.detachedTabs && !state.detachedTabs.includes(tab.detached),
+              )
+            ) {
               const fallback: BrowserTab = {
                 id: randomUUID(),
                 url: '',
@@ -1232,17 +1267,19 @@ function BrowserContent({
                 kind: 'web',
                 profileId: 'default',
               }
-              const next = [...remaining, ...incoming, ...adopted]
-              currentTabs.current = next.length ? next : [fallback]
+              const withLocalTab = (tabs: BrowserTab[]) =>
+                tabs.some((tab) => !tab.detached) ? tabs : [...tabs, fallback]
+              currentTabs.current = withLocalTab([...merge(remaining), ...adopted])
               setTabs((previous) => {
                 const kept = previous.filter((tab) => !closedIds.has(tab.id) && !placeholder(tab))
-                const next = [...kept, ...incoming, ...adopted].slice(0, 100)
-                return next.length ? next : [fallback]
+                const next = [...merge(kept), ...adopted].slice(0, 100)
+                return withLocalTab(next)
               })
               if (closedKeys.has(browserKey))
                 selectTab(
-                  currentTabs.current.find((tab) => tab.id === previousSelected?.previewOf) ??
-                    currentTabs.current[0],
+                  currentTabs.current.find(
+                    (tab) => tab.id === previousSelected?.previewOf && !tab.detached,
+                  ) ?? currentTabs.current.find((tab) => !tab.detached)!,
                 )
               let foreground = -1
               additions.slice(0, capacity).forEach((tab, index) => {
@@ -1379,7 +1416,13 @@ function BrowserContent({
     }
   }, [browser, browserKey, mode])
   useEffect(() => {
-    if (!browser || (!url && !nativeTabKeys.has(`${scope}:${activeTab}`)) || mode !== 'web') return
+    if (
+      !browser ||
+      selectedTab.detached ||
+      (!url && !nativeTabKeys.has(`${scope}:${activeTab}`)) ||
+      mode !== 'web'
+    )
+      return
     let alive = true
     let frame: number | undefined
     let previousCommand = ''
@@ -1535,6 +1578,7 @@ function BrowserContent({
     agentAccess,
     studioBrowsersLocal,
     selectedTab.id,
+    selectedTab.detached,
     selectedTab.keepAwake,
     paneVisible,
   ])
@@ -1587,9 +1631,10 @@ function BrowserContent({
     if (dispose && shared && restorableTab(tab))
       setClosed((previous) => [tab, ...previous].slice(0, 20))
     const remaining = currentTabs.current.filter((item) => item.id !== tab.id)
-    const next: BrowserTab[] = remaining.length
+    const next: BrowserTab[] = remaining.some((item) => !item.detached)
       ? remaining
       : [
+          ...remaining,
           {
             id: randomUUID(),
             url: '',
@@ -1601,11 +1646,13 @@ function BrowserContent({
         ]
     currentTabs.current = next
     setTabs(next)
-    if (activeTab === tab.id)
-      selectTab(
-        next.find((item) => item.id === tab.previewOf) ??
-          next[Math.min(tabs.indexOf(tab), next.length - 1)],
-      )
+    if (activeTab === tab.id) {
+      const replacement =
+        next.find((item) => item.id === tab.previewOf && !item.detached) ??
+        next[Math.min(tabs.indexOf(tab), next.length - 1)]
+      const local = replacement.detached ? next.find((item) => !item.detached) : replacement
+      if (local) selectTab(local)
+    }
     if (dispose)
       void disposeTab(tab).catch((cause) => setError(`Could not close tab: ${String(cause)}`))
   }
@@ -1978,8 +2025,8 @@ function BrowserContent({
             }
           : undefined
       }
-      active={activeTab === tab.id}
-      busy={busy}
+      active={!tab.detached && activeTab === tab.id}
+      busy={busy || !!tab.detached}
       reorder={
         !busy && tabDragGroup(tab)
           ? {
@@ -2072,14 +2119,36 @@ function BrowserContent({
         browser && shared
           ? (targetWindowId) =>
               void act(async () => {
-                await browser({
+                if (
+                  tab.pinned &&
+                  targetWindowId === undefined &&
+                  currentTabs.current.length >= 100 &&
+                  !currentTabs.current.some((item) => item.id !== tab.id && !item.detached)
+                )
+                  throw new Error('Close a tab before detaching the last page.')
+                const key = nativeKey(tab.id)
+                const result = await browser({
                   action: 'move-tab',
-                  key: nativeKey(tab.id),
+                  key,
                   tab: { ...tab, title: tab.title.slice(0, 4096) },
                   targetWindowId,
                 })
-                nativeTabKeys.delete(`${scope}:${tab.id}`)
-                removeTab(tab, false)
+                if (result?.detachedTabs?.includes(key)) {
+                  const next = currentTabs.current.map((item) =>
+                    item.id === tab.id ? { ...item, detached: key } : item,
+                  )
+                  let fallback = next.find((item) => !item.detached)
+                  if (!fallback) {
+                    fallback = { ...emptyBrowserTab, id: randomUUID() }
+                    next.push(fallback)
+                  }
+                  currentTabs.current = next
+                  setTabs(next)
+                  if (activeTabRef.current === tab.id) selectTab(fallback)
+                } else {
+                  nativeTabKeys.delete(`${scope}:${tab.id}`)
+                  removeTab(tab, false)
+                }
               })
           : undefined
       }
@@ -3121,7 +3190,7 @@ function BrowserContent({
                                   {pinnedTabs.length}
                                 </span>
                               </div>
-                              <div className="grid grid-cols-[repeat(auto-fill,minmax(3rem,1fr))] gap-1.5">
+                              <div className="studio-browser-pin-grid">
                                 {pinnedTabs.map(renderTab)}
                               </div>
                             </section>
@@ -3367,7 +3436,9 @@ function BrowserContent({
         </p>
       )}
       {tabs
-        .filter((tab) => tab.kind === 'remote' && (!shared || openedTabs.has(tab.id)))
+        .filter(
+          (tab) => !tab.detached && tab.kind === 'remote' && (!shared || openedTabs.has(tab.id)),
+        )
         .map((tab) => (
           <div
             key={tab.id}

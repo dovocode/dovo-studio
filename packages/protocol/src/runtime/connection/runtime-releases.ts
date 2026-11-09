@@ -49,6 +49,7 @@ async function fetchGitHubReleases(fetcher: typeof fetch): Promise<RuntimeReleas
     if ('draft' in item && item.draft !== false) continue
     if (!item.html_url.startsWith('https://github.com/dovocode/dovo-studio/releases/')) continue
     const channel = item.tag_name.includes('-nightly.') ? 'nightly' : 'stable'
+    if (channel === 'stable' && 'prerelease' in item && item.prerelease !== false) continue
     const release = {
       version: item.tag_name.replace(/^v/, ''),
       notes: 'body' in item && typeof item.body === 'string' ? item.body : '',

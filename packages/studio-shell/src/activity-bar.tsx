@@ -83,6 +83,7 @@ export function ActivityBar({
   onUpdate,
   onCheckUpdates,
   onDetachBrowser,
+  indicators,
 }: {
   views: readonly StudioView[]
   activeId: string
@@ -91,6 +92,7 @@ export function ActivityBar({
   onUpdate?: () => void
   onCheckUpdates?: () => void
   onDetachBrowser?: () => void
+  indicators?: Readonly<Record<string, 'unread' | 'attention' | undefined>>
 }) {
   const sidebar = useNavigationSidebar()
   const [updateOpen, setUpdateOpen] = useState(false)
@@ -122,11 +124,15 @@ export function ActivityBar({
     selected: boolean,
     select: () => void,
   ) => {
+    const indicator = indicators?.[id]
+    const notice = indicator === 'attention' ? 'Needs input' : 'Unread notifications'
     const button = (
       <Button
         variant="ghost"
         size="icon"
         aria-label={label}
+        aria-description={indicator ? notice : undefined}
+        data-notification={indicator}
         aria-current={selected ? 'page' : undefined}
         aria-expanded={selected && sidebar?.collapsible ? !sidebar.collapsed : undefined}
         className={cn('studio-navigation-item', selected && 'is-active')}
@@ -138,6 +144,13 @@ export function ActivityBar({
       >
         <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
         <span className="studio-navigation-label">{label}</span>
+        {indicator && (
+          <span
+            className="studio-navigation-notification"
+            role="status"
+            aria-label={`${label}: ${notice}`}
+          />
+        )}
       </Button>
     )
     return (
@@ -153,6 +166,7 @@ export function ActivityBar({
           {selected && sidebar?.collapsible
             ? `${label} · ${sidebar.collapsed ? 'Show' : 'Hide'} sidebar`
             : label}
+          {indicator && ` · ${notice}`}
         </TooltipContent>
       </Tooltip>
     )
