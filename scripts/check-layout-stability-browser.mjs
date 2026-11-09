@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const ui = root + 'packages/studio-ui/src/'
 const mobile = root + 'apps/mobile/src/'
 const native = `
+export const Platform={OS:'ios'};
 const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s??{};
 const css=s=>{const v=flat(s);const result={...v};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
 export const View=({children,style,accessibilityLabel,accessibilityState})=><div aria-label={accessibilityLabel} aria-busy={accessibilityState?.busy} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',...css(style)}}>{children}</div>;
@@ -56,6 +57,11 @@ function App(){const [state,setState]=useState('clean');window.setSaveState=setS
     { path: './settings-controls', importer: mobile + 'screens/', contents: native },
     { path: '../ui/content/text', importer: mobile + 'screens/', contents: native },
     { path: '../ui/theme', importer: mobile + 'screens/', contents: native },
+    { path: '../theme', importer: mobile + 'ui/layout/', contents: native },
+    {
+      path: 'expo-glass-effect',
+      contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>false,isLiquidGlassAvailable=()=>false;`,
+    },
   ],
 )
 const server = await createServer({

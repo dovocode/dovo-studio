@@ -1022,7 +1022,6 @@ export function Composer({
             borderRadius: 26,
             padding: 3,
             gap: 0,
-            backgroundColor: colors.surface,
             borderWidth: 1,
             borderColor: focused ? colors.accent : colors.border,
           }}

@@ -14,6 +14,7 @@ import { View, ScrollView, Pressable } from 'react-native'
 import { SettingsAction } from './settings-controls'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
+import { Glass } from '../ui/layout/glass'
 
 export const SettingsFooterContext = createContext<((footer: ReactNode) => void) | null>(null)
 
@@ -76,6 +77,13 @@ export function SettingsSaveBar({
     }
   }, [saveError, dirty])
   const count = changeCount || changes.length || 1
+  const status = saving
+    ? 'Saving…'
+    : dirty
+      ? `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
+      : saved
+        ? 'Changes saved.'
+        : 'No unsaved changes'
   const changesKey = JSON.stringify(changes)
   const content = useMemo(
     () => (
@@ -84,110 +92,104 @@ export function SettingsSaveBar({
         accessibilityState={{ busy: saving }}
         style={{
           ...contentColumn.form,
-          gap: 8,
-          padding: 12,
-          borderTopWidth: 1,
-          borderColor: dirty ? colors.border : 'transparent',
-          backgroundColor: colors.background,
+          paddingHorizontal: 12,
+          paddingVertical: 8,
         }}
       >
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Review unsaved settings changes"
-            accessibilityState={{ expanded: review, disabled: !dirty }}
-            disabled={!dirty || !changes.length}
-            onPress={() => setReview((value) => !value)}
-            style={{
-              minHeight: 44,
-              minWidth: 120,
-              flexBasis: 120,
-              flexGrow: 1,
-              flexShrink: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
+        <Glass testID="Settings save surface" style={{ borderRadius: 24, padding: 12, gap: 8 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={dirty && !saving ? 'Review unsaved settings changes' : status}
+              accessibilityValue={dirty && !saving ? { text: status } : undefined}
+              accessibilityState={{ expanded: review, disabled: !dirty }}
+              disabled={!dirty || !changes.length}
+              onPress={() => setReview((value) => !value)}
+              style={{
+                minHeight: 44,
+                minWidth: 120,
+                flexBasis: 120,
+                flexGrow: 1,
+                flexShrink: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <View
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: colors.warning,
+                  opacity: dirty ? 1 : 0,
+                }}
+              />
+              <Text accessibilityLiveRegion="polite" style={[styles.muted, { flexShrink: 1 }]}>
+                {status}
+              </Text>
+            </Pressable>
             <View
               style={{
-                width: 6,
-                height: 6,
-                borderRadius: 3,
-                backgroundColor: colors.warning,
-                opacity: dirty ? 1 : 0,
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+                flexGrow: 1,
+                gap: 12,
               }}
-            />
-            <Text accessibilityLiveRegion="polite" style={[styles.muted, { flexShrink: 1 }]}>
-              {saving
-                ? 'Saving…'
-                : dirty
-                  ? `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
-                  : saved
-                    ? 'Changes saved.'
-                    : 'No unsaved changes'}
-            </Text>
-          </Pressable>
-          <View
-            style={{
-              flexDirection: 'row',
-              flexWrap: 'wrap',
-              justifyContent: 'flex-end',
-              flexGrow: 1,
-              gap: 12,
-            }}
-          >
-            <SettingsAction
-              secondary
-              label="Discard"
-              disabled={!dirty || saving}
-              onPress={() => handlers.current.onDiscard()}
-            />
-            <SettingsAction
-              label={saveLabel}
-              disabled={!dirty || saving || disabled}
-              onPress={() => handlers.current.onSave()}
-            />
+            >
+              <SettingsAction
+                secondary
+                label="Discard"
+                disabled={!dirty || saving}
+                onPress={() => handlers.current.onDiscard()}
+              />
+              <SettingsAction
+                label={saveLabel}
+                disabled={!dirty || saving || disabled}
+                onPress={() => handlers.current.onSave()}
+              />
+            </View>
           </View>
-        </View>
-        {dirty && review && (
-          <ScrollView style={{ maxHeight: 180 }} accessibilityLabel="Settings change review">
-            <Text style={styles.text}>Your changes</Text>
-            {changes.map((change) => (
-              <View key={change.key} style={{ paddingVertical: 4 }}>
-                <Text style={styles.text}>{change.label}</Text>
-                <Text style={styles.muted}>
-                  {change.before} → {change.after}
-                </Text>
-              </View>
-            ))}
-            {latest && (
-              <>
-                <Text style={styles.text}>Latest saved changes · your draft is kept</Text>
-                {latest.length ? (
-                  latest.map((change) => (
-                    <View key={change.key} style={{ paddingVertical: 4 }}>
-                      <Text style={styles.text}>{change.label}</Text>
-                      <Text style={styles.muted}>
-                        {change.before} → {change.after}
-                      </Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.muted}>No remotely changed fields found.</Text>
-                )}
-                <Text style={styles.muted}>
-                  Discard and reload to use the latest saved settings.
-                </Text>
-              </>
-            )}
-          </ScrollView>
-        )}
-        {!!reviewError && (
-          <Text accessibilityRole="alert" style={styles.error}>
-            Could not read latest saved changes: {reviewError}. Your draft is kept.
-          </Text>
-        )}
+          {dirty && review && (
+            <ScrollView style={{ maxHeight: 180 }} accessibilityLabel="Settings change review">
+              <Text style={styles.text}>Your changes</Text>
+              {changes.map((change) => (
+                <View key={change.key} style={{ paddingVertical: 4 }}>
+                  <Text style={styles.text}>{change.label}</Text>
+                  <Text style={styles.muted}>
+                    {change.before} → {change.after}
+                  </Text>
+                </View>
+              ))}
+              {latest && (
+                <>
+                  <Text style={styles.text}>Latest saved changes · your draft is kept</Text>
+                  {latest.length ? (
+                    latest.map((change) => (
+                      <View key={change.key} style={{ paddingVertical: 4 }}>
+                        <Text style={styles.text}>{change.label}</Text>
+                        <Text style={styles.muted}>
+                          {change.before} → {change.after}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.muted}>No remotely changed fields found.</Text>
+                  )}
+                  <Text style={styles.muted}>
+                    Discard and reload to use the latest saved settings.
+                  </Text>
+                </>
+              )}
+            </ScrollView>
+          )}
+          {!!reviewError && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              Could not read latest saved changes: {reviewError}. Your draft is kept.
+            </Text>
+          )}
+        </Glass>
       </View>
     ),
     [
@@ -197,6 +199,7 @@ export function SettingsSaveBar({
       disabled,
       saved,
       count,
+      status,
       changesKey,
       colors,
       styles,

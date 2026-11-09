@@ -336,6 +336,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 </Disclosure>
               )}
               <SettingsSaveBar
+                surface="embedded"
                 saveLabel={selection ? 'Save selection model' : 'Save title settings'}
                 dirty={dirty}
                 saving={busy}

@@ -356,7 +356,8 @@ export function SettingsSaveBar({
         : description
   return (
     <div
-      className={`studio-settings-savebar ${surface === 'embedded' ? 'studio-settings-savebar-embedded' : ''} sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-none border-t border-border/70 bg-background py-3 shadow-none`}
+      className={`studio-settings-savebar ${surface === 'embedded' ? 'studio-settings-savebar-embedded' : 'sticky'} z-10 flex flex-wrap items-center justify-between gap-3`}
+      data-settings-sticky-actions={surface === 'page' ? '' : undefined}
       role="group"
       aria-label="Settings save actions"
       aria-busy={saving}

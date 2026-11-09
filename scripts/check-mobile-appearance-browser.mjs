@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise native input identity and imperative updates; RN Web replacements are covered by Storybook.
 const mocks = {
   'react-native-reanimated': `import {View} from 'react-native';const transition={duration:()=>transition,easing:()=>transition,reduceMotion:()=>transition};export const Easing={bezier:()=>undefined},LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View};`,
-  'expo-glass-effect': `import {StyleSheet} from 'react-native';export const isGlassEffectAPIAvailable=()=>true,isLiquidGlassAvailable=()=>true;export const GlassView=({children,glassEffectStyle,style})=><div data-testid="Native glass" data-glass-effect={glassEffectStyle} style={StyleSheet.flatten(style)}>{children}</div>;`,
+  'expo-glass-effect': `import {useLayoutEffect} from 'react';import {StyleSheet} from 'react-native';export const isGlassEffectAPIAvailable=()=>window.nativeGlassAvailable!==false,isLiquidGlassAvailable=()=>window.nativeGlassAvailable!==false;export const GlassView=({children,glassEffectStyle,style})=>{useLayoutEffect(()=>{window.glassMounts.push(glassEffectStyle)},[]);return <div data-testid="Native glass" data-glass-effect={glassEffectStyle} style={StyleSheet.flatten(style)}>{children}</div>};`,
   'expo-document-picker': `export const getDocumentAsync=async()=>window.themeFile?{canceled:false,assets:[{uri:'theme.jsonc',name:'native.jsonc'}]}:{canceled:true};`,
   'expo-file-system': `export class File{get size(){return window.themeFile.length}async text(){return window.themeFile}}`,
   'react-native': `
@@ -21,7 +21,7 @@ const mocks = {
     export const Platform={OS:'ios'};
     export const Linking={openURL:async()=>{}};
     export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
-    const transparencyListeners=new Set();window.setReduceTransparency=value=>transparencyListeners.forEach(listener=>listener(value));export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,isReduceTransparencyEnabled:async()=>false,addEventListener:(event,listener)=>{if(event==='reduceTransparencyChanged')transparencyListeners.add(listener);return {remove(){transparencyListeners.delete(listener)}}}};
+    const transparencyListeners=new Set(),contrastListeners=new Set();window.setReduceTransparency=value=>transparencyListeners.forEach(listener=>listener(value));window.setSystemContrast=value=>contrastListeners.forEach(listener=>listener(value));export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,isReduceTransparencyEnabled:()=>{window.transparencyReads++;return window.delaySystemReads?new Promise(resolve=>window.resolveTransparency=resolve):Promise.resolve(false)},isDarkerSystemColorsEnabled:()=>window.delaySystemReads?new Promise(resolve=>window.resolveContrast=resolve):Promise.resolve(false),addEventListener:(event,listener)=>{const listeners=event==='reduceTransparencyChanged'?transparencyListeners:event==='darkerSystemColorsChanged'?contrastListeners:new Set();listeners.add(listener);return {remove(){listeners.delete(listener)}}}};
     export const View=({children,style,testID})=><div data-testid={testID} style={{display:"flex",flexDirection:"column",flexShrink:0,...nativeStyle(style)}}>{children}</div>;
     export const ScrollView=({children,contentContainerStyle})=><div style={{display:"flex",flexDirection:"column",...nativeStyle(contentContainerStyle)}}>{children}</div>;
     export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,accessibilityRole})=><button disabled={disabled} role={accessibilityRole} aria-label={accessibilityLabel} aria-checked={accessibilityState?.checked} aria-selected={accessibilityRole==='tab'?accessibilityState?.selected:undefined} style={{display:'flex',flexDirection:'column',flexShrink:0,border:0,background:'transparent',textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>;
@@ -71,20 +71,21 @@ const built = await build({
       import {ComposerField} from './src/tasks/composer/composer-field';
       import {useDraft} from './src/tasks/draft/use-draft';
       import {useMobilePreferences,updateMobilePreferences} from './src/runtime/preferences/app-preferences';
-      window.fieldMounts=0;window.draftMounts=0;
+      window.fieldMounts=0;window.draftMounts=0;window.glassMounts=[];window.transparencyReads=0;
+      function LaterGlass(){const [visible,setVisible]=useState(false);window.mountLaterGlass=setVisible;return visible?<Glass><span>Later control</span></Glass>:null;}
       function Draft(){
-        const {colors,mode,palette,code}=useTheme();
+        const {colors,mode,palette,code,highContrast,reduceTransparency}=useTheme();
         const preferences=useMobilePreferences();const draft=useDraft('task','');
         const [sending,setSending]=useState(false);const [tab,setTab]=useState('overview');
         useEffect(()=>{window.draftMounts++},[]);
-        window.currentTheme={colors,mode,palette,code};window.preferences=preferences;
+        window.currentTheme={colors,mode,palette,code,highContrast,reduceTransparency};window.preferences=preferences;
         window.configure=updateMobilePreferences;window.setSending=setSending;
         return <div id="draft" style={{background:colors.background,color:colors.text}}>
           <ComposerField value={sending?'':draft.text} revision={JSON.stringify([draft.revision,sending])} onChangeText={text=>draft.update(text,'keyboard')} onSelectionChange={()=>{}} editable={draft.ready&&!sending} showOptions trailingControlCount={0}/>
           <div id="status-pill"><Pill label="Review changes" onPress={()=>window.pillPresses=(window.pillPresses||0)+1} onDismiss={()=>window.pillDismissed=true}/></div><PullTabs value={tab} items={[{id:"overview",name:"Overview"},{id:"files",name:"Files"}]} onChange={setTab}/><span id="error" style={{color:colors.error}}>Send failed</span>
         </div>;
       }
-      createRoot(document.getElementById('app')).render(<MobileAppearance><Glass><Draft/></Glass><AppearanceScreen/></MobileAppearance>);
+      createRoot(document.getElementById('app')).render(<MobileAppearance><Glass testID="Draft glass" style={{borderRadius:26,backgroundColor:'transparent',shadowOpacity:0.18}}><Draft/></Glass><LaterGlass/><AppearanceScreen/></MobileAppearance>);
     `,
     resolveDir: root + 'apps/mobile/',
     loader: 'tsx',
@@ -148,8 +149,15 @@ try {
       JSON.stringify({ confirmArchive: true, themePalette: 'retired', timeFormat: '24h' }),
     ),
   )
-  const load = async () => {
+  const load = async (nativeGlassAvailable = true, delaySystemReads = false) => {
     await page.reload()
+    await page.evaluate(
+      ({ nativeGlassAvailable, delaySystemReads }) => {
+        window.nativeGlassAvailable = nativeGlassAvailable
+        window.delaySystemReads = delaySystemReads
+      },
+      { nativeGlassAvailable, delaySystemReads },
+    )
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.waitForFunction(() => window.preferences?.ready)
     await page.getByLabel('Message').waitFor()
@@ -231,6 +239,18 @@ try {
       true,
       'Changing native glass preserves the input, focus and caret',
     )
+    assert.equal(
+      await glass.evaluate((node) => node.style.backgroundColor),
+      highContrast
+        ? await page.evaluate(() => {
+            const probe = document.createElement('div')
+            probe.style.backgroundColor = window.currentTheme.colors.surface
+            return probe.style.backgroundColor
+          })
+        : 'transparent',
+      'High contrast overrides a transparent caller fill',
+    )
+    if (highContrast) assert.equal(await glass.evaluate((node) => node.style.shadowOpacity), '0')
   }
   for (const reduced of [true, false]) {
     await page.evaluate((reduced) => window.setReduceTransparency(reduced), reduced)
@@ -254,8 +274,38 @@ try {
       true,
       'Transparency changes preserve the draft input',
     )
+    if (reduced) {
+      assert.notEqual(await glass.evaluate((node) => node.style.backgroundColor), 'transparent')
+      assert.equal(await glass.evaluate((node) => node.style.shadowOpacity), '0')
+    }
   }
   assert.equal(await glass.getAttribute('data-glass-effect'), 'regular')
+  await page.evaluate(() => window.mountLaterGlass(true))
+  await page.getByText('Later control', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.glassMounts.at(-1)),
+    'regular',
+    'New controls use the resolved preference on their first commit',
+  )
+  assert.equal(
+    await page.evaluate(() => window.transparencyReads),
+    1,
+    'Glass controls share one system preference read',
+  )
+  for (const highContrast of [true, false]) {
+    await page.evaluate((value) => window.setSystemContrast(value), highContrast)
+    await page.waitForFunction(
+      (value) =>
+        document.querySelector('[data-testid="Native glass"]').dataset.glassEffect ===
+        (value ? 'none' : 'regular'),
+      highContrast,
+    )
+    assert.equal(
+      await input.evaluate((node) => node === window.originalInput),
+      true,
+      'System Increase Contrast preserves the draft input',
+    )
+  }
   assert.ok((await pill.boundingBox()).height >= 44)
   const filesTab = page.getByRole('tab', { name: 'Files', exact: true })
   await filesTab.click()
@@ -337,6 +387,33 @@ try {
   await exerciseThemeBrowser(page, catalog, { mobile: true })
   await load()
   await page.waitForFunction(() => window.currentTheme.code.colors.background === '#18202d')
+  await load(true, true)
+  await page.evaluate(() => {
+    window.setReduceTransparency(true)
+    window.setSystemContrast(true)
+    window.resolveTransparency(false)
+    window.resolveContrast(false)
+  })
+  await page.waitForFunction(
+    () => window.currentTheme.highContrast && window.currentTheme.reduceTransparency,
+  )
+  assert.equal(
+    await page.getByTestId('Native glass').first().getAttribute('data-glass-effect'),
+    'none',
+    'A delayed preference read cannot replace a newer accessibility event',
+  )
+  await page.evaluate(() => window.setReduceTransparency(false))
+  assert.equal(
+    await page.getByTestId('Native glass').first().getAttribute('data-glass-effect'),
+    'none',
+    'System contrast remains active after transparency changes',
+  )
+  await load(false)
+  assert.equal(await page.getByTestId('Native glass').count(), 0)
+  const fallback = page.getByTestId('Draft glass')
+  assert.notEqual(await fallback.evaluate((node) => node.style.backgroundColor), 'transparent')
+  assert.equal(await fallback.evaluate((node) => node.style.shadowOpacity), '0')
+  assert.equal(await page.getByLabel('Message').inputValue(), 'Draft survives theme changes')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile Appearance: all shared palettes in light/dark, live system changes, explicit override, migration and persistence; theme changes keep draft, editor, focus, caret and pending-send restoration mounted.',

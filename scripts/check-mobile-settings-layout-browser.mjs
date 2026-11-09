@@ -42,7 +42,7 @@ const native = `
   export const Alert={alert(){}};
   export const Appearance={setColorScheme(){}};
   export const useColorScheme=()=>window.systemMode||'dark';
-  export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,addEventListener:(_event,callback)=>{window.setSystemMotion=callback;return {remove(){}}}};
+  export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,isReduceTransparencyEnabled:async()=>false,isDarkerSystemColorsEnabled:async()=>false,addEventListener:(event,callback)=>{if(event==='reduceMotionChanged')window.setSystemMotion=callback;return {remove(){}}}};
 `
 const swift = `
   import {useState} from 'react';import {View,Text as RNText} from 'react-native';

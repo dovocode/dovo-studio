@@ -51,8 +51,8 @@ controls. Apply backdrop blur only to temporary menus and dialogs. Keep scrollin
 surfaces free of backdrop filters. Browsers without backdrop blur use opaque surfaces. High contrast
 and reduced transparency use opaque surfaces without decorative highlights. The Gradients and Glow
 preferences still control their respective effects. Native mobile uses the same geometry and palette
-with platform controls and opaque surfaces. No refraction engine or pointer tracking runs on thread
-rows. Hosted service chrome keeps its plain presentation.
+with platform controls. No refraction engine or pointer tracking runs on thread rows. Hosted service
+chrome keeps its plain presentation.
 
 Floating surfaces use a 24px blur, richer color and layered edge highlights. Permanent surfaces use
 the same painted highlights without a backdrop filter. This keeps the glass finish visible without
@@ -64,6 +64,11 @@ the window header when the sidebar is hidden. Keyboard focus follows it during c
 The button uses the shared opaque fallback and leaves thread rows unchanged. Compact layouts retain
 their existing navigation.
 
+Desktop sidebar controls and the browser header share painted edge highlights. Keep the composer
+edge visible when its input has focus. Page settings use an inset, rounded save bar above the bottom
+edge. Embedded save actions stay flat inside their parent card. These permanent surfaces use no
+backdrop blur. Keep their geometry stable when effects or themes change.
+
 Grouped choices use a recessed capsule track and a raised selected capsule. Settings and composer
 tabs share this finish. Selection does not move or resize the control. Keep keyboard focus on the
 chosen option and use arrows, Home and End where the component supports them. Wrap settings choices
@@ -71,6 +76,34 @@ at narrow widths and retain 44px touch targets. Browser addresses use the same r
 Toolbars use painted highlights without backdrop blur. Native status pills use `Glass` with the
 existing opaque fallback. Native iOS pickers and switches keep their platform appearance. The
 catalog's **Selection / Inset Glass Controls** story uses these production controls.
+
+Mobile uses native liquid glass for the composer, new-item input, browser toolbar, status capsules
+and inset settings save bar. Keep the checklist and queue above the composer. The browser toolbar
+shares one glass surface across its address and actions. Do not nest glass effects. Keep opaque
+fills off native glass and keep its React parent stable when accessibility settings change. Reduce
+Transparency, high contrast and devices without native glass use an opaque palette surface without a
+shadow. Read system glass preferences in the appearance provider above navigation. New controls must
+use the known values on their first render. iOS Increase Contrast also enables the accessible
+palette. Caller styles must not override the opaque fallback. Thread rows and scrolling content keep
+their existing solid surfaces.
+
+Check mobile glass changes with:
+
+```sh
+pnpm --filter @dovo/mobile typecheck
+pnpm exec playwright install chromium
+node scripts/check-mobile-appearance-browser.mjs
+node scripts/check-mobile-browser-toolbar-browser.mjs
+node scripts/check-mobile-settings-layout-browser.mjs
+node scripts/check-mobile-composer-actions-browser.mjs
+node scripts/check-mobile-workspace-browser.mjs
+```
+
+These browser checks use native adapters. They check layout, fallback styles, actions and input
+identity. They do not prove native refraction or touch behavior. Inspect the production surfaces in
+an iOS simulator and on a device in light and dark mode. Check high contrast and Reduce
+Transparency. Keep an unsaved draft focused while changing appearance. Confirm that its text and
+caret stay put.
 
 Settings rows keep 16px of space at both card edges and 12px above and below their content. Keep
 this inset when controls move below labels in a narrow pane. Dividers span the card width.
@@ -97,8 +130,12 @@ Verify shared surface changes with:
 ```sh
 pnpm --filter @dovo/design --filter @dovo/web-ui build
 pnpm --filter @dovo/desktop build
+pnpm --filter @dovo/web build
 pnpm exec playwright install chromium
 node scripts/check-shared-controls-appearance-browser.mjs
+node scripts/check-general-settings-browser.mjs
+node scripts/check-settings-target-browser.mjs
+node scripts/check-layout-stability-browser.mjs
 node scripts/check-unified-workspace-browser.mjs
 node scripts/check-mobile-settings-layout-browser.mjs
 node scripts/check-image-attachments-browser.mjs

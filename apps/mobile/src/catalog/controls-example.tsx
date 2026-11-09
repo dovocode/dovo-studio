@@ -9,6 +9,7 @@ import { Switch } from '../ui/controls/switch'
 import { Text } from '../ui/content/text'
 import { createMobileTheme, MobileThemeContext, useTheme } from '../ui/theme'
 import { MobileCatalogProviders } from './providers'
+import { useGlassAccessibility } from '../ui/use-glass-accessibility'
 
 /** Shared local-only control specimen for the browser catalog and native Storybook. */
 export function MobileControlsExample({
@@ -18,7 +19,8 @@ export function MobileControlsExample({
   palette?: StudioThemeId
   mode?: StudioThemeMode
 }) {
-  const theme = createMobileTheme(palette, mode)
+  const accessibility = useGlassAccessibility()
+  const theme = createMobileTheme(palette, mode, undefined, accessibility)
   return (
     <MobileCatalogProviders>
       <MobileThemeContext.Provider value={theme}>

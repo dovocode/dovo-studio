@@ -42,13 +42,18 @@ export function createMobileTheme(
   palette: StudioThemeId,
   mode: StudioThemeMode,
   code?: { theme: ReturnType<typeof resolveCodeTheme>; custom: boolean },
-  accessibility: { highContrast?: boolean; colorVision?: 'default' | 'blue-orange' } = {},
+  accessibility: {
+    highContrast?: boolean
+    colorVision?: 'default' | 'blue-orange'
+    reduceTransparency?: boolean
+  } = {},
 ) {
   const colors = createMobileColors(palette, mode, accessibility)
   return {
     palette,
     mode,
     highContrast: !!accessibility.highContrast,
+    reduceTransparency: accessibility.reduceTransparency ?? true,
     reduceMotion: false,
     colors,
     styles: createStyles(colors, !!accessibility.highContrast),

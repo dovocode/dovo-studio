@@ -40,6 +40,7 @@ try {
       '../connection/provider': nativeRuntime,
       '../../runtime/connection/provider': nativeRuntime,
       'react-native': controls,
+      'expo-glass-effect': `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>false,isLiquidGlassAvailable=()=>false;`,
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
     }
     const built = await build({
@@ -225,12 +226,19 @@ try {
             sideBorder: style.borderLeftWidth,
           }
         })
-      assert.equal(savebar.radius, '0px')
-      assert.equal(savebar.shadow, 'none')
-      assert.equal(savebar.bottom, '0px')
+      assert.equal(savebar.radius, '20px')
+      assert.notEqual(savebar.shadow, 'none')
+      assert.equal(savebar.bottom, '8px')
       assert.equal(savebar.topBorder, '1px')
-      assert.equal(savebar.sideBorder, '0px')
+      assert.equal(savebar.sideBorder, '1px')
       assert.notEqual(savebar.background, 'rgba(0, 0, 0, 0)')
+      if (process.env.DOVO_SETTINGS_SCREENSHOTS) {
+        await page.getByRole('group', { name: 'Settings save actions' }).scrollIntoViewIfNeeded()
+        await page.screenshot({
+          path: '/tmp/dovo-settings-glass-savebar.png',
+          animations: 'disabled',
+        })
+      }
     }
     await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page

@@ -633,11 +633,11 @@ export function WorkspaceStarter({
       </ScrollView>
       <View style={{ ...contentColumn.form, padding: 12, gap: 10 }}>
         <Glass
+          testID="Workspace input surface"
           style={{
             borderRadius: 26,
             borderWidth: 1,
             borderColor: editorFocused ? colors.accent : colors.border,
-            backgroundColor: colors.surface,
             padding: 3,
             gap: 0,
           }}

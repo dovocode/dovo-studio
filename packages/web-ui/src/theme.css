@@ -60,10 +60,11 @@
   --studio-glow-strength: 0.5;
   /* Opaline surface finish. Keep colors in the selected Studio palette. */
   --studio-surface-sheen:
-    radial-gradient(ellipse at 0% 0%, #ffffff14, transparent 62%),
+    radial-gradient(ellipse at 0% 0%, #ffffff1c, transparent 58%),
+    radial-gradient(ellipse at 100% 100%, #ffffff08, transparent 60%),
     linear-gradient(155deg, #ffffff0d, transparent 48%, #ffffff05);
   --studio-surface-rim:
-    inset 0.5px 1px 0 #ffffff30, inset -0.5px -0.5px 0 #ffffff12, inset 0 -2px 5px #00000010;
+    inset 0.5px 1px 0 #ffffff38, inset -0.5px -0.5px 0 #ffffff18, inset 0 -2px 5px #00000010;
   --studio-surface-shadow: 0 3px 6px #00000024, 0 18px 44px -12px #00000080;
   --studio-floating-fill: var(--popover);
   --studio-surface-filter: blur(24px) saturate(1.4);
@@ -107,6 +108,7 @@
 :root[data-theme='light'] {
   --studio-surface-sheen:
     radial-gradient(ellipse at 0% 0%, #ffffffcc, transparent 62%),
+    radial-gradient(ellipse at 100% 100%, #ffffff33, transparent 60%),
     linear-gradient(155deg, #ffffff66, transparent 55%, #ffffff40);
   --studio-surface-rim:
     inset 0.5px 1px 0 #fffffff0, inset -0.5px -0.5px 0 #ffffff80, inset 0 -2px 5px #00000006;

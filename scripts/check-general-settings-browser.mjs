@@ -788,6 +788,30 @@ try {
   await page
     .getByRole('textbox', { name: 'Days in Settled before archiving', exact: true })
     .fill('12')
+  await page.setViewportSize({ width: 1280, height: 520 })
+  const focusClearance = await page
+    .getByRole('textbox', { name: 'Days in Settled before archiving', exact: true })
+    .evaluate((input) => {
+      input.blur()
+      const viewport = input.closest('.studio-settings-scroll')
+      const footer = viewport.querySelector('[data-settings-sticky-actions]')
+      footer.scrollIntoView({ block: 'end' })
+      viewport.scrollTop +=
+        input.getBoundingClientRect().bottom - footer.getBoundingClientRect().top - 6
+      const covered = input.getBoundingClientRect().bottom > footer.getBoundingClientRect().top
+      input.focus({ preventScroll: true })
+      return {
+        covered,
+        clear: input.getBoundingClientRect().bottom <= footer.getBoundingClientRect().top,
+        focused: document.activeElement === input,
+      }
+    })
+  assert.deepEqual(
+    focusClearance,
+    { covered: true, clear: true, focused: true },
+    'Keyboard focus scrolls clear of the page save bar',
+  )
+  await page.setViewportSize({ width: 1280, height: 900 })
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Changes saved.' }).waitFor()
   let writes = await page.evaluate(() => window.writes)
