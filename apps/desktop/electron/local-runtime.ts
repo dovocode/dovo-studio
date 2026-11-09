@@ -4,6 +4,7 @@ import {
   mutableStruct,
   newerRuntimeVersion,
   taskSchema,
+  nativeAgentWorking,
 } from '@dovo/protocol'
 import { readListenAddress, writeListenAddress } from '@dovo/api/listen-address'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
@@ -804,7 +805,11 @@ export function pauseLocalRuntime() {
                 mutableStruct({
                   workspace: mutableStruct({
                     tasks: Schema.Array(
-                      mutableStruct({ status: Schema.String, replica: taskSchema.fields.replica }),
+                      mutableStruct({
+                        status: Schema.String,
+                        replica: taskSchema.fields.replica,
+                        subagents: taskSchema.fields.subagents,
+                      }),
                     ),
                   }),
                 }),
@@ -825,7 +830,13 @@ export function pauseLocalRuntime() {
               )
             }),
           )
-          if (state?.workspace.tasks.some((task) => !task.replica && task.status === 'running'))
+          if (
+            state?.workspace.tasks.some(
+              (task) =>
+                !task.replica &&
+                (task.status === 'running' || task.subagents?.some(nativeAgentWorking)),
+            )
+          )
             return yield* Effect.fail(
               new Error('Finish or stop active runs before switching execution environments.'),
             )

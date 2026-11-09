@@ -909,3 +909,49 @@ it('does not treat a running replica from another computer as local work', async
     expect.objectContaining({ body: '{}' }),
   )
 })
+
+it('offers restart recovery for live native subagents between parent turns', async () => {
+  const task = {
+    id: 'parent',
+    title: 'Review',
+    repositoryId: 'repo',
+    agentId: '',
+    status: 'review',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+    subagents: [
+      {
+        id: 'child',
+        provider: 'claude',
+        name: 'Reviewer',
+        status: 'working',
+        sessionLive: true,
+        startedAt: '',
+        updatedAt: '',
+      },
+    ],
+  }
+  const request = vi.fn<typeof fetch>(async (input) =>
+    Response.json(
+      requestUrl(input).endsWith('/prepare-restart')
+        ? { id: 'restart-lease' }
+        : { ...snapshot, workspace: { ...snapshot.workspace, tasks: [task] } },
+    ),
+  )
+  vi.stubGlobal('fetch', request)
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
+  f.message.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 1 })
+  await updates.install()
+  expect(f.message).toHaveBeenLastCalledWith(
+    expect.objectContaining({ buttons: ['Restart and resume', 'Later'] }),
+  )
+  expect(f.install).not.toHaveBeenCalled()
+  expect(updates.state().status).toBe('downloaded')
+})

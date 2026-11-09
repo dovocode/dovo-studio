@@ -497,26 +497,52 @@ it('keeps the desktop connection available while external access changes', async
   expect(f.stopBackgroundRuntimeForUpdate).not.toHaveBeenCalled()
 })
 
-it('refuses an environment switch while owned tasks are running', async () => {
-  const f = await childFixture()
-  const starting = f.startLocalRuntime('/unused')
-  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
-  f.child.emit('message', { type: 'ready', port: 8787 })
-  const connection = await starting
-  vi.stubGlobal(
-    'fetch',
-    vi.fn<typeof fetch>(async (url, options) => {
-      // Use the platform's request validation: GET bodies throw before any network request.
-      const request = new Request(url, options)
-      expect(request.method).toBe('GET')
-      expect(request.headers.get('Authorization')).toBe(`Bearer ${connection.token}`)
-      return Response.json({ workspace: { tasks: [{ status: 'running' }] } })
-    }),
-  )
-  await expect(f.pauseLocalRuntime()).rejects.toThrow('Finish or stop active runs')
-  expect(f.kill).not.toHaveBeenCalled()
-  await f.stopLocalRuntime()
-})
+it.each(['thread', 'native'])(
+  'refuses an environment switch while owned %s work runs',
+  async (kind) => {
+    const f = await childFixture()
+    const starting = f.startLocalRuntime('/unused')
+    await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+    f.child.emit('message', { type: 'ready', port: 8787 })
+    const connection = await starting
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url, options) => {
+        // Use the platform's request validation: GET bodies throw before any network request.
+        const request = new Request(url, options)
+        expect(request.method).toBe('GET')
+        expect(request.headers.get('Authorization')).toBe(`Bearer ${connection.token}`)
+        return Response.json({
+          workspace: {
+            tasks: [
+              {
+                status: kind === 'thread' ? 'running' : 'review',
+                ...(kind === 'native'
+                  ? {
+                      subagents: [
+                        {
+                          id: 'child',
+                          provider: 'claude',
+                          name: 'Reviewer',
+                          status: 'working',
+                          sessionLive: true,
+                          startedAt: '',
+                          updatedAt: '',
+                        },
+                      ],
+                    }
+                  : {}),
+              },
+            ],
+          },
+        })
+      }),
+    )
+    await expect(f.pauseLocalRuntime()).rejects.toThrow('Finish or stop active runs')
+    expect(f.kill).not.toHaveBeenCalled()
+    await f.stopLocalRuntime()
+  },
+)
 
 it.each([false, true])(
   'checks owned tasks before switching environments (running replica: %s)',

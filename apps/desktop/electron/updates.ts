@@ -1,6 +1,6 @@
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { ManagedPolicy } from '@dovo/runtime/managed-policy'
-import { decode, fetchRuntimeReleases } from '@dovo/protocol'
+import { decode, fetchRuntimeReleases, nativeAgentWorking } from '@dovo/protocol'
 import { fetchGitHubRelease } from '@dovo/protocol/github-release-auth'
 import { app, dialog, Menu, BrowserWindow, shell, type MenuItemConstructorOptions } from 'electron'
 import updater from 'electron-updater'
@@ -282,7 +282,11 @@ export function registerUpdates(
       const snapshot = decode(snapshotSchema, await response.json())
       if (
         resumeInterrupted === undefined &&
-        (snapshot.workspace.tasks.some((task) => !task.replica && task.status === 'running') ||
+        (snapshot.workspace.tasks.some(
+          (task) =>
+            !task.replica &&
+            (task.status === 'running' || task.subagents?.some(nativeAgentWorking)),
+        ) ||
           snapshot.runs.some((run) => run.status === 'running'))
       ) {
         if (remote)
