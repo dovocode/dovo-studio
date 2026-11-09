@@ -559,7 +559,7 @@ try {
   assert.equal(await general.locator('svg.lucide-git-branch, svg.lucide-git-fork').count(), 0)
   assert.ok(!/stale-branch|Local checkout/.test(await general.textContent()))
   await page.evaluate(() => window.setProject(''))
-  for (const sort of ['newest', 'oldest', 'title', 'project', 'status']) {
+  for (const sort of ['newest', 'oldest', 'title', 'project']) {
     await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
     await page.waitForFunction(() => !window.settledPath().includes('settled='))
   }

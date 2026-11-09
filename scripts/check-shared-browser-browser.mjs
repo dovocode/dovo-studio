@@ -4235,6 +4235,8 @@ try {
   await orderPage
     .getByRole('combobox', { name: 'Viewport', exact: true })
     .waitFor({ state: 'hidden' })
+  // Closing the popover restores trigger focus. Dismiss its tooltip before checking the page.
+  await orderPage.keyboard.press('Escape')
   await orderPage.waitForFunction(
     (start) => window.calls.slice(start).some((call) => call.action === 'show' && call.viewport),
     beforeViewport,
@@ -4258,6 +4260,7 @@ try {
   }, portrait)
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
   await orderPage.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('fill')
+  await orderPage.keyboard.press('Escape')
   await orderPage.waitForFunction(() => {
     const last = window.calls.findLast((call) => ['show', 'hide'].includes(call.action))
     return last?.action === 'show' && !last.viewport

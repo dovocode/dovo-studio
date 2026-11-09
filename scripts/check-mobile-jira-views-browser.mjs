@@ -4,6 +4,7 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
+export const Alert={alert:()=>{throw Error('Unexpected draft limit alert')}};
 export const View=({children})=><div>{children}</div>;
 export const ScrollView=View;
 export const Pressable=({children,onPress,accessibilityLabel,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>;

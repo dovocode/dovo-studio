@@ -5,6 +5,7 @@ import type { Runtime } from '../runtime/connection/provider'
 import { discoverReader, verifiedSourceRead } from './source-reader'
 
 vi.mock('../runtime/connection/provider', () => ({ useRuntime: vi.fn<() => void>() }))
+vi.mock('react-native', () => ({ Alert: { alert: vi.fn<() => void>() } }))
 const response = Schema.Struct({ title: Schema.String })
 
 it('rejects a same-account rebind before fresh discovery can authorize unrelated content', async () => {

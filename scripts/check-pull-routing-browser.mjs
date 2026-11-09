@@ -11,7 +11,7 @@ const mocks = {
   '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../../../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
-  'react-native': `export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
+  'react-native': `export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const Alert={alert:()=>{throw Error('Unexpected draft limit alert')}};`,
 }
 const bundle = await build({
   stdin: {
