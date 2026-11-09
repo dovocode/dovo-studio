@@ -46,6 +46,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     ),
   )
   releases.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+  // Publication can create a tag after checkout. Refresh after reading releases so
+  // every published candidate can be resolved, or fail instead of skipping a build.
+  execFileSync('git', ['fetch', 'origin', '--tags'], { stdio: 'inherit' })
   const result = nightlyChanges({ target, releases })
   console.error(
     result.previous

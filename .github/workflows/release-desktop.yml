@@ -44,7 +44,8 @@ jobs:
           VERSION=$(node -p 'require("./package.json").version')
           if [[ "$GITHUB_EVENT_NAME" == schedule || ( "$GITHUB_EVENT_NAME" == workflow_dispatch && -z "$INPUT_TAG" ) ]]; then
             test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" || { echo "Nightlies must run on the default branch"; exit 1; }
-            if test "$(node scripts/packaging/nightly-changes.mjs "$GITHUB_SHA")" != true; then
+            CHANGES=$(node scripts/packaging/nightly-changes.mjs "$GITHUB_SHA")
+            if test "$CHANGES" != true; then
               echo "build=false" >> "$GITHUB_OUTPUT"
               echo "No changes since the last published release; skipping nightly." >> "$GITHUB_STEP_SUMMARY"
               exit 0
