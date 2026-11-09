@@ -175,3 +175,61 @@ it('replaces a disconnected tail after an offline gap and loads older messages i
   )
   expect(merged.historyBefore).toBe('message-105')
 })
+
+it('repairs only the historical missing-parent encoding and converges in both directions', async () => {
+  const { recoverThreadParentVersion } = await import('./thread-replication.js')
+  const bare = records(0)[0]
+  if (bare.value.kind !== 'thread') throw Error('Expected descriptor')
+  const rich = {
+    ...bare,
+    value: { ...bare.value, parent: { runtimeId: 'owner', threadId: 'parent' } },
+  }
+  expect(recoverThreadParentVersion(bare, rich)).toEqual(rich)
+  expect(recoverThreadParentVersion(rich, bare)).toEqual(rich)
+  for (const changed of [
+    { ...rich, updatedAt: rich.updatedAt + 1 },
+    { ...rich, changeId: 'different' },
+    { ...rich, value: { ...rich.value, projectName: 'Changed' } },
+    { ...rich, value: { ...rich.value, removed: true } },
+  ])
+    expect(recoverThreadParentVersion(bare, changed)).toBeUndefined()
+  expect(
+    recoverThreadParentVersion(rich, {
+      ...rich,
+      value: { ...rich.value, parent: { runtimeId: 'other', threadId: 'parent' } },
+    }),
+  ).toBeUndefined()
+  const open = (replicaId: string) =>
+    DurableState.open({
+      channel: threadReplicationChannel,
+      replicaId,
+      storage: { load: () => undefined, save: () => {} },
+      decode: decodeThreadRecord,
+      validateVersion: validateThreadVersion,
+      recoverVersion: recoverThreadParentVersion,
+    })
+  const a = await open('a'),
+    b = await open('b')
+  await a.importVersions([bare])
+  await b.importVersions([rich])
+  const before = a.dataRevision
+  await a.accept(await b.exchange(a.request()))
+  expect(a.versions()).toEqual([rich])
+  expect(a.dataRevision).toBeGreaterThan(before)
+  await b.accept(await a.exchange(b.request()))
+  expect(b.versions()).toEqual([rich])
+  expect(a.revision).toBe(1)
+  expect(b.revision).toBe(1)
+  await Promise.all([a.close(), b.close()])
+})
+
+it('keeps equal replica rows stable when the active computer or fleet order changes', () => {
+  const a = project(records(1)),
+    b = structuredClone(a)
+  const first = { runtimeId: 'a', connected: true, tasks: [a] },
+    second = { runtimeId: 'b', connected: true, tasks: [b] }
+  expect([...preferredThreadCopies([first, second])]).toEqual([a])
+  expect([...preferredThreadCopies([second, first])]).toEqual([a])
+  const newer = { ...b, updatedAt: '2026-11-09T00:00:00Z' }
+  expect([...preferredThreadCopies([first, { ...second, tasks: [newer] }])]).toEqual([newer])
+})

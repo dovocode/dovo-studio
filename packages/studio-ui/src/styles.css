@@ -179,6 +179,50 @@
 .studio-composer {
   border-radius: 1.75rem;
 }
+.studio-composer-activity {
+  width: calc(100% - 48px);
+  max-width: calc(var(--chat-max) - 48px);
+  margin-block: 0 -1px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--card);
+  background-image: var(--studio-surface-sheen);
+}
+.studio-chat-image-edit {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-color: var(--studio-floating-fill);
+  background-image: var(--studio-surface-sheen);
+  -webkit-backdrop-filter: var(--studio-surface-filter);
+  backdrop-filter: var(--studio-surface-filter);
+  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+}
+@media (hover: hover) and (pointer: fine) {
+  .studio-chat-image-edit {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-out;
+  }
+  .studio-chat-image:is(:hover, :focus-within) > .studio-chat-image-edit {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (pointer: coarse) {
+  .studio-chat-image-edit {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-chat-image-edit {
+    transition: none;
+  }
+}
 .task-composer .studio-composer {
   border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
   background-color: var(--card);
@@ -330,6 +374,7 @@
   color: var(--foreground);
 }
 .task-composer [data-composer-stop] {
+  background-image: none;
   overflow: visible;
   box-shadow: none;
   --composer-accent: var(--destructive);
@@ -405,14 +450,9 @@
 .dark .task-composer .studio-composer {
   border-color: color-mix(in srgb, var(--primary) 14%, var(--border));
   background-color: color-mix(in srgb, var(--card) 80%, var(--sidebar));
-  background-image: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--primary) 4%, transparent),
-    transparent 48%,
-    color-mix(in srgb, var(--primary) 2%, transparent)
-  );
+  background-image: var(--studio-surface-sheen);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--primary) 3%, transparent),
+    var(--studio-surface-rim),
     0 8px 28px #00000020;
 }
 .dark .task-composer .studio-composer:focus-within {
@@ -1244,8 +1284,8 @@ textarea {
 }
 .studio-browser-pin-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 4px;
 }
 .studio-browser-group-heading {
   display: flex;
@@ -1343,9 +1383,9 @@ textarea {
   border-radius: 8px;
   background: color-mix(in srgb, var(--foreground) 5%, var(--sidebar));
 }
-/* Pinned cards keep fixed icon and identity positions while activity changes above them. */
+/* Compact browser pins show the page first. Identity stays in the tooltip and accessible name. */
 .studio-browser-tab[data-pinned] {
-  height: 80px;
+  height: 56px;
   padding: 0;
   border-radius: 12px;
   border-color: color-mix(in srgb, var(--foreground) 15%, var(--border));
@@ -1384,16 +1424,17 @@ textarea {
 }
 .studio-browser-tab[data-pinned] .studio-browser-tab-source {
   position: absolute;
-  top: 28px;
+  top: 50%;
+  transform: translateY(-50%);
   left: 0;
   right: 0;
   width: 100%;
-  height: 45px;
+  height: 24px;
 }
 .studio-browser-tab[data-pinned] .studio-browser-tab-favicon,
 .studio-browser-tab[data-pinned] .studio-browser-tab-favicon > :is(img, svg) {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 .studio-browser-tab[data-pinned] .studio-browser-tab-favicon > img {
   border-radius: 7px;
@@ -1403,28 +1444,12 @@ textarea {
   top: 0;
   right: -5px;
 }
-.studio-browser-tab[data-pinned] .studio-browser-tab-profile {
-  gap: 3px;
-}
-.studio-browser-tab[data-pinned] .studio-browser-tab-identity {
-  width: 18px;
-  height: 14px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--foreground) 6%, var(--sidebar));
-  box-shadow: inset 0 1px color-mix(in srgb, var(--foreground) 8%, transparent);
-  font-size: 9px;
-}
-.studio-browser-tab[data-pinned] .studio-browser-tab-identity svg {
-  width: 10px;
-  height: 10px;
-}
 .studio-browser-pin-status {
   position: absolute;
-  top: 7px;
-  left: 7px;
-  width: 5px;
-  height: 5px;
+  top: 5px;
+  left: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--muted-foreground);
 }
@@ -2014,7 +2039,7 @@ textarea {
   min-height: 30px;
   padding: 4px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 999px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   transition: background-color 120ms ease-out;
@@ -2156,6 +2181,26 @@ textarea {
 .studio-filter-chip[aria-pressed='true'] {
   background: var(--selection);
   font-weight: 600;
+  background-image: var(--studio-surface-sheen);
+  box-shadow: var(--studio-control-rim);
+}
+.studio-search-field > input {
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--foreground) 3%, var(--card));
+}
+.studio-segmented {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  padding: 2px;
+}
+.studio-segmented > [role='tab'] {
+  border-radius: 999px;
+}
+.studio-segmented > [role='tab'][aria-selected='true'] {
+  background: var(--card);
+  box-shadow:
+    var(--studio-surface-rim),
+    0 1px 3px #00000018;
 }
 .studio-settings-group > [data-slot='card'] {
   border-color: color-mix(in srgb, var(--border) 85%, var(--foreground) 4%);
@@ -2917,6 +2962,9 @@ a.studio-project-row:hover {
   }
 }
 
+.studio-composer-activity [data-queue-actions] {
+  background-color: var(--card);
+}
 /* Hover actions overlay the preview; touch panels retain their action row. */
 @media (hover: hover) {
   [data-queue-actions] {
@@ -3384,6 +3432,7 @@ a.studio-project-row:hover {
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
+  border-radius: var(--dovo-radius-control);
 }
 .studio-disclosure > summary::-webkit-details-marker {
   display: none;
@@ -3402,6 +3451,7 @@ a.studio-project-row:hover {
 }
 .studio-disclosure > summary:hover {
   color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
 /* Softly outlined workspace panes retain the compact composition. */

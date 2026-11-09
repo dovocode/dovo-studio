@@ -919,3 +919,92 @@ it('searches older replica messages through the authenticated search route', asy
     await b.close()
   }
 })
+
+it('automatically repairs old parent omissions through authenticated HTTP without changing history or identity', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dovo-parent-recovery-'))
+  const path = join(dir, 'runtime.sqlite')
+  let f = await fixture(path)
+  const bare: ThreadRecord = {
+    kind: 'thread',
+    ownerRuntimeId: 'remote-owner',
+    threadId: 'child',
+    ownerName: 'Remote',
+    projectName: 'Project',
+    createdAt: '2026-10-01',
+    status: 'done',
+    historyRevision: 0,
+    removed: false,
+  }
+  const version = {
+    key: threadRecordKey(bare),
+    updatedAt: 1,
+    changeId: 'old-descriptor',
+    deleted: false,
+    value: bare,
+  }
+  const rich = {
+    ...version,
+    value: { ...bare, parent: { runtimeId: 'remote-owner', threadId: 'parent' } },
+  }
+  const request = (versions: unknown[], source: string) => ({
+    batch: {
+      protocol: 1,
+      channel: threadReplicationChannel,
+      source,
+      after: 0,
+      through: versions.length,
+      more: false,
+      changes: versions.map((version, index) => ({ sequence: index + 1, version })),
+    },
+    pull: { after: 0 },
+  })
+  try {
+    expect(
+      (await f.call('/api/threads/state/exchange', request([version], 'old-client'))).status,
+    ).toBe(200)
+    const oldTask = f.runtime.services.threadReplication.replicas()[0]
+    const tables = ['thread_versions', 'thread_state_log', 'thread_registers']
+    const counts = () =>
+      tables.map((t) =>
+        f.runtime.services.db
+          .prepare('SELECT COUNT(*) FROM ' + t)
+          .pluck()
+          .get(),
+      )
+    const before = counts(),
+      identity = f.runtime.services.runtimeId
+    // The same JSON data can have a different key order after a database migration.
+    const reordered = JSON.stringify(Object.fromEntries(Object.entries(version).reverse()))
+    for (const table of tables)
+      f.runtime.services.db.prepare('UPDATE ' + table + ' SET value=?').run(reordered)
+    expect(
+      (await f.call('/api/threads/state/exchange', request([rich], 'new-client'))).status,
+    ).toBe(200)
+    expect(counts()).toEqual(before)
+    const recovered = f.runtime.services.threadReplication.replicas()[0]
+    expect(recovered).not.toBe(oldTask)
+    expect(recovered.spawnParent).toEqual(rich.value.parent)
+    for (const t of tables) {
+      const rows = f.runtime.services.db.prepare('SELECT value FROM ' + t).all() as {
+        value: string
+      }[]
+      expect(rows.map((r) => JSON.parse(r.value))).toContainEqual(rich)
+    }
+    expect(
+      (await f.call('/api/threads/state/exchange', request([version], 'old-client'))).status,
+    ).toBe(200)
+    const conflict = { ...rich, value: { ...rich.value, projectName: 'Unrelated change' } }
+    expect(
+      (await f.call('/api/threads/state/exchange', request([conflict], 'broken-client'))).status,
+    ).toBe(400)
+    await f.close()
+    f = await fixture(path)
+    expect(f.runtime.services.runtimeId).toBe(identity)
+    expect(f.runtime.services.threadReplication.replicas()[0].spawnParent).toEqual(
+      rich.value.parent,
+    )
+  } finally {
+    await f.close()
+    await rm(dir, { recursive: true, force: true })
+  }
+})

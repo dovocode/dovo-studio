@@ -165,7 +165,7 @@ export function SettingsGroup({
 }) {
   const id = useId()
   const content = (
-    <Card asChild className="divide-y divide-border/50 rounded-none border-0 bg-transparent p-0">
+    <Card asChild className="divide-y divide-border/50 overflow-hidden p-0">
       <div>{children}</div>
     </Card>
   )

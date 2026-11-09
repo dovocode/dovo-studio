@@ -59,11 +59,15 @@
 :root {
   --studio-glow-strength: 0.5;
   /* Opaline surface finish. Keep colors in the selected Studio palette. */
-  --studio-surface-sheen: linear-gradient(155deg, #ffffff0d, transparent 48%, #ffffff03);
-  --studio-surface-rim: inset 0.5px 0.5px 0 #ffffff26, inset -0.5px -0.5px 0 #ffffff0a;
-  --studio-surface-shadow: 0 2px 4px #00000014, 0 12px 32px -12px #00000066;
+  --studio-surface-sheen:
+    radial-gradient(ellipse at 0% 0%, #ffffff14, transparent 62%),
+    linear-gradient(155deg, #ffffff0d, transparent 48%, #ffffff05);
+  --studio-surface-rim:
+    inset 0.5px 1px 0 #ffffff30, inset -0.5px -0.5px 0 #ffffff12, inset 0 -2px 5px #00000010;
+  --studio-surface-shadow: 0 3px 6px #00000024, 0 18px 44px -12px #00000080;
   --studio-floating-fill: var(--popover);
-  --studio-surface-filter: blur(16px) saturate(1.15);
+  --studio-surface-filter: blur(24px) saturate(1.4);
+  --studio-control-rim: inset 0 1px 0 #ffffff24, inset 0 -1px 3px #00000020;
   color-scheme: dark;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -97,9 +101,13 @@
 }
 /* Dovo fallback before React mounts; Appearance applies the selected palette before paint. */
 :root[data-theme='light'] {
-  --studio-surface-sheen: linear-gradient(155deg, #ffffff99, transparent 55%, #ffffff33);
-  --studio-surface-rim: inset 0.5px 0.5px 0 #ffffffcc, inset -0.5px -0.5px 0 #ffffff66;
-  --studio-surface-shadow: 0 2px 4px #00000006, 0 12px 32px -12px #00000026;
+  --studio-surface-sheen:
+    radial-gradient(ellipse at 0% 0%, #ffffffcc, transparent 62%),
+    linear-gradient(155deg, #ffffff66, transparent 55%, #ffffff40);
+  --studio-surface-rim:
+    inset 0.5px 1px 0 #fffffff0, inset -0.5px -0.5px 0 #ffffff80, inset 0 -2px 5px #00000006;
+  --studio-surface-shadow: 0 3px 6px #0000000a, 0 18px 44px -12px #00000030;
+  --studio-control-rim: inset 0 1px 0 #ffffffcc, inset 0 -1px 2px #00000008;
   color-scheme: light;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -178,9 +186,9 @@
 }
 
 /* Dense lists use painted highlights. Only temporary surfaces blur the backdrop. */
-@supports (backdrop-filter: blur(1px)) {
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   :root {
-    --studio-floating-fill: color-mix(in srgb, var(--popover) 94%, transparent);
+    --studio-floating-fill: color-mix(in srgb, var(--popover) 84%, transparent);
   }
 }
 :root[data-high-contrast='true'] {
@@ -188,6 +196,7 @@
   --studio-surface-rim: 0 0 0 transparent;
   --studio-floating-fill: var(--popover);
   --studio-surface-filter: none;
+  --studio-control-rim: none;
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   :root:root {
@@ -195,6 +204,7 @@
     --studio-surface-rim: 0 0 0 transparent;
     --studio-floating-fill: var(--popover);
     --studio-surface-filter: none;
+    --studio-control-rim: none;
   }
 }
 
@@ -219,6 +229,7 @@
   border-radius: 20px;
   background-color: var(--studio-floating-fill);
   background-image: var(--studio-surface-sheen);
+  -webkit-backdrop-filter: var(--studio-surface-filter);
   backdrop-filter: var(--studio-surface-filter);
   box-shadow:
     var(--studio-surface-rim),
@@ -340,16 +351,19 @@
     [data-slot='select-trigger']
   ) {
     background-color: var(--card);
-    box-shadow: inset 0 1px 2px #00000008;
+    box-shadow: var(--studio-control-rim);
   }
   :where([data-slot='card']) {
     background-image: var(--studio-surface-sheen);
-    box-shadow: var(--studio-surface-rim);
+    box-shadow:
+      var(--studio-surface-rim),
+      0 2px 8px -4px #00000020;
   }
   :where(.studio-menu-surface) {
     border-color: var(--border);
     background-color: var(--studio-floating-fill);
     background-image: var(--studio-surface-sheen);
+    -webkit-backdrop-filter: var(--studio-surface-filter);
     backdrop-filter: var(--studio-surface-filter);
     color: var(--foreground);
     box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow), var(--studio-glow-wide);
@@ -385,6 +399,18 @@
     [data-slot='switch'][data-state='checked']
   ) {
     box-shadow: var(--studio-glow);
+  }
+  :where(
+    [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']),
+    [data-slot='badge']
+  ) {
+    background-image: var(--studio-surface-sheen);
+    box-shadow: var(--studio-control-rim);
+  }
+  :where([data-slot='switch-thumb']) {
+    box-shadow:
+      var(--studio-control-rim),
+      0 1px 3px #00000030;
   }
   :root[data-theme-gradients='false'] :where([data-slot='button'][data-variant='default']) {
     background-image: none;

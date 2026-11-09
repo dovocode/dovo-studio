@@ -13,6 +13,9 @@ import { PassThrough } from 'node:stream'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
+const requestUrl = (input: Parameters<typeof fetch>[0]) =>
+  typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+
 const fixture = vi.hoisted(() => ({
   directory: '',
   packaged: false,
@@ -33,6 +36,8 @@ vi.mock('electron', () => ({
   dialog: { showMessageBox: fixture.dialog },
 }))
 vi.mock('./background-runtime.js', () => ({
+  backgroundRuntimeMatches:
+    vi.fn<typeof import('./background-runtime.js').backgroundRuntimeMatches>(),
   stopBackgroundRuntimeForUpdate:
     vi.fn<typeof import('./background-runtime.js').stopBackgroundRuntimeForUpdate>(),
   ensureBackgroundRuntime:
@@ -825,3 +830,64 @@ it('closes the runtime log before shutdown resolves, even when shutdown overlaps
   await new Promise((resolve) => setTimeout(resolve, 50))
   expect(existsSync(fixture.directory)).toBe(false)
 })
+
+it.each(['idle', 'busy', 'other-app', 'newer-runtime'] as const)(
+  'handles an older background runtime safely after a desktop replacement: %s',
+  async (mode) => {
+    const { Effect } = await import('effect')
+    const { backgroundRuntimeMatches, stopBackgroundRuntimeForUpdate, ensureBackgroundRuntime } =
+      await import('./background-runtime.js')
+    fixture.directory = mkdtempSync(join(tmpdir(), 'dovo-desktop-handoff-'))
+    fixture.packaged = true
+    vi.stubGlobal('process', {
+      ...process,
+      platform: 'darwin',
+      resourcesPath: '/fixture/resources',
+      getuid: () => 501,
+    })
+    const connection = {
+      address: 'http://127.0.0.1:51464',
+      token: 'a'.repeat(32),
+      pid: process.pid,
+    }
+    writeFileSync(join(fixture.directory, 'runtime-connection.json'), JSON.stringify(connection))
+    let version = mode === 'newer-runtime' ? '0.0.8' : '0.0.6'
+    vi.mocked(backgroundRuntimeMatches).mockResolvedValue(mode !== 'other-app')
+    vi.mocked(stopBackgroundRuntimeForUpdate).mockReturnValue(
+      Effect.sync(() => {
+        rmSync(join(fixture.directory, 'runtime-connection.json'))
+      }),
+    )
+    vi.mocked(ensureBackgroundRuntime).mockReturnValue(
+      Effect.sync(() => {
+        version = '0.0.7'
+        writeFileSync(
+          join(fixture.directory, 'runtime-connection.json'),
+          JSON.stringify(connection),
+        )
+      }),
+    )
+    const request = vi.fn<typeof fetch>(async (input) =>
+      requestUrl(input).endsWith('/prepare-restart')
+        ? Response.json(mode === 'busy' ? { error: 'Work is running' } : { id: 'handoff-lease' }, {
+            status: mode === 'busy' ? 409 : 200,
+          })
+        : Response.json({
+            owner: true,
+            protocolVersion: 2,
+            releaseDistribution: 'desktop',
+            releaseVersion: version,
+          }),
+    )
+    vi.stubGlobal('fetch', request)
+    const { startLocalRuntime, stopLocalRuntime } = await import('./local-runtime')
+    expect(await startLocalRuntime('/unused')).toEqual({
+      address: connection.address,
+      token: connection.token,
+    })
+    expect(stopBackgroundRuntimeForUpdate).toHaveBeenCalledTimes(mode === 'idle' ? 1 : 0)
+    expect(ensureBackgroundRuntime).toHaveBeenCalledTimes(mode === 'idle' ? 1 : 0)
+    expect(version).toBe(mode === 'idle' ? '0.0.7' : mode === 'newer-runtime' ? '0.0.8' : '0.0.6')
+    await stopLocalRuntime()
+  },
+)

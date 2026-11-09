@@ -1,6 +1,6 @@
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { useEffect, useState } from 'react'
-import { EditChatImage } from '../composer/chat-image-edit-context'
+import { ChatImageFrame, EditChatImage } from '../composer/chat-image-edit-context'
 import { useWorkspace } from '@dovo/studio-core'
 import {
   taskImageReadSchema,
@@ -75,22 +75,26 @@ function ResultImage({
     )
   return (
     <div className="my-2 min-w-0">
-      {image && (uri || connected) ? (
-        <button type="button" aria-label={`Preview ${label}`} onClick={() => setOpen(true)}>
-          {content}
-        </button>
-      ) : (
-        content
-      )}
-      {image && (
-        <EditChatImage
+      {image ? (
+        <ChatImageFrame
           source={
             reference
               ? { taskId, eventId: reference.eventId, index: reference.index }
               : { uri: image }
           }
           label={label}
-        />
+        >
+          <button
+            type="button"
+            disabled={!uri && !connected}
+            aria-label={`Preview ${label}`}
+            onClick={() => setOpen(true)}
+          >
+            {content}
+          </button>
+        </ChatImageFrame>
+      ) : (
+        content
       )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-5xl">

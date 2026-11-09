@@ -17,6 +17,7 @@ import {
   retryRuntimeSync,
   startRuntimeSync,
   runtimeSyncOnline,
+  isUnauthorizedRuntimeError,
   retainWorkspace,
   pendingAgentPresets,
   recoverRuntimePairings,
@@ -1110,7 +1111,12 @@ export function WorkspaceProvider({
         )
       } catch (error) {
         assertProfile(profile)
-        if (snapshotOrder.current.get(profile.id) === order) {
+        // A failed auxiliary read does not disconnect a healthy live stream. Otherwise
+        // replication refreshes repeatedly replace owner rows with replicas and back again.
+        if (
+          snapshotOrder.current.get(profile.id) === order &&
+          (isUnauthorizedRuntimeError(error) || !runtimeSyncOnline(profile.connection))
+        ) {
           const message = error instanceof Error ? error.message : String(error)
           updateOverview({
             ...(overviewsRef.current[profile.id] ?? idleRuntimeOverview(profile)),

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync, readdirSync } from 'node:fs'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname
 const resolveDir = root + 'packages/extension-tasks'
@@ -8,10 +9,10 @@ const built = await bundleBrowser(
       resolveDir,
       loader: 'tsx',
       contents: `
-import {ChatImageEditProvider} from './src/chat/composer/chat-image-edit';import {EditChatImage,useChatImageUploader} from './src/chat/composer/chat-image-edit-context';import {useScreenshotAttachment} from './src/browser/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
+import {ChatImageEditProvider} from './src/chat/composer/chat-image-edit';import {ChatImageFrame,EditChatImage,useChatImageUploader} from './src/chat/composer/chat-image-edit-context';import {useScreenshotAttachment} from './src/browser/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
 window.calls=[];window.rows=[];window.stored={};window.failed=false;window.revision=1;
 window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/draft-guard')return {guard:'guard-'+window.revision,guardedUploads:window.oldRuntime?undefined:1};if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:window.source};if(window.failed)throw Error('Upload rejected');if(window.holdUpload)await new Promise(resolve=>window.releaseUpload=resolve);if(input.draftGuard&&input.draftGuard!=='guard-'+window.revision)throw Error('Draft changed during upload');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};if(!input.queuedMessageId)window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision,nextGuard:'guard-'+window.revision}};
-function Contents(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const [editing,setEditing]=useState(null);window.beginEdit=()=>setEditing({messageId:'queued',files:window.files.slice(0,1)});window.cancelEdit=()=>setEditing(null);window.editing=editing;const a=useAttachments(snapshot.workspace.tasks[0],editing?{...editing,uploaded:(file,replaceId)=>setEditing(current=>({...current,files:[...current.files.filter(item=>item.id!==replaceId),file]})),remove:id=>setEditing(current=>({...current,files:current.files.filter(file=>file.id!==id)}))}:undefined);useChatImageUploader(file=>a.upload([file],undefined,true),true);window.remove=a.remove;const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/><textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<ChatImageEditProvider><Contents/></ChatImageEditProvider>);`,
+function Contents(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const [editing,setEditing]=useState(null);window.beginEdit=()=>setEditing({messageId:'queued',files:window.files.slice(0,1)});window.cancelEdit=()=>setEditing(null);window.editing=editing;const a=useAttachments(snapshot.workspace.tasks[0],editing?{...editing,uploaded:(file,replaceId)=>setEditing(current=>({...current,files:[...current.files.filter(item=>item.id!==replaceId),file]})),remove:id=>setEditing(current=>({...current,files:current.files.filter(file=>file.id!==id)}))}:undefined);useChatImageUploader(file=>a.upload([file],undefined,true),true);window.remove=a.remove;const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/><ChatImageFrame source={{uri:"https://fixture.test/preview.png"}} label="Hover preview"><img alt="Hover preview" width="240" height="140" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='140'%3E%3Crect width='240' height='140' fill='%233a6070'/%3E%3C/svg%3E"/></ChatImageFrame><textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<ChatImageEditProvider><Contents/></ChatImageEditProvider>);`,
     },
     bundle: true,
     write: false,
@@ -43,7 +44,54 @@ try {
   await page.setContent(
     '<style>iframe{width:100%;height:700px;border:0}</style><div id="app"></div>',
   )
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await page.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const image = page.getByAltText('Hover preview', { exact: true })
+  const action = page.getByRole('button', { name: 'Edit and attach Hover preview', exact: true })
+  const frame = page.locator('.studio-chat-image')
+  await image.waitFor()
+  await page.mouse.move(1, 1)
+  const opacity = () => action.evaluate((node) => getComputedStyle(node).opacity)
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.studio-chat-image-edit')).opacity === '0',
+  )
+  const imageBefore = await frame.boundingBox()
+  await frame.hover()
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.studio-chat-image-edit')).opacity === '1',
+  )
+  const box = await action.boundingBox()
+  const picture = await image.boundingBox()
+  assert.ok(
+    box.x >= picture.x &&
+      box.y >= picture.y &&
+      box.x + box.width <= picture.x + picture.width &&
+      box.y + box.height <= picture.y + picture.height,
+    JSON.stringify({ box, picture }),
+  )
+  assert.deepEqual(await frame.boundingBox(), imageBefore, 'Hover does not move the image')
+  await page.mouse.move(1, 1)
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.studio-chat-image-edit')).opacity === '0',
+  )
+  await action.focus()
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.studio-chat-image-edit')).opacity === '1',
+  )
+  assert.equal(await opacity(), '1', 'Keyboard focus reveals the action')
+  await page.getByRole('textbox', { name: 'Message' }).focus()
+  const media = await page.context().newCDPSession(page)
+  await media.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
+  await page.waitForFunction(() => matchMedia('(pointer:coarse)').matches)
+  assert.equal(await opacity(), '1', 'Touch keeps the image action visible')
+  assert.ok((await action.boundingBox()).height >= 44)
+  await media.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  await media.detach()
   await page.waitForFunction(() => window.upload)
   await page.evaluate(() => {
     const c = document.createElement('canvas')

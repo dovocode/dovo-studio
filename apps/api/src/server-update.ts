@@ -78,7 +78,7 @@ async function execute(command: string, args: string[], cwd: string, logPath: st
 }
 // Snapshot only runtime source, manifests and lockfile. Credentials, databases, other app
 // source, Git state and the working checkout's node_modules never enter a release.
-async function stageServerSource(root: string, target: string) {
+export async function stageServerSource(root: string, target: string) {
   await mkdir(target, {
     recursive: true,
     mode: 0o700,
@@ -88,6 +88,7 @@ async function stageServerSource(root: string, target: string) {
     'pnpm-lock.yaml',
     'pnpm-workspace.yaml',
     'tsconfig.base.json',
+    '.npmrc',
     'patches',
   ])
     await cp(join(root, name), join(target, name), {
@@ -109,7 +110,8 @@ async function stageServerSource(root: string, target: string) {
         ...manifest,
         scripts: {
           ...manifest.scripts,
-          postinstall: 'node scripts/prepare-pty.mjs',
+          postinstall:
+            'tsc -p packages/durable-connections/tsconfig.build.json && node scripts/prepare-pty.mjs',
         },
       },
       null,
@@ -124,6 +126,8 @@ async function stageServerSource(root: string, target: string) {
     'packages/runtime',
     'packages/protocol',
     'packages/client-runtime',
+    'packages/durable-connections',
+    'packages/push',
   ])
   for (const category of ['apps', 'packages']) {
     for (const entry of await readdir(join(root, category), {
@@ -136,6 +140,34 @@ async function stageServerSource(root: string, target: string) {
         recursive: true,
       })
       await cp(join(root, relative, 'package.json'), join(target, relative, 'package.json'))
+      if (relative === 'packages/protocol' || relative === 'packages/client-runtime') {
+        // Their generated browser bundles are part of this source snapshot. Rebuilding
+        // desktop-only assets would require unrelated desktop/UI packages in the release.
+        const path = join(target, relative, 'package.json')
+        const manifest: unknown = JSON.parse(await readFile(path, 'utf8'))
+        if (
+          !manifest ||
+          typeof manifest !== 'object' ||
+          !('scripts' in manifest) ||
+          !manifest.scripts ||
+          typeof manifest.scripts !== 'object'
+        )
+          throw new Error('Invalid runtime package manifest: ' + relative)
+        await writeFile(
+          path,
+          JSON.stringify(
+            {
+              ...manifest,
+              scripts: {
+                ...manifest.scripts,
+                build: 'tsc -p tsconfig.build.json',
+              },
+            },
+            null,
+            2,
+          ),
+        )
+      }
       if (runtimePackages.has(relative)) {
         await cp(join(root, relative, 'src'), join(target, relative, 'src'), {
           recursive: true,

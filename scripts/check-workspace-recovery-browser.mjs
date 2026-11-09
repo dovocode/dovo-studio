@@ -23,6 +23,10 @@ import {updateAppPreferences} from './packages/studio-core/src/preferences.ts';
 import {LauncherWorkspaceProvider} from './packages/studio-core/src/workspace/launcher-provider.tsx';
 import {readRuntimeRegistry,writeRuntimeRegistry} from './packages/studio-core/src/workspace/runtime-registry.ts';
 window.calls=[];
+window.liveListeners=new Set();
+window.dovo={runtimeSync:{subscribe:(input,listener)=>{const entry={input,listener};window.liveListeners.add(entry);return()=>window.liveListeners.delete(entry)},update(){},refresh(){}}};
+window.streamStatus=online=>{for(const {input,listener} of window.liveListeners){if(input.connection.address!==window.profiles[0].connection.address)continue;if(online)listener({type:'snapshot',snapshot:window.server,epoch:'live',sequence:1});listener({type:'status',status:online?'live':'reconnecting',online})}};
+
 window.profiles=Array.from({length:6},(_,i)=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'test-token-for-host-'+i},'Computer '+i));
 localStorage.setItem('dovo.runtimes.v1',JSON.stringify({version:1,activeId:window.profiles[0].id,profiles:window.profiles}));
 const workspace={version:1,runtimeAddress:'',agents:[{id:'agent',name:'Before',instructions:'',provider:'codex',model:'',permission:'ask',endpoint:''}],tasks:[],repositories:[],automations:[]};
@@ -31,6 +35,7 @@ window.failWorkspace=true;
 window.fetch=async(url,init={})=>{
   const parsed=new URL(url);const path=parsed.pathname;const input=init.body?JSON.parse(init.body):undefined;
   window.calls.push({host:parsed.host,path,query:parsed.search,input});
+  if(path==='/api/snapshot' && window.authFailed && parsed.hostname==='host0.lan')return Response.json({error:'Invalid device token'},{status:401});
   if(path==='/api/snapshot' && window.failSnapshot && parsed.hostname==='host0.lan')throw new Error('No connection to selected computer');
   if(path==='/api/snapshot')return Response.json({...window.server,settingsScopesSupported:parsed.hostname==='host0.lan'});
   if(path==='/api/mutations/status')return Response.json({version:1});
@@ -174,6 +179,43 @@ try {
   })
   await page.getByRole('button', { name: 'Retry connection', exact: true }).click()
   await page.getByRole('switch', { name: 'Enable Device Hub', exact: true }).waitFor()
+  await page.evaluate(() => window.streamStatus(true))
+  await page.waitForFunction(() => window.workspaceContext.connected)
+  const liveBefore = await page.evaluate(() => ({
+    active: window.workspaceContext.activeRuntimeId,
+    revision: window.workspaceContext.snapshot.revision,
+  }))
+  await page.evaluate(async () => {
+    window.failSnapshot = true
+    await window.workspaceContext.refreshRuntime(window.profiles[0]).catch(() => {})
+  })
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      active: window.workspaceContext.activeRuntimeId,
+      revision: window.workspaceContext.snapshot.revision,
+    })),
+    liveBefore,
+  )
+  assert.equal(
+    await page.evaluate(() => window.workspaceContext.connected),
+    true,
+    'An auxiliary read failure must keep the healthy stream connected',
+  )
+  assert.equal(await page.getByRole('button', { name: 'Retry connection', exact: true }).count(), 0)
+  await page.evaluate(async () => {
+    window.failSnapshot = false
+    window.authFailed = true
+    await window.workspaceContext.refreshRuntime(window.profiles[0]).catch(() => {})
+  })
+  await page.waitForFunction(() => !window.workspaceContext.connected)
+  await page.getByRole('button', { name: 'Retry connection', exact: true }).waitFor()
+  await page.evaluate(async () => {
+    window.authFailed = false
+    window.streamStatus(false)
+    await window.workspaceContext.refreshRuntime(window.profiles[0])
+  })
+  await page.getByRole('switch', { name: 'Enable Device Hub', exact: true }).waitFor()
+
   await page.evaluate(() => window.editWorkspace())
   await page.waitForFunction(() =>
     window.workspaceContext.syncError?.includes('Workspace conflict'),

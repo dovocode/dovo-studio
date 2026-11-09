@@ -11,11 +11,13 @@ export function Glass({
   style,
   interactive = false,
   tinted = false,
+  testID,
 }: {
   children: ReactNode
   style?: StyleProp<ViewStyle>
   interactive?: boolean
   tinted?: boolean
+  testID?: string
 }) {
   const { colors, mode: appearanceMode, highContrast } = useTheme()
 
@@ -56,6 +58,7 @@ export function Glass({
   if (Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable())
     return (
       <GlassView
+        testID={testID}
         colorScheme={appearanceMode}
         glassEffectStyle={opaque ? 'none' : 'regular'}
         isInteractive={interactive}
@@ -65,5 +68,9 @@ export function Glass({
         {children}
       </GlassView>
     )
-  return <View style={[opaqueStyle, style]}>{children}</View>
+  return (
+    <View testID={testID} style={[opaqueStyle, style]}>
+      {children}
+    </View>
+  )
 }

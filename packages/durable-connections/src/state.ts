@@ -10,6 +10,10 @@ export interface StateChange<T> {
   sequence: number
   version: StateVersion<T>
 }
+export interface StateVersionRepair<T> {
+  previous: StateVersion<T>
+  version: StateVersion<T>
+}
 export interface StateBatch<T> {
   protocol: 1
   channel: string
@@ -46,7 +50,8 @@ export interface StateStorage {
   update?(change: (current: unknown) => unknown): Promise<unknown>
   /** Optional append-only store. readChanges returns a snapshot envelope with `after`
    * and only journal entries beyond that sequence. The store must reject truncation.
-   * append must atomically check the expected sequence and commit records, checkpoints and sources.
+   * append must atomically check the expected sequence and commit records, checkpoints,
+   * sources and any repairs. A store used with recoverVersion must support repairs.
    * Do not combine this single-writer interface with update. */
   readChanges?(after: number): unknown
   append?(
@@ -54,6 +59,7 @@ export interface StateStorage {
     changes: readonly StateChange<unknown>[],
     checkpoints: Readonly<Record<string, number>>,
     sources?: Readonly<Record<string, string>>,
+    repairs?: readonly StateVersionRepair<unknown>[],
   ): void | Promise<void>
   /** Stable content identity for immutable snapshots (for example the stored JSON string). */
   contentKey?(snapshot: unknown): unknown
@@ -67,6 +73,12 @@ export interface DurableStateOptions<T> {
   decode(value: unknown): T
   /** Validate without changing the version, including its identity. */
   validateVersion?: (version: StateVersion<T>) => void
+  /** Recover a proven historical encoding defect. Return one of the two complete versions,
+   * or undefined to reject the conflict. Never use this for competing user edits. */
+  recoverVersion?: (
+    previous: StateVersion<T>,
+    incoming: StateVersion<T>,
+  ) => StateVersion<T> | undefined
   validateState?: (latest: readonly StateVersion<T>[]) => void
   /** Ignore echoed records which this replica cannot accept as authoritative. They still
    * advance the sender checkpoint. Keep this decision stable for replayed versions. */
@@ -146,6 +158,8 @@ export class DurableState<T> {
   private known = new Map<string, StateVersion<T>>()
   private winners = new Map<string, StateVersion<T>>()
   private clock = 0
+  private contentRevision = 0
+  private repairedRevision = 0
 
   private constructor(private options: DurableStateOptions<T>) {
     text(options.channel)
@@ -329,11 +343,19 @@ export class DurableState<T> {
     const contentKey = this.options.storage.contentKey?.(value)
     if (contentKey !== undefined && contentKey === this.storedKey) return this.snapshot
     const current = this.decodeSnapshot(value)
-    if (
-      current.journal.length < this.revision ||
-      this.snapshot.journal.some((change, index) => json(change) !== json(current.journal[index]))
-    )
-      return fail('Durable state storage history changed')
+    if (current.journal.length < this.revision) return fail('Durable state storage history changed')
+    let repaired = false
+    for (const [index, change] of this.snapshot.journal.entries()) {
+      const next = current.journal[index]
+      if (json(change) === json(next)) continue
+      if (
+        json(
+          this.recover(change.version, next.version, 'Durable state storage history changed'),
+        ) !== json(next.version)
+      )
+        return fail('Durable state storage history changed')
+      repaired = true
+    }
     if (
       Object.entries(this.snapshot.checkpoints).some(
         ([source, sequence]) =>
@@ -342,12 +364,15 @@ export class DurableState<T> {
     )
       return fail('Durable state storage checkpoints changed')
     if (
+      !repaired &&
       current.journal.length === this.revision &&
       json(current.checkpoints) === json(this.snapshot.checkpoints) &&
       json(current.sources ?? {}) === json(this.snapshot.sources ?? {})
     )
       return this.snapshot
-    return current
+    return !repaired && current.journal.length === this.revision
+      ? { ...current, journal: this.snapshot.journal }
+      : current
   }
   /** Observe commits from another storage owner without publishing uncommitted writes. */
   refresh() {
@@ -402,7 +427,9 @@ export class DurableState<T> {
         )
         this.publish({
           ...this.snapshot,
-          journal: [...this.snapshot.journal, ...appended],
+          journal: appended.length
+            ? [...this.snapshot.journal, ...appended]
+            : this.snapshot.journal,
           checkpoints,
           sources,
         })
@@ -426,13 +453,34 @@ export class DurableState<T> {
     return result
   }
 
+  private recover(
+    previous: StateVersion<T>,
+    incoming: StateVersion<T>,
+    message = 'A state version was reused with different data',
+  ): StateVersion<T> {
+    if (identity(previous) === identity(incoming) && this.options.recoverVersion) {
+      const recovered = this.options.recoverVersion(
+        this.decodeVersion(previous),
+        this.decodeVersion(incoming),
+      )
+      if (recovered) {
+        const encoded = json(recovered)
+        if (encoded === json(previous) || encoded === json(incoming))
+          return this.decodeVersion(recovered)
+      }
+    }
+    return fail(message)
+  }
+
   private async commit(
     edit: (base: StateSnapshot<T>) => readonly StateVersion<T>[],
     checkpoint?: { source: string; through: number },
     peer?: string,
   ) {
+    let repairs: StateVersionRepair<T>[] = []
     const build = (base: StateSnapshot<T>): StateSnapshot<T> => {
-      const known =
+      repairs = []
+      let known =
         base === this.snapshot
           ? this.known
           : new Map(base.journal.map(({ version }) => [identity(version), version]))
@@ -441,8 +489,22 @@ export class DurableState<T> {
       for (const version of edit(base)) {
         const previous = pending.get(identity(version)) ?? known.get(identity(version))
         if (previous) {
-          if (json(previous) !== json(version))
-            fail('A state version was reused with different data')
+          if (json(previous) !== json(version)) {
+            const recovered = this.recover(previous, version)
+            if (json(recovered) !== json(previous)) {
+              if (pending.has(identity(version))) {
+                pending.set(identity(version), recovered)
+                const change = appended.find(
+                  (entry) => identity(entry.version) === identity(version),
+                )
+                if (change) change.version = recovered
+              } else {
+                if (known === this.known) known = new Map(known)
+                known.set(identity(version), recovered)
+                repairs.push({ previous, version: recovered })
+              }
+            }
+          }
           continue
         }
         appended.push({ sequence: base.journal.length + appended.length + 1, version })
@@ -457,11 +519,18 @@ export class DurableState<T> {
         checkpoint &&
         peer !== undefined &&
         (!Object.hasOwn(base.sources ?? {}, peer) || base.sources?.[peer] !== checkpoint.source)
-      if (!appended.length && !changedCheckpoint && !changedSource) return base
+      if (!appended.length && !repairs.length && !changedCheckpoint && !changedSource) return base
       this.options.validateState?.(mergeLatest([...known.values()], [...pending.values()]))
+      const restored = new Map(repairs.map(({ version }) => [identity(version), version]))
+      const journal = repairs.length
+        ? base.journal.map((change) => ({
+            ...change,
+            version: restored.get(identity(change.version)) ?? change.version,
+          }))
+        : base.journal
       return {
         ...base,
-        journal: [...base.journal, ...appended],
+        journal: appended.length ? [...journal, ...appended] : journal,
         checkpoints: changedCheckpoint
           ? { ...base.checkpoints, [checkpoint.source]: checkpoint.through }
           : base.checkpoints,
@@ -488,6 +557,7 @@ export class DurableState<T> {
           next.journal.slice(this.revision),
           next.checkpoints,
           next.sources,
+          repairs,
         )
       else {
         const stored: unknown = JSON.parse(json(next))
@@ -499,10 +569,22 @@ export class DurableState<T> {
   }
 
   private publish(next: StateSnapshot<T>) {
+    const contentChanged = next.journal !== this.snapshot.journal
+    if (
+      contentChanged &&
+      this.snapshot.journal.some(
+        (change, index) =>
+          change !== next.journal[index] && json(change) !== json(next.journal[index]),
+      )
+    )
+      this.repairedRevision++
+    if (contentChanged) this.contentRevision++
     if (next.journal.length >= this.revision && next.journal[0] === this.snapshot.journal[0])
       this.indexChanges(next.journal.slice(this.revision))
     else this.index(next)
     this.snapshot = next
+    // Receipts are durable progress, not new content to broadcast back to every peer.
+    if (!contentChanged) return
     for (const listener of [...this.listeners]) {
       try {
         listener()
@@ -525,6 +607,17 @@ export class DurableState<T> {
   }
   get revision() {
     return this.snapshot.journal.length
+  }
+  /** Local content generation, including safe repairs that retain journal sequence numbers. */
+  get dataRevision() {
+    return this.contentRevision
+  }
+  /** Local generation of committed historical repairs; sessions must resend their prefix. */
+  get repairRevision() {
+    return this.repairedRevision
+  }
+  get supportsVersionRecovery() {
+    return this.options.recoverVersion !== undefined
   }
   subscribe(listener: () => void) {
     if (this.closing) throw new Error('Durable state is closed')
@@ -711,8 +804,22 @@ export class DurableState<T> {
     const source = input.pull.source === undefined ? undefined : text(input.pull.source)
     if (source === this.replicaId && after > this.revision)
       return fail('State cursor is ahead of the source')
-    const accepted = await this.receive(input.batch)
-    return { accepted, batch: this.batch(source === this.replicaId ? after : 0) }
+    const batch = this.decodeBatch(input.batch)
+    // A stale client can already have acknowledged our complete version under its old,
+    // incomplete encoding. Return retained history even though its sequence is caught up.
+    const replay =
+      this.options.recoverVersion &&
+      batch.changes.some(({ version }) => {
+        const previous = this.known.get(identity(version))
+        return (
+          previous &&
+          this.options.acceptVersion?.(version) !== false &&
+          json(previous) !== json(version) &&
+          json(this.recover(previous, version)) === json(previous)
+        )
+      })
+    const accepted = await this.receive(batch)
+    return { accepted, batch: this.batch(!replay && source === this.replicaId ? after : 0) }
   }
   async accept(input: unknown, peer?: string) {
     if (this.options.storage.update) await this.refresh()
@@ -722,7 +829,13 @@ export class DurableState<T> {
     if (through > this.revision) return fail('State acknowledgement is ahead of the source')
     const batch = this.decodeBatch(input.batch)
     await this.receive(batch, peer)
-    return { peer: batch.source, sentThrough: through, more: batch.more || through < this.revision }
+    return {
+      peer: batch.source,
+      sentThrough: through,
+      receivedMore: batch.more,
+      receivedThrough: batch.through,
+      more: batch.more || through < this.revision,
+    }
   }
   close() {
     this.closing = true

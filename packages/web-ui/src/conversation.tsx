@@ -71,9 +71,7 @@ export function ConversationScrollButton({ reduceMotion }: { reduceMotion?: bool
     !isAtBottom && (
       <Button
         aria-label="Scroll to latest message"
-        className="absolute bottom-3 rounded-full"
-        // Keep the action beside the reading column, with a pane-edge fallback for narrow chats.
-        style={{ right: 'max(0.75rem, calc((100% - var(--chat-max, 100%)) / 2 - 2.5rem))' }}
+        className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full"
         size="icon"
         variant="outline"
         onClick={() => {

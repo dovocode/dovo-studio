@@ -591,7 +591,7 @@ const startup = Effect.gen(function* () {
         },
       } satisfies NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     })
-    const updates = registerUpdates(__dirname, async () => {
+    const updates = registerUpdates(__dirname, async (beforeStop) => {
       preparingUpdate = true
       const reopen = () => {
         if (!mainWindow || mainWindow.isDestroyed()) createWindow()
@@ -600,6 +600,7 @@ const startup = Effect.gen(function* () {
         await browserWindows.returnAll()
         if (!(await closeStudioWindows()))
           throw new Error('Update cancelled. Save your edits before updating.')
+        await beforeStop()
         const restore = await prepareLocalRuntimeUpdate(__dirname)
         quitting = true
         browserWindows.setQuitting(true)

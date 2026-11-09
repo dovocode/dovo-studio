@@ -298,6 +298,7 @@ try {
       return {
         action: { left: action.left, right: action.right, bottom: action.bottom },
         logRight: log.right,
+        logCenter: log.left + log.width / 2,
         logBottom: log.bottom,
         composerRight: composer.right,
         composerTop: composer.top,
@@ -313,13 +314,10 @@ try {
       'Latest action clears the conversation edge',
     )
     assert.ok(geometry.action.bottom < geometry.composerTop, 'Latest action clears the composer')
-    if (width >= 560) {
-      assert.ok(geometry.action.left >= geometry.proseRight, 'Latest action stays outside prose')
-      assert.ok(
-        Math.abs(geometry.action.left - geometry.composerRight) <= 12,
-        'Latest action follows the reading/composer column',
-      )
-    }
+    assert.ok(
+      Math.abs((geometry.action.left + geometry.action.right) / 2 - geometry.logCenter) < 1,
+      'Latest action stays centered in the conversation pane: ' + JSON.stringify(geometry),
+    )
     assert.equal(await rail.isVisible(), width !== 360)
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     if (screenshots) await page.screenshot({ path: `${screenshots}/conversation-${width}.png` })

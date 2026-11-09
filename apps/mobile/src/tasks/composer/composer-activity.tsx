@@ -11,13 +11,7 @@ import { NativeTodos } from '../conversation/components/native-todos'
 import { MessageQueue } from './message-queue'
 import { pendingQueue } from './pending-send'
 
-export function ComposerActivity({
-  task,
-  inComposer = false,
-}: {
-  task: Task
-  inComposer?: boolean
-}) {
+export function ComposerActivity({ task, attached = false }: { task: Task; attached?: boolean }) {
   const { colors, styles } = useTheme()
   const { actions } = useTaskConversation()
   const { call, connected } = useRuntime()
@@ -192,19 +186,24 @@ export function ComposerActivity({
       </Pressable>
     </View>
   )
+  const Surface = attached ? View : Glass
   return (
     <View
       accessibilityLabel="Composer activity"
       style={{
-        marginHorizontal: inComposer ? 20 : 12,
-        marginBottom: 8,
+        marginHorizontal: attached ? 20 : 12,
+        marginTop: 0,
+        marginBottom: attached ? -1 : 8,
       }}
     >
-      <Glass
+      <Surface
         style={{
-          borderRadius: 12,
+          borderRadius: attached ? 16 : 12,
+          ...(attached ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : {}),
+          backgroundColor: attached ? colors.surface : undefined,
           overflow: 'hidden',
           borderWidth: 1,
+          borderBottomWidth: attached ? 0 : 1,
           borderColor: colors.border,
         }}
       >
@@ -254,7 +253,7 @@ export function ComposerActivity({
             />
           </View>
         )}
-      </Glass>
+      </Surface>
     </View>
   )
 }

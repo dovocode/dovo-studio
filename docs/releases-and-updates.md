@@ -22,11 +22,21 @@ notes and live download progress, including transferred bytes and speed. After d
 **Restart and install** or **Later**. On Windows, confirming the restart installs the update
 silently and relaunches the app without the installer wizard. Installation checks the local runtime
 and waits if tasks or automations are running. Choosing Later does not install unexpectedly on quit.
-Remote runtimes are not restarted. Source builds explain how to update the checkout instead of
-attempting an installer update. Stable and Nightly have separate app identities and installers but
-use the same workspace and pairing data. Run one version's local runtime at a time; opening the
-other version connects to the existing compatible runtime without restarting it. Incompatible
-runtime protocol versions require a runtime update before the other app can connect.
+The updater checks active work, closes windows with the existing draft guards, then acquires a
+runtime restart lease before stopping the local runtime. The lease blocks new work from paired
+clients during shutdown. Cancelling a close prompt does not reserve a restart. An installation
+failure restores the runtime and cancels the restart lease. Remote runtimes are not restarted.
+Source builds explain how to update the checkout instead of attempting an installer update. Stable
+and Nightly have separate app identities and installers but use the same workspace and pairing data.
+Run one version's local runtime at a time; opening the other version connects to the existing
+compatible runtime without restarting it. Incompatible runtime protocol versions require a runtime
+update before the other app can connect.
+
+After an external macOS app replacement, Studio can refresh an older background runtime from the
+same app path and release channel. It checks the authenticated runtime, the launchd PID, the exact
+entrypoint and the release version. It acquires a restart lease first. Running work defers this
+handoff until a later connection or app launch. Studio does not downgrade a newer runtime or stop
+another app variant's service. This handoff requires the updated desktop app.
 
 The feed is the public `dovocode/dovo-studio` GitHub repository. A source push alone is not a binary
 release. The Release workflow produces:
@@ -50,6 +60,11 @@ Linux builds use the same desktop identity for Wayland, X11 and packaged launche
 an AppImage registers a user-local launcher and persistent Dovo icon under `$XDG_DATA_HOME` (or
 `~/.local/share`). Later launches update its executable path after an AppImage move or upgrade.
 Existing user-owned launchers are preserved; DEB/RPM launchers are installed by the package manager.
+
+Source-server updates stage all runtime workspace dependencies, including durable connections and
+push. They keep the saved browser bundles from the source snapshot. They do not rebuild desktop-only
+browser assets. Installation uses the frozen lockfile and the existing pnpm configuration. The
+candidate build and native terminal smoke check finish before the running service changes.
 
 For a standalone Linux server, [the one-command installer](server-setup.md) selects and verifies the
 matching server archive, registers the user service, and uses the same command for upgrades.
@@ -386,3 +401,16 @@ Computer updates lists **Server** and **Desktop** independently; updating the de
 replace or restart the separately installed server. The desktop target stays visible during its
 restart, and completion checks the app's version rather than the server's version. Both the host app
 and server need this release once before standalone-server discovery is available.
+
+## Update path regression checks
+
+```sh
+pnpm --filter @dovo/api... -r build
+pnpm exec vp test apps/desktop/electron/updates.test.ts apps/desktop/electron/local-runtime.test.ts apps/desktop/electron/background-runtime.test.ts apps/desktop/electron/remote-updates.test.ts apps/api/src/server-update.test.ts apps/api/src/server-update-recovery.test.ts apps/api/src/server-remote-update.test.ts packages/runtime/src/http/desktop-updates.integration.test.ts
+```
+
+The desktop lifecycle tests use Electron and launchd adapters. They check ownership, active work,
+channel selection, close cancellation and failure recovery. They do not run a signed installer on
+macOS or Windows. A Linux staged-source check also installed the frozen dependencies, built the
+candidate and started its real runtime and native terminal. Physical iOS installation and
+interaction need a new native build and a device check.

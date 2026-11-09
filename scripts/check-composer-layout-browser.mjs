@@ -873,7 +873,7 @@ try {
     ),
     mainCount,
   )
-  // The queue stays inset above the shared composer, with compaction outside both surfaces.
+  // Queue and checklist attach above the rounded input, inset at both sides.
   await page.evaluate(() =>
     window.setTask({
       repositoryId: 'git',
@@ -944,23 +944,33 @@ try {
     assert.ok(compact.y + compact.height <= queue.y)
     assert.ok(queue.height <= 32, JSON.stringify(queue))
     assert.ok(
-      Math.abs(queueStrip.x - composer.x - 12) < 1 &&
-        Math.abs(queueStrip.width - composer.width + 24) < 1,
+      Math.abs(queueStrip.x - composer.x - 24) < 1 &&
+        Math.abs(queueStrip.width - composer.width + 48) < 1,
       JSON.stringify({ queueStrip, composer }),
     )
     assert.ok(
-      Math.abs(queueStrip.y + queueStrip.height + 8 - composer.y) < 2,
-      JSON.stringify({ queue, composer }),
+      Math.abs(queueStrip.y + queueStrip.height - 1 - composer.y) < 2,
+      JSON.stringify({ queueStrip, composer }),
     )
+    const attachment = await page.locator('.studio-composer').evaluate((element) => {
+      const style = getComputedStyle(element)
+      const activity = document.querySelector('.studio-composer-activity')
+      return {
+        outside: !element.contains(activity),
+        inputRadius: parseFloat(style.borderTopLeftRadius),
+        inputBorder: parseFloat(style.borderTopWidth),
+        activityBottomBorder: parseFloat(getComputedStyle(activity).borderBottomWidth),
+        activityRadius: parseFloat(getComputedStyle(activity).borderTopLeftRadius),
+      }
+    })
     assert.ok(
-      await page.locator('.studio-composer').evaluate((element) => {
-        const style = getComputedStyle(element)
-        return (
-          parseFloat(style.borderTopLeftRadius) >= 20 &&
-          parseFloat(style.borderTopRightRadius) >= 20
-        )
-      }),
-      'The composer keeps its rounded top corners below the checklist and queue',
+      attachment.outside &&
+        attachment.inputRadius >= 20 &&
+        attachment.inputBorder === 1 &&
+        attachment.activityBottomBorder === 0 &&
+        attachment.activityRadius === 16,
+      'The activity panel sits outside the input border and attaches above its rounded corners: ' +
+        JSON.stringify(attachment),
     )
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),

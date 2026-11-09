@@ -437,8 +437,10 @@ it('keeps the runtime alive when update closing is cancelled and reopens after p
   if (!prepare) throw new Error('Missing update preparation')
   fixture.closeWindows.mockClear()
   fixture.closeWindows.mockResolvedValueOnce(false)
-  await expect(prepare()).rejects.toThrow('Update cancelled')
+  const beforeStop = vi.fn<() => Promise<void>>(async () => {})
+  await expect(prepare(beforeStop)).rejects.toThrow('Update cancelled')
   expect(prepareLocalRuntimeUpdate).not.toHaveBeenCalled()
+  expect(beforeStop).not.toHaveBeenCalled()
   const windows = fixture.windows
   const quits = fixture.quit.mock.calls.length
   fixture.closeWindows.mockImplementationOnce(async () => {
@@ -447,7 +449,8 @@ it('keeps the runtime alive when update closing is cancelled and reopens after p
     return true
   })
   vi.mocked(prepareLocalRuntimeUpdate).mockRejectedValueOnce(new Error('Preparation failed'))
-  await expect(prepare()).rejects.toThrow('Preparation failed')
+  await expect(prepare(beforeStop)).rejects.toThrow('Preparation failed')
+  expect(beforeStop).toHaveBeenCalledOnce()
   expect(fixture.quit).toHaveBeenCalledTimes(quits)
   expect(fixture.windows).toBe(windows + 1)
   fixture.closeWindows.mockClear()

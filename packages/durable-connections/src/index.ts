@@ -14,6 +14,7 @@ export {
 } from './state.js'
 export type {
   StateVersion,
+  StateVersionRepair,
   StateChange,
   StateBatch,
   StateRequest,

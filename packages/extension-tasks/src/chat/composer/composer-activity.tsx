@@ -57,7 +57,7 @@ export function ComposerActivity({
     <section
       ref={section}
       aria-label="Composer activity"
-      className="relative mx-auto mb-2 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-24px)] overflow-hidden rounded-xl border border-border/70 bg-card text-[0.8125rem]"
+      className="studio-composer-activity relative mx-auto overflow-hidden text-[0.8125rem]"
     >
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {`${task.queue?.length ?? 0} queued ${(task.queue?.length ?? 0) === 1 ? 'message' : 'messages'}${pausedCount ? `, ${pausedCount} paused` : ''}`}
@@ -68,7 +68,7 @@ export function ComposerActivity({
         <div
           role={both ? 'tablist' : undefined}
           aria-label={both ? 'Queue and checklist' : undefined}
-          className="flex min-w-0 flex-1 items-center gap-1 pr-8"
+          className={`flex min-w-0 flex-1 items-center gap-1 pr-8 ${both ? 'studio-segmented' : ''}`}
         >
           {[
             ...(hasQueue

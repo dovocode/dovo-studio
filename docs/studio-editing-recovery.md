@@ -88,7 +88,31 @@ under their parent. Search can find a child through its parent. Child input requ
 parent's **Needs input** section. Project and computer filters keep the parent as context. Subagents
 stay behind its icon. An archived parent remains as context when it has a visible child. Desktop
 Unified uses the same preferred-copy rules as Threads. A connected original wins over its replicas.
-A connected replica can replace an offline original. One logical thread has one main row.
+A connected replica can replace an offline original. One logical thread has one main row. Equal
+copies use a stable computer ID to break ties. Their order in the fleet does not change the selected
+row.
+
+Older thread decoders dropped `parent` without changing the version ID. Updated clients and runtimes
+repair that specific omission when another paired copy has the complete version. All other data and
+the version ID must match. The repair commits in the same transaction as its receive receipt. It
+keeps journal sequence numbers, runtime identities, pairings, history and drafts. It also updates
+stored summaries. A replay from an old client cannot remove a restored parent link.
+
+An active sender resends retained history after a committed repair, even if its peer already
+acknowledged every journal entry. A receiver that detects an incomplete copy returns its retained
+complete history. Clients drain these replay pages with the page cursor, even when a saved receipt
+is already further ahead. Receipts and version counts do not need a reset.
+
+If an older peer rejects the damaged outgoing record before it returns its complete copy, the
+updated client pulls the peer's retained history, then tries the push again. This replay includes
+pages that were already acknowledged. It uses the existing reconnect backoff if the error remains.
+It does not reset storage or pairings. Different parent links and other data conflicts remain
+visible. Automatic recovery does not choose between competing user edits.
+
+Thread catch-up publishes one settled UI refresh after its batches complete. Receipt-only changes do
+not trigger another content exchange or refresh. A failed background snapshot read keeps a healthy
+live stream connected. Confirmed authentication failures still report a disconnected state. These
+rules prevent temporary read failures from switching rows between owners and replicas.
 
 Parent links and monitor facts use the selected copy's row key. A child remains under its parent
 when the parent, the child, or both use replicas on other computers. Opening the row uses the

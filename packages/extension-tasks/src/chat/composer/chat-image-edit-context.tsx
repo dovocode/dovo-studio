@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+} from 'react'
 import { Pencil } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
 import type { ChatImageSource } from '@dovo/protocol'
@@ -33,11 +40,13 @@ export function EditChatImage({
   label,
   onEdit,
   compact = false,
+  overlay = false,
 }: {
   source: ChatImageSource
   label: string
   onEdit?: () => void
   compact?: boolean
+  overlay?: boolean
 }) {
   const context = useContext(ChatImageEditContext)
   const { connected } = useWorkspace()
@@ -48,9 +57,11 @@ export function EditChatImage({
       size={compact ? 'icon' : 'sm'}
       variant="ghost"
       className={
-        compact
-          ? 'size-7 shrink-0 text-muted-foreground [@media(pointer:coarse)]:size-11'
-          : undefined
+        overlay
+          ? 'studio-chat-image-edit'
+          : compact
+            ? 'size-7 shrink-0 text-muted-foreground [@media(pointer:coarse)]:size-11'
+            : undefined
       }
       title={`Edit and attach ${label}`}
       disabled={!connected || context.disabled || context.busy || !context.available}
@@ -63,5 +74,22 @@ export function EditChatImage({
       <Pencil className="size-3.5" />
       {!compact && 'Edit & attach'}
     </Button>
+  )
+}
+
+export function ChatImageFrame({
+  children,
+  ...props
+}: {
+  children: ReactNode
+  source: ChatImageSource
+  label: string
+  onEdit?: () => void
+}) {
+  return (
+    <span className="studio-chat-image relative inline-flex max-w-full align-top">
+      {children}
+      <EditChatImage {...props} overlay />
+    </span>
   )
 }

@@ -2,6 +2,9 @@ import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/proto
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { decode, managedPolicySchema } from '@dovo/protocol'
+const requestUrl = (input: Parameters<typeof fetch>[0]) =>
+  typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+
 const f = vi.hoisted(() => ({
   githubFetch: vi.fn<typeof fetch>(async (input, init) => fetch(input, init)),
   open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
@@ -145,7 +148,10 @@ it('disables all update entry points under managed policy', async () => {
     ),
   )
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   expect(updates.supported).toBe(false)
   expect(await updates.refresh()).toBe(false)
   await expect(updates.install()).rejects.toThrow('Example')
@@ -173,7 +179,10 @@ it('forces stable updates and honors a managed HTTP desktop feed', async () => {
   )
   f.notes = undefined
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   expect(updates.state().channel).toBe('stable')
   await expect(updates.setChannel('nightly')).rejects.toThrow('Example')
   await expect(updates.remote('download', '1.0.0-nightly.1')).rejects.toThrow('Example')
@@ -187,10 +196,17 @@ it('forces stable updates and honors a managed HTTP desktop feed', async () => {
 it('publishes update notes and downloads directly from the sidebar action', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+    vi.fn<typeof fetch>(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    ),
   )
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.refresh()
   expect(updates.state()).toMatchObject({
     status: 'available',
@@ -220,7 +236,10 @@ it('loads release notes from the release when updater metadata omits them', asyn
     vi.fn<typeof fetch>(async () => Response.json({ body: 'New release changes' })),
   )
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.refresh()
   await vi.waitFor(() => expect(updates.state().notes).toBe('New release changes'))
   expect(f.githubFetch).toHaveBeenCalledTimes(3)
@@ -236,7 +255,10 @@ it('resolves the published release on every check without adding credentials to 
     return Response.json(url.endsWith('/latest') ? metadata : [metadata])
   })
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.refresh()
   expect(f.githubFetch).toHaveBeenCalledTimes(2)
   expect(f.feed).toHaveBeenLastCalledWith({
@@ -274,7 +296,10 @@ it.each(['stable', 'nightly'] as const)(
     })
     const versions = { stable: '0.0.9', nightly: '0.0.9-nightly.43' }
     const { registerUpdates } = await import('./updates')
-    const updates = registerUpdates('/unused', async () => async () => {})
+    const updates = registerUpdates('/unused', async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    })
     await updates.refresh()
     expect(f.feed).toHaveBeenLastCalledWith({
       provider: 'generic',
@@ -293,7 +318,10 @@ it('reports a missing published channel instead of checking another channel', as
   vi.mocked(readLocalSettingsSection).mockReturnValue('nightly')
   f.githubFetch.mockImplementation(async () => Response.json([]))
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await expect(updates.refresh()).rejects.toThrow('No nightly desktop release is published')
   expect(updates.state()).toEqual({ status: 'error', channel: 'nightly' })
   expect(f.checks).not.toHaveBeenCalled()
@@ -302,21 +330,32 @@ it('reports a missing published channel instead of checking another channel', as
 it('asks again after the download before restarting', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+    vi.fn<typeof fetch>(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    ),
   )
   const { registerUpdates } = await import('./updates')
-  await registerUpdates('/unused', async () => async () => {}).check()
+  await registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  }).check()
   expect(f.message).toHaveBeenCalledTimes(2)
   expect(f.install).toHaveBeenCalledOnce()
 })
 it('keeps the downloaded update ready when restart is deferred', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+    vi.fn<typeof fetch>(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    ),
   )
   f.message.mockResolvedValueOnce({ response: 1 })
   const { registerUpdates } = await import('./updates')
-  const prepare = vi.fn<() => Promise<() => Promise<void>>>()
+  const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>()
   const updates = registerUpdates('/unused', prepare)
   await updates.install()
   expect(updates.state().status).toBe('downloaded')
@@ -328,12 +367,21 @@ it('shows Windows installation progress only after restart is confirmed', async 
   vi.spyOn(process, 'arch', 'get').mockReturnValue('x64')
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+    vi.fn<typeof fetch>(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    ),
   )
   f.message.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 1 })
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater
-  const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
+  const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>(
+    async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    },
+  )
   const updates = registerUpdates('/unused', prepare)
   await updates.check()
   expect(updates.state().status).toBe('downloaded')
@@ -354,7 +402,10 @@ it('shows Windows installation progress only after restart is confirmed', async 
 })
 it('uses the same check action from the application menu and sidebar bridge', async () => {
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   const menu = f.menu as Array<{
     role?: string
     submenu?: Array<{ label?: string; click?: () => void }>
@@ -372,15 +423,22 @@ it('uses the same check action from the application menu and sidebar bridge', as
 it('waits for the runtime to stop before installation and restores it on synchronous failure', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+    vi.fn<typeof fetch>(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    ),
   )
   const { registerUpdates } = await import('./updates')
   const restore = vi.fn<() => Promise<void>>(async () => {})
   let stopped = false
-  const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => {
-    stopped = true
-    return restore
-  })
+  const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>(
+    async (beforeStop) => {
+      await beforeStop()
+      stopped = true
+      return restore
+    },
+  )
   f.install.mockImplementation(() => {
     expect(stopped).toBe(true)
     throw new Error('Install failed')
@@ -393,12 +451,19 @@ it('waits for the runtime to stop before installation and restores it on synchro
 it('restores the stopped runtime when the updater reports an asynchronous installation error', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+    vi.fn<typeof fetch>(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    ),
   )
   const { registerUpdates } = await import('./updates')
   const restore = vi.fn<() => Promise<void>>(async () => {})
   f.install.mockImplementation(() => {})
-  await registerUpdates('/unused', async () => restore).check()
+  await registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return restore
+  }).check()
   f.listeners.get('error')?.(new Error('Installer rejected update'))
   await vi.waitFor(() => expect(restore).toHaveBeenCalledOnce())
   f.listeners.get('error')?.(new Error('Repeated error'))
@@ -409,7 +474,12 @@ it('opens Linux package downloads without attempting an AppImage update for DEB/
   vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
   vi.stubEnv('APPIMAGE', '')
   const { registerUpdates } = await import('./updates')
-  const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
+  const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>(
+    async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    },
+  )
   await registerUpdates('/unused', prepare).check()
   expect(f.open).toHaveBeenCalledWith('https://github.com/dovocode/dovo-studio/releases/latest')
   expect(prepare).not.toHaveBeenCalled()
@@ -422,7 +492,10 @@ it('keeps nightly updates on the prerelease channel and links nightly packages',
   f.version = '0.0.7-nightly.42'
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater
-  await registerUpdates('/unused', async () => async () => {}).check()
+  await registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  }).check()
   expect(updater.allowPrerelease).toBe(true)
   expect(f.open).toHaveBeenCalledWith('https://github.com/dovocode/dovo-studio/releases?q=nightly')
 })
@@ -430,10 +503,19 @@ it('keeps nightly updates on the prerelease channel and links nightly packages',
 it('downloads remotely without a host dialog and restarts only after an explicit command', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+    vi.fn<typeof fetch>(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    ),
   )
   const { registerUpdates } = await import('./updates')
-  const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
+  const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>(
+    async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    },
+  )
   const updates = registerUpdates('/unused', prepare)
   await updates.remote('download', 'next')
   expect(updates.state().status).toBe('downloaded')
@@ -467,7 +549,10 @@ it('refuses a remote restart without the requested download and reports active w
     ),
   )
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await expect(updates.remote('restart', 'next')).rejects.toThrow('Download')
   await updates.remote('download', 'next')
   await expect(updates.remote('restart', 'next')).rejects.toThrow('Finish running')
@@ -478,7 +563,10 @@ it('refuses a remote restart without the requested download and reports active w
 it('persists a selected channel and clears release metadata from the previous channel', async () => {
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.refresh()
   await updates.setChannel('nightly')
   expect(updater.channel).toBe(
@@ -496,7 +584,10 @@ it('restores the saved channel instead of following the installed build', async 
   f.version = '0.0.7-nightly.42'
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   expect(updates.state().channel).toBe('stable')
   expect(updater.allowPrerelease).toBe(false)
   expect(updater.allowDowngrade).toBe(true)
@@ -505,7 +596,10 @@ it('restores the saved channel instead of following the installed build', async 
 it('keeps a downloaded update on its selected channel until installation', async () => {
   f.message.mockResolvedValueOnce({ response: 1 })
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.install()
   await expect(updates.setChannel('nightly')).rejects.toThrow('Finish the current update')
   expect(updates.state().channel).toBe('stable')
@@ -529,7 +623,10 @@ it('uses the architecture-specific feed when checking Windows ARM nightly releas
   )
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater
-  await registerUpdates('/unused', async () => async () => {}).setChannel('nightly')
+  await registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  }).setChannel('nightly')
   expect(updater.channel).toBe('nightly-arm64')
   expect(f.feed).toHaveBeenCalledWith({
     provider: 'generic',
@@ -539,7 +636,10 @@ it('uses the architecture-specific feed when checking Windows ARM nightly releas
 
 it('rechecks an existing offer before downloading the newest release', async () => {
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.refresh()
   f.next = 'newer'
   f.message.mockResolvedValueOnce({ response: 1 })
@@ -550,7 +650,10 @@ it('rechecks an existing offer before downloading the newest release', async () 
 })
 it('checks online even with a downloaded release, preserving it only while still current', async () => {
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   f.message.mockResolvedValueOnce({ response: 1 })
   await updates.install()
   await updates.refresh()
@@ -563,7 +666,10 @@ it('checks online even with a downloaded release, preserving it only while still
 
 it('does not download a stale offer when the online recheck fails', async () => {
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.refresh()
   f.checks.mockImplementationOnce(() => {
     throw new Error('Offline')
@@ -577,10 +683,20 @@ it('keeps default stable and nightly channels without saving an implicit choice'
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater
   f.version = '0.0.7'
-  expect(registerUpdates('/unused', async () => async () => {}).state().channel).toBe('stable')
+  expect(
+    registerUpdates('/unused', async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    }).state().channel,
+  ).toBe('stable')
   expect(updater.allowDowngrade).toBe(false)
   f.version = '0.0.7-nightly.42'
-  expect(registerUpdates('/unused', async () => async () => {}).state().channel).toBe('nightly')
+  expect(
+    registerUpdates('/unused', async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    }).state().channel,
+  ).toBe('nightly')
   expect(updater.allowPrerelease).toBe(true)
   expect(updater.allowDowngrade).toBe(false)
   expect(writeLocalSettingsSection).not.toHaveBeenCalled()
@@ -589,7 +705,10 @@ it('allows an explicit stable-to-nightly change despite prerelease version order
   f.version = '0.0.7'
   const { registerUpdates } = await import('./updates')
   const updater = (await import('electron-updater')).default.autoUpdater
-  const updates = registerUpdates('/unused', async () => async () => {})
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    return async () => {}
+  })
   await updates.setChannel('nightly')
   expect(updater.allowPrerelease).toBe(true)
   expect(updater.allowDowngrade).toBe(true)
@@ -604,11 +723,18 @@ it.each([false, true])(
     const request = vi.fn<typeof fetch>(async (input) =>
       (input instanceof Request ? input.url : input.toString()).endsWith('/prepare-restart')
         ? Response.json({ id: 'restart-lease' })
-        : Response.json(snapshot),
+        : Response.json(
+            requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+          ),
     )
     vi.stubGlobal('fetch', request)
     const { registerUpdates } = await import('./updates')
-    const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
+    const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>(
+      async (beforeStop) => {
+        await beforeStop()
+        return async () => {}
+      },
+    )
     const updates = registerUpdates('/unused', prepare)
     await updates.remote('install', 'next', resumeInterrupted)
     expect(f.downloads).toHaveBeenCalledOnce()
@@ -627,11 +753,14 @@ it('cancels restart preparation and keeps the download retryable when shutdown f
   const request = vi.fn<typeof fetch>(async (input) =>
     (input instanceof Request ? input.url : input.toString()).endsWith('/prepare-restart')
       ? Response.json({ id: 'restart-lease' })
-      : Response.json(snapshot),
+      : Response.json(
+          requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+        ),
   )
   vi.stubGlobal('fetch', request)
   const { registerUpdates } = await import('./updates')
-  const updates = registerUpdates('/unused', async () => {
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
     throw new Error('Shutdown failed')
   })
   await expect(updates.remote('install', 'next', false)).rejects.toThrow('Shutdown failed')
@@ -641,6 +770,40 @@ it('cancels restart preparation and keeps the download retryable when shutdown f
     expect.objectContaining({
       body: JSON.stringify({ id: 'restart-lease' }),
     }),
+  )
+  expect(f.install).not.toHaveBeenCalled()
+})
+
+it('does not stop the runtime when new work starts while windows are closing', async () => {
+  const request = vi.fn<typeof fetch>(async (input) =>
+    requestUrl(input).endsWith('/prepare-restart')
+      ? Response.json({ error: 'New work is running' }, { status: 409 })
+      : Response.json(snapshot),
+  )
+  vi.stubGlobal('fetch', request)
+  const { registerUpdates } = await import('./updates')
+  const stopped = vi.fn<() => void>()
+  const updates = registerUpdates('/unused', async (beforeStop) => {
+    await beforeStop()
+    stopped()
+    return async () => {}
+  })
+  await updates.install()
+  expect(stopped).not.toHaveBeenCalled()
+  expect(f.install).not.toHaveBeenCalled()
+  expect(updates.state().error).toContain('prepare')
+})
+
+it('does not reserve a restart before an unsaved-edit close prompt is accepted', async () => {
+  const request = vi.fn<typeof fetch>(async () => Response.json(snapshot))
+  vi.stubGlobal('fetch', request)
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => {
+    throw Error('Keep editing')
+  })
+  await updates.install()
+  expect(request.mock.calls.every(([url]) => !requestUrl(url).includes('prepare-restart'))).toBe(
+    true,
   )
   expect(f.install).not.toHaveBeenCalled()
 })

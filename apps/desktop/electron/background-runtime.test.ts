@@ -163,3 +163,26 @@ it('keeps desktop release metadata in launchd without putting it in the credenti
     JSON.parse(await readFile(join(options.directory, 'runtime-environment.json'), 'utf8')),
   ).toEqual({})
 })
+
+it('recognizes only the authenticated PID and exact app entrypoint for a runtime handoff', async () => {
+  const { backgroundRuntimeMatches } = await import('./background-runtime')
+  const options = await fixture()
+  const command = vi.fn<(args: string[]) => Promise<string>>(
+    async () => `pid = 123\narguments = {\n  ${options.node}\n  ${options.entrypoint}\n}\n`,
+  )
+  expect(
+    await backgroundRuntimeMatches(options.directory, 501, 123, options.entrypoint, command),
+  ).toBe(true)
+  expect(
+    await backgroundRuntimeMatches(options.directory, 501, 124, options.entrypoint, command),
+  ).toBe(false)
+  expect(
+    await backgroundRuntimeMatches(
+      options.directory,
+      501,
+      123,
+      options.entrypoint + '-other',
+      command,
+    ),
+  ).toBe(false)
+})

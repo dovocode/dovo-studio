@@ -134,6 +134,28 @@ export function ensureBackgroundRuntime(
 export const backgroundRuntimeLabel = (directory: string) =>
   `com.dovo.studio.runtime.${createHash('sha256').update(directory).digest('hex').slice(0, 16)}`
 
+/** An app replaced outside the updater may leave its old launchd process running.
+ * Never replace a service launched by another installed app or desktop variant. */
+export async function backgroundRuntimeMatches(
+  directory: string,
+  uid: number,
+  pid: number,
+  entrypoint: string,
+  command: (args: string[]) => Promise<string | void> = launchctl,
+) {
+  let description: string | void
+  try {
+    description = await command(['print', `gui/${uid}/${backgroundRuntimeLabel(directory)}`])
+  } catch {
+    return false
+  }
+  if (typeof description !== 'string') return false
+  return (
+    Number(description.match(/(?:^|\n)\s*pid = (\d+)/)?.[1]) === pid &&
+    description.split('\n').some((line) => line.trim() === entrypoint)
+  )
+}
+
 /** Only stop a service whose launchd PID matches this profile's authenticated discovery. */
 export function stopBackgroundRuntimeForUpdate(
   directory: string,

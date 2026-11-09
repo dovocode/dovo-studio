@@ -604,7 +604,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                 ),
                 Effect.tapError((error) =>
                   Effect.sync(() => {
-                    if (sequence.current.get(profile.id) === version)
+                    if (
+                      sequence.current.get(profile.id) === version &&
+                      (isUnauthorizedRuntimeError(error) || !runtimeSyncOnline(profile.connection))
+                    )
                       updateEntry(profile, (previous) => ({
                         ...previous,
                         connected: false,

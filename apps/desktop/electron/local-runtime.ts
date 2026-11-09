@@ -1,8 +1,17 @@
-import { createRuntimeClient, RUNTIME_PROTOCOL_VERSION, mutableStruct } from '@dovo/protocol'
+import {
+  createRuntimeClient,
+  RUNTIME_PROTOCOL_VERSION,
+  mutableStruct,
+  newerRuntimeVersion,
+} from '@dovo/protocol'
 import { readListenAddress, writeListenAddress } from '@dovo/api/listen-address'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { homedir, uptime } from 'node:os'
-import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
+import {
+  ensureBackgroundRuntime,
+  stopBackgroundRuntimeForUpdate,
+  backgroundRuntimeMatches,
+} from './background-runtime.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
   appendFileSync,
@@ -120,7 +129,7 @@ function backgroundStartupFailure(port: string) {
     return `The Mac background runtime cannot start because port ${port} is in use by another app. Quit that app, then reopen Dovo Studio.`
   return `The Mac background runtime did not become ready.${reason ? ` ${reason}` : ''} See runtime-service.log in the desktop data directory.`
 }
-const existingRuntime = (requireCompatible = true) =>
+const existingRuntime = (requireCompatible = true, refreshOlder = false) =>
   Effect.gen(function* () {
     const saved = yield* Effect.try({
       try: () => {
@@ -144,7 +153,7 @@ const existingRuntime = (requireCompatible = true) =>
             Authorization: `Bearer ${saved.token}`,
           },
           redirect: 'error',
-          signal,
+          signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
         })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const snapshot: unknown = await response.json()
@@ -155,6 +164,71 @@ const existingRuntime = (requireCompatible = true) =>
           snapshot.owner !== true
         )
           throw new Error('Owner access is required')
+        if (
+          refreshOlder &&
+          app.isPackaged &&
+          process.platform === 'darwin' &&
+          'releaseDistribution' in snapshot &&
+          snapshot.releaseDistribution === 'desktop' &&
+          'releaseVersion' in snapshot &&
+          typeof snapshot.releaseVersion === 'string' &&
+          snapshot.releaseVersion.includes('-nightly.') ===
+            app.getVersion().includes('-nightly.') &&
+          newerRuntimeVersion(app.getVersion(), snapshot.releaseVersion)
+        ) {
+          const uid = process.getuid?.()
+          if (
+            uid !== undefined &&
+            (await backgroundRuntimeMatches(
+              desktopRuntimeDirectory(),
+              uid,
+              saved.pid,
+              join(process.resourcesPath, 'runtime/dist/index.js'),
+            ))
+          ) {
+            const headers = {
+              Authorization: `Bearer ${saved.token}`,
+              'Content-Type': 'application/json',
+            }
+            // The runtime checks active work and prevents new work in one operation.
+            const prepared = await fetch(saved.address + '/api/runtime/prepare-restart', {
+              method: 'POST',
+              headers,
+              body: '{}',
+              signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+            })
+            if (prepared.status !== 409) {
+              if (!prepared.ok) throw new Error('Could not prepare the old runtime for update')
+              const lease: unknown = await prepared.json()
+              if (
+                !lease ||
+                typeof lease !== 'object' ||
+                !('id' in lease) ||
+                typeof lease.id !== 'string'
+              )
+                throw new Error('Invalid runtime restart preparation')
+              try {
+                await Effect.runPromise(
+                  stopBackgroundRuntimeForUpdate(desktopRuntimeDirectory(), uid, saved.pid),
+                )
+              } catch (cause) {
+                const cancelled = await fetch(saved.address + '/api/runtime/cancel-restart', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({ id: lease.id }),
+                  signal: AbortSignal.timeout(5000),
+                })
+                if (!cancelled.ok)
+                  throw new AggregateError(
+                    [cause],
+                    'Runtime update failed and restart preparation could not be cancelled',
+                  )
+                throw cause
+              }
+              return undefined
+            }
+          }
+        }
         if (
           requireCompatible &&
           (!('protocolVersion' in snapshot) ||
@@ -170,10 +244,6 @@ const existingRuntime = (requireCompatible = true) =>
       },
       catch: failure,
     }).pipe(
-      Effect.timeoutOrElse({
-        duration: '3 seconds',
-        orElse: () => Effect.fail((() => new Error('Runtime health check timed out'))()),
-      }),
       Effect.catch((cause) =>
         cause instanceof RuntimeCompatibilityError
           ? Effect.fail(cause)
@@ -543,7 +613,10 @@ export function startLocalRuntime(
           owned = undefined
         }
         // External servers belong to their supervisor. Re-read discovery after a service restart.
-        const existing = yield* existingRuntime(!options.allowIncompatible)
+        const existing = yield* existingRuntime(
+          !options.allowIncompatible,
+          !options.allowIncompatible,
+        )
         if (existing) return existing
         if (app.isPackaged && process.platform === 'darwin') {
           const { env } = yield* runtimeOptions()

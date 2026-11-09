@@ -8,6 +8,7 @@ import {
   decode,
   decodeThreadRecord,
   validateThreadVersion,
+  recoverThreadParentVersion,
   threadReplicationChannel,
   threadVersionSchema,
   ThreadHistoryChangedError,
@@ -56,6 +57,7 @@ export class ThreadReplication {
           storage: journal.storage(store),
           decode: decodeThreadRecord,
           validateVersion: validateThreadVersion,
+          recoverVersion: recoverThreadParentVersion,
           acceptVersion: (version) => {
             if (
               version.deleted ||

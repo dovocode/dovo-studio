@@ -26,7 +26,7 @@ export function SearchField({
   const input = inputRef ?? localRef
   const clearable = value.length > 0 && !disabled && !readOnly
   return (
-    <div className={cn('relative min-w-0', containerClassName)}>
+    <div className={cn('studio-search-field relative min-w-0', containerClassName)}>
       <Search
         aria-hidden="true"
         className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"

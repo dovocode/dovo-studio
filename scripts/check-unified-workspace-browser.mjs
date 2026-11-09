@@ -500,7 +500,12 @@ try {
   )
   assert.equal(await pinnedPages.locator('.studio-browser-tab-title').count(), 0)
   assert.equal(await pinnedPages.locator('.studio-browser-tab-favicon img').count(), 5)
-  assert.equal(await pinnedPages.locator('.studio-browser-tab-profile').count(), 5)
+  assert.equal(await pinnedPages.locator('.studio-browser-tab-profile').count(), 0)
+  assert.ok(
+    (
+      await pinnedPages.first().locator('.studio-browser-tab-select').getAttribute('title')
+    ).includes('local'),
+  )
   assert.equal(
     await pinnedSection.locator('[data-workspace-kind="thread"] .studio-thread-card').count(),
     2,
@@ -535,9 +540,26 @@ try {
           return { x, y, width, height }
         }),
       )
+    const assertCenteredFavicons = async () => {
+      const offsets = await pinnedPages.locator('.studio-browser-tab').evaluateAll((tiles) =>
+        tiles.map((tile) => {
+          const icon = tile.querySelector('.studio-browser-tab-favicon').getBoundingClientRect()
+          const card = tile.getBoundingClientRect()
+          return {
+            x: icon.x + icon.width / 2 - card.x - card.width / 2,
+            y: icon.y + icon.height / 2 - card.y - card.height / 2,
+          }
+        }),
+      )
+      assert.ok(
+        offsets.every(({ x, y }) => Math.abs(x) < 1 && Math.abs(y) < 1),
+        JSON.stringify(offsets),
+      )
+    }
+    await assertCenteredFavicons()
     const idleUnifiedPins = await unifiedPinGeometry()
     assert.ok(
-      idleUnifiedPins.every((tile) => tile.height === 80),
+      idleUnifiedPins.every((tile) => tile.height === 56),
       'Unified pins match browser density',
     )
     await page.evaluate(() =>
@@ -563,6 +585,7 @@ try {
       idleUnifiedPins,
       'Unified pins keep their geometry when all media indicators appear',
     )
+    await assertCenteredFavicons()
     const microphonePosition = await pinnedPages
       .first()
       .getByRole('img', { name: 'Microphone on in Docs', exact: true })
@@ -747,7 +770,7 @@ try {
       await tile
         .locator('[data-browser-tab-select]')
         .evaluate((button) => button.getBoundingClientRect().height),
-      78,
+      54,
     )
     assert.ok(nextGridRow.y > tileBounds.y, 'Five fixture pages wrap in the compact grid')
     assert.ok(

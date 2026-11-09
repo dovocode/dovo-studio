@@ -38,7 +38,9 @@ Studio takes its surface styling from [Opaline](https://opaline.buildlab.in/inst
 edge highlights, frosted menus and dialogs, rounded actions and restrained depth. Keep the selected
 Studio palette. Shared tokens use 10px field corners, 16px cards and a 4px spacing scale. Text
 actions use capsule shapes. Keep thread rows, including pinned threads, at their current compact
-height and spacing. Pinned browser tabs retain their small cards.
+height and spacing. Pinned browser tabs use 56px cards and a 24px favicon at the exact center.
+Status and activity stay in the corners. Computer and profile details stay in the tooltip and
+accessible name. Do not add an identity badge row to the cards.
 
 `packages/web-ui/src/theme.css` owns the shared surface finish. Use it for settings, navigation and
 controls. Apply backdrop blur only to temporary menus and dialogs. Keep scrolling lists and code
@@ -48,13 +50,25 @@ preferences still control their respective effects. Native mobile uses the same 
 with platform controls and opaque surfaces. No refraction engine or pointer tracking runs on thread
 rows. Hosted service chrome keeps its plain presentation.
 
+Floating surfaces use a 24px blur, richer color and layered edge highlights. Permanent surfaces use
+the same painted highlights without a backdrop filter. This keeps the glass finish visible without
+adding blur work to each thread row. Keep the Gradients, Glow, high-contrast and
+reduced-transparency preferences active.
+
+Center **Scroll to latest message** in its conversation pane. Inline chat images show **Edit &
+attach** over the image on hover or keyboard focus. Touch screens keep this action visible with a
+44px minimum height. Revealing the action must not move the image or the conversation.
+
 Typography uses the shared sans-serif stack and monospace for codes. Use color for interaction,
 state and selection. User-selected Studio themes remain supported.
 
 Keyboard focus must remain visible: use a crisp two-pixel indicator on individual controls. The
 composer uses a single focused border, not nested rings around both the container and text area.
-Toolbar controls retain their own focus indicator. Never fix a glow by removing all focus feedback.
-Respect reduced motion, light mode, high contrast and native dynamic type.
+Place checklist and queue above the input box. Attach their lower edge to its top border. Inset both
+sides by 24px on desktop and 20px on mobile. Keep the input's rounded top corners. Do not put
+activity inside the input box. Toolbar controls retain their own focus indicator. Never fix a glow
+by removing all focus feedback. Respect reduced motion, light mode, high contrast and native dynamic
+type.
 
 Verify shared surface changes with:
 
@@ -65,6 +79,8 @@ pnpm exec playwright install chromium
 node scripts/check-shared-controls-appearance-browser.mjs
 node scripts/check-unified-workspace-browser.mjs
 node scripts/check-mobile-settings-layout-browser.mjs
+node scripts/check-image-attachments-browser.mjs
+node scripts/check-thread-scroll-browser.mjs
 ```
 
 Keep primary actions, danger actions, disabled states, empty states and errors explicit. Dense

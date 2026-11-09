@@ -76,6 +76,39 @@ export function validateThreadVersion(version: ThreadVersion) {
   )
     throw new Error('Replicated message identity changed')
 }
+
+/** Older decoders discarded parent provenance without issuing a new version. Restore only
+ * that proven omission. Different parents, edits and unknown fields remain conflicts. */
+export function recoverThreadParentVersion(previous: ThreadVersion, incoming: ThreadVersion) {
+  if (
+    previous.deleted ||
+    incoming.deleted ||
+    previous.key !== incoming.key ||
+    previous.updatedAt !== incoming.updatedAt ||
+    previous.changeId !== incoming.changeId ||
+    previous.value.kind !== 'thread' ||
+    incoming.value.kind !== 'thread'
+  )
+    return undefined
+  const rich = previous.value.parent ? previous : incoming
+  const bare = previous.value.parent ? incoming : previous
+  if (
+    rich.value.kind !== 'thread' ||
+    bare.value.kind !== 'thread' ||
+    !rich.value.parent ||
+    bare.value.parent
+  )
+    return undefined
+  const { parent: _parent, ...value } = rich.value
+  // Descriptor fields other than parent are primitives. Sort keys for cross-client encoding.
+  const fields = (entry: object) =>
+    JSON.stringify(
+      Object.entries(entry)
+        .filter(([, field]) => field !== undefined)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+    )
+  return fields(value) === fields(bare.value) ? rich : undefined
+}
 export const threadReplicaReadSchema = mutableStruct({
   ownerRuntimeId: id,
   threadId: id,
@@ -208,7 +241,7 @@ export function replicatedThreadList(
 export function preferredThreadCopies(
   sources: readonly { runtimeId: string; connected: boolean; tasks: readonly Task[] }[],
 ) {
-  const preferred = new Map<string, { task: Task; rank: number }>()
+  const preferred = new Map<string, { task: Task; rank: number; source: string }>()
   for (const source of sources)
     for (const task of source.tasks) {
       const owner = task.replica?.ownerRuntimeId ?? source.runtimeId
@@ -220,9 +253,13 @@ export function preferredThreadCopies(
         !previous ||
         rank > previous.rank ||
         (rank === previous.rank &&
-          (task.updatedAt ?? task.createdAt) > (previous.task.updatedAt ?? previous.task.createdAt))
+          ((task.updatedAt ?? task.createdAt) >
+            (previous.task.updatedAt ?? previous.task.createdAt) ||
+            ((task.updatedAt ?? task.createdAt) ===
+              (previous.task.updatedAt ?? previous.task.createdAt) &&
+              source.runtimeId < previous.source)))
       )
-        preferred.set(key, { task, rank })
+        preferred.set(key, { task, rank, source: source.runtimeId })
     }
   return new Set([...preferred.values()].map((entry) => entry.task))
 }

@@ -7,6 +7,7 @@ import {
   startReplication,
   type StateStorage,
   type StateRequest,
+  type StateVersion,
   jsonStateStorage,
 } from './index.js'
 
@@ -867,4 +868,261 @@ it('does not decode or rewrite unchanged transactional JSON state', async () => 
   await state.importVersions([])
   expect(decoder).not.toHaveBeenCalled()
   expect(adapter.update).toHaveBeenCalled()
+})
+
+const incompleteVersion: StateVersion<string> = {
+  key: 'historical',
+  updatedAt: 100,
+  changeId: 'legacy:100',
+  deleted: false,
+  value: 'missing',
+}
+const completeVersion: StateVersion<string> = { ...incompleteVersion, value: 'complete' }
+function recoverComplete(previous: StateVersion<string>, incoming: StateVersion<string>) {
+  if (previous.value === 'missing' && incoming.value === 'complete') return incoming
+  if (previous.value === 'complete' && incoming.value === 'missing') return previous
+  return undefined
+}
+
+it('commits repairs and receipts atomically, preserves identity and rejects old incomplete replays', async () => {
+  const storage = memory()
+  const options = {
+    channel: 'test',
+    replicaId: 'client',
+    storage,
+    decode,
+    recoverVersion: recoverComplete,
+  }
+  const state = await DurableState.open(options)
+  const remote = await open('remote')
+  try {
+    await state.importVersions([incompleteVersion])
+    await remote.importVersions([completeVersion])
+    const changed = vi.fn<() => void>()
+    state.subscribe(changed)
+    const revision = state.dataRevision
+    storage.save.mockImplementationOnce(() => {
+      throw new Error('Disk full')
+    })
+    await expect(state.receive(remote.batch())).rejects.toThrow('Disk full')
+    expect(state.history('historical')).toEqual([incompleteVersion])
+    expect(state.checkpoint('remote')).toBe(0)
+    expect(state.dataRevision).toBe(revision)
+    expect(changed).not.toHaveBeenCalled()
+    await state.receive(remote.batch())
+    expect(state.history('historical')).toEqual([completeVersion])
+    expect(state.revision).toBe(1)
+    expect(state.checkpoint('remote')).toBe(1)
+    expect(state.dataRevision).toBe(revision + 1)
+    expect(changed).toHaveBeenCalledTimes(1)
+    await state.importVersions([incompleteVersion])
+    expect(state.history('historical')).toEqual([completeVersion])
+    expect(changed).toHaveBeenCalledTimes(1)
+    const reopened = await DurableState.open(options)
+    try {
+      expect(reopened.replicaId).toBe('client')
+      expect(reopened.history('historical')).toEqual([completeVersion])
+      expect(reopened.checkpoint('remote')).toBe(1)
+    } finally {
+      await reopened.close()
+    }
+  } finally {
+    await Promise.all([state.close(), remote.close()])
+  }
+})
+
+it('rebases a repair from another transactional owner without losing concurrent edits', async () => {
+  const shared = transactional()
+  const options = {
+    channel: 'test',
+    storage: shared.storage,
+    decode,
+    recoverVersion: recoverComplete,
+    createReplicaId: () => 'shared',
+  }
+  const a = await DurableState.openPersisted(options)
+  await a.importVersions([incompleteVersion])
+  const b = await DurableState.openPersisted(options)
+  try {
+    await a.importVersions([completeVersion])
+    await b.set('draft', 'Keep this work')
+    expect(b.history('historical')).toEqual([completeVersion])
+    await a.refresh()
+    expect(a.get('draft')).toBe('Keep this work')
+    expect(a.history('historical')).toEqual([completeVersion])
+    expect(a.revision).toBe(2)
+    expect(a.replicaId).toBe('shared')
+    await expect(
+      b.importVersions([{ ...completeVersion, value: 'Competing edit' }]),
+    ).rejects.toThrow('reused')
+    expect(b.get('draft')).toBe('Keep this work')
+  } finally {
+    await Promise.all([a.close(), b.close()])
+  }
+})
+
+it('deduplicates an incomplete and complete version in one batch', async () => {
+  const state = await DurableState.open({
+    channel: 'test',
+    replicaId: 'a',
+    storage: memory(),
+    decode,
+    recoverVersion: recoverComplete,
+  })
+  try {
+    await state.importVersions([incompleteVersion, completeVersion, incompleteVersion])
+    expect(state.history('historical')).toEqual([completeVersion])
+    expect(state.revision).toBe(1)
+  } finally {
+    await state.close()
+  }
+})
+
+it('rejects a recovery callback that invents a third version without changing saved data', async () => {
+  const state = await DurableState.open({
+    channel: 'test',
+    replicaId: 'a',
+    storage: memory(),
+    decode,
+    recoverVersion: (_previous, incoming) =>
+      incoming.deleted ? undefined : { ...incoming, value: 'Invented data' },
+  })
+  try {
+    await state.importVersions([incompleteVersion])
+    await expect(state.importVersions([completeVersion])).rejects.toThrow('reused')
+    expect(state.history('historical')).toEqual([incompleteVersion])
+    expect(state.revision).toBe(1)
+  } finally {
+    await state.close()
+  }
+})
+
+it('persists receipt progress without broadcasting it as new content', async () => {
+  const a = await open('a'),
+    b = await open('b'),
+    c = await open('c')
+  try {
+    await a.set('draft', 'Same content')
+    await b.receive(a.batch())
+    await c.importVersions(a.versions())
+    const changed = vi.fn<() => void>()
+    b.subscribe(changed)
+    const revision = b.dataRevision
+    await b.receive(c.batch(), 'other-computer')
+    expect(b.checkpoint('c')).toBe(1)
+    expect(b.sourceFor('other-computer')).toBe('c')
+    expect(b.dataRevision).toBe(revision)
+    expect(changed).not.toHaveBeenCalled()
+  } finally {
+    await Promise.all([a.close(), b.close(), c.close()])
+  }
+})
+
+it('keeps true conflicts visible and backs off instead of looping through recovery', async () => {
+  vi.useFakeTimers()
+  const options = { channel: 'test', decode, storage: memory(), recoverVersion: () => undefined }
+  const a = await DurableState.open({ ...options, replicaId: 'a' })
+  const b = await open('b')
+  const version = {
+    key: 'key',
+    updatedAt: 100,
+    changeId: 'same-version',
+    deleted: false as const,
+    value: 'Original user edit',
+  }
+  await a.importVersions([version])
+  await b.importVersions([{ ...version, value: 'Competing user edit' }])
+  const exchange = vi.fn<(input: unknown) => ReturnType<typeof b.exchange>>((input) =>
+    b.exchange(input),
+  )
+  const errors = vi.fn<(error: Error) => void>()
+  const session = startReplication({ state: a, exchange, onError: errors })
+  try {
+    await vi.advanceTimersByTimeAsync(0)
+    expect(exchange).toHaveBeenCalledTimes(2)
+    expect(errors).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ message: expect.stringContaining('reused') }),
+    )
+    expect(a.get('key')).toBe('Original user edit')
+    expect(b.get('key')).toBe('Competing user edit')
+    expect(a.checkpoint('b')).toBe(0)
+  } finally {
+    await session.stop()
+    await Promise.all([a.close(), b.close()])
+  }
+})
+
+it('resends repaired history to an already caught-up peer without adding a version', async () => {
+  vi.useFakeTimers()
+  const options = { channel: 'test', decode, recoverVersion: recoverComplete }
+  const a = await DurableState.open({ ...options, replicaId: 'a', storage: memory() })
+  const b = await DurableState.open({ ...options, replicaId: 'b', storage: memory() })
+  await a.importVersions([incompleteVersion])
+  const errors = vi.fn<(error: Error) => void>()
+  const session = startReplication({
+    state: a,
+    exchange: (input) => b.exchange(input),
+    onError: errors,
+    intervalMs: null,
+  })
+  try {
+    await vi.advanceTimersByTimeAsync(0)
+    expect(b.history('historical')).toEqual([incompleteVersion])
+    await a.importVersions([completeVersion])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(b.history('historical')).toEqual([completeVersion])
+    expect(a.revision).toBe(1)
+    expect(b.revision).toBe(1)
+    expect(errors).not.toHaveBeenCalled()
+  } finally {
+    await session.stop()
+    await Promise.all([a.close(), b.close()])
+  }
+})
+
+it('returns repaired history when a stale sender already acknowledged its journal', async () => {
+  const options = { channel: 'test', decode, recoverVersion: recoverComplete }
+  const a = await DurableState.open({ ...options, replicaId: 'a', storage: memory() })
+  const b = await DurableState.open({ ...options, replicaId: 'b', storage: memory() })
+  try {
+    await a.importVersions([incompleteVersion])
+    await sync(a, b)
+    expect(a.checkpoint('b')).toBe(1)
+    await b.importVersions([completeVersion])
+    await a.accept(await b.exchange(a.request('b')))
+    expect(a.history('historical')).toEqual([completeVersion])
+    expect(a.revision).toBe(1)
+    expect(b.revision).toBe(1)
+  } finally {
+    await Promise.all([a.close(), b.close()])
+  }
+})
+
+it('drains repaired replay pages behind an acknowledged checkpoint without looping', async () => {
+  vi.useFakeTimers()
+  const options = { channel: 'test', decode, recoverVersion: recoverComplete, batchSize: 1 }
+  const a = await DurableState.open({ ...options, replicaId: 'a', storage: memory() })
+  const b = await DurableState.open({ ...options, replicaId: 'b', storage: memory() })
+  await b.set('marker', 'Keep this independent edit')
+  await a.importVersions([incompleteVersion])
+  await sync(a, b)
+  expect(a.checkpoint('b')).toBe(2)
+  await b.importVersions([completeVersion])
+  const errors = vi.fn<(error: Error) => void>()
+  const exchange = vi.fn<(input: StateRequest<string>) => Promise<unknown>>((input) =>
+    b.exchange(input),
+  )
+  const session = startReplication({ state: a, exchange, onError: errors, intervalMs: null })
+  try {
+    await vi.advanceTimersByTimeAsync(0)
+    expect(a.history('historical')).toEqual([completeVersion])
+    expect(a.get('marker')).toBe('Keep this independent edit')
+    expect(a.revision).toBe(2)
+    expect(b.revision).toBe(2)
+    expect(exchange.mock.calls.length).toBeLessThan(8)
+    expect(errors).not.toHaveBeenCalled()
+  } finally {
+    await session.stop()
+    await Promise.all([a.close(), b.close()])
+  }
 })

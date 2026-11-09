@@ -259,7 +259,6 @@ export function BrowserTabRow({
                   />
                 )}
               </span>
-              {tab.pinned && identity}
             </span>
             {!tab.pinned && (
               <>

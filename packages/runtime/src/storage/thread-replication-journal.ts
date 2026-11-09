@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { hostname } from 'node:os'
+import { isDeepStrictEqual } from 'node:util'
 import { Schema } from 'effect'
 import { compareVersions, nextRevision, type StateStorage } from '@dovo/durable-connections'
 import {
@@ -11,6 +12,7 @@ import {
   threadRecordKey,
   threadReplicationChannel,
   validateThreadVersion,
+  recoverThreadParentVersion,
   replicatedThreadList,
   replicatedThread,
   ThreadHistoryChangedError,
@@ -399,7 +401,9 @@ export class ThreadReplicationJournal {
         .prepare('SELECT value FROM thread_versions WHERE identity=?')
         .get(this.identity(version)),
     )
-    return !!row && row.value === JSON.stringify(version)
+    if (!row) return false
+    const previous = decode(versionSchema, JSON.parse(row.value))
+    return isDeepStrictEqual(previous, version) || !!recoverThreadParentVersion(previous, version)
   }
   storage(store: WorkspaceStore): StateStorage {
     const append: NonNullable<StateStorage['append']> = (
@@ -407,6 +411,7 @@ export class ThreadReplicationJournal {
       rawChanges,
       checkpoints,
       sources,
+      repairs = [],
     ) => {
       const changes = decode(snapshotSchema.fields.journal, rawChanges)
       store.transaction(() => {
@@ -415,6 +420,34 @@ export class ThreadReplicationJournal {
         if (changes.some((change, index) => change.sequence !== after + index + 1))
           throw new Error('Invalid thread journal sequence')
         const changed = new Map<string, ThreadVersion>()
+        for (const repair of repairs) {
+          const previous = decode(versionSchema, repair.previous)
+          const version = decode(versionSchema, repair.version)
+          if (!isDeepStrictEqual(recoverThreadParentVersion(previous, version), version))
+            throw new Error('Invalid thread parent recovery')
+          const identity = this.identity(version)
+          const stored = decode(
+            rowSchema,
+            this.db.prepare('SELECT value FROM thread_versions WHERE identity=?').get(identity),
+          )
+          if (!stored || !isDeepStrictEqual(JSON.parse(stored.value), previous))
+            throw new Error('Thread recovery history changed')
+          const encoded = JSON.stringify(version)
+          this.db
+            .prepare('UPDATE thread_versions SET value=? WHERE identity=?')
+            .run(encoded, identity)
+          this.db
+            .prepare(
+              "UPDATE thread_state_log SET value=? WHERE json_extract(value,'$.key')=? AND json_extract(value,'$.updatedAt')=? AND json_extract(value,'$.changeId')=?",
+            )
+            .run(encoded, version.key, version.updatedAt, version.changeId)
+          const current = this.get(version.key)
+          if (current && this.identity(current) === identity)
+            this.db
+              .prepare('UPDATE thread_registers SET value=? WHERE key=?')
+              .run(encoded, version.key)
+          this.summaries = undefined
+        }
         const insert = this.db.prepare('INSERT INTO thread_state_log VALUES (?,?)')
         for (const change of changes) {
           insert.run(change.sequence, JSON.stringify(change.version))

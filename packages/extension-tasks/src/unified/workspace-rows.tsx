@@ -258,22 +258,6 @@ export function WorkspacePageRow({
                   </span>
                 )}
               </span>
-              <span
-                className="studio-browser-tab-profile absolute inset-x-0 bottom-0 flex min-w-0 shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
-                aria-hidden="true"
-              >
-                <span className="studio-browser-tab-identity">
-                  <RuntimeIcon icon={runtimeIcon} className="size-2 shrink-0" aria-hidden="true" />
-                </span>
-                <span
-                  className={cn(
-                    'studio-browser-tab-identity overflow-hidden',
-                    emoji && 'text-[9px]',
-                  )}
-                >
-                  {emoji ?? initials}
-                </span>
-              </span>
             </span>
           </button>
           <BrowserTabActivity state={activity} title={title} pinned onMute={onMute} />

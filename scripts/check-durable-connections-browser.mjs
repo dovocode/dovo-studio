@@ -30,11 +30,11 @@ const built = await build({
     resolveDir: root,
     contents: `
 import {DurableState,jsonStateStorage} from './packages/durable-connections/src/index.ts';
-import {browserSharedStateStorage} from './packages/studio-core/src/runtime/shared-state-storage.ts';
+import {browserSharedStateStorage,browserThreadStateStorage} from './packages/studio-core/src/runtime/shared-state-storage.ts';
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
-import {decode,runtimeProfile,runtimeRegistrySchema,retainRuntimeConnections} from './packages/protocol/src/index.ts';
+import {decode,runtimeProfile,runtimeRegistrySchema,retainRuntimeConnections,decodeThreadRecord,validateThreadVersion,recoverThreadParentVersion,threadReplicationChannel,threadRecordKey} from './packages/protocol/src/index.ts';
 import {clientScopeKey} from './packages/client-runtime/src/effects/request-scope.ts';
 import {createDetailDrafts,detailDraftKey,useDetailDraft} from './apps/mobile/src/runtime/state/detail-drafts.ts';
 const drafts=createDetailDrafts();let registry,draftRoot;
@@ -59,6 +59,14 @@ window.openSharedReplica=async id=>{
   window.state=await DurableState.openPersisted({channel:'shared-browser-state',createReplicaId:()=>id,now:()=>100,
     storage:browserSharedStateStorage,
     decode:value=>{if(typeof value!=='string')throw Error('Expected string');return value}});
+};
+window.bareThread=(()=>{const value={kind:'thread',ownerRuntimeId:'owner',threadId:'child',ownerName:'Owner',projectName:'Project',createdAt:'2026-01-01',status:'done',historyRevision:0,removed:false};return {key:threadRecordKey(value),updatedAt:100,changeId:'owner:100',deleted:false,value}})();
+window.richThread={...window.bareThread,value:{...window.bareThread.value,parent:{runtimeId:'owner',threadId:'parent'}}};
+window.openThreadReplica=async(id,recover=true)=>{
+  await window.state?.close?.();
+  window.state=await DurableState.openPersisted({channel:threadReplicationChannel,createReplicaId:()=>id,
+    storage:browserThreadStateStorage,decode:decodeThreadRecord,validateVersion:validateThreadVersion,
+    ...(recover?{recoverVersion:recoverThreadParentVersion}:{})});
 };
 window.openReplica=async id=>{
   window.failStorage=false;
@@ -188,9 +196,36 @@ try {
     await a.evaluate(() => window.state.replicaId),
     await b.evaluate(() => window.state.replicaId),
   )
+  // Upgrade an actual IndexedDB thread journal, then rebase a second open window.
+  await a.evaluate(async () => {
+    await window.openThreadReplica('retained-thread-identity', false)
+    await window.state.importVersions([window.bareThread])
+  })
+  await a.evaluate(() => window.openThreadReplica('must-not-replace-identity'))
+  await b.evaluate(() => window.openThreadReplica('second-window'))
+  await a.evaluate(() => window.state.importVersions([window.richThread]))
+  await b.evaluate(() =>
+    window.state.set(JSON.stringify(['owner', 'child', 'title']), {
+      kind: 'title',
+      ownerRuntimeId: 'owner',
+      threadId: 'child',
+      value: 'Keep this offline edit',
+    }),
+  )
+  await a.evaluate(() => window.state.refresh())
+  assert.deepEqual(
+    await a.evaluate(() => window.state.history(window.bareThread.key)),
+    await a.evaluate(() => [window.richThread]),
+  )
+  assert.equal(await a.evaluate(() => window.state.revision), 2)
+  assert.equal(await a.evaluate(() => window.state.replicaId), 'retained-thread-identity')
+  const repairedJournal = await a.evaluate(() => window.state.versions())
+  await a.reload()
+  await a.evaluate(() => window.openThreadReplica('unused-after-reload'))
+  assert.deepEqual(await a.evaluate(() => window.state.versions()), repairedJournal)
   assert.deepEqual(errors, [])
   console.log(
-    'Durable browser state: offline reload, two-way sync, replay, recovery, storage failure, concurrent IndexedDB journals and mobile draft scopes passed.',
+    'Durable browser state: offline reload, two-way sync, replay, recovery, storage failure, concurrent IndexedDB journals, safe thread-parent repair across windows, and mobile draft scopes passed.',
   )
 } finally {
   await browser.close()

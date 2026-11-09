@@ -266,3 +266,118 @@ it('ignores unrelated streamed snapshots without reloading storage or starving s
   expect(h.refreshed).toHaveBeenCalled()
   await runtime.close()
 })
+
+it('publishes one settled view after a multi-batch catch-up, and none for receipt-only changes', async () => {
+  vi.useFakeTimers()
+  const runtime = await peer()
+  await runtime.importVersions(
+    Array.from({ length: 260 }, (_, i) => {
+      const value: ThreadRecord = { ...title, threadId: 'thread-' + i }
+      return {
+        key: threadRecordKey(value),
+        updatedAt: i + 1,
+        changeId: 'owner:' + i,
+        deleted: false,
+        value,
+      }
+    }),
+  )
+  const h = harness((_profile, _path, input) => runtime.exchange(input))
+  h.controller.update([target()], true)
+  await flush()
+  expect(h.refreshed).toHaveBeenCalledTimes(1)
+  h.controller.retry()
+  await flush()
+  expect(h.refreshed).toHaveBeenCalledTimes(1)
+  await runtime.close()
+})
+
+it.each([false, true])(
+  'automatically pulls a complete version from an older strict peer (already acknowledged: %s)',
+  async (acknowledged) => {
+    vi.useFakeTimers()
+    const runtime = await peer()
+    // Put the complete descriptor beyond the first response page.
+    await runtime.importVersions(
+      Array.from({ length: 260 }, (_, i) => {
+        const value: ThreadRecord = { ...title, threadId: 'other-' + i }
+        return {
+          key: threadRecordKey(value),
+          updatedAt: i + 1,
+          changeId: 'owner:' + i,
+          deleted: false,
+          value,
+        }
+      }),
+    )
+    const value: ThreadRecord = {
+      ownerRuntimeId: 'owner',
+      threadId: 'child',
+      kind: 'thread',
+      ownerName: 'Owner',
+      projectName: 'Project',
+      createdAt: '2026-01-01',
+      status: 'done',
+      historyRevision: 0,
+      removed: false,
+    }
+    const bare = {
+      key: threadRecordKey(value),
+      updatedAt: 500,
+      changeId: 'old:500',
+      deleted: false as const,
+      value,
+    }
+    const rich = {
+      ...bare,
+      value: { ...value, parent: { runtimeId: 'owner', threadId: 'parent' } },
+    }
+    await runtime.importVersions([rich])
+    const storage = memory()
+    const client = await DurableState.open({
+      channel: threadReplicationChannel,
+      replicaId: 'app:one',
+      storage,
+      decode: decodeThreadRecord,
+      validateVersion: validateThreadVersion,
+    })
+    if (acknowledged) {
+      let after = 0
+      while (after < runtime.revision) {
+        const batch = runtime.batch(after)
+        await client.receive(
+          {
+            ...batch,
+            changes: batch.changes.map((change) => ({
+              ...change,
+              version: change.version.key === bare.key ? bare : change.version,
+            })),
+          },
+          target().profile.id,
+        )
+        after = batch.through
+      }
+    } else await client.importVersions([bare])
+    await client.close()
+    const request = vi.fn<ThreadStateSyncOptions['request']>((_profile, _path, input) =>
+      runtime.exchange(input),
+    )
+    const h = harness(request, storage)
+    h.controller.update([target()], true)
+    await flush()
+    expect(h.error).toHaveBeenLastCalledWith('')
+    expect(h.refreshed).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls.length).toBeLessThan(12)
+    const reopened = await DurableState.openPersisted({
+      channel: threadReplicationChannel,
+      createReplicaId: () => 'unused',
+      storage,
+      decode: decodeThreadRecord,
+      validateVersion: validateThreadVersion,
+    })
+    expect(reopened.history(bare.key)).toEqual([rich])
+    expect(reopened.revision).toBe(261)
+    await reopened.close()
+    await runtime.close()
+  },
+)

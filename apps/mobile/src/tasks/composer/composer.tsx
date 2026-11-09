@@ -999,7 +999,6 @@ export function Composer({
         </Pressable>
       )}
       {!renderAbove && setup}
-      <ComposerActivity task={task} inComposer />
       {editing && (
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 }}>
           <Text style={[styles.muted, { flex: 1 }]}>
@@ -1016,7 +1015,9 @@ export function Composer({
         </View>
       )}
       <Animated.View layout={transition} testID="Composer surface">
+        <ComposerActivity task={task} attached />
         <Glass
+          testID="Composer input surface"
           style={{
             borderRadius: 26,
             padding: 3,

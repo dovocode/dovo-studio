@@ -16,7 +16,7 @@ import {
   type PdfViewState,
 } from '@dovo/protocol'
 import { TaskVisualization } from './task-visualization'
-import { EditChatImage } from '../composer/chat-image-edit-context'
+import { ChatImageFrame, EditChatImage } from '../composer/chat-image-edit-context'
 import {
   useEffect,
   useLayoutEffect,
@@ -93,12 +93,11 @@ function TaskImage({
       </span>
     )
   return current?.uri ? (
-    <span className="inline-flex max-w-full flex-col items-start gap-1">
+    <ChatImageFrame source={{ taskId, path }} label={alt}>
       <button type="button" aria-label={`Preview ${alt}`} onClick={() => onPreview(path)}>
         <img src={current.uri} alt={alt} className="max-h-96 max-w-full object-contain" />
       </button>
-      <EditChatImage source={{ taskId, path }} label={alt} />
-    </span>
+    </ChatImageFrame>
   ) : (
     <span role="status">Loading {alt}…</span>
   )
@@ -276,7 +275,7 @@ export function TaskMessageResponse({
 function RemoteChatImage({ uri, label }: { uri: string; label: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <span className="inline-flex max-w-full flex-col items-start gap-1">
+    <ChatImageFrame source={{ uri }} label={label}>
       <button type="button" aria-label={`Preview ${label}`} onClick={() => setOpen(true)}>
         <img
           loading="lazy"
@@ -294,8 +293,7 @@ function RemoteChatImage({ uri, label }: { uri: string; label: string }) {
           </a>
         </DialogContent>
       </Dialog>
-      <EditChatImage source={{ uri }} label={label} />
-    </span>
+    </ChatImageFrame>
   )
 }
 

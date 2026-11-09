@@ -11,6 +11,7 @@ import {
   threadReplicationChannel,
   decodeThreadRecord,
   validateThreadVersion,
+  recoverThreadParentVersion,
   type ThreadRecord,
 } from './thread-replication.js'
 import type { RuntimeOverview, RuntimeProfile } from './runtime-fleet.js'
@@ -57,6 +58,7 @@ export class ThreadStateSynchronization {
       createReplicaId: () => this.options.createReplicaId(),
       decode: decodeThreadRecord,
       validateVersion: validateThreadVersion,
+      recoverVersion: recoverThreadParentVersion,
     }).catch((error: unknown) => {
       this.opening = undefined
       throw error
@@ -158,10 +160,10 @@ export class ThreadStateSynchronization {
             throw new Error('Thread sync reached a different runtime')
           return response
         },
-        afterExchange: async () => {
-          if (!valid()) return
-          if (session.revision !== state.revision) {
-            const revision = state.revision
+        afterExchange: async ({ caughtUp }) => {
+          if (!valid() || !caughtUp) return
+          if (session.revision !== state.dataRevision) {
+            const revision = state.dataRevision
             await this.options.refreshed(session.target.profile)
             if (!valid()) return
             session.revision = revision

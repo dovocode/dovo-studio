@@ -1106,7 +1106,7 @@ try {
   const activity = page.getByLabel('Composer activity', { exact: true })
   assert.equal(
     await activity.evaluate((node) => {
-      const shell = document.querySelector('[data-testid="Composer surface"]')
+      const shell = document.querySelector('[data-testid="Composer input surface"]')
       const input = document.querySelector('[data-testid="Composer input row"]')
       return (
         !shell.contains(node) &&
@@ -1115,7 +1115,7 @@ try {
       )
     }),
     true,
-    'Queue and checklist have a separate panel just above the original input',
+    'Queue and checklist attach above the input surface',
   )
   const stableInput = page.getByRole('textbox', { name: 'Message', exact: true })
   await stableInput.evaluate((node) => {
@@ -1152,12 +1152,12 @@ try {
     const rowBox = await row.boundingBox(),
       inputBox = await surface.boundingBox()
     const activityBox = await activity.boundingBox()
-    const shellBox = await page.getByTestId('Composer surface').boundingBox()
+    const shellBox = await page.getByTestId('Composer input surface').boundingBox()
     assert.ok(rowBox && inputBox && rowBox.y + rowBox.height <= inputBox.y)
     assert.ok(activityBox && shellBox)
     assert.ok(
-      Math.abs(shellBox.y - (activityBox.y + activityBox.height) - 12) < 1,
-      'The activity panel leaves a gap above the rounded composer: ' +
+      Math.abs(activityBox.y + activityBox.height - 1 - shellBox.y) < 1,
+      'The activity panel attaches above the rounded composer with inset sides: ' +
         JSON.stringify({ activityBox, shellBox }),
     )
     assert.ok(Math.abs(activityBox.x - shellBox.x - 20) < 1)

@@ -9,7 +9,7 @@ import { startLocalRuntime } from './local-runtime.js'
 const { autoUpdater } = updater
 export function registerUpdates(
   directory: string,
-  prepareQuit: () => Promise<() => Promise<void>>,
+  prepareQuit: (beforeStop: () => Promise<void>) => Promise<() => Promise<void>>,
 ) {
   const policy = ManagedPolicy.load()
   const managedUpdates = policy.document?.limits?.updates
@@ -133,7 +133,7 @@ export function registerUpdates(
   }
   autoUpdater.on('error', (error) => {
     console.error('Desktop update failed:', error.message)
-    publish({ ...state, status: 'error' })
+    publish({ ...state, status: 'error', error: error.message })
     void recover().catch((cause) =>
       console.error('Could not restore runtime after failed update:', cause),
     )
@@ -268,7 +268,7 @@ export function registerUpdates(
         }
       }
       const connection = await startLocalRuntime(directory, { allowIncompatible: true })
-      const response = await fetch(`${connection.address}/api/snapshot`, {
+      const response = await fetch(`${connection.address}/api/snapshot?scope=overview`, {
         headers: {
           Authorization: `Bearer ${connection.token}`,
         },
@@ -294,14 +294,16 @@ export function registerUpdates(
         })
         return
       }
-      if (remote?.resumeInterrupted !== undefined) {
+      restoreRuntime = await prepareQuit(async () => {
+        // Hold the runtime restart lease for local and remote installs. The earlier
+        // snapshot alone cannot stop another device from starting work during shutdown.
         const prepared = await fetch(`${connection.address}/api/runtime/prepare-restart`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${connection.token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ resumeInterrupted: remote.resumeInterrupted }),
+          body: JSON.stringify({ resumeInterrupted: remote?.resumeInterrupted }),
           signal: AbortSignal.timeout(5000),
         })
         if (!prepared.ok) throw new Error('Could not prepare interrupted threads for restart')
@@ -314,14 +316,18 @@ export function registerUpdates(
         )
           throw new Error('Invalid restart preparation')
         restartPreparation = { ...connection, id: result.id }
-      }
+      })
       publish({ ...state, status: 'restarting' })
-      restoreRuntime = await prepareQuit()
       // Show local Windows installation progress. Remote updates must finish unattended
       // so paired devices can reconnect without someone clicking Finish on this computer.
       autoUpdater.quitAndInstall(process.platform === 'win32' && remote !== undefined, true)
     } catch (error) {
       let message = error instanceof Error ? error.message : String(error)
+      try {
+        await recover()
+      } catch (cause) {
+        message += ` Runtime recovery failed: ${cause instanceof Error ? cause.message : String(cause)}`
+      }
       try {
         if (restartPreparation) {
           const cancelled = await fetch(
@@ -340,11 +346,6 @@ export function registerUpdates(
         }
       } catch (cause) {
         message += ` Restart cancellation failed: ${cause instanceof Error ? cause.message : String(cause)}`
-      }
-      try {
-        await recover()
-      } catch (cause) {
-        message += ` Runtime recovery failed: ${cause instanceof Error ? cause.message : String(cause)}`
       }
       publish({
         ...state,
