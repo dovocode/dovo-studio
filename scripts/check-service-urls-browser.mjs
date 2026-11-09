@@ -53,7 +53,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-core',
       contents:
-        'export const useSettingsDraft=dirty=>{window.serviceDraftDirty=dirty};export const useAppPreferences=()=>window.services;export const updateAppPreferences=patch=>window.save(patch);',
+        'export const useSettingsDraft=dirty=>{window.serviceDraftDirty=dirty};export const useAppPreferences=()=>window.services;export const useAppPreferenceSaveError=()=>null;export const updateAppPreferences=patch=>window.save(patch);',
     },
     {
       path: '@dovo/studio-ui',

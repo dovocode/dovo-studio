@@ -9,7 +9,7 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';import {useAttachments} from './src/chat/composer/use-attachments';import {optimizeAttachmentImage} from './src/chat/composer/attachment-images';
-window.optimize=optimizeAttachmentImage;window.uploads=[];window.connected=true;window.request=async(path,input)=>{window.uploads.push({path,input});return {revision:1,attachment:{id:input.id,name:input.name,mime:input.name.endsWith('.webp')?'image/webp':'application/octet-stream',size:atob(input.data).length}}};
+window.optimize=optimizeAttachmentImage;window.uploads=[];window.connected=true;window.request=async(path,input)=>{if(path==='/api/attachments/draft-guard')return {guard:'guard-'+window.uploads.length,guardedUploads:1};if(input.draftGuard!=='guard-'+window.uploads.length)throw Error('Unexpected draft guard');window.uploads.push({path,input});return {revision:1,nextGuard:'guard-'+window.uploads.length,attachment:{id:input.id,name:input.name,mime:input.name.endsWith('.webp')?'image/webp':'application/octet-stream',size:atob(input.data).length}}};
 function App(){const attachments=useAttachments({id:'task',draftAttachments:[]});window.upload=attachments.upload;return <><textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{attachments.error}</div><div role="status">{attachments.busy?'Working':'Ready'}</div></>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,

@@ -187,17 +187,19 @@ const connections=Object.fromEntries(['a','b'].map(owner=>[owner,{address:owner,
 window.calls=[];window.completedCancellations=0;window.serverFiles=owner=>computers[owner].files;
 window.request=async(owner,path,input)=>{
   window.calls.push({owner,path,input});const server=computers[owner];
+  if(path==='/api/attachments/draft-guard')return {guard:'draft-'+server.revision,guardedUploads:1};
   if(path==='/api/tasks/history'){if(window.holdHistory)await new Promise(resolve=>window.releaseHistory=resolve);return {messages:[{id:'message',role:'user',text:'Snapshot text'}],turns:[],historyRevision:1}};
   if(path==='/api/attachments/remove'){
     if(window.failCleanup)throw Error('Cleanup unavailable');
     server.cancelled.add(input.id);server.files=server.files.filter(file=>file.id!==input.id);return {ok:true,revision:++server.revision};
   }
   if(path!=='/api/attachments/upload')throw Error('Unexpected '+path);
+  if(input.draftGuard!=='draft-'+server.revision)throw Error('Unexpected draft guard');
   if(window.holdCommit)await new Promise(resolve=>window.releaseCommit=resolve);
   if(server.cancelled.has(input.id))throw Error('Upload cancelled');
   const attachment={id:input.id,name:input.name,mime:'text/markdown',size:atob(input.data).length};server.files=[...server.files,attachment];const revision=++server.revision;
   if(window.holdResponse)await new Promise(resolve=>window.releaseResponse=resolve);
-  if(window.loseResponse)throw Error('Upload response lost');return {attachment,revision};
+  if(window.loseResponse)throw Error('Upload response lost');return {attachment,revision,nextGuard:'draft-'+revision};
 };
 function App(){
   const [owner,setOwner]=useState('a'),[revision,publish]=useReducer(value=>value+1,0);window.publish=()=>flushSync(publish);window.changeOwner=next=>flushSync(()=>setOwner(next));

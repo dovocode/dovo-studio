@@ -8,6 +8,20 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const require = createRequire(new URL('../apps/design-system/package.json', import.meta.url))
 const built = await build({
+  plugins: [
+    {
+      name: 'native-alert-fixture',
+      setup(builder) {
+        builder.onResolve({ filter: /^react-native$/ }, () => ({
+          path: 'react-native',
+          namespace: 'fixture',
+        }))
+        builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
+          contents: 'export const Alert={alert:()=>{throw Error("Unexpected draft limit alert")}};',
+        }))
+      },
+    },
+  ],
   alias: {
     react: require.resolve('react'),
     'react-dom': require.resolve('react-dom/package.json').replace(/package\.json$/, ''),

@@ -21,6 +21,7 @@ export const Text=({children,style,numberOfLines})=><span style={{overflowWrap:'
 export const Pressable=({children,onPress,style,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} onClick={onPress} style={{display:'flex',flexDirection:'column',textAlign:'left',color:'inherit',font:'inherit',background:'transparent',border:0,...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,ListEmptyComponent,contentContainerStyle})=><div style={{...flat(contentContainerStyle),minWidth:0}}>{ListHeaderComponent}<div data-rows>{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}</div>{!data.length&&ListEmptyComponent}{ListFooterComponent}</div>;
 export const Keyboard={dismiss:()=>{}};
+export const Alert={alert:(title,text,actions)=>window.alertActions=actions};
 export const useTheme=()=>({colors:{text:'#24292f',background:'#fff',surface:'#f6f8fa',selection:'#ddf4ff',accent:'#0969da',border:'#d0d7de',muted:'#57606a',error:'#cf222e',success:'#1a7f37',warning:'#9a6700'},styles:{screen:{padding:12,gap:12},row:{flexDirection:'row',alignItems:'center',gap:8},text:{fontSize:15,color:'#24292f'},muted:{fontSize:12,color:'#57606a'},empty:{padding:16,gap:8}}});
 export const Icon=()=>null;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;

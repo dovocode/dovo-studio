@@ -14,6 +14,7 @@ export const WorkspaceScope=({children})=>children;
 export const StudioHostProvider=({api,children})=>{window.host=api;return <Host.Provider value={api}>{children}</Host.Provider>};
 export const SettingsTargetProvider=({children})=>children;
 export const useAppPreferences=()=>({showIssues:true,showJira:true});export const updateAppPreferences=()=>{};
+export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
 export const useConfirmSettingsNavigation=()=>()=>true;export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);
 export const useRepositorySources=()=>{useWorkspace();return window.sources};
 export function WorkspaceProvider({children}) {

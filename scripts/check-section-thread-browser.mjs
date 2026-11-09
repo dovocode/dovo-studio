@@ -22,6 +22,7 @@ export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/s
     export const SettingsTargetProvider=({children})=>children;
     export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const updateAppPreferences=()=>{};
+    export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
     const confirmSettingsNavigation=()=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : Promise.resolve(window.allowSettings);export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
     export function WorkspaceProvider({children}) {
       const [runtimeId,setRuntimeId]=useState('mac');
