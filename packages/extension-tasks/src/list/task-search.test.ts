@@ -1,7 +1,13 @@
 import { expect, it } from 'vite-plus/test'
 import type { Task } from '@dovo/studio-core'
-import { mergeMessageResults, messageResults, switcherResults } from './task-search'
-import type { TaskEntry } from './task-collection'
+import {
+  mergeMessageResults,
+  messageResults,
+  switcherResults,
+  switcherThreadGroups,
+} from './task-search'
+import { collectTasks, type TaskEntry, type TaskSource } from './task-collection'
+import { createTask } from '@dovo/studio-core'
 
 const entry = (id: string, title: string, text: string, changes: Partial<Task> = {}): TaskEntry =>
   ({
@@ -59,4 +65,67 @@ it('ranks hits across computers before applying the global cap and keeps identit
   expect(result).toHaveLength(50)
   expect(result[0]).toEqual({ ...newer, snippet: 'cached' })
   expect(result[1]).toEqual(hits[0])
+})
+
+const searchTask = (id: string, title: string, changes: Partial<Task> = {}): Task => ({
+  ...createTask({ title, repositoryId: '', agentId: '', objective: '' }),
+  id,
+  ...changes,
+})
+const searchSource = (runtimeId: string, tasks: Task[]): TaskSource => ({
+  runtimeId,
+  name: runtimeId,
+  online: true,
+  snapshot: null,
+  workspace: {
+    version: 1,
+    runtimeAddress: '',
+    repositories: [],
+    agents: [],
+    automations: [],
+    tasks,
+  },
+})
+it('ranks parent groups and reveals only matching children, with one limit per parent', () => {
+  const tasks = [
+    searchTask('parent', 'Release work'),
+    ...Array.from({ length: 40 }, (_, index) =>
+      searchTask(`child-${index}`, `Fix login ${index}`, {
+        delegation: { parentTaskId: 'parent', parentRunId: 'run', key: String(index) },
+      }),
+    ),
+    searchTask('other', 'Fix login independently'),
+    searchTask('unrelated', 'Write docs', {
+      delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'unrelated' },
+    }),
+  ]
+  const entries = collectTasks([searchSource('mac', tasks)])
+  const groups = switcherThreadGroups(entries, 'login', 2)
+  expect(new Set(groups.map((group) => group.entry.task.id))).toEqual(new Set(['parent', 'other']))
+  expect(
+    groups.find((group) => group.entry.task.id === 'parent')?.matches.map((match) => match.task.id),
+  ).toHaveLength(40)
+  expect(
+    switcherThreadGroups(entries, '')
+      .map((group) => group.entry.task.id)
+      .sort(),
+  ).toEqual(['other', 'parent'])
+  expect(switcherThreadGroups(entries, '').every((group) => !group.matches.length)).toBe(true)
+})
+it('resolves remote descendants without grouping a same-ID thread on another computer', () => {
+  const entries = collectTasks([
+    searchSource('mac', [searchTask('parent', 'Coordinator')]),
+    searchSource('server', [
+      searchTask('parent', 'Unrelated'),
+      searchTask('child', 'Matching needle', {
+        spawnParent: { runtimeId: 'mac', threadId: 'parent' },
+      }),
+      searchTask('nested', 'Needle follow-up', {
+        delegation: { parentTaskId: 'child', parentRunId: 'run', key: 'nested' },
+      }),
+    ]),
+  ])
+  const [group] = switcherThreadGroups(entries, 'needle')
+  expect(group.entry.key).toBe(JSON.stringify(['mac', 'parent']))
+  expect(group.matches.map((match) => match.task.id).sort()).toEqual(['child', 'nested'])
 })

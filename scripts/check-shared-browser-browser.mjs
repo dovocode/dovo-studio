@@ -3917,7 +3917,10 @@ try {
   await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
   const tileBounds = await firstTile.boundingBox()
   const activityBounds = await firstTile.getByLabel('Tab activity', { exact: true }).boundingBox()
-  assert.ok(activityBounds.height === 22, 'Pinned activity uses a compact fixed two-row strip')
+  assert.ok(
+    activityBounds.width <= tileBounds.width - 6 && activityBounds.height <= 26,
+    'Pinned activity wraps within the tile',
+  )
   for (const icon of await firstTile.locator('.studio-browser-tab-activity svg').all()) {
     const bounds = await icon.boundingBox()
     assert.equal(bounds.width, 8, 'Pinned activity icons stay small enough for narrow cards')
@@ -3982,6 +3985,7 @@ try {
   await controlsPage.waitForFunction(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'compact-0',
   )
+  await regularTab.hover()
   await regularTab.getByRole('button', { name: 'Settle tab Website 4', exact: true }).click()
   assert.equal(
     await controlsPage.evaluate(
@@ -4039,11 +4043,15 @@ try {
     narrowActiveGeometry,
     'Partial activity keeps narrow pins stable',
   )
-  assert.deepEqual(
-    await firstTile.locator('[data-browser-activity="microphone"]').boundingBox(),
-    narrowMic,
-    'Microphone stays in its own slot when other signals stop',
+  const remainingActivity = await firstTile
+    .getByLabel('Tab activity', { exact: true })
+    .boundingBox()
+  assert.ok(
+    remainingActivity.width < activityBounds.width,
+    'Activity only uses space for visible signals',
   )
+  const remainingMic = await firstTile.locator('[data-browser-activity="microphone"]').boundingBox()
+  assert.ok(remainingMic.x >= narrowMic.x, 'Remaining activity flows toward the right edge')
   await controlsPage.evaluate(async () => {
     window.tabActivityStates = []
     await window.pollBrowser()
@@ -4083,14 +4091,39 @@ try {
   for (let step = 0; step < 6; step++) await separator.press('ArrowRight')
   await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 244)
   const currentRow = compactSidebar.getByRole('button', { name: /^Website 4 Local/ })
-  const close = compactSidebar.getByRole('button', { name: 'Close tab Website 4', exact: true })
+  const close = compactSidebar.getByRole('button', {
+    name: 'Close tab Website 4',
+    exact: true,
+    includeHidden: true,
+  })
   await controlsPage.mouse.move(1000, 750)
   assert.equal(
-    await close.evaluate((button) => getComputedStyle(button.parentElement).opacity),
-    '0',
+    await close.evaluate((button) => getComputedStyle(button.parentElement).display),
+    'none',
+  )
+  assert.equal(
+    await currentRow
+      .locator('.studio-browser-tab-title')
+      .evaluate((element) => getComputedStyle(element).paddingRight),
+    '0px',
+    'Hidden actions do not reserve title space',
+  )
+  await currentRow.focus()
+  await close.waitFor({ state: 'visible' })
+  await controlsPage.keyboard.press('Tab')
+  assert.equal(
+    await regularTab.locator('.studio-browser-tab-actions :focus').count(),
+    1,
+    'Keyboard focus reveals actions and can reach them',
   )
   await currentRow.hover()
   await close.waitFor({ state: 'visible' })
+  assert.ok(
+    await currentRow
+      .locator('.studio-browser-tab-title')
+      .evaluate((element) => parseFloat(getComputedStyle(element).paddingRight) > 0),
+    'Visible actions make room for their controls',
+  )
   assert.equal(
     await close.evaluate((button) => getComputedStyle(button.parentElement).opacity),
     '1',
@@ -4514,6 +4547,7 @@ try {
     'A definitive missing icon clears the remote favicon',
   )
   await firstTile.locator('[data-browser-tab-select]').click()
+  await remoteIconRow.locator('..').hover()
   await remoteIconRow
     .locator('..')
     .getByRole('button', { name: /^Close tab / })

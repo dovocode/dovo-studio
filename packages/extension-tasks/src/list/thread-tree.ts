@@ -1,1 +1,6 @@
-export { buildThreadTree, threadDescendants, type NestedThread } from '@dovo/protocol'
+export {
+  buildThreadTree,
+  threadDescendants,
+  matchingThreadChildren,
+  type NestedThread,
+} from '@dovo/protocol'

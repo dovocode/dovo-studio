@@ -5,6 +5,8 @@ import { readTaskListViewState, saveTaskListViewState } from './task-list-view-s
 import type { NestedThread } from './thread-tree'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
+  matchingThreadChildren,
+  type ThreadSearchFilter,
   threadChildRows,
   threadNativeAgents,
   pullStackLabel,
@@ -80,6 +82,8 @@ function TaskRowView({
   thread,
   selectedThreadKey,
   searching,
+  search,
+  revealSearch,
 }: {
   task: Task
   selected: boolean
@@ -96,6 +100,8 @@ function TaskRowView({
   thread?: NestedThread
   selectedThreadKey?: string
   searching?: boolean
+  search?: ThreadSearchFilter
+  revealSearch?: boolean
 }) {
   const activeTerminals = terminals + taskBackgroundTerminalCount(task)
   const terminalIndicator = activeTerminals > 0 && (
@@ -111,7 +117,10 @@ function TaskRowView({
     () => readTaskListViewState(studioHost).threadExpansion?.[parentKey] ?? false,
   )
   const [hovered, setHovered] = useState(false)
-  const open = !!searching || expanded || hovered
+  const [expandedSearch, setExpandedSearch] = useState<string>()
+  const open = searching
+    ? !!revealSearch || (expandedSearch !== undefined && expandedSearch === search?.query)
+    : expanded || hovered
   const repository = owner.repositories.find((r) => r.id === task.repositoryId)
   const displayProject = taskDisplayProject(task, owner.repositories)
   const general = repository?.kind === 'scratch'
@@ -141,7 +150,13 @@ function TaskRowView({
       thread,
     ],
   )
-  const childRows = useMemo(() => threadChildRows(rootThread), [rootThread])
+  const childRows = useMemo(
+    () =>
+      search
+        ? matchingThreadChildren(threadChildRows(rootThread), search)
+        : threadChildRows(rootThread),
+    [rootThread, search],
+  )
   const summary = useMemo(
     () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
     [childRows, task.acknowledgedSubagentFailures],
@@ -479,10 +494,15 @@ function TaskRowView({
             aria-expanded={open}
             aria-controls={open ? childrenId : undefined}
             title={childrenDetail}
-            disabled={searching}
-            onMouseEnter={() => setHovered(true)}
+            onMouseEnter={() => {
+              if (!searching) setHovered(true)
+            }}
             onClick={(event) => {
               event.stopPropagation()
+              if (searching) {
+                setExpandedSearch(open ? undefined : search?.query)
+                return
+              }
               // A hover preview becomes pinned on click; clicking again closes it.
               const next = !expanded
               setHovered(false)

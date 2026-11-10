@@ -18,7 +18,7 @@ const readRuntime=(profile,path,input)=>new Promise(resolve=>window.calls.push({
 function App(){const[cfg,setCfg]=useState({owners:['a','b'],token:'first',online:true,missing:false,older:false}),[tick,setTick]=useState(0),[mode,setMode]=useState(null);window.change=patch=>flushSync(()=>setCfg(old=>({...old,...patch})));window.stream=()=>flushSync(()=>setTick(n=>n+1));
 const profiles=['a','b'].filter(id=>id!=='b'||!cfg.missing).map(id=>({id,name:id,connection:{address:'http://'+id+'.lan',token:id==='b'?cfg.token:'first'}}));
 window.workspace={activeRuntimeId:'a',connection:profiles[0].connection,runtimeRegistry:{profiles},readRuntime,request:async()=>{window.activeCalls++;return {taskIds:[],hits:[]}}};
-const entries=cfg.owners.flatMap(id=>['shared',...(cfg.older?['older']:[])].map(taskId=>({key:JSON.stringify([id,taskId]),projectName:'Studio',source:{runtimeId:id,name:'Computer '+id,online:id==='a'||cfg.online},task:{id:taskId,title:(taskId==='older'?'Older settled thread ':'Thread ')+id,createdAt:'2026-10-24',draft:String(tick),messages:cfg.online?[]:[{id:'local',role:'user',text:'needle in saved messages'}]}})));
+const entries=cfg.owners.flatMap(id=>['shared',...(cfg.older?['older']:[]),...(cfg.children?['child','sibling']:[])].map(taskId=>({key:JSON.stringify([id,taskId]),projectName:'Studio',source:{runtimeId:id,name:'Computer '+id,online:id==='a'||cfg.online},task:{id:taskId,title:(taskId==='child'?'Needle child ':taskId==='sibling'?'Unrelated sibling ':taskId==='older'?'Older settled thread ':'Thread ')+id,...(['child','sibling'].includes(taskId)?{delegation:{parentTaskId:'shared',parentRunId:'run',key:taskId}}:{}),createdAt:'2026-10-24',draft:String(tick),messages:cfg.online?[]:[{id:'local',role:'user',text:'needle in saved messages'}]}})));
 return <><button onClick={()=>setMode('messages')}>Search conversations</button><button onClick={()=>setMode('tasks')}>Go to thread</button><TaskSearchDialog mode={mode} entries={entries} onModeChange={setMode} onClose={()=>setMode(null)} onSelect={(entry,messageId)=>window.opened.push({key:entry.key,messageId})}/></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
@@ -191,6 +191,33 @@ try {
     await input.press('Escape')
     await page.getByRole('dialog').waitFor({ state: 'detached' })
     assert.equal(await page.evaluate(() => window.watches.length - window.stops.length), 0)
+    await page.evaluate(() => window.change({ children: true, older: false }))
+    await page.getByRole('button', { name: 'Go to thread', exact: true }).click()
+    await taskInput.fill('needle')
+    assert.equal(await page.getByRole('option').count(), 2)
+    assert.equal(await page.getByText('Needle child a', { exact: true }).count(), 0)
+    await page.keyboard.down('Alt')
+    await page.getByText('Needle child a', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('option').count(), 4)
+    assert.equal(await page.getByText('Unrelated sibling a', { exact: true }).count(), 0)
+    await taskInput.press('ArrowDown')
+    await page.keyboard.up('Alt')
+    await page.getByText('Needle child a', { exact: true }).waitFor({ state: 'detached' })
+    await taskInput.press('Enter')
+    assert.equal(await page.evaluate(() => window.opened.at(-1).key), '["a","shared"]')
+    await page.getByRole('button', { name: 'Go to thread', exact: true }).click()
+    await taskInput.fill('needle')
+    await page.keyboard.down('Alt')
+    await page.getByText('Needle child a', { exact: true }).waitFor()
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+    await page.getByText('Needle child a', { exact: true }).waitFor({ state: 'detached' })
+    await page.keyboard.up('Alt')
+    await page.keyboard.down('Alt')
+    await page.getByText('Needle child a', { exact: true }).waitFor()
+    await taskInput.press('ArrowDown')
+    await taskInput.press('Enter')
+    await page.keyboard.up('Alt')
+    assert.equal(await page.evaluate(() => window.opened.at(-1).key), '["a","child"]')
     assert.deepEqual(errors, [])
     await page.close()
   }

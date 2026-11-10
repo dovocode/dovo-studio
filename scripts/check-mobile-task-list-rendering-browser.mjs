@@ -884,9 +884,20 @@ try {
   await page.getByRole('button', { name: 'Filters', exact: true }).click()
   const search = page.getByRole('textbox', { name: 'Search tasks', exact: true })
   await search.fill('Child task')
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('button[aria-label="Subthreads for Parent task"]')
+        ?.getAttribute('aria-expanded') === 'false',
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).count(),
+    0,
+  )
+  assert.equal(await subthreads.isDisabled(), false)
+  await subthreads.click()
   await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).waitFor()
   assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
-  assert.equal(await subthreads.isDisabled(), true)
   await search.fill('')
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
   // Filtering uses a deferred query; wait for that render before checking the restored collapse.

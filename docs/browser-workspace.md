@@ -382,9 +382,12 @@ icons are never fetched from the local computer.
 
 Desktop and paired-runtime pages use declared regular icons, Apple touch icons and precomposed Apple
 touch icons. Larger declared sizes take priority; SVG and `sizes="any"` icons take first priority.
-The owner decodes the image to PNG at up to 128 × 128 pixels. Smaller raster images keep their size.
-ICO files use their largest image. Icon requests use the page's browser profile. The 1 MiB download
-limit and the 100,000-character viewer limit still apply.
+Apple touch icons without a declared size take priority over ordinary icons with no size. The loader
+checks actual decoded sizes and upgrades a small icon when another candidate has more detail. It
+keeps a usable icon if later candidates fail. The owner decodes the image to PNG at up to 128 × 128
+pixels. Smaller raster images keep their size. ICO files use their largest image. Icon requests use
+the page's browser profile. The 1 MiB download limit and the 100,000-character viewer limit still
+apply.
 
 To check icon loading and the desktop preview layout, run:
 

@@ -66,7 +66,10 @@ node scripts/check-desktop-audit-layout-browser.mjs
 
 Pinned browser tabs use 56px cards and a 24px favicon at the exact center. Status and activity stay
 in the corners. Computer and profile details stay in the tooltip and accessible name. Do not add an
-identity badge row to the cards.
+identity badge row to the cards. Activity icons wrap and use only the space they need. Empty
+activity slots do not reserve space. Regular tab titles use the full row until hover or keyboard
+focus shows actions. Touch devices keep those actions visible. The desktop activity bar has a 6px
+left inset, which matches the gap to the sidebar.
 
 `packages/web-ui/src/theme.css` owns the shared surface finish. Use it for settings, navigation and
 controls. Desktop navigation uses one translucent surface per pane with a 28px backdrop blur. Keep

@@ -154,3 +154,22 @@ it('matches complete sorting for shuffled pages, ties and boundary limits', () =
     expect(page.omitted).toBe(Math.max(0, tasks.length - limit))
   }
 })
+
+it('counts only omitted parents while retaining settled children and local parent context', () => {
+  const tasks: Task[] = Array.from({ length: 12 }, (_, index) => task(String(index)))
+  tasks.push(
+    ...Array.from({ length: 40 }, (_, index) => ({
+      ...task(`child-${index}`),
+      delegation: { parentTaskId: '0', parentRunId: 'run', key: String(index) },
+    })),
+  )
+  tasks.push({ ...task('remote-child'), spawnParent: { runtimeId: 'other', threadId: 'parent' } })
+  const page = settledSummaryPage(tasks, 2)
+  expect(page.omitted).toBe(9)
+  expect(
+    page.tasks.filter((item) => !item.delegation && !item.spawnParent).map((item) => item.id),
+  ).toEqual(['0', '10', '11'])
+  expect(page.tasks.filter((item) => !!item.delegation || !!item.spawnParent)).toHaveLength(41)
+  expect(settledSummaryPage(tasks, 0).omitted).toBe(11)
+  expect(settledSummaryPage(tasks, 100).omitted).toBe(0)
+})

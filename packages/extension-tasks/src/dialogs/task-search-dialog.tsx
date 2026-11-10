@@ -5,7 +5,8 @@ import { watchRuntimeSettled } from '@dovo/protocol'
 import { MessageSquare, Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, cn } from '@dovo/studio-ui'
 import type { TaskEntry } from '../list/task-collection'
-import { switcherResults } from '../list/task-search'
+import { switcherThreadGroups } from '../list/task-search'
+import { useSearchSubthreads } from '../list/use-search-subthreads'
 
 export type TaskSearchMode = 'tasks' | 'messages'
 
@@ -50,6 +51,11 @@ export function TaskSearchDialog({
     if (!mode) setQuery('')
   }, [mode])
   const search = useTaskSearch(entries, mode === 'messages' ? query : '')
+  const revealSubthreads = useSearchSubthreads(mode === 'tasks')
+  const threadGroups = useMemo(
+    () => (mode === 'tasks' ? switcherThreadGroups(entries, query) : []),
+    [entries, query, mode],
+  )
   const results = useMemo(
     () =>
       mode === 'messages'
@@ -59,20 +65,40 @@ export function TaskSearchDialog({
             messageId: hit.messageId,
             title: hit.entry.task.title,
             detail: hit.snippet,
+            child: false,
           }))
-        : switcherResults(entries, query).map((entry) => ({
-            key: entry.key,
-            entry,
-            messageId: undefined,
-            title: entry.task.title,
-            detail: `${entry.projectName} · ${entry.source.name}${entry.task.archivedAt ? ' · Archived' : ''}`,
-          })),
-    [entries, query, mode, search.hits],
+        : threadGroups.flatMap(({ entry, matches }) => [
+            {
+              key: entry.key,
+              entry,
+              messageId: undefined,
+              title: entry.task.title,
+              child: false,
+              detail: `${entry.projectName} · ${entry.source.name}${entry.task.archivedAt ? ' · Archived' : ''}${matches.length ? ` · ${matches.length} matching subthread${matches.length === 1 ? '' : 's'}` : ''}`,
+            },
+            ...(revealSubthreads
+              ? matches.map((child) => ({
+                  key: child.key,
+                  entry: child,
+                  messageId: undefined,
+                  title: child.task.title,
+                  child: true,
+                  detail: `Subthread · ${child.projectName} · ${child.source.name}`,
+                }))
+              : []),
+          ]),
+    [threadGroups, mode, search.hits, revealSubthreads],
   )
+  const activeParent = threadGroups.find((group) =>
+    group.matches.some((match) => match.key === activeKey),
+  )?.entry.key
   const active = Math.max(
     0,
-    results.findIndex((result) => result.key === activeKey),
+    results.findIndex(
+      (result) => result.key === activeKey || (!revealSubthreads && result.key === activeParent),
+    ),
   )
+
   useEffect(() => {
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [activeKey, results])
@@ -159,6 +185,7 @@ export function TaskSearchDialog({
                 className={cn(
                   'flex w-full min-w-0 flex-col rounded-md px-3 py-2 text-left',
                   index === active && 'bg-accent/55',
+                  result.child && 'ml-4 w-[calc(100%-1rem)] border-l border-border',
                 )}
               >
                 <span className="truncate text-sm">{result.title}</span>
@@ -192,7 +219,9 @@ export function TaskSearchDialog({
                   ? 'Type to search conversation history.'
                   : mode === 'messages' && search.hits.length === 50
                     ? 'Showing up to 50 matches. Refine your search for older messages.'
-                    : '\u00a0')}
+                    : mode === 'tasks' && threadGroups.some((group) => group.matches.length)
+                      ? 'Hold Alt to show matching subthreads.'
+                      : '\u00a0')}
         </p>
       </DialogContent>
     </Dialog>

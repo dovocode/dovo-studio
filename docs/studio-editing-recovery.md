@@ -141,13 +141,18 @@ existing pairings. Summary reads reuse their projection until committed metadata
 Message-only updates do not rebuild the summaries.
 
 The mobile unified list uses the shared thread tree. Delegated local and remote subthreads appear
-under their parent. Search can find a child through its parent. Child input requests reach the
-parent's **Needs input** section. Project and computer filters keep the parent as context. Subagents
-stay behind its icon. An archived parent remains as context when it has a visible child. Desktop
-Unified uses the same preferred-copy rules as Threads. A connected original wins over its replicas.
-A connected replica can replace an offline original. One logical thread has one main row. Equal
-copies use a stable computer ID to break ties. Their order in the fleet does not change the selected
-row.
+under their parent. Search can find a child through its parent. Thread search shows parent results
+by default. On desktop/web, hold **Alt** to reveal matching subthreads. Release **Alt** to hide
+them. This does not change saved expansion choices. On mobile, use the parent's subthread button to
+open matching children. Side chats also belong under their parent. The **Messages** tab still opens
+exact message matches. Settled counts and paging count parent threads. Child summaries stay
+available for family navigation and do not consume the settled page budget. Child input requests
+reach the parent's **Needs input** section. Project and computer filters keep the parent as context.
+Subagents stay behind its icon. An archived parent remains as context when it has a visible child.
+Desktop Unified uses the same preferred-copy rules as Threads. A connected original wins over its
+replicas. A connected replica can replace an offline original. One logical thread has one main row.
+Equal copies use a stable computer ID to break ties. Their order in the fleet does not change the
+selected row.
 
 Older thread decoders dropped `parent` without changing the version ID. Updated clients and runtimes
 repair that specific omission when another paired copy has the complete version. All other data and
@@ -197,6 +202,7 @@ pnpm --filter @dovo/runtime... --filter @dovo/api... -r build
 pnpm --filter @dovo/desktop build
 pnpm exec vp test packages/studio-core/src/preferences.test.ts apps/mobile/src/runtime/state/detail-drafts.test.ts packages/extension-tasks/src/list/thread-tree.test.ts packages/runtime/src/storage/thread-replication-journal.test.ts packages/runtime/src/storage/thread-replication.test.ts packages/runtime/src/http/diagnostics.test.ts packages/runtime/src/http/browser.test.ts packages/runtime/src/previews/browser-do-not-track.test.ts packages/runtime/src/previews/browser-session-cookies.test.ts apps/desktop/electron/main.test.ts
 pnpm exec vp test packages/extension-tasks/src/list/task-collection.test.ts apps/mobile/src/tasks/list/task-list-projection.test.ts apps/mobile/src/workspace/workspace-items.test.ts
+pnpm exec vp test packages/extension-tasks/src/list/task-search.test.ts packages/protocol/src/tasks/settled-page.test.ts
 pnpm exec vp test packages/durable-connections/src apps/mobile/src/runtime/connection/mutation-storage.test.ts packages/protocol/src/runtime/connection/shared-state-sync.test.ts packages/protocol/src/runtime/connection/shared-state-values.test.ts packages/protocol/src/runtime/connection/workspace-reconciliation.test.ts packages/runtime/src/storage/workspace.test.ts packages/runtime/src/agents/tasks/task-queue.test.ts
 pnpm test:durable-connections:browser
 pnpm test:preference-storage:browser
@@ -209,6 +215,8 @@ pnpm test:terminal-engine:browser
 pnpm test:code-review:browser
 pnpm test:mobile-workspaces:browser
 node scripts/check-mobile-task-list-rendering-browser.mjs
+node scripts/check-task-search-browser.mjs
+node scripts/check-sidebar-rendering-browser.mjs
 pnpm test:unified-workspace:browser
 ```
 

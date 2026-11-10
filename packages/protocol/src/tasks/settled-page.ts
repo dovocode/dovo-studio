@@ -14,12 +14,21 @@ export function settledSummaryPage<T extends Task>(
   now = Date.now(),
 ) {
   const protectedIds = new Set(selected)
-  for (const task of tasks)
+  for (const task of tasks) {
+    // Child summaries belong to their family and never consume the parent page budget.
+    const parentId = task.sideThread?.parentTaskId ?? task.delegation?.parentTaskId
+    if (parentId) {
+      protectedIds.add(task.id)
+      protectedIds.add(parentId)
+    }
+    if (task.spawnParent) protectedIds.add(task.id)
+    if (task.threadWatches?.some((watch) => watch.relation === 'spawned')) protectedIds.add(task.id)
     for (const child of task.subagents ?? [])
       if (child.taskId) {
         protectedIds.add(task.id)
         protectedIds.add(child.taskId)
       }
+  }
   // Keep the worst retained row at the heap root: selecting 25 from a large
   // workspace costs O(n log 25), without sorting or retaining every omitted row.
   const heap: number[] = []

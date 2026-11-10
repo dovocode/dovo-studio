@@ -1277,6 +1277,10 @@ try {
     await page.getByRole('group', { name: 'Project and checkout', exact: true }).waitFor()
     const rail = page.getByRole('navigation', { name: 'Main navigation', exact: true })
     const tasks = rail.getByRole('button', { name: 'Threads', exact: true })
+    const railBox = await rail.boundingBox()
+    if (device.name === 'desktop') {
+      assert.equal(railBox.x, 6, 'Activity bar has the same 6px inset as the sidebar gap')
+    }
     assert.equal(await tasks.getAttribute('aria-current'), 'page')
     await rail.getByRole('button', { name: 'Browser', exact: true }).click()
     assert.equal(

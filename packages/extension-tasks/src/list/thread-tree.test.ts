@@ -3,7 +3,7 @@ import { decode, snapshotSchema } from '@dovo/protocol'
 import { createTask } from '@dovo/studio-core'
 import { expect, it } from 'vite-plus/test'
 import { collectTasks, taskCollectionKey, type TaskSource } from './task-collection'
-import { buildThreadTree, threadDescendants } from './thread-tree'
+import { buildThreadTree, matchingThreadChildren, threadDescendants } from './thread-tree'
 
 const task = (id: string, extra: Partial<Task> = {}): Task => ({
   ...createTask({ title: id, repositoryId: '', agentId: '', objective: '' }),
@@ -1009,4 +1009,48 @@ it('presents native providers and Studio children as the same rows without chang
     nativeAgentKey('parent', { ...claude, sessionId: 'other' }),
   )
   expect(threadChildRows({ ...parent, online: false })[1]).toMatchObject({ online: false })
+})
+
+it('groups side chats beneath their parent and keeps only the matching branch during search', () => {
+  const entries = collectTasks([
+    source('desktop', [
+      task('parent'),
+      task('side', {
+        sideThread: {
+          parentTaskId: 'parent',
+          objective: 'Investigate',
+          source: 'head',
+          contextMessageCount: 0,
+          contextHash: '',
+          parentHistoryRevision: 0,
+          permissionCeiling: { provider: 'codex', permission: 'read-only' },
+        },
+      }),
+      task('nested', {
+        title: 'Needle work',
+        delegation: { parentTaskId: 'side', parentRunId: 'run', key: 'nested' },
+      }),
+      task('unrelated', {
+        delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'unrelated' },
+      }),
+    ]),
+  ])
+  const tree = buildThreadTree(entries)
+  expect(tree.roots.map((entry) => entry.task.id)).toEqual(['parent'])
+  const children = tree.nodes.get(key('desktop', 'parent'))!.children
+  expect(
+    threadDescendants(matchingThreadChildren(children, { query: 'needle', keys: new Set() })).map(
+      (child) => child.threadId,
+    ),
+  ).toEqual(['side', 'nested'])
+  expect(
+    threadDescendants(
+      matchingThreadChildren(children, {
+        query: 'history only',
+        keys: new Set([key('desktop', 'nested')]),
+      }),
+    ).map((child) => child.threadId),
+  ).toEqual(['side', 'nested'])
+  expect(matchingThreadChildren(children, { query: 'missing', keys: new Set() })).toEqual([])
+  expect(children).toHaveLength(2)
 })

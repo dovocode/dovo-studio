@@ -10,6 +10,8 @@ import {
   taskPullStatusFor,
   threadChildRows,
   threadTreeSummary,
+  matchingThreadChildren,
+  type ThreadSearchFilter,
 } from '@dovo/protocol'
 import {
   Archive,
@@ -82,6 +84,7 @@ function TaskListRowView({
   needsInput = row.needsInput,
   thread,
   searching,
+  search,
   owner,
   now,
   testID,
@@ -103,6 +106,7 @@ function TaskListRowView({
   needsInput?: boolean
   thread?: NestedThread
   searching?: boolean
+  search?: ThreadSearchFilter
   owner: TaskListOwner
   now: number
   testID: string
@@ -137,7 +141,10 @@ function TaskListRowView({
     })
   }, [])
   const [expanded, setExpanded] = useState(false)
-  const open = !!searching || expanded
+  const [expandedSearch, setExpandedSearch] = useState<string>()
+  const open = searching
+    ? expandedSearch !== undefined && expandedSearch === search?.query
+    : expanded
   const onOpen = useCallback(() => commands.open(row.key), [commands, row.key])
   const onDetails = useCallback(() => commands.details(row.key), [commands, row.key])
   const onSelect = useCallback(() => commands.select(row.key), [commands, row.key])
@@ -200,7 +207,10 @@ function TaskListRowView({
   const StatusIcon = statusIcons[state] ?? CircleDashed
   const settled = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !settled
-  const childRows = useMemo(() => (thread ? threadChildRows(thread) : []), [thread])
+  const childRows = useMemo(() => {
+    const children = thread ? threadChildRows(thread) : []
+    return search ? matchingThreadChildren(children, search) : children
+  }, [thread, search])
   const summary = useMemo(
     () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
     [childRows, task.acknowledgedSubagentFailures],
@@ -289,10 +299,12 @@ function TaskListRowView({
       accessibilityHint={childrenDetail}
       accessibilityState={{
         expanded: open,
-        disabled: disabled || selectionActive || !!searching,
+        disabled: disabled || selectionActive,
       }}
-      disabled={disabled || selectionActive || !!searching}
-      onPress={() => setExpanded(!open)}
+      disabled={disabled || selectionActive}
+      onPress={() =>
+        searching ? setExpandedSearch(open ? undefined : search?.query) : setExpanded(!open)
+      }
       style={{
         position: 'absolute',
         left: subthreadPosition?.left ?? 0,

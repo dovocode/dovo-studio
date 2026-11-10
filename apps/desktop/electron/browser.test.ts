@@ -2754,7 +2754,8 @@ it('captures a bounded website favicon and exposes it in native status', async (
     new Response('not an image', { headers: { 'content-type': 'text/html' } }),
   )
   listener('page-favicon-updated')?.({}, ['https://example.com/not-icon'])
-  await vi.waitFor(() => expect(mocks.contents.session.fetch).toHaveBeenCalledTimes(3))
+  // Both declared candidates are small or invalid, so finish their root-icon fallbacks.
+  await vi.waitFor(() => expect(mocks.contents.session.fetch).toHaveBeenCalledTimes(4))
   expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty(
     'favicon',
     expect.any(String),

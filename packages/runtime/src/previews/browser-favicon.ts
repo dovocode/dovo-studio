@@ -17,14 +17,17 @@ async function thumbnail(bytes: Uint8Array) {
   const { default: sharp } = await import('sharp')
   const image = sharp(source, { limitInputPixels: 4 * 1024 * 1024 })
   const { format } = await image.metadata()
-  const png = await image
+  const { data, info } = await image
     .resize(iconSize, iconSize, {
       fit: 'inside',
       withoutEnlargement: format !== 'svg',
     })
     .png()
-    .toBuffer()
-  return `data:image/png;base64,${png.toString('base64')}`
+    .toBuffer({ resolveWithObject: true })
+  return {
+    icon: `data:image/png;base64,${data.toString('base64')}`,
+    quality: Math.min(info.width, info.height),
+  }
 }
 
 /** A document owns its requests; newer icon events and navigation cancel older results. */
@@ -72,6 +75,7 @@ export function createBrowserFaviconLoader(
       current?.abort()
       const controller = new AbortController()
       current = controller
+      let quality = 0
       for (const url of candidates) {
         if (controller.signal.aborted) return
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)])
@@ -101,13 +105,17 @@ export function createBrowserFaviconLoader(
             reader.releaseLock()
           }
           const icon = await thumbnail(Buffer.concat(chunks))
-          if (!controller.signal.aborted) publish(icon)
-          return
+          if (controller.signal.aborted) return
+          if (icon.quality > quality) {
+            quality = icon.quality
+            publish(icon.icon)
+          }
+          if (quality >= iconSize) return
         } catch {
           // A broken, unsupported or oversized declared icon must not hide another valid one.
         }
       }
-      if (!controller.signal.aborted) publish(null)
+      if (!controller.signal.aborted && !quality) publish(null)
     },
   }
 }
@@ -233,8 +241,12 @@ export function observeBrowserFavicons(
     pending = false
     const size = (link: HTMLLinkElement) => {
       if (link.type.toLowerCase() === 'image/svg+xml') return Infinity
+      const apple = link.rel
+        .toLowerCase()
+        .split(/\s+/)
+        .some((rel) => rel.startsWith('apple-touch-icon'))
       return Math.max(
-        0,
+        apple && !link.sizes.value.trim() ? 180 : 0,
         ...link.sizes.value
           .toLowerCase()
           .split(/\s+/)

@@ -186,6 +186,24 @@ try {
     `${streaming.rows} row renders for 30 frames of one thread (${initial} rows mounted)`,
   )
 
+  const threadSearch = page.getByRole('textbox', { name: 'Search threads', exact: true })
+  await threadSearch.fill('Child thread')
+  await page.getByText('Parent thread', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).count(),
+    0,
+  )
+  await page.keyboard.down('Alt')
+  await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Native child', exact: true }).count(),
+    0,
+  )
+  await page.keyboard.up('Alt')
+  await page
+    .getByRole('button', { name: 'Open child thread Child thread', exact: true })
+    .waitFor({ state: 'detached' })
+  await threadSearch.fill('')
   const childToggle = page.getByRole('button', {
     name: 'Subthreads for Parent thread',
     exact: true,

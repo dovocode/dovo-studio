@@ -179,13 +179,14 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
     parent.children.push(child)
   }
   // Local delegation is authoritative when a remote monitor also refers to the same child.
-  for (const entry of entries)
-    if (entry.task.delegation) {
+  for (const entry of entries) {
+    const parentTaskId = entry.task.sideThread?.parentTaskId ?? entry.task.delegation?.parentTaskId
+    if (parentTaskId) {
       const parentKey = resolveThreadKey(
         entry.task.replica?.ownerRuntimeId ??
           entry.source.snapshot?.runtimeId ??
           entry.source.runtimeId,
-        entry.task.delegation.parentTaskId,
+        parentTaskId,
       )
       const record = entryByKey
         .get(parentKey)
@@ -195,6 +196,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
       nodes.get(entry.key)!.activity = record?.activity
       attach(parentKey, entry.key)
     }
+  }
   for (const entry of entries) {
     const parent = entry.task.spawnParent
     if (parent) attach(resolveThreadKey(parent.runtimeId, parent.threadId), entry.key)
@@ -591,3 +593,23 @@ export function nativeOverflowFailures(
     ? overflow.failed
     : 0
 }
+
+/** Keep matching children and the ancestors needed to reach them. */
+export function matchingThreadChildren(
+  children: readonly NestedThread[],
+  search: ThreadSearchFilter,
+): NestedThread[] {
+  return children.flatMap((child) => {
+    const nested = matchingThreadChildren(child.children, search)
+    const matches =
+      search.keys.has(child.key) ||
+      [child.title, child.computerName, child.projectName ?? ''].some((text) =>
+        text.toLowerCase().includes(search.query.trim().toLowerCase()),
+      )
+    return matches || nested.length
+      ? [{ ...child, children: nested, nativeAgents: undefined, nativeAgentOverflow: undefined }]
+      : []
+  })
+}
+
+export type ThreadSearchFilter = { query: string; keys: ReadonlySet<string> }

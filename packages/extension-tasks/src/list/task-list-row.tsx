@@ -1,4 +1,4 @@
-import type { SubagentListItem } from '@dovo/protocol'
+import type { SubagentListItem, ThreadSearchFilter } from '@dovo/protocol'
 import type { Task } from '@dovo/studio-core'
 import {
   memo,
@@ -89,6 +89,8 @@ function TaskListRowView({
   thread,
   selectedThreadKey,
   searching,
+  search,
+  revealSearch,
 }: {
   entryKey: string
   task: Task
@@ -111,6 +113,8 @@ function TaskListRowView({
   thread?: NestedThread
   selectedThreadKey?: string
   searching: boolean
+  search?: ThreadSearchFilter
+  revealSearch?: boolean
 }) {
   const element = useRef<HTMLDivElement>(null)
   const estimate = task.archived || task.archivedAt ? 38 : 72 + (subagents.length ? 32 : 0)
@@ -231,6 +235,8 @@ function TaskListRowView({
             thread={thread}
             selectedThreadKey={selectedThreadKey}
             searching={searching}
+            search={search}
+            revealSearch={revealSearch}
           />
         </TaskContextMenu>
       )}

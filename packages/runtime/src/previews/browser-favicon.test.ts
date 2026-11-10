@@ -114,6 +114,7 @@ it('rejects unsafe URLs and excessive bodies and falls back to a valid image', a
   expect(fetchIcon.mock.calls.map(([url]) => url)).toEqual([
     'https://example.com/huge.png',
     'https://example.com/valid.png',
+    'https://example.com/favicon.ico',
   ])
   expect(publish).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/png;base64,/))
 })
@@ -140,4 +141,31 @@ it('does not publish an old request after a newer update or a same-URL reload', 
   fetchIcon.mockResolvedValue(new Response('not an image'))
   await loader.load('https://example.com/', ['/new.png'])
   expect(publish).toHaveBeenLastCalledWith(null)
+})
+
+it('upgrades a small declared favicon to the highest usable image without publishing a later downgrade', async () => {
+  const sizes = [16, 96, 32, 256]
+  const bytes = await Promise.all(
+    sizes.map((size) =>
+      sharp({ create: { width: size, height: size, channels: 4, background: '#112233' } })
+        .png()
+        .toBuffer(),
+    ),
+  )
+  const fetchIcon = vi.fn<FaviconFetch>(async (url) => {
+    const index = sizes.findIndex((size) => url.endsWith(`/${size}.png`))
+    return index >= 0 ? new Response(bytes[index]) : new Response(null, { status: 404 })
+  })
+  const publish = vi.fn<(icon: string | null) => void>()
+  await createBrowserFaviconLoader(fetchIcon, publish).load(
+    'https://example.com/',
+    sizes.map((size) => `/${size}.png`),
+  )
+  const publishedSizes = await Promise.all(
+    publish.mock.calls.map(
+      async ([icon]) => (await sharp(Buffer.from(icon!.split(',')[1]!, 'base64')).metadata()).width,
+    ),
+  )
+  expect(publishedSizes).toEqual([16, 96, 128])
+  expect(fetchIcon).toHaveBeenCalledTimes(4)
 })

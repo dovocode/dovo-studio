@@ -134,6 +134,43 @@ try {
     ],
     [128, 0, 128, 255],
   )
+  const touch =
+    'data:image/png;base64,' +
+    (
+      await sharp({ create: { width: 180, height: 180, channels: 4, background: '#008080' } })
+        .png()
+        .toBuffer()
+    ).toString('base64')
+  const basic =
+    'data:image/png;base64,' +
+    (
+      await sharp({ create: { width: 16, height: 16, channels: 4, background: 'red' } })
+        .png()
+        .toBuffer()
+    ).toString('base64')
+  await evaluate(
+    'work',
+    `document.querySelectorAll('link[rel]').forEach(link=>link.remove());
+    for (const [rel,href] of ${JSON.stringify([
+      ['icon', basic],
+      ['apple-touch-icon', touch],
+    ])}) {
+      const link=document.createElement('link');link.rel=rel;link.href=href;document.head.append(link);
+    }`,
+  )
+  const preferred = (
+    await waitFor(
+      'work',
+      (state) => typeof state?.favicon === 'string' && state.favicon !== appleIcon,
+    )
+  ).favicon
+  const preferredImage = sharp(Buffer.from(preferred.split(',')[1], 'base64'))
+  assert.equal((await preferredImage.metadata()).width, 128)
+  assert.deepEqual(
+    [...(await preferredImage.raw().toBuffer()).subarray(0, 4)],
+    [0, 128, 128, 255],
+    'An Apple icon without sizes wins over a standard small favicon',
+  )
   console.log(
     'Remote favicons passed: profile cookies, fallback, SVG, blob icons, dynamic updates, reload, high resolution and Apple touch icons.',
   )
