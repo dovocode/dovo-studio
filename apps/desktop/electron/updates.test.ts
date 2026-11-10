@@ -6,7 +6,8 @@ const requestUrl = (input: Parameters<typeof fetch>[0]) =>
   typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 
 const f = vi.hoisted(() => ({
-  githubFetch: vi.fn<typeof fetch>(async (input, init) => fetch(input, init)),
+  publicReleaseFetch: vi.fn<typeof fetch>(),
+  githubFetch: vi.fn<typeof fetch>(),
   open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
   listeners: new Map<
     string,
@@ -90,13 +91,25 @@ vi.mock('electron-updater', () => ({
 vi.mock('./local-runtime.js', () => ({
   startLocalRuntime: async () => ({ address: 'http://fixture', token: 'fixture-token' }),
 }))
+// Route only public discovery to its fixture. Runtime/release-note boundaries stay explicit.
+function stubRuntimeFetch(fetcher: typeof fetch) {
+  vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    requestUrl(input).startsWith('https://api.github.com/repos/dovocode/dovo-studio/releases') &&
+    !requestUrl(input).includes('/releases/tags/')
+      ? f.publicReleaseFetch(input, init)
+      : fetcher(input, init),
+  )
+}
 beforeEach(() => {
+  f.githubFetch.mockImplementation((input, init) => fetch(input, init))
+  stubRuntimeFetch(async (input) => {
+    throw new Error(`Unexpected runtime request: ${requestUrl(input)}`)
+  })
   // Generic updater tests describe an auto-updatable installation on every host.
   // The package-manager cases below explicitly clear APPIMAGE.
   vi.stubEnv('APPIMAGE', '/fixture/Dovo.AppImage')
-  f.githubFetch.mockImplementation(async (input, init) => {
+  f.publicReleaseFetch.mockImplementation(async (input) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    if (url.includes('/releases/tags/')) return fetch(input, init)
     const release = (version: string) => ({
       tag_name: `v${version}`,
       html_url: `https://github.com/dovocode/dovo-studio/releases/tag/v${version}`,
@@ -191,11 +204,10 @@ it('forces stable updates and honors a managed HTTP desktop feed', async () => {
     provider: 'generic',
     url: 'http://updates.internal/releases/',
   })
-  expect(f.githubFetch).not.toHaveBeenCalled()
+  expect(f.publicReleaseFetch).not.toHaveBeenCalled()
 })
 it('publishes update notes and downloads directly from the sidebar action', async () => {
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async (input) =>
       Response.json(
         requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
@@ -231,10 +243,7 @@ it('publishes update notes and downloads directly from the sidebar action', asyn
 })
 it('loads release notes from the release when updater metadata omits them', async () => {
   f.notes = undefined
-  vi.stubGlobal(
-    'fetch',
-    vi.fn<typeof fetch>(async () => Response.json({ body: 'New release changes' })),
-  )
+  stubRuntimeFetch(vi.fn<typeof fetch>(async () => Response.json({ body: 'New release changes' })))
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async (beforeStop) => {
     await beforeStop()
@@ -242,7 +251,8 @@ it('loads release notes from the release when updater metadata omits them', asyn
   })
   await updates.refresh()
   await vi.waitFor(() => expect(updates.state().notes).toBe('New release changes'))
-  expect(f.githubFetch).toHaveBeenCalledTimes(3)
+  expect(f.publicReleaseFetch).toHaveBeenCalledTimes(2)
+  expect(f.githubFetch).toHaveBeenCalledOnce()
 })
 
 it('resolves the published release on every check without adding credentials to the download feed', async () => {
@@ -250,7 +260,7 @@ it('resolves the published release on every check without adding credentials to 
     tag_name: 'v0.0.9',
     html_url: 'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.9',
   }
-  f.githubFetch.mockImplementation(async (input) => {
+  f.publicReleaseFetch.mockImplementation(async (input) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     return Response.json(url.endsWith('/latest') ? metadata : [metadata])
   })
@@ -260,13 +270,18 @@ it('resolves the published release on every check without adding credentials to 
     return async () => {}
   })
   await updates.refresh()
-  expect(f.githubFetch).toHaveBeenCalledTimes(2)
+  expect(f.publicReleaseFetch).toHaveBeenCalledTimes(2)
+  expect(f.githubFetch).not.toHaveBeenCalled()
+  for (const [, options] of f.publicReleaseFetch.mock.calls) {
+    expect(options?.credentials).toBe('omit')
+    expect(new Headers(options?.headers).has('Authorization')).toBe(false)
+  }
   expect(f.feed).toHaveBeenLastCalledWith({
     provider: 'generic',
     url: 'https://github.com/dovocode/dovo-studio/releases/download/v0.0.9/',
   })
   await updates.refresh()
-  expect(f.githubFetch).toHaveBeenCalledTimes(4)
+  expect(f.publicReleaseFetch).toHaveBeenCalledTimes(4)
 })
 it.each(['stable', 'nightly'] as const)(
   'uses only published %s releases and follows channel changes on the next check',
@@ -280,7 +295,7 @@ it.each(['stable', 'nightly'] as const)(
       draft,
       prerelease,
     })
-    f.githubFetch.mockImplementation(async (input) => {
+    f.publicReleaseFetch.mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       return Response.json(
         url.endsWith('/latest')
@@ -311,25 +326,26 @@ it.each(['stable', 'nightly'] as const)(
       url: `https://github.com/dovocode/dovo-studio/releases/download/v${versions[other]}/`,
     })
     expect(updates.state().channel).toBe(other)
-    expect(f.githubFetch).toHaveBeenCalledTimes(4)
+    expect(f.publicReleaseFetch).toHaveBeenCalledTimes(4)
   },
 )
 it('reports a missing published channel instead of checking another channel', async () => {
   vi.mocked(readLocalSettingsSection).mockReturnValue('nightly')
-  f.githubFetch.mockImplementation(async () => Response.json([]))
+  f.publicReleaseFetch.mockImplementation(async () => Response.json([]))
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async (beforeStop) => {
     await beforeStop()
     return async () => {}
   })
-  await expect(updates.refresh()).rejects.toThrow('No nightly desktop release is published')
+  await expect(updates.refresh()).rejects.toThrow(
+    'No published nightly desktop update was found. Try again later or check the releases page.',
+  )
   expect(updates.state()).toEqual({ status: 'error', channel: 'nightly' })
   expect(f.checks).not.toHaveBeenCalled()
   expect(f.feed).not.toHaveBeenCalled()
 })
 it('asks again after the download before restarting', async () => {
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async (input) =>
       Response.json(
         requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
@@ -345,8 +361,7 @@ it('asks again after the download before restarting', async () => {
   expect(f.install).toHaveBeenCalledOnce()
 })
 it('keeps the downloaded update ready when restart is deferred', async () => {
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async (input) =>
       Response.json(
         requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
@@ -365,8 +380,7 @@ it('keeps the downloaded update ready when restart is deferred', async () => {
 it('shows Windows installation progress only after restart is confirmed', async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
   vi.spyOn(process, 'arch', 'get').mockReturnValue('x64')
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async (input) =>
       Response.json(
         requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
@@ -421,8 +435,7 @@ it('uses the same check action from the application menu and sidebar bridge', as
   expect(f.message).toHaveBeenCalledTimes(2)
 })
 it('waits for the runtime to stop before installation and restores it on synchronous failure', async () => {
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async (input) =>
       Response.json(
         requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
@@ -449,8 +462,7 @@ it('waits for the runtime to stop before installation and restores it on synchro
   expect(f.message).toHaveBeenLastCalledWith(expect.objectContaining({ detail: 'Install failed' }))
 })
 it('restores the stopped runtime when the updater reports an asynchronous installation error', async () => {
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async (input) =>
       Response.json(
         requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
@@ -501,8 +513,7 @@ it('keeps nightly updates on the prerelease channel and links nightly packages',
 })
 
 it('downloads remotely without a host dialog and restarts only after an explicit command', async () => {
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async (input) =>
       Response.json(
         requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
@@ -527,8 +538,7 @@ it('downloads remotely without a host dialog and restarts only after an explicit
   expect(f.install).toHaveBeenCalledOnce()
 })
 it('refuses a remote restart without the requested download and reports active work', async () => {
-  vi.stubGlobal(
-    'fetch',
+  stubRuntimeFetch(
     vi.fn<typeof fetch>(async () =>
       Response.json({
         ...snapshot,
@@ -609,7 +619,7 @@ it('keeps a downloaded update on its selected channel until installation', async
 it('uses the architecture-specific feed when checking Windows ARM nightly releases', async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
   vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64')
-  f.githubFetch.mockImplementation(async (input) =>
+  f.publicReleaseFetch.mockImplementation(async (input) =>
     (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith(
       '/latest',
     )
@@ -727,7 +737,7 @@ it.each([false, true])(
             requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
           ),
     )
-    vi.stubGlobal('fetch', request)
+    stubRuntimeFetch(request)
     const { registerUpdates } = await import('./updates')
     const prepare = vi.fn<(beforeStop: () => Promise<void>) => Promise<() => Promise<void>>>(
       async (beforeStop) => {
@@ -757,7 +767,7 @@ it('cancels restart preparation and keeps the download retryable when shutdown f
           requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
         ),
   )
-  vi.stubGlobal('fetch', request)
+  stubRuntimeFetch(request)
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async (beforeStop) => {
     await beforeStop()
@@ -780,7 +790,7 @@ it('does not stop the runtime when new work starts while windows are closing', a
       ? Response.json({ error: 'New work is running' }, { status: 409 })
       : Response.json(snapshot),
   )
-  vi.stubGlobal('fetch', request)
+  stubRuntimeFetch(request)
   const { registerUpdates } = await import('./updates')
   const stopped = vi.fn<() => void>()
   const updates = registerUpdates('/unused', async (beforeStop) => {
@@ -796,7 +806,7 @@ it('does not stop the runtime when new work starts while windows are closing', a
 
 it('does not reserve a restart before an unsaved-edit close prompt is accepted', async () => {
   const request = vi.fn<typeof fetch>(async () => Response.json(snapshot))
-  vi.stubGlobal('fetch', request)
+  stubRuntimeFetch(request)
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async () => {
     throw Error('Keep editing')
@@ -831,7 +841,7 @@ it.each([0, 1])('offers a local restart with work retained, choice %s', async (c
           },
     ),
   )
-  vi.stubGlobal('fetch', request)
+  stubRuntimeFetch(request)
   // First choose Later after downloading. The downloaded action must then offer recovery.
   f.message.mockResolvedValueOnce({ response: 1 })
   const { registerUpdates } = await import('./updates')
@@ -892,7 +902,7 @@ it('does not treat a running replica from another computer as local work', async
         : { ...snapshot, workspace: { ...snapshot.workspace, tasks: [replica] } },
     ),
   )
-  vi.stubGlobal('fetch', request)
+  stubRuntimeFetch(request)
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async (beforeStop) => {
     await beforeStop()
@@ -941,7 +951,7 @@ it('offers restart recovery for live native subagents between parent turns', asy
         : { ...snapshot, workspace: { ...snapshot.workspace, tasks: [task] } },
     ),
   )
-  vi.stubGlobal('fetch', request)
+  stubRuntimeFetch(request)
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async (beforeStop) => {
     await beforeStop()

@@ -90,8 +90,11 @@ export function registerUpdates(
       }
       // Resolve the chosen published channel for every check, with or without a GitHub login.
       // Keep tokens out of updater logs and downloads, and avoid GitHub's prerelease selector.
-      const release = (await fetchRuntimeReleases(fetchGitHubRelease))[channel]
-      if (!release) throw new Error(`No ${channel} desktop release is published`)
+      const release = (await fetchRuntimeReleases())[channel]
+      if (!release)
+        throw new Error(
+          `No published ${channel} desktop update was found. Try again later or check the releases page.`,
+        )
       autoUpdater.setFeedURL({
         provider: 'generic',
         url: `https://github.com/dovocode/dovo-studio/releases/download/v${release.version}/`,

@@ -17,6 +17,11 @@ prereleases; Nightly selects published nightly tags. Drafts never appear in eith
 selection also applies without a GitHub login. If the selected channel has no published release, the
 check reports the problem and keeps that channel selected.
 
+Release discovery uses only the public GitHub API, without host credentials or cookies. This keeps
+unpublished drafts out of the list, including accounts with more than 100 drafts. If the public API
+fails or reaches its rate limit, Studio uses published Homebrew metadata. It never switches to an
+authenticated release list.
+
 Source launches show **Dovo Studio (Dev)** in the window and menu. The update icon opens release
 notes and live download progress, including transferred bytes and speed. After download, choose
 **Restart and install** or **Later**. On Windows, confirming the restart installs the update
@@ -71,7 +76,7 @@ candidate build and native terminal smoke check finish before the running servic
 For a standalone Linux server, [the one-command installer](server-setup.md) selects and verifies the
 matching server archive, registers the user service, and uses the same command for upgrades.
 
-The Linux installer, managed server updater, desktop release checks and WSL runtime installation
+The Linux installer, managed server updater, desktop release-note reads and WSL runtime installation
 reuse `GH_TOKEN`, `GITHUB_TOKEN`, or the host user's existing `gh auth` login, in that order, for
 GitHub API metadata. Credential lookup is noninteractive and optional. Tokens stay on the host and
 are not sent to archive downloads, public metadata fallbacks or paired clients. Managed Homebrew

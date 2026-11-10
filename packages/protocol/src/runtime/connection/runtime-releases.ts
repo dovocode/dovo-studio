@@ -22,6 +22,8 @@ export function newerRuntimeVersion(a: string, b: string) {
 async function fetchGitHubReleases(fetcher: typeof fetch): Promise<RuntimeReleases> {
   const options: RequestInit = {
     cache: 'no-store',
+    credentials: 'omit',
+    redirect: 'error',
     headers: { Accept: 'application/vnd.github+json' },
     signal: AbortSignal.timeout(15000),
   }
@@ -45,7 +47,7 @@ async function fetchGitHubReleases(fetcher: typeof fetch): Promise<RuntimeReleas
       typeof item.html_url !== 'string'
     )
       continue
-    // Authenticated GitHub users can see drafts; offer only publicly published releases.
+    // Offer only published releases, even if an unexpected response includes drafts.
     if ('draft' in item && item.draft !== false) continue
     if (!item.html_url.startsWith('https://github.com/dovocode/dovo-studio/releases/')) continue
     const channel = item.tag_name.includes('-nightly.') ? 'nightly' : 'stable'
@@ -93,7 +95,9 @@ async function publishedRuntimeReleases(): Promise<RuntimeReleases> {
   return Object.fromEntries(entries.filter((entry) => entry !== undefined))
 }
 const pending = new Map<typeof fetch, Promise<RuntimeReleases>>()
-export function fetchRuntimeReleases(fetcher: typeof fetch = fetch): Promise<RuntimeReleases> {
+/** Discover public releases without an account, cookies or a host credential transport. */
+export function fetchRuntimeReleases(): Promise<RuntimeReleases> {
+  const fetcher = fetch
   const current = pending.get(fetcher)
   if (current) return current
   const request = fetchGitHubReleases(fetcher).catch(async (cause: unknown) => {
