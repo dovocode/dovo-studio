@@ -21,6 +21,18 @@ Shared Browser sessions are separate from the thread's right-side preview. Profi
 reused across both surfaces, but their login cookies are isolated; signing in on one does not sign
 you in on the other.
 
+When Browser workspace is off, **Open in Dovo** uses a standalone preview window. In that window,
+links with `target="_blank"` and `window.open` open child previews directly. They do not ask you to
+choose where to open the link again. Child previews keep the preview session, form submissions and
+normal opener behavior. This also works for nested links and pages opened blank before navigation.
+Child previews close with their opener. They remain sandboxed and accept HTTP and HTTPS pages.
+
+Verify this flow with `pnpm exec playwright install chromium`, then
+`pnpm test:detached-browser-links:native`. The check uses real Electron windows with temporary
+profiles. It covers new-window links, nested and delayed navigation, cookies, an opener callback,
+POST forms, unsafe URL rejection and window cleanup. It has passed on Linux; macOS and Windows still
+need native verification.
+
 With **Studio Tools → Browsers** enabled on a tab's computer, agents can list and operate live
 workspace tabs through `studio_browsers` (remote tabs and desktop-local tabs alike; private tabs are
 always excluded). A bot badge marks tabs agents can reach, and lights up on desktop tabs while an

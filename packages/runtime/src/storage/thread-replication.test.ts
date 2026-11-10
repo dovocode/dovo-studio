@@ -828,7 +828,10 @@ it('paginates settled replicas together with local threads and retains explicitl
     expect(response.status).toBe(200)
     const snapshot = decode(snapshotSchema, await response.json())
     expect(snapshot.workspace.tasks).toHaveLength(25)
-    expect(snapshot.olderSettled).toEqual({ limit: 25, omitted: 35 })
+    expect(snapshot.olderSettled).toEqual({ limit: 25, omitted: 35, threadKeys: expect.any(Array) })
+    expect(snapshot.olderSettled?.threadKeys).toHaveLength(35)
+    for (const key of snapshot.olderSettled?.threadKeys ?? [])
+      expect(JSON.parse(key)[0]).toBe(owner.runtime.services.runtimeId)
     const read = receiver.runtime.services.threadReplication.read(
       owner.runtime.services.runtimeId,
       'shared-0',

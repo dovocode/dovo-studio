@@ -206,6 +206,8 @@ export const snapshotSchema = mutableStruct({
   managedPolicy: Schema.optional(managedPolicySummarySchema),
   olderSettled: Schema.optional(
     mutableStruct({
+      /** Logical identities of omitted roots, for exact counts across replicas and connection aliases. */
+      threadKeys: Schema.optional(mutableArray(Schema.String)),
       limit: Schema.Number.pipe(
         Schema.check(Schema.isInt()),
         Schema.check(Schema.isBetween({ minimum: 1, maximum: 100000 })),

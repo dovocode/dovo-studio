@@ -79,17 +79,42 @@ export async function openBrowserLink(parent: BrowserWindow, raw: string) {
       partition: 'dovo-links',
     },
   })
-  browser.webContents.setWindowOpenHandler(({ url: next }) => {
-    void offerLink(parent, next)
-    return { action: 'deny' }
-  })
-  browser.webContents.on('will-navigate', (event, next) => {
-    try {
-      previewUrl(next)
-    } catch {
-      event.preventDefault()
+  const trackPreview = (preview: BrowserWindow) => {
+    preview.webContents.setWindowOpenHandler(({ url: next }) => {
+      try {
+        if (next && next !== 'about:blank') previewUrl(next)
+      } catch {
+        return { action: 'deny' }
+      }
+      // The user already chose this browser. Let Chromium retain the opener,
+      // session and POST body instead of sending each new page to Studio's chooser.
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          parent: preview,
+          autoHideMenuBar: true,
+          webPreferences: {
+            sandbox: true,
+            contextIsolation: true,
+            nodeIntegration: false,
+            nodeIntegrationInSubFrames: false,
+            webviewTag: false,
+          },
+        },
+      }
+    })
+    const guard = (event: Electron.Event, next: string) => {
+      try {
+        if (next !== 'about:blank') previewUrl(next)
+      } catch {
+        event.preventDefault()
+      }
     }
-  })
+    preview.webContents.on('will-navigate', guard)
+    preview.webContents.on('will-redirect', guard)
+    preview.webContents.on('did-create-window', trackPreview)
+  }
+  trackPreview(browser)
   browser.webContents.session.setPermissionRequestHandler((_contents, _permission, respond) =>
     respond(false),
   )

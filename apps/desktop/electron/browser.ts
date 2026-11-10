@@ -312,11 +312,14 @@ export function registerBrowser(
     entry.workspace &&
     !entry.sleeping &&
     (entry.keepAwake ?? browserDefaultKeepAwake(entry.contents.getURL() || entry.url))
+  const agentConnected = (entry: Entry) =>
+    !!cdp?.connected(JSON.stringify([entry.windowId, entry.key]))
   const syncBackgroundThrottling = (entry: Entry) => {
     if (!entry.contents.isDestroyed())
       entry.contents.setBackgroundThrottling(
         !(
           keepsAwake(entry) ||
+          agentConnected(entry) ||
           entry.videoPictureInPicture ||
           entry.documentPip ||
           entry.stopFrames ||
@@ -786,6 +789,9 @@ export function registerBrowser(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        // Navigation must not take focus from another tab or the Studio editor.
+        // Selection and deliberate page clicks manage native focus instead.
+        focusOnNavigation: false,
         // Run sandboxed lifecycle preloads in subframes, without exposing Node to websites.
         nodeIntegrationInSubFrames: true,
         // The session preload supplies Document PiP through a same-origin native popup.
@@ -927,6 +933,7 @@ export function registerBrowser(
     view.webContents.on('focus', () => {
       if (
         created.workspace &&
+        !agentConnected(created) &&
         !view.getVisible() &&
         openableUrl(created.contents.getURL()) &&
         !windowTabs.get(created.windowId)?.created.some((tab) => tab.key === created.key)
@@ -2065,7 +2072,13 @@ export function registerBrowser(
       entry.agentAccess = !!(command.agentAccess && command.taskId && directory)
       entry.taskId = command.taskId
       if (command.agentAccess && command.taskId && directory) {
-        cdpPending ??= createBrowserCdp(directory).catch((error) => {
+        cdpPending ??= createBrowserCdp(directory, (key) => {
+          const current = views.get(key)
+          if (!current) return
+          // Keep active agent work alive without selecting, showing or focusing the page.
+          if (current.inactiveAt !== undefined) current.inactiveAt = Date.now()
+          syncBackgroundThrottling(current)
+        }).catch((error) => {
           cdpPending = undefined
           throw error
         })

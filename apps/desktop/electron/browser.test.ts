@@ -355,6 +355,7 @@ it('isolates tabs, clamps their bounds, ignores unknown hides and retains inacti
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      focusOnNavigation: false,
       nodeIntegrationInSubFrames: true,
       disableBlinkFeatures: 'DocumentPictureInPictureAPI',
       partition: 'persist:dovo-preview:default',
@@ -656,6 +657,7 @@ it('replaces the native view when its profile changes, keeping separate persiste
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        focusOnNavigation: false,
         nodeIntegrationInSubFrames: true,
         disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: 'persist:dovo-preview:work',
@@ -666,6 +668,7 @@ it('replaces the native view when its profile changes, keeping separate persiste
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        focusOnNavigation: false,
         nodeIntegrationInSubFrames: true,
         disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: 'persist:dovo-preview:personal',
@@ -881,6 +884,48 @@ it('keeps hidden views while an agent is connected and evicts them after it disc
   await vi.advanceTimersByTimeAsync(30_000)
   expect(mocks.contents.close).toHaveBeenCalledOnce()
   expect(bridge.remove).toHaveBeenCalledWith(JSON.stringify([1, 'agent']))
+})
+
+it('runs connected agents without throttling or focus promotion and restores idle behavior', async () => {
+  vi.useFakeTimers()
+  let connected = false
+  let changed: Parameters<typeof import('./browser-cdp').createBrowserCdp>[1]
+  const bridge = {
+    connected: () => connected,
+    register: () => 'ws://unused',
+    remove: vi.fn<(id: string) => void>(),
+    close: async () => {},
+  }
+  mocks.cdpCreate.mockImplementationOnce(async (_directory, callback) => {
+    changed = callback
+    return bridge
+  })
+  registrations.push(registerBrowser('/app/index.html', '/tmp/browser-background'))
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  await call(event, {
+    ...workspaceShow,
+    agentAccess: true,
+    taskId: 'studio:browser',
+    keepAwake: false,
+  })
+  await call(event, { action: 'hide', key: workspaceShow.key })
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  const key = JSON.stringify([1, workspaceShow.key])
+  connected = true
+  changed?.(key, true)
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  listener('focus')?.()
+  expect(mocks.window.show).not.toHaveBeenCalled()
+  expect(mocks.window.focus).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  connected = false
+  changed?.(key, false)
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(5 * 60_000)
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
 })
 
 it('captures only the requested browser view and rejects empty images', async () => {

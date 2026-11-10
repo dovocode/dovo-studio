@@ -163,6 +163,16 @@ it('enforces independent runtime/run toggles, exact run scope, and read-only acc
       .status,
   ).toBe(403)
   expect((await reader.post('browsers', { action: 'open' })).status).toBe(403)
+  const screenshot = vi
+    .spyOn(reader.s.browsers, 'agentCommand')
+    .mockResolvedValue({ ok: true, image: 'png' })
+  expect((await reader.post('browsers', { action: 'screenshot', id: 'existing' })).status).toBe(200)
+  expect(screenshot).toHaveBeenCalledWith(
+    expect.any(String),
+    { action: 'screenshot' },
+    expect.any(Function),
+    'existing',
+  )
   reader.s.runCredentials.revoke(reader.token)
   expect((await reader.post('diagnostics', { action: 'health' })).status).toBe(401)
 })

@@ -151,7 +151,8 @@ export function authorizeRunRoute(
       denied()
   } else if (path === '/api/previews/browser/agent') {
     const command = record(input.command)
-    if (grant.readOnly && command.action !== 'snapshot' && command.action !== 'close') denied()
+    if (grant.readOnly && !['snapshot', 'screenshot', 'close'].includes(String(command.action)))
+      denied()
   } else if (path === '/api/terminals/run') {
     if (
       grant.readOnly ||

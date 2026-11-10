@@ -1,5 +1,10 @@
 import { expect, it } from 'vite-plus/test'
-import { settledSummaryPage, supportsSettledSummaryPaging } from './settled-page.js'
+import {
+  omittedSettledCount,
+  settledThreadKey,
+  settledSummaryPage,
+  supportsSettledSummaryPaging,
+} from './settled-page.js'
 import { compareTasks, taskSortOptions } from './task-priority.js'
 import type { Task } from '../workspace.js'
 const task = (id: string): Task => ({
@@ -153,4 +158,144 @@ it('matches complete sorting for shuffled pages, ties and boundary limits', () =
     expect(page.tasks).toEqual(tasks.filter((task) => expected.has(task.id)))
     expect(page.omitted).toBe(Math.max(0, tasks.length - limit))
   }
+})
+
+it('keeps hidden samples, side chats and explicit thread families out of the omitted root count', () => {
+  const tasks: Task[] = [
+    task('0'),
+    { ...task('1'), example: true },
+    {
+      ...task('2'),
+      status: 'draft',
+      sideThread: {
+        parentTaskId: '0',
+        contextMessageCount: 0,
+        objective: '',
+        parentHistoryRevision: 0,
+        contextHash: '',
+        source: 'head',
+        permissionCeiling: { provider: 'codex', permission: 'full-access' },
+      },
+    },
+    task('3'),
+    { ...task('4'), delegation: { parentTaskId: '3', parentRunId: 'run', key: 'child' } },
+    task('5'),
+    { ...task('6'), spawnParent: { runtimeId: 'owner', threadId: '5' } },
+    task('7'),
+    task('8'),
+  ]
+  const page = settledSummaryPage(tasks, 1)
+  expect(page.tasks.map((task) => task.id)).toEqual(['0', '1', '2', '3', '4', '5', '6', '8'])
+  expect(page.omittedTasks.map((task) => task.id)).toEqual(['7'])
+  expect(page.omitted).toBe(1)
+})
+
+it('keeps spawned watch targets with their parent, including replica targets', () => {
+  const tasks: Task[] = [
+    {
+      ...task('0'),
+      threadWatches: [
+        {
+          runtimeId: 'remote',
+          threadId: 'child',
+          computerName: 'Remote',
+          relation: 'spawned',
+          delegated: true,
+          status: 'watching',
+          offline: false,
+        },
+      ],
+    },
+    {
+      ...task('1'),
+      replica: {
+        ownerRuntimeId: 'remote',
+        threadId: 'child',
+        ownerName: 'Remote',
+        projectName: 'Project',
+      },
+    },
+    task('2'),
+    task('3'),
+  ]
+  expect(settledSummaryPage(tasks, 1).tasks.map((task) => task.id)).toEqual(['0', '1', '3'])
+  expect(settledSummaryPage(tasks, 1).omitted).toBe(1)
+})
+
+it('counts omitted logical threads once across owners, replicas, selected rows and different page sizes', () => {
+  const tasks = Array.from({ length: 40 }, (_, i) => task(`thread-${i}`))
+  const copies = tasks.map((original) => ({
+    ...original,
+    id: `replica-${original.id}`,
+    replica: {
+      ownerRuntimeId: 'owner',
+      threadId: original.id,
+      ownerName: 'Owner',
+      projectName: 'Project',
+    },
+  }))
+  const source = (runtimeId: string, tasks: Task[], limit: number, selected: string[] = []) => {
+    const page = settledSummaryPage(tasks, limit, selected)
+    return {
+      runtimeId,
+      tasks: page.tasks,
+      page: {
+        omitted: page.omitted,
+        threadKeys: page.omittedTasks.map((task) => settledThreadKey(task, runtimeId)),
+      },
+    }
+  }
+  for (const limit of [1, 25, 40, 50]) {
+    const sources = [
+      source('owner', tasks, limit),
+      source('replica-host', copies, 10, ['replica-thread-0']),
+      source('owner', tasks, 5),
+    ]
+    const loaded = new Set(
+      sources.flatMap((source) =>
+        source.tasks.map((task) => settledThreadKey(task, source.runtimeId)),
+      ),
+    )
+    expect(loaded.size + omittedSettledCount(sources)).toBe(40)
+  }
+})
+
+it('accepts scalar counts from older runtimes without double counting connection aliases', () => {
+  expect(
+    omittedSettledCount([
+      { runtimeId: 'one', tasks: [], page: { omitted: 15 } },
+      { runtimeId: 'one', tasks: [], page: { omitted: 15 } },
+      { runtimeId: 'two', tasks: [], page: { omitted: 5 } },
+    ]),
+  ).toBe(20)
+})
+
+it('excludes a spawned remote child from omitted roots when its parent is on another computer', () => {
+  const parent: Task = {
+    ...task('parent'),
+    threadWatches: [
+      {
+        runtimeId: 'remote',
+        threadId: 'child',
+        computerName: 'Remote',
+        relation: 'spawned',
+        delegated: true,
+        status: 'watching',
+        offline: false,
+      },
+    ],
+  }
+  expect(
+    omittedSettledCount([
+      { runtimeId: 'owner', tasks: [parent] },
+      {
+        runtimeId: 'remote',
+        tasks: [],
+        page: {
+          omitted: 2,
+          threadKeys: [JSON.stringify(['remote', 'child']), JSON.stringify(['remote', 'other'])],
+        },
+      },
+    ]),
+  ).toBe(1)
 })

@@ -5,23 +5,30 @@ import {
   previewUrl,
   STUDIO_BROWSER_SCOPE,
   isPrivateBrowserProfile,
+  remoteBrowserInputSchema,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
-import type { CDPSession } from 'playwright'
 import { HttpError } from '../errors.js'
 import type { AgentBrowserCommand } from './agent-browser.js'
-import { browserScript } from './browser-script.js'
+import { browserScript, browserScriptResult } from './browser-script.js'
+import { staleBrowserRef, nextBrowserSnapshotId } from './browser-targets.js'
+import { browserObservationSchema, readBrowserObservation } from './browser-observation.js'
 import { readDesktopBrowserTargets, type DesktopBrowserTarget } from './desktop-browser-host.js'
 
 export const DESKTOP_BROWSER_PREFIX = 'desktop:'
+const snapshots = new Map<string, { document: number; url: string; refs: Map<string, number> }>()
+const commands = new Map<string, Promise<void>>()
 
 export function desktopWorkspaceTargets(): DesktopBrowserTarget[] {
-  return readDesktopBrowserTargets().filter(
+  const targets = readDesktopBrowserTargets().filter(
     (target) =>
       target.taskId === STUDIO_BROWSER_SCOPE &&
       !!target.tabId &&
       !isPrivateBrowserProfile(target.profileId),
   )
+  const endpoints = new Set(targets.map((target) => target.endpoint))
+  for (const endpoint of snapshots.keys()) if (!endpoints.has(endpoint)) snapshots.delete(endpoint)
+  return targets
 }
 
 export function desktopBrowserTarget(id: string) {
@@ -76,19 +83,41 @@ type AxNode = {
   ignored?: boolean
   role?: { value?: string }
   name?: { value?: string }
-  childIds?: string[]
+  childIds?: readonly string[]
+  backendDOMNodeId?: number
+  value?: { value?: string | number | boolean }
+  properties?: readonly { name: string; value: { value?: string | number | boolean } }[]
 }
 
 /** Format a CDP accessibility tree like a compact aria snapshot (bounded, readable lines). */
-export function formatAxSnapshot(nodes: AxNode[], limit = 32000): string {
+export function formatAxSnapshot(
+  nodes: readonly AxNode[],
+  limit = 32000,
+  refFor?: (node: AxNode) => string | undefined,
+): string {
   const byId = new Map(nodes.map((node) => [node.nodeId, node]))
   const lines: string[] = []
   const visit = (node: AxNode, depth: number) => {
     if (lines.join('').length > limit || depth > 40) return
     const role = node.role?.value ?? 'generic'
     const name = (node.name?.value ?? '').replace(/\s+/g, ' ').trim()
-    if (!node.ignored && role !== 'generic' && role !== 'none')
-      lines.push(`${'  '.repeat(depth)}- ${role}${name ? ` "${name}"` : ''}`)
+    if (!node.ignored && role !== 'generic' && role !== 'none') {
+      const ref = refFor?.(node)
+      const states = (node.properties ?? [])
+        .filter((property) =>
+          ['disabled', 'checked', 'selected', 'expanded', 'required', 'readonly', 'level'].includes(
+            property.name,
+          ),
+        )
+        .map((property) => ` [${property.name}=${JSON.stringify(property.value.value)}]`)
+        .join('')
+      const value = !['textbox', 'searchbox', 'spinbutton', 'combobox'].includes(role)
+        ? node.value?.value
+        : undefined
+      lines.push(
+        `${'  '.repeat(depth)}- ${role}${name ? ` ${JSON.stringify(name)}` : ''}${ref ? ` [ref=${ref}]` : ''}${states}${value !== undefined ? `: ${JSON.stringify(value)}` : ''}`,
+      )
+    }
     for (const childId of node.childIds ?? []) {
       const child = byId.get(childId)
       if (child)
@@ -107,6 +136,22 @@ const axTreeSchema = mutableStruct({
       role: Schema.optional(mutableStruct({ value: Schema.optional(Schema.String) })),
       name: Schema.optional(mutableStruct({ value: Schema.optional(Schema.String) })),
       childIds: Schema.optional(Schema.Array(Schema.String)),
+      backendDOMNodeId: Schema.optional(Schema.Number),
+      value: Schema.optional(
+        mutableStruct({
+          value: Schema.optional(Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+        }),
+      ),
+      properties: Schema.optional(
+        Schema.Array(
+          mutableStruct({
+            name: Schema.String,
+            value: mutableStruct({
+              value: Schema.optional(Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+            }),
+          }),
+        ),
+      ),
     }),
   ),
 })
@@ -130,7 +175,14 @@ class PageCdp {
     socket.on('message', (raw) => {
       let message: { id?: number; method?: string; result?: unknown; error?: { message?: string } }
       try {
-        message = JSON.parse(raw.toString()) as typeof message
+        message = JSON.parse(
+          (Array.isArray(raw)
+            ? Buffer.concat(raw)
+            : Buffer.isBuffer(raw)
+              ? raw
+              : Buffer.from(raw)
+          ).toString('utf8'),
+        ) as typeof message
       } catch {
         return
       }
@@ -148,14 +200,15 @@ class PageCdp {
         pending.reject(new HttpError(503, 'Desktop browser disconnected'))
       this.pending.clear()
     })
+    socket.on('error', () => socket.close())
   }
   static async open(endpoint: string) {
     const socket = new WebSocket(endpoint, { maxPayload: 16 * 1024 * 1024 })
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new HttpError(504, 'Desktop browser connection timed out')),
-        10000,
-      )
+      const timer = setTimeout(() => {
+        socket.terminate()
+        reject(new HttpError(504, 'Desktop browser connection timed out'))
+      }, 10000)
       socket.once('open', () => {
         clearTimeout(timer)
         resolve()
@@ -170,10 +223,29 @@ class PageCdp {
   send(method: string, params?: Record<string, unknown>): Promise<unknown> {
     const id = ++this.sequence
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(
+          new HttpError(
+            504,
+            `Desktop browser command timed out: ${method}. Inspect the page before retrying an action.`,
+          ),
+        )
+      }, 10000)
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        reject: (error) => {
+          clearTimeout(timer)
+          reject(error)
+        },
+      })
       this.socket.send(JSON.stringify({ id, method, params }), (error) => {
         if (error) {
           this.pending.delete(id)
+          clearTimeout(timer)
           reject(error)
         }
       })
@@ -201,28 +273,42 @@ const keys: Record<string, { key: string; code: string; keyCode: number; text?: 
   End: { key: 'End', code: 'End', keyCode: 35 },
   PageUp: { key: 'PageUp', code: 'PageUp', keyCode: 33 },
   PageDown: { key: 'PageDown', code: 'PageDown', keyCode: 34 },
+  Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
   ' ': { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
 }
 
-/** Locate one element in the page. Desktop tabs support CSS selectors and `text=` lookups. */
-function finderExpression(selector: string, action: 'click' | 'fill', text?: string) {
+type ElementCommand =
+  | { action: 'click' }
+  | { action: 'focus' }
+  | { action: 'fill'; text: string }
+  | { action: 'scroll'; deltaY: number }
+
+function elementAction(command: ElementCommand) {
+  if (command.action === 'click')
+    return `el.scrollIntoView({ block: 'center' }); el.click(); return true`
+  if (command.action === 'focus')
+    return `el.focus({ preventScroll: true }); if (document.activeElement !== el && !el.contains(document.activeElement)) throw new Error('Element cannot receive keyboard input'); return true`
+  if (command.action === 'scroll')
+    return `el.scrollBy(0, ${JSON.stringify(command.deltaY)}); return true`
+  return `{
+        el.focus();
+        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set ?? Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        if ('value' in el && setter) setter.call(el, ${JSON.stringify(command.text)}); else if (el.isContentEditable) el.textContent = ${JSON.stringify(command.text)}; else throw new Error('Element is not fillable');
+        el.dispatchEvent(new InputEvent('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return true
+      }`
+}
+
+/** Locate exactly one element; never fall back to the user's focused page or control. */
+function finderExpression(selector: string, command: ElementCommand) {
   if (/^(role|xpath|id|data-testid)=/.test(selector))
     throw new HttpError(
       400,
       'Desktop browser tabs support CSS selectors and text= lookups. Use a CSS selector, or evaluate a script for role-based lookup.',
     )
-  const locate = selector.startsWith('text=')
-    ? `[...document.querySelectorAll('body *')].filter((el) => el.children.length === 0 || ['BUTTON','A','LABEL','LI','SPAN'].includes(el.tagName)).find((el) => (el.textContent ?? '').trim() === ${JSON.stringify(selector.slice(5).replace(/^"|"$/g, ''))})`
-    : `document.querySelector(${JSON.stringify(selector)})`
-  const act =
-    action === 'click'
-      ? `el.scrollIntoView({ block: 'center' }); el.click(); return true`
-      : `{
-          const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set ?? Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if ('value' in el && setter) setter.call(el, ${JSON.stringify(text ?? '')}); else if (el.isContentEditable) el.textContent = ${JSON.stringify(text ?? '')}; else throw new Error('Element is not fillable');
-          el.dispatchEvent(new InputEvent('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return true
-        }`
-  return `(() => { const el = ${locate}; if (!el) throw new Error('No element matches selector'); ${act} })()`
+  const matches = selector.startsWith('text=')
+    ? `[...document.querySelectorAll('body *')].filter((el) => el.children.length === 0 || ['BUTTON','A','LABEL','LI','SPAN'].includes(el.tagName)).filter((el) => (el.textContent ?? '').trim() === ${JSON.stringify(selector.slice(5).replace(/^"|"$/g, ''))})`
+    : `[...document.querySelectorAll(${JSON.stringify(selector)})]`
+  return `(() => { const matches = ${matches}; if (matches.length !== 1) throw new Error('Expected one element; found ' + matches.length + '. Take a fresh snapshot and use its ref.'); const el = matches[0]; ${elementAction(command)} })()`
 }
 
 const withTimeout = async <T>(pending: Promise<T>, ms: number): Promise<T | undefined> => {
@@ -234,6 +320,40 @@ const withTimeout = async <T>(pending: Promise<T>, ms: number): Promise<T | unde
     ])
   } finally {
     clearTimeout(timer)
+  }
+}
+
+async function actOnElement(
+  cdp: PageCdp,
+  endpoint: string,
+  selector: string,
+  command: ElementCommand,
+  authorize: () => void,
+) {
+  if (!selector.startsWith('ref=')) {
+    await browserScript(cdp, finderExpression(selector, command))
+    return
+  }
+  const snapshot = snapshots.get(endpoint)
+  const backendNodeId = snapshot?.refs.get(selector.slice(4))
+  if (!snapshot || backendNodeId === undefined) throw staleBrowserRef()
+  const resolved = decode(
+    mutableStruct({ object: mutableStruct({ objectId: Schema.optional(Schema.String) }) }),
+    await cdp.send('DOM.resolveNode', { backendNodeId }),
+  )
+  const objectId = resolved.object.objectId
+  if (!objectId) throw staleBrowserRef()
+  try {
+    authorize()
+    browserScriptResult(
+      await cdp.send('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: `function() { const el = this; if (!el.isConnected || el.ownerDocument !== document || performance.timeOrigin !== ${snapshot.document} || location.href !== ${JSON.stringify(snapshot.url)}) throw new Error('This element reference is stale. Take a fresh snapshot.'); ${elementAction(command)} }`,
+        returnByValue: true,
+      }),
+    )
+  } finally {
+    await cdp.send('Runtime.releaseObject', { objectId })
   }
 }
 
@@ -250,10 +370,40 @@ export async function desktopBrowserCommand(
       404,
       'Desktop browser tab not found. Open the tab in the desktop Browser workspace, then list sessions again.',
     )
+  const operation = (commands.get(target.endpoint) ?? Promise.resolve()).then(() =>
+    runDesktopBrowserCommand(id, command, authorize, target.endpoint),
+  )
+  const settled = operation.then(
+    () => {},
+    () => {},
+  )
+  commands.set(target.endpoint, settled)
+  try {
+    return await operation
+  } finally {
+    if (commands.get(target.endpoint) === settled) commands.delete(target.endpoint)
+  }
+}
+
+async function runDesktopBrowserCommand(
+  id: string,
+  command: AgentBrowserCommand,
+  authorize: () => void,
+  endpoint: string,
+) {
+  authorize()
+  const target = desktopBrowserTarget(id)
+  if (!target || target.endpoint !== endpoint)
+    throw new HttpError(
+      404,
+      'Desktop browser tab not found. Open the tab in the desktop Browser workspace, then list sessions again.',
+    )
   const cdp = await PageCdp.open(target.endpoint)
   try {
     authorize()
     await cdp.send('Page.enable')
+    if (['navigate', 'back', 'forward', 'reload', 'close'].includes(command.action))
+      snapshots.delete(target.endpoint)
     const loaded = () => withTimeout(cdp.onceEvent('Page.loadEventFired'), 10000)
     let scriptResult: unknown
     switch (command.action) {
@@ -283,22 +433,20 @@ export async function desktopBrowserCommand(
         break
       }
       case 'evaluate':
-        scriptResult = await browserScript(cdp as unknown as CDPSession, command.script)
+        scriptResult = await browserScript(cdp, command.script)
         break
       case 'click':
-        await browserScript(
-          cdp as unknown as CDPSession,
-          finderExpression(command.selector, 'click'),
-        )
+      case 'fill': {
+        await actOnElement(cdp, target.endpoint, command.selector, command, authorize)
         break
-      case 'fill':
-        await browserScript(
-          cdp as unknown as CDPSession,
-          finderExpression(command.selector, 'fill', command.text),
-        )
-        break
+      }
       case 'key': {
+        decode(remoteBrowserInputSchema, { type: 'key', key: command.key })
         const named = keys[command.key]
+        if (!named && command.key.length !== 1)
+          throw new HttpError(400, `Desktop browser tabs do not support the key: ${command.key}`)
+        if (command.selector)
+          await actOnElement(cdp, target.endpoint, command.selector, { action: 'focus' }, authorize)
         if (!named && command.key.length === 1)
           await cdp.send('Input.insertText', { text: command.key })
         else if (named) {
@@ -320,40 +468,55 @@ export async function desktopBrowserCommand(
         break
       }
       case 'scroll':
-        await browserScript(
-          cdp as unknown as CDPSession,
-          `window.scrollBy(0, ${JSON.stringify(command.deltaY)})`,
-        )
+        if (command.selector)
+          await actOnElement(cdp, target.endpoint, command.selector, command, authorize)
+        else await browserScript(cdp, `window.scrollBy(0, ${JSON.stringify(command.deltaY)})`)
         break
       case 'snapshot':
+      case 'screenshot':
         break
     }
     authorize()
     const page = decode(
-      mutableStruct({ url: Schema.String, title: Schema.String }),
+      mutableStruct({ url: Schema.String, title: Schema.String, document: Schema.Number }),
       await browserScript(
-        cdp as unknown as CDPSession,
-        '({ url: location.href, title: document.title })',
+        cdp,
+        '({ url: location.href, title: document.title, document: performance.timeOrigin })',
       ),
     )
-    await cdp.send('Accessibility.enable')
-    const tree = decode(axTreeSchema, await cdp.send('Accessibility.getFullAXTree'))
-    const screenshot = decode(
-      screenshotSchema,
-      await cdp.send('Page.captureScreenshot', { format: 'png' }),
-    )
-    return {
+    const details = {
       ok: true as const,
-      ...(command.action === 'evaluate' ? { result: scriptResult } : {}),
       url: page.url,
       title: page.title,
-      snapshot: formatAxSnapshot(
-        tree.nodes.map((node) => ({
-          ...node,
-          childIds: node.childIds ? [...node.childIds] : undefined,
-        })),
+    }
+    if (command.action === 'evaluate') return { ...details, result: scriptResult }
+    if (command.action === 'screenshot') {
+      const screenshot = decode(
+        screenshotSchema,
+        await cdp.send('Page.captureScreenshot', { format: 'png' }),
+      )
+      return { ...details, image: screenshot.data }
+    }
+    await cdp.send('Accessibility.enable')
+    snapshots.delete(target.endpoint)
+    const tree = decode(axTreeSchema, await cdp.send('Accessibility.getFullAXTree'))
+    const refs = new Map<string, number>()
+    const generation = nextBrowserSnapshotId()
+    const snapshot = formatAxSnapshot(tree.nodes, 32001, (node) => {
+      if (!node.backendDOMNodeId) return undefined
+      const ref = `${generation}-${node.nodeId}`
+      refs.set(ref, node.backendDOMNodeId)
+      return ref
+    })
+    snapshots.set(target.endpoint, { document: page.document, url: page.url, refs })
+    return {
+      ...details,
+      snapshot: snapshot.slice(0, 32000),
+      snapshotTruncated: snapshot.length > 32000,
+      ...decode(
+        browserObservationSchema,
+        await browserScript(cdp, `(${readBrowserObservation.toString()})()`),
       ),
-      image: screenshot.data,
     }
   } finally {
     cdp.close()

@@ -1,6 +1,5 @@
 import { decode, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
-import type { CDPSession } from 'playwright'
 import { HttpError } from '../errors.js'
 
 const evaluationSchema = mutableStruct({
@@ -16,8 +15,23 @@ const evaluationSchema = mutableStruct({
   ),
 })
 
+export function browserScriptResult(evaluation: unknown) {
+  const { result, exceptionDetails } = decode(evaluationSchema, evaluation)
+  if (exceptionDetails)
+    throw new HttpError(400, exceptionDetails.exception?.description ?? exceptionDetails.text)
+  return result.value ?? result.unserializableValue ?? null
+}
+
 /** CDP bounds synchronous loops; the deadline also bounds unresolved promises. */
-export async function browserScript(cdp: CDPSession, script: string): Promise<unknown> {
+export async function browserScript(
+  cdp: {
+    send(
+      method: 'Runtime.evaluate' | 'Runtime.terminateExecution',
+      params?: Record<string, unknown>,
+    ): Promise<unknown>
+  },
+  script: string,
+): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined
   let timedOut = false
   try {
@@ -35,10 +49,7 @@ export async function browserScript(cdp: CDPSession, script: string): Promise<un
         }, 10000)
       }),
     ])
-    const { result, exceptionDetails } = decode(evaluationSchema, evaluation)
-    if (exceptionDetails)
-      throw new HttpError(400, exceptionDetails.exception?.description ?? exceptionDetails.text)
-    return result.value ?? result.unserializableValue ?? null
+    return browserScriptResult(evaluation)
   } finally {
     clearTimeout(timer)
     if (timedOut) await cdp.send('Runtime.terminateExecution')

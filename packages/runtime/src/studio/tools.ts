@@ -74,7 +74,7 @@ export function studioReadAction(part: string, action: unknown) {
       )) ||
     (part === 'automations' &&
       ['list', 'read', 'validate', 'runs', 'wait'].includes(String(action))) ||
-    (part === 'browsers' && ['list', 'snapshot', 'logs'].includes(String(action))) ||
+    (part === 'browsers' && ['list', 'snapshot', 'screenshot', 'logs'].includes(String(action))) ||
     (part === 'ui' && ['list', 'snapshot'].includes(String(action))) ||
     part === 'diagnostics'
   )

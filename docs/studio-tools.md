@@ -52,9 +52,84 @@ the desktop's page-scoped CDP host while the tab is open in the desktop Browser 
 alongside `thread`, `agent` and `studio` sessions. Workspace and desktop tabs are the user's live,
 signed-in tabs; private-profile tabs are never listed or accessible. Choose a session ID explicitly
 before operating a live tab. Desktop tabs support CSS and `text=` selectors (no `role=`) and capture
-no console logs. Page actions return PNG screenshots and accessibility snapshots. Logs contain at
-most the most recent 100 console, page-error and failed HTTP/network entries. They live only as long
-as the browser session.
+no console logs. Page actions return accessibility text and live DOM data by default. Logs contain
+at most the most recent 100 console, page-error and failed HTTP/network entries. They live only as
+long as the browser session.
+
+Use this browser workflow:
+
+1. Use `list` and choose a session ID or reference. Use `open` for an isolated session.
+2. Use `snapshot` to read the accessibility tree in `snapshot` and the live DOM data in `elements`.
+   The tree shows roles, names, nesting, states and element references such as `[ref=abc-1-e4]`.
+   Each DOM element has a CSS `selector`, tag and name. Form controls also report current values,
+   check states, disabled/read-only states, validation messages and select options. Links report
+   their URLs. Password values and file paths are omitted.
+3. Use `selector: "ref=abc-1-e4"` with `click`, `fill`, `key` or `scroll` to target a tree element.
+   References belong to one tab and one snapshot. A new snapshot or navigation makes old references
+   invalid. DOM CSS selectors remain available as a fallback. Navigation and input return fresh page
+   state. Check that state before the next action. Selectors describe the current DOM; inspect again
+   if the page changes or a selector no longer matches.
+4. Use `evaluate` for a focused read, such as `document.querySelector('output').textContent`, or a
+   JSON object with the fields you need. It returns only the expression result and page URL/title.
+   Wrap statements in an IIFE. Async expressions are supported, with a 10-second limit. This action
+   can change the page and is unavailable in read-only runs.
+5. Use `screenshot` only when you need pixels to check layout or appearance. It returns a PNG image
+   and page URL/title. Other browser actions do not return images.
+
+Accessibility text is limited to 32,000 characters. Live DOM element data has a separate
+32,000-character budget. It includes up to 150 visible elements, including elements outside the
+viewport, and up to 50 options per select. The response reports truncation through
+`snapshotTruncated`, `elementsTruncated` and `optionsTruncated`. Use a focused `evaluate` read when
+data is truncated. DOM element data covers the main document. Iframe entries report frame URLs;
+inner frame and shadow-root controls are not included in this list. Both the isolated `browser` tool
+and `studio_browsers` use this data-first workflow. `snapshot` and `screenshot` remain available in
+read-only runs; existing pairing and private-tab rules still apply.
+
+The tree and reference design follows the patterns used by
+[T3 Code](https://github.com/pingdotgg/t3code/blob/main/apps/server/src/preview/ServerBrowserPage.ts),
+[Playwright MCP](https://github.com/microsoft/playwright-mcp#tools) and
+[Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/tool-reference.md#take_snapshot).
+T3 Code namespaces native Playwright references and invalidates them after snapshots and navigation.
+Playwright MCP uses accessibility trees and element references as the default interaction path.
+Chrome DevTools MCP uses snapshot element IDs and separates screenshots from text snapshots.
+[Browser Use MCP](https://github.com/browser-use/browser-use/blob/main/browser_use/mcp/cli_mcp.py)
+also provides a separate screenshot tool alongside code and live-data reads. Dovo keeps that
+separation and uses page-scoped CDP node references for desktop tabs.
+
+Browser actions do not need browser focus. They use the selected session ID, even while you work in
+another tab or window or keep Studio hidden or minimized. Keep the live tab open. Desktop tabs
+disable background throttling while an agent connection is active. The last disconnect restores the
+normal policy and restarts the idle timer. Hidden pages still report `document.visibilityState` as
+`hidden`; sites can use this state to pause their own work.
+
+Give `key` a `selector` to send input to that element. Without one, it uses the active element in
+the target page. Give `scroll` a `selector` to scroll that element. Without one, it scrolls the
+window. Both accept a CSS selector or a current tree reference. For example:
+
+```json
+{ "action": "key", "id": "desktop:tab-id", "selector": "ref=abc-1-e4", "key": "Enter" }
+```
+
+Run the desktop background check with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:agent-browser-background:native
+```
+
+This check builds the runtime and uses real Electron windows with temporary profiles. It checks tree
+references, input, navigation, scroll, focus, draft preservation and connection cleanup with another
+tab or window focused and Studio hidden or minimized. Linux checks need a display or `xvfb-run`. The
+Linux fixture uses `--no-sandbox` for the test process only.
+
+Verify the browser data flow from a source checkout:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/api... -r build
+pnpm exec vp test packages/runtime/src/previews/agent-browser.test.ts packages/runtime/src/previews/desktop-browser.test.ts
+pnpm test:studio-tools:browser
+```
 
 Threads and browser tabs share one paste-ready ID format: `studio:<runtime>:thread:<id>` and
 `studio:<runtime>:browser:<id>` (the three-part `studio:<runtime>:<id>` form also works). Users copy

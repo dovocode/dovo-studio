@@ -795,8 +795,11 @@ it.each([true, false])(
         listeners: new Set(viewing ? [() => {}] : []),
         page: {
           ...selectionSession().page,
-          locator: () => ({ ariaSnapshot: async () => 'Page' }),
-          screenshot: async () => Buffer.from('image'),
+          on: () => {},
+          ariaSnapshotJSON: async () => [{ role: 'heading', name: 'Page' }],
+        },
+        cdp: {
+          send: async () => ({ result: { value: { elements: [], elementsTruncated: false } } }),
         },
       }
       sessions.set('thread', Promise.resolve(session))

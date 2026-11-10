@@ -1,30 +1,29 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { BrowserWindow } from 'electron'
+import { EventEmitter } from 'node:events'
 
 const fixture = vi.hoisted(() => ({
   answer: vi.fn<() => Promise<{ response: number }>>(async () => ({ response: 2 })),
   external: vi.fn<(url: string) => Promise<void>>(async () => {}),
   sent: vi.fn<(channel: string, url: string) => void>(),
-  navigate: undefined as
-    | ((event: unknown, url: string, inPlace: boolean, mainFrame: boolean) => void)
-    | undefined,
+  contents: [] as EventEmitter[],
   popup: undefined as ((event: { url: string }) => unknown) | undefined,
   loaded: vi.fn<(url: string) => Promise<void>>(async () => {}),
 }))
 vi.mock('electron', () => ({
   BrowserWindow: class {
-    webContents = {
+    webContents = Object.assign(new EventEmitter(), {
       send: fixture.sent,
       setWindowOpenHandler: (handler: typeof fixture.popup) => {
         fixture.popup = handler
-      },
-      on: (event: string, handler: typeof fixture.navigate) => {
-        if (event === 'did-start-navigation') fixture.navigate = handler
       },
       session: {
         setPermissionRequestHandler: () => {},
         setPermissionCheckHandler: () => {},
       },
+    })
+    constructor() {
+      fixture.contents.push(this.webContents)
     }
     isDestroyed() {
       return false
@@ -38,6 +37,7 @@ vi.mock('electron', () => ({
 }))
 afterEach(() => {
   vi.clearAllMocks()
+  fixture.contents.splice(0)
 })
 
 it('asks before opening a link in the internal browser', async () => {
@@ -117,24 +117,51 @@ it('clears receiver readiness on document navigation but preserves fragment navi
   const { offerLink, setLinkReceiver } = await import('./links')
   const parent = new BrowserWindow()
   setLinkReceiver(parent.webContents, true)
-  fixture.navigate?.({}, 'https://example.com/#section', true, true)
+  parent.webContents.emit('did-start-navigation', {}, 'https://example.com/#section', true, true)
   await offerLink(parent, 'https://example.com/')
   expect(fixture.sent).toHaveBeenCalledOnce()
-  fixture.navigate?.({}, 'https://example.com/', false, true)
+  parent.webContents.emit('did-start-navigation', {}, 'https://example.com/', false, true)
   await offerLink(parent, 'https://example.com/')
   expect(fixture.answer).toHaveBeenCalledOnce()
 })
 
-it('routes isolated-browser popups through the trusted parent', async () => {
+it('opens standalone-browser links as sandboxed previews without asking Studio again', async () => {
   const { openBrowserLink, setLinkReceiver } = await import('./links')
   const parent = new BrowserWindow()
   setLinkReceiver(parent.webContents, true)
   await openBrowserLink(parent, 'https://example.com/')
-  expect(fixture.popup?.({ url: 'https://github.com/team/project/pull/7' })).toEqual({
-    action: 'deny',
+  expect(fixture.popup?.({ url: 'http://runtime.lan/preview' })).toMatchObject({
+    action: 'allow',
+    overrideBrowserWindowOptions: {
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
+      },
+    },
   })
-  expect(fixture.sent).toHaveBeenCalledWith('links:open', 'https://github.com/team/project/pull/7')
+  expect(fixture.popup?.({ url: 'about:blank' })).toMatchObject({ action: 'allow' })
+  expect(fixture.popup?.({ url: '' })).toMatchObject({ action: 'allow' })
+  expect(fixture.popup?.({ url: 'file:///tmp/private' })).toEqual({ action: 'deny' })
+  expect(fixture.popup?.({ url: 'javascript:alert(1)' })).toEqual({ action: 'deny' })
+  const browser = fixture.contents.at(-1)!
+  // Electron supplies the live child, with its opener/session/POST already intact.
+  const child = new BrowserWindow()
+  browser.emit('did-create-window', child)
+  expect(fixture.popup?.({ url: 'https://example.com/nested' })).toMatchObject({ action: 'allow' })
+  for (const event of ['will-navigate', 'will-redirect']) {
+    const preventDefault = vi.fn<() => void>()
+    child.webContents.emit(event, { preventDefault }, 'file:///tmp/private')
+    expect(preventDefault).toHaveBeenCalledOnce()
+    child.webContents.emit(event, { preventDefault }, 'http://runtime.lan/next')
+    child.webContents.emit(event, { preventDefault }, 'about:blank')
+    expect(preventDefault).toHaveBeenCalledOnce()
+  }
+  expect(fixture.sent).not.toHaveBeenCalled()
   expect(fixture.answer).not.toHaveBeenCalled()
+  expect(fixture.external).not.toHaveBeenCalled()
 })
 
 it('shows only one fallback dialog while the app chooser is unavailable', async () => {

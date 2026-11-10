@@ -5,6 +5,7 @@ import {
   watchRuntimeSettled,
   settledSummaryPageSize,
   supportsSettledSummaryPaging,
+  omittedSettledCount,
 } from '@dovo/protocol'
 import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
@@ -308,10 +309,23 @@ export function TaskList({
     const stops = listConnections().map((connection) => watchRuntimeSettled(connection, listLimit))
     return () => stops.forEach((stop) => stop())
   }, [pagingConnections, listLimit])
-  const omittedSettled =
-    listLimit === undefined
-      ? 0
-      : sources.reduce((sum, source) => sum + (source.snapshot?.olderSettled?.omitted ?? 0), 0)
+  const omittedSettled = useMemo(
+    () =>
+      listLimit === undefined
+        ? 0
+        : omittedSettledCount(
+            sources.map((source) => ({
+              runtimeId:
+                source.snapshot?.runtimeId ??
+                source.connection?.runtimeId ??
+                source.runtimeId ??
+                '',
+              tasks: source.workspace.tasks,
+              page: source.snapshot?.olderSettled,
+            })),
+          ),
+    [listLimit, sources],
+  )
   const deferredQuery = useDeferredValue(query)
   const search = useTaskSearch(allEntries, deferredQuery)
   const searchIdentity = JSON.stringify([...search.keys].sort())

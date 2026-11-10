@@ -1,6 +1,7 @@
 import {
   taskIsWorking,
   watchRuntimeSettled,
+  omittedSettledCount,
   settledSummaryPageSize,
   supportsSettledSummaryPaging,
 } from '@dovo/protocol'
@@ -167,10 +168,20 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     const stops = listConnections().map((connection) => watchRuntimeSettled(connection, listLimit))
     return () => stops.forEach((stop) => stop())
   }, [pagingConnections, listLimit])
-  const omittedSettled =
-    listLimit === undefined
-      ? 0
-      : overviews.reduce((sum, entry) => sum + (entry.snapshot?.olderSettled?.omitted ?? 0), 0)
+  const omittedSettled = useMemo(
+    () =>
+      listLimit === undefined
+        ? 0
+        : omittedSettledCount(
+            overviews.map((entry) => ({
+              runtimeId:
+                entry.snapshot?.runtimeId ?? entry.profile.connection.runtimeId ?? entry.profile.id,
+              tasks: entry.snapshot?.workspace.tasks ?? [],
+              page: entry.snapshot?.olderSettled,
+            })),
+          ),
+    [listLimit, overviews],
+  )
   const historySearch = useTaskSearch(entries, query, focused)
   const searchKeys = JSON.stringify([...historySearch.keys].sort())
   const projectGroups = useMemo(

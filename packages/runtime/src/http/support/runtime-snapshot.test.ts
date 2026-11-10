@@ -277,7 +277,13 @@ it('opts into bounded settled summaries, keeps selected old threads and leaves l
     )
   const first = await read(25)
   expect(first.workspace.tasks).toHaveLength(25)
-  expect(first.olderSettled).toEqual({ limit: 25, omitted: 15 })
+  expect(first.olderSettled).toEqual({
+    limit: 25,
+    omitted: 15,
+    threadKeys: tasks
+      .slice(0, 15)
+      .map((task) => JSON.stringify([runtime.services.runtimeId, task.id])),
+  })
   expect((await read(25)).workspace).toBe(first.workspace)
   const selected = await read(25, ['settled-0'])
   expect(selected.workspace.tasks.some((task) => task.id === 'settled-0')).toBe(true)
@@ -291,5 +297,11 @@ it('opts into bounded settled summaries, keeps selected old threads and leaves l
   }))
   const reordered = await read(25)
   expect(reordered.workspace.tasks.some((task) => task.id === 'settled-0')).toBe(true)
-  expect(reordered.olderSettled).toEqual({ limit: 25, omitted: 15 })
+  expect(reordered.olderSettled).toEqual({
+    limit: 25,
+    omitted: 15,
+    threadKeys: tasks
+      .slice(1, 16)
+      .map((task) => JSON.stringify([runtime.services.runtimeId, task.id])),
+  })
 })

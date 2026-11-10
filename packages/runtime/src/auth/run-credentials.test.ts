@@ -163,7 +163,7 @@ it('allows read-only browser/device reads and cleanup but blocks mutations and t
     .spyOn(s.deviceHosts, 'list')
     .mockResolvedValue({ host: 'test', devices: [], diagnostics: [] })
   const action = vi.spyOn(s.deviceHosts, 'action').mockResolvedValue({ ok: true })
-  for (const action of ['snapshot', 'close'])
+  for (const action of ['snapshot', 'screenshot', 'close'])
     expect(
       (await post('/api/previews/browser/agent', { taskId, command: { action } })).status,
     ).toBe(200)
@@ -200,7 +200,7 @@ it('allows read-only browser/device reads and cleanup but blocks mutations and t
     ['/api/terminals/run', { command: 'pwd', newTerminal: true }],
   ] satisfies Array<[string, Record<string, unknown>]>)
     expect((await post(path, { ...input, taskId, parentRunId: runId })).status).toBe(403)
-  expect(browser).toHaveBeenCalledTimes(2)
+  expect(browser).toHaveBeenCalledTimes(3)
 })
 
 it('enforces feature flags and explicit native sandbox against raw HTTP', async () => {

@@ -44,6 +44,65 @@ function createContents() {
   }
 }
 
+it('reports first and last client transitions once, including target revocation', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dovo-cdp-connections-'))
+  const changed = vi.fn<(id: string, connected: boolean) => void>()
+  const bridge = await createBrowserCdp(directory, changed)
+  const contents = createContents()
+  const clients: WebSocket[] = []
+  const key = 'background'
+  const connect = async (endpoint: string) => {
+    const client = new WebSocket(endpoint)
+    clients.push(client)
+    await new Promise<void>((resolve, reject) => {
+      client.once('open', resolve)
+      client.once('error', reject)
+    })
+    return client
+  }
+  const closed = (client: WebSocket) =>
+    new Promise<void>((resolve) => client.once('close', () => resolve()))
+  try {
+    const endpoint = bridge.register(key, 'task', 'work', contents)
+    const first = await connect(endpoint)
+    const second = await connect(endpoint)
+    expect(changed.mock.calls).toEqual([[key, true]])
+    const firstClosed = closed(first)
+    first.close()
+    await firstClosed
+    expect(bridge.connected(key)).toBe(true)
+    expect(changed.mock.calls).toEqual([[key, true]])
+    const secondClosed = closed(second)
+    second.close()
+    await secondClosed
+    await vi.waitFor(() =>
+      expect(changed.mock.calls).toEqual([
+        [key, true],
+        [key, false],
+      ]),
+    )
+    expect(contents.debugger.detach).toHaveBeenCalledOnce()
+    const third = await connect(endpoint)
+    const fourth = await connect(endpoint)
+    const revoked = Promise.all([closed(third), closed(fourth)])
+    bridge.remove(key)
+    await revoked
+    expect(changed.mock.calls).toEqual([
+      [key, true],
+      [key, false],
+      [key, true],
+      [key, false],
+    ])
+    bridge.remove(key)
+    await bridge.close()
+    expect(changed).toHaveBeenCalledTimes(4)
+  } finally {
+    for (const client of clients) client.terminate()
+    await bridge.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 it('isolates page discovery, forwards CDP, blocks application targets and revokes sockets', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-cdp-test-'))
   const contents = createContents()

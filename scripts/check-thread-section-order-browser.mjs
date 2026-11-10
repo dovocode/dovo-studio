@@ -17,7 +17,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId={window.selectedId??""} temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
+    contents: `import {settledSummaryPage,settledThreadKey,preferredThreadCopies} from '@dovo/protocol';window.pageSettled=settledSummaryPage;window.settledKey=settledThreadKey;window.preferredCopies=preferredThreadCopies;import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId={window.selectedId??""} temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={window.sources??[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
     loader: 'tsx',
     resolveDir: root + 'packages/extension-tasks/',
   },
@@ -452,9 +452,116 @@ try {
       5,
     )
   }
+  // Real pager and sidebar: hidden rows and replicas must not change the root count.
+  await page.evaluate(async () => {
+    const base = {
+      agentId: '',
+      repositoryId: 'repo',
+      status: 'review',
+      archived: true,
+      createdAt: '2026-10-01T00:00:00Z',
+      draft: '',
+      files: [],
+      messages: [],
+      turns: [],
+      example: false,
+    }
+    const originals = Array.from({ length: 40 }, (_, index) => ({
+      ...base,
+      id: `settled-${index}`,
+      title: `Settled ${index}`,
+      createdAt: new Date(Date.UTC(2026, 9, 1, 0, index)).toISOString(),
+    }))
+    const family = [
+      { ...base, id: 'parent', title: 'Settled parent' },
+      {
+        ...base,
+        id: 'child',
+        title: 'Settled child',
+        delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'child' },
+      },
+      {
+        ...base,
+        id: 'side',
+        title: 'Unsent side chat',
+        status: 'draft',
+        sideThread: { parentTaskId: 'parent', contextMessageCount: 0 },
+      },
+      { ...base, id: 'sample', title: 'Sample thread', example: true },
+    ]
+    const copies = originals.map((task) => ({
+      ...task,
+      id: `copy-${task.id}`,
+      replica: { ownerRuntimeId: 'owner', threadId: task.id },
+    }))
+    window.applySettledPage = (limit) => {
+      const makeSource = (runtimeId, tasks, selected = []) => {
+        const page = window.pageSettled(tasks, limit, selected)
+        const workspace = { ...window.source.workspace, tasks: page.tasks }
+        return {
+          runtimeId,
+          name: runtimeId,
+          online: true,
+          workspace,
+          snapshot: {
+            runtimeId,
+            workspace,
+            questions: [],
+            approvals: [],
+            olderSettled: {
+              limit,
+              omitted: page.omitted,
+              threadKeys: page.omittedTasks.map((task) => window.settledKey(task, runtimeId)),
+            },
+          },
+        }
+      }
+      const sources = [
+        makeSource('owner', [...originals, ...family]),
+        makeSource('replica', copies, ['copy-settled-0']),
+      ]
+      const preferred = window.preferredCopies(
+        sources.map((source) => ({
+          runtimeId: source.runtimeId,
+          connected: true,
+          tasks: source.workspace.tasks,
+        })),
+      )
+      window.sources = sources.map((source) => ({
+        ...source,
+        workspace: {
+          ...source.workspace,
+          tasks: source.workspace.tasks.filter((task) => preferred.has(task)),
+        },
+      }))
+      window.render()
+    }
+    window.groupBy('status')
+    window.applySettledPage(25)
+    await window.remount()
+  })
+  const settledSummary = page.locator('[data-section="settled"] > summary')
+  await settledSummary.filter({ hasText: /^Settled41$/ }).waitFor()
+  if (!(await settledSummary.locator('..').evaluate((element) => element.open)))
+    await settledSummary.click()
+  await page.getByRole('button', { name: 'Show more settled threads', exact: true }).click()
+  await page.getByRole('button', { name: 'Load more settled threads', exact: true }).click()
+  await page.evaluate(() => window.applySettledPage(50))
+  await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).waitFor()
+  assert.equal(await settledSummary.textContent(), 'Settled41')
+  const settledRows = page
+    .locator('[data-section="settled"]')
+    .getByRole('button', { name: /^Settled/ })
+  assert.equal(await settledRows.count(), 41, 'The full Settled count matches its root rows')
+  assert.equal(await page.getByRole('button', { name: 'Settled child', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Unsent side chat', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Sample thread', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).click()
+  await page.evaluate(() => window.applySettledPage(25))
+  assert.equal(await settledSummary.textContent(), 'Settled41')
   assert.deepEqual(errors, [])
   console.log(
-    'Thread categories: overview organizer, live reordering, collapse state, keyboard task order, cold-start persistence, hidden/empty sections, boundaries and reset verified.',
+    'Thread categories: overview organizer, live reordering, collapse state, keyboard task order, cold-start persistence, hidden/empty sections, boundaries, reset and stable settled counts across paging and replicas verified.',
   )
 } finally {
   await browser.close()

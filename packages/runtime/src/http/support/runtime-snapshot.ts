@@ -1,5 +1,5 @@
 import { enabledStudioTools } from '@dovo/protocol'
-import { settledSummaryPage } from '@dovo/protocol'
+import { settledSummaryPage, settledThreadKey } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { Effect } from 'effect'
@@ -67,10 +67,15 @@ function projectWorkspace(
 }
 const settledPages = new WeakMap<
   Workspace,
-  Map<string, { workspace: Workspace; omitted: number; expires: number }>
+  Map<string, { workspace: Workspace; omitted: number; threadKeys: string[]; expires: number }>
 >()
-function pagedWorkspace(workspace: Workspace, limit: number, selected: readonly string[] = []) {
-  const key = JSON.stringify([limit, [...selected].sort()])
+function pagedWorkspace(
+  workspace: Workspace,
+  runtimeId: string,
+  limit: number,
+  selected: readonly string[] = [],
+) {
+  const key = JSON.stringify([runtimeId, limit, [...selected].sort()])
   let pages = settledPages.get(workspace)
   const previous = pages?.get(key)
   const now = Date.now()
@@ -83,6 +88,7 @@ function pagedWorkspace(workspace: Workspace, limit: number, selected: readonly 
   const value = {
     workspace: page.omitted ? { ...workspace, tasks: page.tasks } : workspace,
     omitted: page.omitted,
+    threadKeys: page.omittedTasks.map((task) => settledThreadKey(task, runtimeId)),
     expires,
   }
   if (!pages) settledPages.set(workspace, (pages = new Map()))
@@ -141,7 +147,7 @@ export function runtimeSnapshot(
     const page =
       settledLimit === undefined
         ? undefined
-        : pagedWorkspace(completeWorkspace, settledLimit, [
+        : pagedWorkspace(completeWorkspace, s.runtimeId, settledLimit, [
             ...(taskIds ?? []),
             ...s.approvals.list().map((request) => request.taskId),
             ...s.questions.list().map((request) => request.taskId),
@@ -355,7 +361,13 @@ export function runtimeSnapshot(
       acpInstallations,
       revision,
       ...(page && settledLimit !== undefined
-        ? { olderSettled: { limit: settledLimit, omitted: page.omitted } }
+        ? {
+            olderSettled: {
+              limit: settledLimit,
+              omitted: page.omitted,
+              threadKeys: page.threadKeys,
+            },
+          }
         : {}),
       workspace: selectedWorkspace,
       approvals: s.approvals.list(),

@@ -95,6 +95,9 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
       url: 'http://localhost:3000/',
       title: 'Test',
       snapshot: '- heading "Test"',
+      elements: [{ selector: '#save', tag: 'button', name: 'Save' }],
+      elementsTruncated: false,
+      snapshotTruncated: false,
       image: 'aGVsbG8=',
     })
     const browserResult = await client.callTool({
@@ -115,6 +118,9 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
           url: 'http://localhost:3000/',
           title: 'Test',
           snapshot: '- heading "Test"',
+          snapshotTruncated: false,
+          elements: [{ selector: '#save', tag: 'button', name: 'Save' }],
+          elementsTruncated: false,
         }),
       },
       { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' },
@@ -144,6 +150,14 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
       { action: 'evaluate', script: '({ answer: 42 })' },
       expect.any(Function),
     )
+    for (const command of [
+      { action: 'key', selector: 'ref=current-1', key: 'Enter' },
+      { action: 'scroll', selector: '#results', deltaY: 200 },
+    ]) {
+      const result = await client.callTool({ name: 'browser', arguments: command })
+      expect(result.isError).not.toBe(true)
+      expect(browser).toHaveBeenLastCalledWith('task', command, expect.any(Function))
+    }
     expect(
       (await client.callTool({ name: 'browser', arguments: { action: 'evaluate' } })).isError,
     ).toBe(true)

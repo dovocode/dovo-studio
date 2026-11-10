@@ -23,6 +23,8 @@ import {
 } from '@dovo/protocol'
 import { redact } from '../storage/activity.js'
 import { browserScript } from './browser-script.js'
+import { browserObservationSchema, readBrowserObservation } from './browser-observation.js'
+import { browserTree, browserLocator } from './browser-targets.js'
 import { browserInteraction } from './browser-interaction.js'
 import { BrowserUploads } from './browser-uploads.js'
 import { BrowserDownloads } from './browser-downloads.js'
@@ -1662,29 +1664,48 @@ export class RemoteBrowsers {
           session.failedNavigation = undefined
           break
         case 'click':
-          await page.locator(command.selector).click()
+          await browserLocator(page, command.selector).click()
           break
         case 'fill':
-          await page.locator(command.selector).fill(command.text)
+          await browserLocator(page, command.selector).fill(command.text)
           break
         case 'key':
           decode(remoteBrowserInputSchema, { type: 'key', key: command.key })
-          await page.keyboard.press(command.key)
+          if (command.selector) await browserLocator(page, command.selector).press(command.key)
+          else await page.keyboard.press(command.key)
           break
         case 'scroll':
-          await page.mouse.wheel(0, command.deltaY)
+          if (command.selector)
+            await browserLocator(page, command.selector).evaluate(
+              (element, deltaY) => element.scrollBy(0, deltaY),
+              command.deltaY,
+            )
+          else await page.evaluate((deltaY) => window.scrollBy(0, deltaY), command.deltaY)
           break
         case 'snapshot':
+        case 'screenshot':
           break
       }
       if (!session.listeners.size) this.scheduleClose(resource, session)
-      return {
+      authorize()
+      const details = {
         ok: true as const,
-        ...(command.action === 'evaluate' ? { result: scriptResult } : {}),
         url: page.url(),
         title: await page.title(),
-        snapshot: (await page.locator('body').ariaSnapshot()).slice(0, 32000),
-        image: (await page.screenshot({ type: 'png', timeout: 10000 })).toString('base64'),
+      }
+      if (command.action === 'evaluate') return { ...details, result: scriptResult }
+      if (command.action === 'screenshot')
+        return {
+          ...details,
+          image: (await page.screenshot({ type: 'png', timeout: 10000 })).toString('base64'),
+        }
+      return {
+        ...details,
+        ...(await browserTree(page)),
+        ...decode(
+          browserObservationSchema,
+          await browserScript(session.cdp, `(${readBrowserObservation.toString()})()`),
+        ),
       }
     })
     session.queue = operation

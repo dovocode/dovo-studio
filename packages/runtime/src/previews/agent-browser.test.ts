@@ -6,6 +6,45 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { RemoteBrowsers } from './browser.js'
 
+it('targets keyboard and scroll input independently of the active element', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-agent-targeted-'))
+  const browsers = new RemoteBrowsers(directory)
+  const call = (command: Parameters<RemoteBrowsers['agentCommand']>[1]) =>
+    browsers.agentCommand('targeted', command, () => {})
+  const read = async (script: string) => {
+    const state = await call({ action: 'evaluate', script })
+    return 'result' in state ? state.result : undefined
+  }
+  try {
+    await call({
+      action: 'evaluate',
+      script: `document.body.innerHTML = '<label>Name<input id="name" value="Name"></label><input id="other" value="Other"><div id="scroll" style="height:80px;overflow:auto"><div style="height:2000px">Results</div></div><div style="height:3000px"></div>'`,
+    })
+    const initial = await call({ action: 'snapshot' })
+    const line =
+      'snapshot' in initial &&
+      initial.snapshot.split('\n').find((line) => line.includes('- textbox "Name"'))
+    const ref = line && /\[ref=([^\]]+)\]/.exec(line)?.[1]
+    if (!ref) throw new Error('Missing Name reference')
+    await read('document.querySelector("#other").focus()')
+    await call({ action: 'key', selector: `ref=${ref}`, key: 'End' })
+    await call({ action: 'key', selector: '#name', key: '!' })
+    expect(await read('document.querySelector("#name").value')).toBe('Name!')
+    expect(await read('document.querySelector("#other").value')).toBe('Other')
+    await expect(call({ action: 'key', selector: `ref=${ref}`, key: 'X' })).rejects.toThrow('stale')
+    await call({ action: 'scroll', selector: '#scroll', deltaY: 200 })
+    expect(await read('document.querySelector("#scroll").scrollTop')).toBe(200)
+    await call({ action: 'scroll', deltaY: 200 })
+    expect(await read('window.scrollY')).toBeGreaterThan(0)
+    await expect(call({ action: 'scroll', selector: `ref=${ref}`, deltaY: 100 })).rejects.toThrow(
+      'stale',
+    )
+  } finally {
+    await browsers.dispose()
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 30000)
+
 it('uses managed Chromium to inspect and interact with HTTP pages in isolated task sessions', async () => {
   const server = createServer((request, response) => {
     response.setHeader('Content-Type', 'text/html')
@@ -13,8 +52,19 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
       response.end(`<h1>${request.headers.cookie ?? 'No cookies'}</h1>`)
       return
     }
+    if (request.url === '/frame') {
+      response.end('<label>Frame name<input></label>')
+      return
+    }
     response.end(
-      `<title>Agent browser test</title><h1>Hello browser</h1><label>Name<input id="name"></label><button onclick="document.querySelector('h1').textContent=document.querySelector('input').value">Save</button><script>document.cookie='test=isolated'</script>`,
+      `<title>Agent browser test</title><h1>Hello browser</h1><label>Name<input id="name"></label><button onclick="document.querySelector('h1').textContent=document.querySelector('input').value">Save</button>
+      <a href="/cookies">Cookies</a><label><input type="checkbox" checked>Active</label>
+      <label>Plan<select><option value="free">Free</option><option value="pro" selected>Pro</option></select></label>
+      <label>Password<input type="password" value="secret-password"></label>
+      <input type="hidden" value="hidden-secret"><button hidden>Hidden action</button>
+      <fieldset disabled><label>Locked<input value="locked"></label></fieldset>
+      <iframe title="Details" src="/frame"></iframe>
+      <script>document.cookie='test=isolated'</script>`,
     )
   })
   server.listen(0, '127.0.0.1')
@@ -29,6 +79,28 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
     const page = await browsers.agentCommand('task-a', { action: 'navigate', url }, authorize)
     expect(page).toMatchObject({ title: 'Agent browser test', url: `${url}/` })
     expect('snapshot' in page && page.snapshot).toContain('Hello browser')
+    expect(page).not.toHaveProperty('image')
+    expect(page).toMatchObject({
+      elementsTruncated: false,
+      snapshotTruncated: false,
+      elements: expect.arrayContaining([
+        expect.objectContaining({ selector: '#name', name: 'Name', value: '' }),
+        expect.objectContaining({ name: 'Active', checked: true }),
+        expect.objectContaining({ name: 'Cookies', href: `${url}/cookies` }),
+        expect.objectContaining({ name: 'Locked', disabled: true, value: 'locked' }),
+        expect.objectContaining({
+          name: 'Plan',
+          value: 'pro',
+          options: [
+            { label: 'Free', value: 'free', selected: false, disabled: false },
+            { label: 'Pro', value: 'pro', selected: true, disabled: false },
+          ],
+        }),
+      ]),
+    })
+    expect(JSON.stringify(page)).not.toContain('secret-password')
+    expect(JSON.stringify(page)).not.toContain('hidden-secret')
+    expect(JSON.stringify(page)).not.toContain('Hidden action')
     expect(await browsers.activeMedia('missing')).toBe(false)
     expect(await browsers.activeMedia('agent-browser:task-a')).toBe(false)
     await browsers.agentCommand(
@@ -46,20 +118,80 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
       authorize,
     )
     expect(await browsers.activeMedia('agent-browser:task-a')).toBe(false)
-    expect('image' in page && Buffer.from(page.image, 'base64').subarray(1, 4).toString()).toBe(
-      'PNG',
-    )
+    const screenshot = await browsers.agentCommand('task-a', { action: 'screenshot' }, authorize)
+    expect(
+      'image' in screenshot && Buffer.from(screenshot.image, 'base64').subarray(1, 4).toString(),
+    ).toBe('PNG')
+    expect(screenshot).not.toHaveProperty('elements')
     await browsers.agentCommand(
       'task-a',
       { action: 'fill', selector: '#name', text: 'Updated' },
       authorize,
     )
+    const current = await browsers.agentCommand('task-a', { action: 'snapshot' }, authorize)
+    const save =
+      'elements' in current && current.elements.find((element) => element.name === 'Save')
+    if (!save) throw new Error('Missing Save element')
+    expect(current).toMatchObject({
+      elements: expect.arrayContaining([
+        expect.objectContaining({ selector: '#name', value: 'Updated' }),
+      ]),
+    })
     const clicked = await browsers.agentCommand(
       'task-a',
-      { action: 'click', selector: 'text=Save' },
+      { action: 'click', selector: save.selector },
       authorize,
     )
     expect('snapshot' in clicked && clicked.snapshot).toContain('Updated')
+    const refLine =
+      'snapshot' in clicked &&
+      clicked.snapshot.split('\n').find((line) => line.includes('- textbox "Name"'))
+    const nameRef = refLine && /\[ref=([^\]]+)\]/.exec(refLine)?.[1]
+    if (!nameRef) throw new Error('Missing textbox reference')
+    await expect(
+      browsers.agentCommand(
+        'task-b',
+        { action: 'fill', selector: `ref=${nameRef}`, text: 'Wrong tab' },
+        authorize,
+      ),
+    ).rejects.toThrow('stale')
+    const refFilled = await browsers.agentCommand(
+      'task-a',
+      { action: 'fill', selector: `ref=${nameRef}`, text: 'From tree' },
+      authorize,
+    )
+    expect(refFilled).toMatchObject({
+      elements: expect.arrayContaining([
+        expect.objectContaining({ name: 'Name', value: 'From tree' }),
+      ]),
+    })
+    await expect(
+      browsers.agentCommand(
+        'task-a',
+        { action: 'fill', selector: `ref=${nameRef}`, text: 'Old tree' },
+        authorize,
+      ),
+    ).rejects.toThrow('stale')
+    const frameLine =
+      'snapshot' in refFilled &&
+      refFilled.snapshot.split('\n').find((line) => line.includes('- textbox "Frame name"'))
+    const frameRef = frameLine && /\[ref=([^\]]+)\]/.exec(frameLine)?.[1]
+    if (!frameRef) throw new Error('Missing frame textbox reference')
+    await browsers.agentCommand(
+      'task-a',
+      { action: 'fill', selector: `ref=${frameRef}`, text: 'Inside frame' },
+      authorize,
+    )
+    expect(
+      await browsers.agentCommand(
+        'task-a',
+        {
+          action: 'evaluate',
+          script: 'document.querySelector("iframe").contentDocument.querySelector("input").value',
+        },
+        authorize,
+      ),
+    ).toMatchObject({ result: 'Inside frame' })
     const evaluated = await browsers.agentCommand(
       'task-a',
       {
@@ -72,7 +204,9 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
     expect(evaluated).toMatchObject({
       result: { title: 'Agent browser test', node: 'undefined', text: 'Script updated' },
     })
-    expect('snapshot' in evaluated && evaluated.snapshot).toContain('Script updated')
+    expect(evaluated).not.toHaveProperty('snapshot')
+    expect(evaluated).not.toHaveProperty('image')
+    expect(evaluated).not.toHaveProperty('elements')
     await expect(
       browsers.agentCommand(
         'task-a',

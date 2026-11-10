@@ -6,6 +6,21 @@ complete task; SQLite remains authoritative, and complete histories use a cache 
 and approximately 64 MiB. The most recently accessed history remains available if it alone exceeds
 that budget. Legacy snapshots and exports still include complete conversations.
 
+Thread lists load settled summaries in pages of 25 when sorted by priority or activity. The Settled
+count includes visible top-level threads and omitted top-level threads. Paging keeps known thread
+families, side chats and sample records available so grouping and hidden drafts remain stable.
+Snapshots include the logical identities of omitted threads in `olderSettled.threadKeys`. Desktop
+and mobile use these identities to count each omitted thread once across computers, replicas and
+connection aliases. This adds one identity per omitted thread, without loading its summary or
+conversation. Older runtimes that return only `olderSettled.omitted` retain the scalar fallback;
+exact counts across replicas require updated runtimes.
+
+Run `pnpm exec playwright install chromium`, then
+`node scripts/check-thread-section-order-browser.mjs` to check the desktop count before and after
+loading more history. The fixture uses the real pager and sidebar with test rows and transport. Run
+`pnpm exec vp test packages/protocol/src/tasks/settled-page.test.ts packages/runtime/src/http/support/runtime-snapshot.test.ts packages/runtime/src/storage/thread-replication.test.ts`
+to check paging and the runtime response.
+
 Version 3 storage writes task metadata independently of the workspace shell. Migration backups,
 history counts, provider intents and submission receipts share the existing transaction boundary.
 Older runtime binaries cannot write this storage format; downgrade from a full database backup.

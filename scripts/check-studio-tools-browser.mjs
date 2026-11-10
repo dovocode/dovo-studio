@@ -189,7 +189,10 @@ try {
   assert.equal(await page.evaluate(() => window.approved), undefined)
   const opened = await call('browsers', { action: 'open', url: pageURL + '/browser' })
   assert.ok(opened.id)
-  assert.ok(opened.image)
+  assert.equal(opened.image, undefined)
+  assert.ok(opened.elements.some((element) => element.name === 'Prompt'))
+  const captured = await call('browsers', { action: 'screenshot', id: opened.id })
+  assert.ok(captured.image)
   const listed = await call('browsers', { action: 'list' })
   assert.ok(
     listed.sessions.some((session) => session.id === opened.id && session.url.startsWith(pageURL)),
@@ -217,7 +220,45 @@ try {
     200,
     paired.id,
   )
-  assert.ok(remoteBrowser.image)
+  assert.equal(remoteBrowser.image, undefined)
+  assert.ok(remoteBrowser.elements.some((element) => element.name === 'Prompt'))
+  const keyed = await call(
+    'browsers',
+    { action: 'key', id: remoteBrowser.id, selector: 'textarea[aria-label="Prompt"]', key: 'H' },
+    200,
+    paired.id,
+  )
+  assert.ok(keyed.elements.some((element) => element.name === 'Prompt' && element.value === 'H'))
+  await call(
+    'browsers',
+    {
+      action: 'evaluate',
+      id: remoteBrowser.id,
+      script: `(() => { const region=document.createElement('div');region.id='results';region.style.cssText='height:80px;overflow:auto';region.innerHTML='<div style="height:2000px">Results</div>';document.body.append(region) })()`,
+    },
+    200,
+    paired.id,
+  )
+  await call(
+    'browsers',
+    { action: 'scroll', id: remoteBrowser.id, selector: '#results', deltaY: 200 },
+    200,
+    paired.id,
+  )
+  const scrolled = await call(
+    'browsers',
+    {
+      action: 'evaluate',
+      id: remoteBrowser.id,
+      script: 'document.querySelector("#results").scrollTop',
+    },
+    200,
+    paired.id,
+  )
+  assert.equal(scrolled.result, 200)
+  assert.ok(
+    (await call('browsers', { action: 'screenshot', id: remoteBrowser.id }, 200, paired.id)).image,
+  )
   assert.ok(
     (await remote.services.browsers.studioList()).some(
       (session) => session.id === remoteBrowser.id,

@@ -25,7 +25,10 @@ type Target = {
 }
 
 /** A page-only CDP transport: never exposes the Electron application or other targets. */
-export async function createBrowserCdp(directory: string) {
+export async function createBrowserCdp(
+  directory: string,
+  connectionChanged?: (id: string, connected: boolean) => void,
+) {
   const targets = new Map<string, Target>()
   const path = join(directory, 'desktop-browser-host.json')
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 })
@@ -89,7 +92,7 @@ export async function createBrowserCdp(directory: string) {
       socket.destroy()
       return
     }
-    const [, target] = found
+    const [id, target] = found
     sockets.handleUpgrade(request, socket, head, (client) => {
       const debuggerApi = target.contents.debugger
       try {
@@ -98,7 +101,9 @@ export async function createBrowserCdp(directory: string) {
         client.close(1011, 'Debugger unavailable')
         return
       }
+      const first = !target.clients.size
       target.clients.add(client)
+      if (first) connectionChanged?.(id, true)
       const event = (
         _event: Electron.Event,
         method: string,
@@ -157,7 +162,8 @@ export async function createBrowserCdp(directory: string) {
       })
       client.on('error', () => client.close())
       client.on('close', () => {
-        target.clients.delete(client)
+        const removed = target.clients.delete(client)
+        if (removed && !target.clients.size) connectionChanged?.(id, false)
         debuggerApi.removeListener('message', event)
         debuggerApi.removeListener('detach', detached)
         if (
@@ -182,8 +188,11 @@ export async function createBrowserCdp(directory: string) {
   const remove = (id: string) => {
     const target = targets.get(id)
     if (!target) return
+    const connected = !!target.clients.size
     for (const client of target.clients) client.terminate()
+    target.clients.clear()
     targets.delete(id)
+    if (connected) connectionChanged?.(id, false)
     save()
   }
   return {
