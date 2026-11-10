@@ -194,7 +194,10 @@ try {
       ) + '\n[data-terminal-session] .h-full.p-2 { height: 240px; }',
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const input = page.getByRole('textbox', { name: 'Workspace request', exact: true })
+  const workspaceForm = page.getByRole('form', { name: 'Workspace input', exact: true })
+  const input = workspaceForm.getByRole('textbox', { name: 'Workspace request', exact: true })
+  // The retained Browser pane has its own Open browser action. Submit through Home's form.
+  const openBrowser = workspaceForm.getByRole('button', { name: 'Open browser', exact: true })
   const selectThread = async (title) => {
     const working = page.locator('.studio-task-sidebar details[data-section="working"]')
     if ((await working.count()) && !(await working.evaluate((section) => section.open)))
@@ -210,7 +213,7 @@ try {
   })
   await input.fill('Investigate the submit crash')
   await input.press('Enter')
-  await page.getByRole('button', { name: 'Open browser', exact: true }).waitFor()
+  await openBrowser.waitFor()
   assert.equal(await page.evaluate(() => window.snapshot.workspace.tasks.length), 0)
   assert.equal(await page.getByRole('tab').count(), 0)
   // The AI suggestion remains visible and can be overridden before confirmation.
@@ -302,7 +305,7 @@ try {
       .getAttribute('data-value'),
     'browser',
   )
-  await page.getByRole('button', { name: 'Open browser', exact: true }).click()
+  await openBrowser.click()
   await page.locator('[data-browser-viewport]').waitFor()
   await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
   await page.getByRole('button', { name: 'Workspace destination', exact: true }).click()
