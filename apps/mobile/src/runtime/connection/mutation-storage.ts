@@ -53,14 +53,15 @@ const storageOperation = <A>(run: () => Promise<A>) =>
       )
       .pipe(Effect.uninterruptible),
   )
-async function readOutbox(connection: RuntimeConnection) {
-  const { directory, file } = await fileFor(connection)
+async function readOutbox({ directory, file }: Awaited<ReturnType<typeof fileFor>>) {
   const backup = new File(directory, `${file.name}.backup`)
   const committed = file.exists ? file : backup.exists ? backup : undefined
   return committed ? decode(mutationOutboxSchema, JSON.parse(await committed.text())) : []
 }
-async function writeOutbox(connection: RuntimeConnection, pending: MutationOutbox) {
-  const { directory, file } = await fileFor(connection)
+async function writeOutbox(
+  { directory, file }: Awaited<ReturnType<typeof fileFor>>,
+  pending: MutationOutbox,
+) {
   const name = file.name
   const backup = new File(directory, `${name}.backup`)
   const temporary = new File(directory, `${name}.tmp`)
@@ -89,15 +90,16 @@ export const mobileMutationStorage: MutationStorage = {
   },
   id: randomUUID,
   read(connection) {
-    return storageOperation(() => readOutbox(connection))
+    return storageOperation(async () => readOutbox(await fileFor(connection)))
   },
   clear(connection) {
-    return storageOperation(() => writeOutbox(connection, []))
+    return storageOperation(async () => writeOutbox(await fileFor(connection), []))
   },
   update(connection, change) {
     return storageOperation(async () => {
-      const pending = change(await readOutbox(connection))
-      await writeOutbox(connection, pending)
+      const location = await fileFor(connection)
+      const pending = change(await readOutbox(location))
+      await writeOutbox(location, pending)
       return pending
     })
   },

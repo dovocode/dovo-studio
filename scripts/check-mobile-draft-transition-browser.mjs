@@ -107,9 +107,9 @@ const mocks = {
   '../conversation/view': `
     import {useConversation} from '../conversation/state/provider';
     import {TaskEmptyState} from '${root}apps/mobile/src/tasks/creation/task-empty-state';
-    export const Conversation=()=>{
+    export const Conversation=({children})=>{
       const task=useConversation();
-      return task.messages.length?task.messages.map(m=><p key={m.id}>{m.text}</p>):<TaskEmptyState/>;
+      return <section aria-label="Thread chat">{task.messages.length?task.messages.map(m=><p key={m.id}>{m.text}</p>):<TaskEmptyState/>}{children}</section>;
     };
   `,
   '../composer/composer': `
@@ -371,11 +371,21 @@ try {
       {
         ...window.created,
         status: 'running',
+        watchCounts: { pipelines: 1 },
         messages: [{ id: 'sent', role: 'user', text: 'First prompt' }],
       },
       false,
     )
   })
+  await page.getByLabel('Pipeline progress', { exact: true }).waitFor()
+  assert.equal(
+    await page
+      .getByRole('region', { name: 'Thread chat' })
+      .getByLabel('Pipeline progress', { exact: true })
+      .count(),
+    1,
+  )
+  assert.equal(await page.getByLabel('Pipeline progress', { exact: true }).count(), 1)
   const menuGroups = await page.evaluate(() => [
     ...new Set(
       window.headerActions.filter((action) => action.overflow).map((action) => action.group),

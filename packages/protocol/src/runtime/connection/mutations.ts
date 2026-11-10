@@ -1076,7 +1076,10 @@ export class RuntimeMutations {
         'messageId' in item.input &&
         typeof item.input.messageId === 'string' &&
         !!item.input.messageId
-      if (item.receiptToken && !safe) {
+      // Message delivery has its own stable identity across credential renewal.
+      // Binding the receipt adds a full journal write without changing its replay rules.
+      if (safe) return
+      if (item.receiptToken) {
         yield* this.save(connection, state, (pending) =>
           pending.map((entry) =>
             entry.id === id ? { ...entry, reviewAfterRenewal: true } : entry,
@@ -1381,6 +1384,13 @@ export class RuntimeMutations {
                 message: 'Update this runtime before recovering saved actions.',
               }),
             )
+          if (
+            state.error &&
+            !state.pending.some((item) => item.blocked || item.reviewAfterRenewal)
+          ) {
+            state.error = null
+            this.changed()
+          }
           yield* this.drain(connection, state, retry, undefined, false, actionId)
         }),
       )

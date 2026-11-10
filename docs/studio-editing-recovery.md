@@ -60,6 +60,48 @@ saving. Failed update preparation reopens Studio. These guards do not recover ed
 crash or power loss. Code references use the text currently shown in the editor, including a draft
 whose save failed.
 
+## Mobile send storage
+
+Mobile combines queued text edits for each computer and thread. An active native write finishes
+first. The next queued text write saves the latest text. Reads, appends, restores, forks and send
+records keep their order and separate text batches. Send records still reach durable storage before
+delivery. A failed combined write reports an error to each waiting caller. A later save can retry.
+
+Submitted text stays hidden while the send is in progress, including draft confirmation after local
+admission. New typing stays visible. Failed sends restore their text. An uncertain background send
+to an older runtime keeps its draft for retry. Locally saved messages show **Saved · pending
+delivery**.
+
+Messages and steering requests with a stable message ID use that ID for safe replay. They do not
+need another journal write to bind a receipt token. Other saved actions keep their existing receipt
+and credential-review checks. Each atomic mobile journal update resolves its file location once. The
+backup and replacement sequence stays the same.
+
+A healthy retry clears its old temporary request error while it waits for a response. Blocked
+actions and actions that need review after credential renewal remain visible. Another failure
+reports its new error. These changes do not resolve competing workspace edits automatically.
+
+A local benchmark used the actual draft storage code with simulated 20 ms native writes. Staging a
+send behind 75 queued edits took 1,588 ms and 76 writes before this change. It took 63 ms and 3
+writes after this change. This measures storage queue time. It excludes screen rendering, real
+device disk I/O and network delivery. Measure composer-clear latency on a physical phone before
+claiming a phone latency result.
+
+Verify with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm exec vp test apps/mobile/src/tasks/draft apps/mobile/src/tasks/composer/pending-send.test.ts apps/mobile/src/runtime/connection/mutation-storage.test.ts packages/protocol/src/runtime/connection
+node scripts/check-mobile-background-start-browser.mjs
+node scripts/check-mobile-settled-send-browser.mjs
+node scripts/check-mobile-queue-restore-browser.mjs
+node scripts/check-mobile-fork-browser.mjs
+```
+
+The browser checks use native storage and input adapters. They verify the saved-state transition,
+new typing, failed storage, retry identity and fast, stalled and offline transport. They do not
+verify a physical iOS or Android keyboard or native storage latency.
+
 ## Terminal clipboard
 
 On desktop, select terminal output, then use **Copy** in the context menu, **Cmd+C**, or

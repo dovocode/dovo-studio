@@ -9,6 +9,7 @@ const fs = vi.hoisted(() => ({
   failMoveAt: undefined as number | undefined,
   failWrite: false,
   writeGate: undefined as Promise<void> | undefined,
+  hashes: 0,
 }))
 vi.mock('expo-file-system', () => {
   const uri = (parts: unknown[]) =>
@@ -73,6 +74,7 @@ vi.mock('expo-crypto', () => ({
   CryptoDigestAlgorithm: { SHA256: 'SHA256' },
   randomUUID: () => 'id',
   digestStringAsync: async (_algorithm: string, value: string) => {
+    fs.hashes++
     const { createHash } = await import('node:crypto')
     return createHash('sha256').update(value).digest('hex')
   },
@@ -101,6 +103,12 @@ beforeEach(() => {
   fs.failMoveAt = undefined
   fs.failWrite = false
   fs.writeGate = undefined
+  fs.hashes = 0
+})
+it('resolves the journal file once for an atomic read and write', async () => {
+  await mobileMutationStorage.update(connection, () => [])
+  expect(fs.hashes).toBe(1)
+  expect(await mobileMutationStorage.read(connection)).toEqual([])
 })
 it('migrates legacy recoveries once and appends independent records without rewriting existing edits', async () => {
   const legacy = await legacyPath()

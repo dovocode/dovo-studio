@@ -11,7 +11,7 @@ try {
     const mocks = {
       '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const encodeWorkTarget=JSON.stringify;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>{window.threadDestination=target},navigate:target=>{window.opened=JSON.parse(target.entityId).url;window.internal=true},openPullLink:url=>{if(url.includes('/pull/')){window.opened=url;window.internal=true;return true}return false},openExternalLink:url=>{window.opened=url;window.internal=false}});`,
       '@dovo/studio-ui':
-        'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;',
+        'export const Card=({children,...props})=><section {...props}>{children}</section>;export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;',
       '../../ui/layout/sheet': 'export const useSheetNavigation=()=>action=>action();',
       'expo-router': 'export const router={push:href=>{window.opened=href}};',
       '../../runtime/connection/provider':

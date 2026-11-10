@@ -1,6 +1,6 @@
 import { usePreviewActive } from '../preview/use-preview-active'
 import { useCallback, useState } from 'react'
-import { Pressable, View, ScrollView, ActivityIndicator } from 'react-native'
+import { Pressable, View, ActivityIndicator } from 'react-native'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { pipelineSignal, taskWaitingSchema, type taskWaitingRequestSchema } from '@dovo/protocol'
 import { useTaskWaiting } from '@dovo/studio-core'
@@ -31,17 +31,8 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
   const pipelines = data?.dependencies.filter((item) => item.kind === 'pipeline') ?? []
   if (!pipelines.length) return null
   return (
-    <ScrollView
-      accessibilityLabel="Pipeline progress"
-      style={{ maxHeight: 144, flexGrow: 0 }}
-      contentContainerStyle={{
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        gap: 8,
-        borderBottomWidth: 1,
-        borderColor: colors.border,
-      }}
-    >
+    <View accessibilityLabel="Pipeline progress" style={[styles.card, { padding: 16, gap: 12 }]}>
+      <Text style={[styles.text, { fontWeight: '600' }]}>Watching pipelines</Text>
       {pipelines.map((item) => {
         const progress = item.progress
         const measured = progress && progress.total > 0 && !progress.partial
@@ -101,6 +92,6 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
         )
       })}
       {!!linkError && <Text style={styles.muted}>{linkError}</Text>}
-    </ScrollView>
+    </View>
   )
 }

@@ -1153,7 +1153,70 @@ it('removes a newly refused unsent command when recovery of an earlier action fa
     (await run(f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'new' }, ok)))
       ._tag,
   ).toBe('Failure')
-  expect(f.stored()).toEqual([{ ...old, blocked: true, receiptToken: connection.token }])
+  expect(f.stored()).toEqual([{ ...old, blocked: true }])
+})
+
+it('clears a transient recovery error during a new attempt without waiting for the whole queue', async () => {
+  const f = fixture()
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new TypeError('Offline')))
+  await run(f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'old' }, ok))
+  expect(f.queue.status(connection).error).not.toBeNull()
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const sending = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      entered()
+      await gate
+      return Response.json({ ok: true })
+    }),
+  )
+  const retry = run(f.queue.recoverEffect(connection, true))
+  try {
+    await sending
+    expect(f.queue.status(connection).pending).toBe(1)
+    expect(f.queue.status(connection).error).toBeNull()
+  } finally {
+    release()
+    expect((await retry)._tag).toBe('Success')
+  }
+})
+
+it('delivers a durable message with only admission and removal writes', async () => {
+  const f = fixture()
+  const update = vi.spyOn(f.storage, 'update')
+  const delivered: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, input) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      delivered.push(new Headers(input?.headers).get('X-Dovo-Mutation-Id')!)
+      return Response.json({ ok: true })
+    }),
+  )
+  await Effect.runPromise(
+    f.queue.enqueueEffect(
+      connection,
+      '/api/tasks/message',
+      {
+        id: 'task',
+        messageId: 'message',
+        text: 'Hello',
+      },
+      ok,
+    ),
+  )
+  await Effect.runPromise(f.queue.recoverEffect(connection))
+  expect(delivered).toEqual(['operation-1'])
+  expect(update).toHaveBeenCalledTimes(2)
+  expect(f.stored()).toEqual([])
 })
 
 it('clears a stale local error when another client has drained the journal', async () => {
@@ -2511,9 +2574,9 @@ it('merges concurrent automatic recoveries into one attempt and one status updat
   expect(host.sends).toBe(3)
   expect(host.statusReads).toBe(1)
   expect(read).toHaveBeenCalledOnce()
-  // Loaded action, bound receipt, transient error and recovery failure.
-  expect(changed).toHaveBeenCalledTimes(4)
-  expect(f.stored()).toEqual([{ ...savedMessage(), receiptToken: connection.token }])
+  // Loaded action, transient error and recovery failure. Message identity needs no receipt write.
+  expect(changed).toHaveBeenCalledTimes(3)
+  expect(f.stored()).toEqual([savedMessage()])
   expect(f.queue.status(connection).error).toContain('Runtime is busy')
 })
 

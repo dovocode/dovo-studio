@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { taskWaitingSchema, pipelineSignal, type taskWaitingRequestSchema } from '@dovo/protocol'
 import { useTaskWaiting, useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { Card } from '@dovo/studio-ui'
 
 /** Read the watcher's saved snapshot. The client never polls the forge. */
 export function TaskPipelineProgress({ taskId, active }: { taskId: string; active: boolean }) {
@@ -22,10 +23,11 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
   const pipelines = data?.dependencies.filter((item) => item.kind === 'pipeline') ?? []
   if (!pipelines.length) return null
   return (
-    <section
+    <Card
       aria-label="Pipeline progress"
-      className="max-h-40 shrink-0 space-y-2 overflow-y-auto border-b border-border/60 px-4 py-2 text-xs"
+      className="studio-pipeline-progress space-y-3 rounded-2xl border border-border bg-card p-4 text-xs"
     >
+      <p className="font-medium text-foreground">Watching pipelines</p>
       {pipelines.map((item) => {
         const progress = item.progress
         const measured = progress && progress.total > 0 && !progress.partial
@@ -78,6 +80,6 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
           {linkError}
         </p>
       )}
-    </section>
+    </Card>
   )
 }

@@ -9,7 +9,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '../task-creation/task-empty-state': 'export const TaskEmptyState=()=>null;',
-  './task-pipeline-progress': 'export const TaskPipelineProgress=()=>null;',
+  './task-pipeline-progress':
+    'export const TaskPipelineProgress=()=> <section aria-label="Pipeline progress">Watching pipelines</section>;',
   // Sharing is verified separately from scroll anchoring and composer collapse.
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
@@ -19,7 +20,7 @@ const mocks = {
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
   '@dovo/web-ui/conversation': `export * from '${root}packages/web-ui/src/conversation.tsx';`,
   '../chat/thread/use-task-viewed': `export const useTaskViewed=()=>({});`,
-  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationRail,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';import {useStickToBottomContext} from 'use-stick-to-bottom';function FollowProbe(){window.followProbe=useStickToBottomContext();return null}export function ChatThread({task,onReadingHistory,active}){const indices=Array.from({length:window.turnCount??20},(_,index)=>index);return <Conversation><FollowProbe/><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content className="studio-conversation-content mx-auto w-full" style={{paddingBlock:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{indices.map(index=><section id={task.id+'-'+index} key={index} style={{contentVisibility:window.staticTurns?"visible":"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-deferred-'+index} pinned={window.staticTurns||index>=indices.length-2}>{()=> <div style={{height:350}}>Turn {task.id} {index+1}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div></ConversationContent></ConversationHistory><ConversationRail items={indices.map(index=>({id:task.id+'-'+index,label:'Turn '+(index+1),preview:'Request and response for this turn'}))}/><ConversationScrollButton/></Conversation>}`,
+  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationRail,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';import {useStickToBottomContext} from 'use-stick-to-bottom';function FollowProbe(){window.followProbe=useStickToBottomContext();return null}export function ChatThread({task,onReadingHistory,active,footer}){const indices=Array.from({length:window.turnCount??20},(_,index)=>index);return <Conversation><FollowProbe/><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content className="studio-conversation-content mx-auto w-full" style={{paddingBlock:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{indices.map(index=><section id={task.id+'-'+index} key={index} style={{contentVisibility:window.staticTurns?"visible":"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-deferred-'+index} pinned={window.staticTurns||index>=indices.length-2}>{()=> <div style={{height:350}}>Turn {task.id} {index+1}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div>{footer}</ConversationContent></ConversationHistory><ConversationRail items={indices.map(index=>({id:task.id+'-'+index,label:'Turn '+(index+1),preview:'Request and response for this turn'}))}/><ConversationScrollButton/></Conversation>}`,
   '../chat/composer/composer': `export function Composer({collapsed}){return <div className="task-composer"><form data-collapsed={collapsed} style={{height:collapsed?48:150,maxWidth:'var(--chat-max)',marginInline:'auto'}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form></div>}`,
 }
 for (const [path, name] of [
@@ -37,7 +38,7 @@ for (const [path, name] of [
   mocks[path] = `export const ${name}=()=>null;`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.setTurnCount=count=>{window.turnCount=count;render(n=>n+1)};window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[]}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.setTurnCount=count=>{window.turnCount=count;render(n=>n+1)};window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[],watchCounts:{pipelines:1}}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
   },
@@ -101,6 +102,14 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const content = page.locator('[data-conversation-content]')
   await content.waitFor({ state: 'attached' })
+  assert.equal(
+    await page.getByRole('region', { name: 'Pipeline progress', includeHidden: true }).count(),
+    1,
+  )
+  assert.equal(
+    await content.getByRole('region', { name: 'Pipeline progress', includeHidden: true }).count(),
+    1,
+  )
   assert.equal(await content.evaluate((e) => getComputedStyle(e).visibility), 'hidden')
   assert.ok(
     (await page

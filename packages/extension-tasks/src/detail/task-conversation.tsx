@@ -232,9 +232,6 @@ export function TaskConversation({
           data-conversation-pane
           className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : ''}`}
         >
-          {!!task.watchCounts?.pipelines && (
-            <TaskPipelineProgress key={task.id} taskId={task.id} active={visible} />
-          )}
           {temporary ? (
             <TaskEmptyState
               task={task}
@@ -263,16 +260,21 @@ export function TaskConversation({
                   setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
                 }
                 footer={
-                  !task.example && (
-                    <InlineThreadSuggestions
-                      taskId={task.id}
-                      active={visible}
-                      onUseSuggestion={(text) => {
-                        setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
-                        setComposerCollapsed(false)
-                      }}
-                    />
-                  )
+                  <>
+                    {!!task.watchCounts?.pipelines && (
+                      <TaskPipelineProgress key={task.id} taskId={task.id} active={visible} />
+                    )}
+                    {!task.example && (
+                      <InlineThreadSuggestions
+                        taskId={task.id}
+                        active={visible}
+                        onUseSuggestion={(text) => {
+                          setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+                          setComposerCollapsed(false)
+                        }}
+                      />
+                    )}
+                  </>
                 }
                 active={visible}
                 onReadingHistory={readingHistory}

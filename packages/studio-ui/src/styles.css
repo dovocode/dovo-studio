@@ -176,6 +176,10 @@
   max-width: calc(var(--chat-max) + 2 * var(--studio-chat-gutter));
   padding-inline: calc(var(--studio-chat-gutter) + 12px);
 }
+.studio-pipeline-progress {
+  background-image: var(--studio-surface-sheen);
+  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+}
 .studio-composer {
   border-radius: 1.75rem;
 }
