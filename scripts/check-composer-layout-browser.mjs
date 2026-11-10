@@ -75,7 +75,7 @@ const built = await build({
       window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
       function Thread({task,workspaceControls,temporary,onSelectRemote,onStartBackground}){
         const [open,setOpen]=useState(false);
-        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New thread':task.title}</span>{!temporary&&<IconButton label="Thread info" aria-expanded={open} onClick={()=>setOpen(value=>!value)} className="size-7"><Info className="size-4"/></IconButton>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div>{open&&<aside className="flex w-72 max-w-[48%] shrink-0"><ThreadInfoPanel><ThreadInfoSettingsSlot visible/></ThreadInfoPanel></aside>}</div></TaskProjectPanelRoot>;
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New thread':task.title}</span>{!temporary&&<IconButton label="Thread info" aria-expanded={open} onClick={()=>setOpen(value=>!value)} className="size-7"><Info className="size-4"/></IconButton>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1"><ThreadInfoPanel><ThreadInfoSettingsSlot visible/></ThreadInfoPanel><div className="flex min-h-0 min-w-0 flex-1 flex-col"><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></div></TaskProjectPanelRoot>;
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
@@ -159,7 +159,7 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const geometry = () =>
     page.evaluate(() => {
-      const hero = document.querySelector('h2').getBoundingClientRect()
+      const hero = document.querySelector('.startup-heading').getBoundingClientRect()
       const composer = document.querySelector('.studio-composer').getBoundingClientRect()
       return {
         heroX: hero.x + hero.width / 2,
@@ -171,8 +171,20 @@ try {
     })
   const infoButton = page.getByRole('button', { name: 'Thread info', exact: true })
   const openInfo = async () => {
+    const composerBefore = await page.locator('.studio-composer').boundingBox()
     if ((await infoButton.getAttribute('aria-expanded')) !== 'true') await infoButton.click()
-    await page.getByRole('complementary', { name: 'Thread info', exact: true }).waitFor()
+    const panel = page.getByRole('complementary', { name: 'Thread info', exact: true })
+    await panel.waitFor()
+    assert.deepEqual(
+      await page.locator('.studio-composer').boundingBox(),
+      composerBefore,
+      'Opening Info preserves composer geometry',
+    )
+    const bounds = await panel.boundingBox()
+    assert.ok(
+      bounds.y + bounds.height <= composerBefore.y - 11,
+      'The floating Info panel leaves space above the composer',
+    )
   }
   const closeInfo = async () => {
     if ((await infoButton.count()) && (await infoButton.getAttribute('aria-expanded')) === 'true')
@@ -745,7 +757,7 @@ try {
         await page.screenshot({ path: screenshots + '/desktop-info-menu.png' })
       const settingsNode = await page.locator('.task-info-settings').elementHandle()
       await closeInfo()
-      assert.equal(await settingsNode.evaluate((node) => node.isConnected), false)
+      assert.equal(await settingsNode.evaluate((node) => node.checkVisibility()), false)
       await openInfo()
       assert.equal(
         await settingsNode.evaluate((node) => node.isConnected),

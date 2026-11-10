@@ -343,6 +343,7 @@ try {
             const selected = getComputedStyle(el)
             const marker = getComputedStyle(el, '::before')
             return {
+              main: el.closest('[aria-label="Main navigation"]') !== null,
               background: selected.backgroundColor,
               image: selected.backgroundImage,
               shadow: selected.boxShadow,
@@ -409,9 +410,13 @@ try {
         effects.rails.length === 2 &&
           effects.rails.every(
             (rail) =>
-              rail.background === 'rgba(0, 0, 0, 0)' &&
-              rail.image === 'none' &&
-              rail.shadow === 'none' &&
+              (rail.main
+                ? rail.background !== 'rgba(0, 0, 0, 0)' &&
+                  /gradient/.test(rail.image) &&
+                  rail.shadow !== 'none'
+                : rail.background === 'rgba(0, 0, 0, 0)' &&
+                  rail.image === 'none' &&
+                  rail.shadow === 'none') &&
               rail.marker === effects.accent &&
               rail.markerWidth === '2px' &&
               rail.markerHeight === '16px' &&
@@ -420,7 +425,7 @@ try {
         id +
           ' ' +
           scheme +
-          ' active rails use visible accent edge markers: ' +
+          ' active workspace uses glass; tool icons keep flat accent markers: ' +
           JSON.stringify(effects.rails),
       )
       assert.equal(effects.threadEdgeWidth, '2px')

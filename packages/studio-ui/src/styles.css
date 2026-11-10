@@ -678,9 +678,9 @@ textarea {
   flex: none;
   min-width: 0;
 }
-.studio-sidebar-brand-row .studio-titlebar {
-  background-image: var(--studio-surface-sheen);
-  box-shadow: var(--studio-control-rim);
+.studio-sidebar-brand-row .studio-titlebar[data-sidebar-brand='true'] {
+  background: transparent;
+  box-shadow: none;
 }
 .studio-sidebar-brand-row:has(.studio-sidebar-toggle) > .studio-titlebar {
   padding-right: 52px;
@@ -696,13 +696,13 @@ textarea {
   z-index: 25;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
   border-radius: 50%;
   background-color: var(--studio-floating-fill, var(--popover));
   background-image: var(--studio-surface-sheen);
   -webkit-backdrop-filter: var(--studio-surface-filter);
   backdrop-filter: var(--studio-surface-filter);
-  box-shadow: var(--studio-control-rim), var(--studio-capsule-shadow);
+  box-shadow: none;
   -webkit-app-region: no-drag;
 }
 .studio-sidebar-toggle[data-fallback] {
@@ -2512,17 +2512,22 @@ select:focus-visible,
 }
 .studio-thread-sidebar-controls,
 .studio-browser-sidebar-library {
-  background-image: var(--studio-surface-sheen);
-  box-shadow: var(--studio-control-rim);
+  background: transparent;
+  box-shadow: none;
 }
-.studio-thread-search input,
-.studio-thread-sidebar-controls .studio-thread-new,
-.studio-browser-library-button,
-.studio-thread-computer,
-.studio-thread-toolbar > button {
-  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+.studio-thread-search input:not([aria-invalid='true']),
+.studio-browser-library-button {
+  border-color: color-mix(in srgb, var(--foreground) 6%, transparent);
   border-style: solid;
   border-width: 1px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  box-shadow: none;
+}
+.studio-thread-sidebar-controls .studio-thread-new,
+.studio-thread-sidebar-controls .studio-thread-computer,
+.studio-thread-toolbar > button {
+  border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   box-shadow: none;
@@ -2535,8 +2540,20 @@ select:focus-visible,
 .studio-browser-library-button:is(:hover, [data-state='open']),
 .studio-thread-computer:hover,
 .studio-thread-toolbar > button:hover {
-  border-color: color-mix(in srgb, var(--foreground) 20%, transparent);
+  border-color: transparent;
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+[data-high-contrast='true'] .studio-thread-search input,
+[data-high-contrast='true'] .studio-thread-computer,
+[data-high-contrast='true'] .studio-sidebar-toggle[data-slot='button'] {
+  border-color: var(--control-edge);
+}
+@media (forced-colors: active) {
+  .studio-thread-search input:not([aria-invalid='true']),
+  .studio-thread-sidebar-controls .studio-thread-computer,
+  .studio-sidebar-toggle[data-slot='button'] {
+    border-color: ButtonText;
+  }
 }
 .studio-task-sidebar .studio-thread-card {
   border-color: transparent;
@@ -3213,15 +3230,35 @@ a.studio-project-row:hover {
   gap: 12px;
 }
 
-/* One accent marker identifies the active destination without another filled tile. */
-.studio
-  .studio-navigation[aria-label='Main navigation']
-  .studio-navigation-item[aria-current='page'],
+/* The active workspace gets a small glass tile. Tool icons keep their quiet marker. */
 .studio .studio-tools-navigation .studio-navigation-item[aria-pressed='true'] {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
   color: var(--primary);
+}
+.studio
+  .studio-navigation[aria-label='Main navigation']
+  .studio-navigation-item[aria-current='page'] {
+  border-radius: 11px;
+  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+  background-color: color-mix(in srgb, var(--primary) 10%, var(--studio-floating-fill));
+  background-image: var(--studio-surface-sheen);
+  box-shadow: var(--studio-control-rim), var(--studio-glow);
+  color: var(--primary);
+}
+:root[data-high-contrast='true']
+  .studio-navigation[aria-label='Main navigation']
+  .studio-navigation-item[aria-current='page'] {
+  box-shadow: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .studio
+    .studio-navigation[aria-label='Main navigation']
+    .studio-navigation-item[aria-current='page'] {
+    background: var(--selection);
+    box-shadow: none;
+  }
 }
 .studio
   .studio-navigation[aria-label='Main navigation']
@@ -3551,14 +3588,31 @@ a.studio-project-row:hover {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
-/* Softly outlined workspace panes retain the compact composition. */
+/* One translucent navigation surface; controls and rows do not add glass layers. */
 @media (min-width: 768px) {
+  .studio {
+    background-color: var(--background);
+    background-image: var(--studio-navigation-light);
+    background-size: 480px 100%;
+    background-repeat: no-repeat;
+  }
+  .studio-task-sidebar {
+    background: transparent;
+  }
   .studio-overview-pane,
   .studio-thread-tools-panel {
     margin: 6px;
-    border: 1px solid var(--border);
-    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--foreground) 7%, transparent);
+    border-radius: 14px;
     overflow: hidden;
+  }
+  .studio-task-sidebar .studio-overview-pane,
+  .studio-navigation[aria-label='Main navigation'] {
+    border-color: color-mix(in srgb, var(--foreground) 7%, transparent);
+    background: var(--studio-navigation-fill);
+    -webkit-backdrop-filter: var(--studio-navigation-filter);
+    backdrop-filter: var(--studio-navigation-filter);
+    box-shadow: none;
   }
   .studio-header-layout[data-compact='false']
     .studio-body:has(> .studio-navigation[aria-label='Main navigation'])
@@ -3570,8 +3624,7 @@ a.studio-project-row:hover {
 @media (min-width: 768px) {
   .studio-navigation[aria-label='Main navigation'] {
     margin: 6px 0;
-    border: 1px solid var(--border);
-    border-radius: 18px;
+    border-radius: 14px;
   }
 }
 
@@ -3823,7 +3876,7 @@ a.studio-project-row:hover {
   font-weight: var(--dovo-type-row-weight);
 }
 
-/* Icon rails stay marker-only; system colors must keep that marker visible. */
+/* System colors must keep selected icons and their markers visible. */
 @media (forced-colors: active) {
   .studio
     .studio-navigation[aria-label='Main navigation']

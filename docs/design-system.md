@@ -47,27 +47,31 @@ in the corners. Computer and profile details stay in the tooltip and accessible 
 identity badge row to the cards.
 
 `packages/web-ui/src/theme.css` owns the shared surface finish. Use it for settings, navigation and
-controls. Apply backdrop blur only to temporary menus and dialogs. Keep scrolling lists and code
-surfaces free of backdrop filters. Browsers without backdrop blur use opaque surfaces. High contrast
-and reduced transparency use opaque surfaces without decorative highlights. The Gradients and Glow
-preferences still control their respective effects. Native mobile uses the same geometry and palette
-with platform controls. No refraction engine or pointer tracking runs on thread rows. Hosted service
-chrome keeps its plain presentation.
+controls. Desktop navigation uses one translucent surface per pane with a 28px backdrop blur. Keep
+rows, fields and code surfaces free of backdrop filters. Browsers without backdrop blur use opaque
+surfaces. High contrast and reduced transparency use opaque surfaces without decorative highlights.
+The Gradients and Glow preferences still control their respective effects. Native mobile uses the
+same geometry and palette with platform controls. No refraction engine or pointer tracking runs on
+thread rows. Hosted service chrome keeps its plain presentation.
 
-Floating surfaces use a 24px blur, richer color and layered edge highlights. Permanent surfaces use
-the same painted highlights without a backdrop filter. This keeps the glass finish visible without
-adding blur work to each thread row. Keep the Gradients, Glow, high-contrast and
-reduced-transparency preferences active.
+Floating surfaces use a 24px blur, richer color and layered edge highlights. Desktop navigation uses
+a transparent fill over a soft palette tint inside the app. It does not show the desktop wallpaper.
+Do not stack bevels or shadows on its header and controls. Keep the Gradients, Glow, high-contrast
+and reduced-transparency preferences active.
 
 Desktop sidebars have a floating glass toggle over their brand row. The toggle stays available in
 the window header when the sidebar is hidden. Keyboard focus follows it during collapse and restore.
 The button uses the shared opaque fallback and leaves thread rows unchanged. Compact layouts retain
 their existing navigation.
 
-Desktop sidebar controls and the browser header share painted edge highlights. Keep the composer
-edge visible when its input has focus. Page settings use an inset, rounded save bar above the bottom
-edge. Embedded save actions stay flat inside their parent card. These permanent surfaces use no
-backdrop blur. Keep their geometry stable when effects or themes change.
+The active main sidebar icon has a small glass tile and keeps its accent marker. Inactive icons and
+thread tool icons stay flat. Light-mode switches use a clean filled track and a neutral thumb. Do
+not add a gradient or glow to their track.
+
+Desktop sidebar actions use flat controls. Only the search field has a quiet inset edge. Keep the
+composer edge visible when its input has focus. Page settings use an inset, rounded save bar above
+the bottom edge. Embedded save actions stay flat inside their parent card. These permanent surfaces
+use no backdrop blur. Keep their geometry stable when effects or themes change.
 
 Grouped choices use a recessed capsule track and a raised selected capsule. Settings and composer
 tabs share this finish. Selection does not move or resize the control. Keep keyboard focus on the
@@ -100,10 +104,10 @@ adapters check these edge choices and draft retention. Check native keyboard con
 disposable simulator with `node scripts/verify-mobile.mjs <simulator-id> --composer-layout-only`.
 Use the selected theme for status-bar text. Verify actual inset sizes on iOS.
 
-Thread info uses the resizable right pane shared by Files and Changes. Its header stays fixed while
-sections scroll. Compact web uses the whole pane. Closing Info preserves composer setting drafts.
-Customize replaces the pane content without changing its bounds. Text-only icon tips must not
-intercept clicks on adjacent controls.
+Thread info floats inside the conversation. It does not resize chat or open the tools sidebar. Keep
+it inset from the thread edges and above the composer. Its header stays fixed while sections scroll.
+Closing Info preserves composer setting drafts. Customize replaces the panel content without
+changing its bounds. Text-only icon tips must not intercept clicks on adjacent controls.
 
 Check mobile glass changes with:
 

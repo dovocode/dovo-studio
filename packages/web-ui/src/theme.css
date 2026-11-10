@@ -67,6 +67,13 @@
     inset 0.5px 1px 0 #ffffff38, inset -0.5px -0.5px 0 #ffffff18, inset 0 -2px 5px #00000010;
   --studio-surface-shadow: 0 3px 6px #00000024, 0 18px 44px -12px #00000080;
   --studio-floating-fill: var(--popover);
+  --studio-navigation-fill: var(--sidebar);
+  --studio-navigation-filter: none;
+  --studio-navigation-light: radial-gradient(
+    ellipse at 0 0,
+    color-mix(in srgb, var(--primary) 9%, transparent),
+    transparent 65%
+  );
   --studio-surface-filter: blur(24px) saturate(1.4);
   --studio-control-rim: inset 0 1px 0 #ffffff24, inset 0 -1px 3px #00000020;
   --studio-inset-fill: color-mix(in srgb, var(--background) 70%, var(--card));
@@ -184,6 +191,7 @@
 :root[data-theme-gradients='false'] .studio-destructive-accent {
   --studio-selected-gradient: none;
   --studio-surface-sheen: none;
+  --studio-navigation-light: none;
 }
 :root[data-theme-glow='0'],
 :root[data-theme-glow='0'] .studio-destructive-accent {
@@ -194,16 +202,21 @@
   --studio-capsule-shadow: none;
 }
 
-/* Dense lists use painted highlights. Only temporary surfaces blur the backdrop. */
+/* Navigation blurs once per surface. Dense rows and their controls do not blur. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   :root {
     --studio-floating-fill: color-mix(in srgb, var(--popover) 84%, transparent);
+    --studio-navigation-fill: color-mix(in srgb, var(--sidebar) 76%, transparent);
+    --studio-navigation-filter: blur(28px) saturate(1.25);
   }
 }
 :root[data-high-contrast='true'] {
   --studio-surface-sheen: none;
   --studio-surface-rim: 0 0 0 transparent;
   --studio-floating-fill: var(--popover);
+  --studio-navigation-fill: var(--sidebar);
+  --studio-navigation-filter: none;
+  --studio-navigation-light: none;
   --studio-surface-filter: none;
   --studio-control-rim: none;
   --studio-inset-shadow: none;
@@ -214,6 +227,9 @@
     --studio-surface-sheen: none;
     --studio-surface-rim: 0 0 0 transparent;
     --studio-floating-fill: var(--popover);
+    --studio-navigation-fill: var(--sidebar);
+    --studio-navigation-filter: none;
+    --studio-navigation-light: none;
     --studio-surface-filter: none;
     --studio-control-rim: none;
     --studio-inset-shadow: none;
@@ -429,6 +445,11 @@
     [data-slot='switch'][data-state='checked']
   ) {
     box-shadow: var(--studio-control-rim), var(--studio-glow);
+  }
+  /* Light switches use a clean track and a raised thumb, without a second glass layer. */
+  :root[data-theme='light'] :where([data-slot='switch'], [data-slot='switch-thumb']) {
+    background-image: none;
+    box-shadow: none;
   }
   :root[data-theme-gradients='false'] :where([data-slot='button'][data-variant='default']) {
     background-image: none;

@@ -23,7 +23,6 @@ import {
   PanelRightOpen,
   PanelRightClose,
   PanelBottom,
-  Info,
 } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
@@ -136,7 +135,6 @@ export function TaskTools({
           {
             label: 'Thread workspace',
             tools: [
-              ['info', 'Thread info', Info, 0],
               ['files', 'Files', Files, 0],
               ['projects', 'Linked projects', FolderSymlink, 0],
               ...(hasArtifacts ? [['artifacts', 'Artifacts', Shapes, 0] as const] : []),

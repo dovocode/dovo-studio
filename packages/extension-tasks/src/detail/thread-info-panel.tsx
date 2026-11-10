@@ -50,16 +50,44 @@ export function TaskProjectPanelRoot({
   )
 }
 
-/** Thread context lives inside the same docked pane as Files and Changes. */
+/** Float context inside its conversation without resizing chat or the tools pane. */
 export function ThreadInfoPanel({ children, title }: { children: ReactNode; title?: string }) {
   const context = useThreadInfoContext()
+  const panel = useRef<HTMLElement>(null)
+  const [maxHeight, setMaxHeight] = useState(480)
+  const open = context?.open ?? true
+  useLayoutEffect(() => {
+    const frame = panel.current?.parentElement
+    if (!frame || !open) return
+    const composer = frame.querySelector<HTMLElement>('.studio-composer')
+    const measure = () => {
+      const rect = frame.getBoundingClientRect()
+      const bottom = Math.min(
+        rect.bottom - 16,
+        composer ? composer.getBoundingClientRect().top - 12 : Infinity,
+      )
+      setMaxHeight(Math.max(0, Math.min(480, bottom - rect.top - 16)))
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(frame)
+    if (composer) observer.observe(composer)
+    measure()
+    return () => observer.disconnect()
+  }, [open])
   return (
     <aside
+      ref={panel}
       id={context?.panelId}
-      hidden={context ? !context.open : undefined}
+      hidden={!open}
       aria-label="Thread info"
       aria-description={title}
-      className="studio-thread-info-panel flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none"
+      style={{
+        top: 16,
+        right: 16,
+        maxHeight,
+        maxWidth: 'calc(100% - 32px)',
+      }}
+      className="studio-thread-info-panel studio-menu-surface absolute z-30 flex w-96 min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border outline-none"
     >
       <header className="studio-thread-tools-header flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
         <h2 className="min-w-0 truncate text-sm font-semibold">Thread info</h2>

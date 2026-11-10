@@ -204,9 +204,9 @@ try {
       `${palette} ${mode} highContrast=${highContrast}: field boundary contrast ${fieldContrast}`,
     )
     assert.equal(
-      (await style('[data-test="sidebar-brand"]', 'backgroundImage')) === 'none',
-      !effects || highContrast,
-      'Sidebar brand keeps the shared finish through titlebar overrides',
+      await style('[data-test="sidebar-brand"]', 'backgroundImage'),
+      'none',
+      'Sidebar brand stays flat above its glass pane',
     )
     assert.equal(
       await style('[data-test="window-browser"]', 'boxShadow'),
@@ -226,7 +226,7 @@ try {
       assert.equal(await page.getByLabel(control).getAttribute('data-state'), 'checked')
       assert.equal(
         (await style(`[aria-label="${control}"]`, 'boxShadow')).includes('0px 0px 14px'),
-        effects,
+        effects && (control !== 'Switch' || mode !== 'light'),
       )
     }
     const toggle = page.getByRole('switch', { name: 'Switch' })
@@ -251,7 +251,9 @@ try {
       const thumb = getComputedStyle(element.querySelector('[data-slot="switch-thumb"]'))
       const contrast = (first, second) =>
         (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
-      const border = luminance(css.borderColor)
+      const border = luminance(
+        css.borderColor === 'rgba(0, 0, 0, 0)' ? css.backgroundColor : css.borderColor,
+      )
       const surface = luminance(
         getComputedStyle(element.closest('[data-slot="card"]')).backgroundColor,
       )

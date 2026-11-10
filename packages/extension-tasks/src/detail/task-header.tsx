@@ -46,7 +46,6 @@ export type TaskSurface =
   | 'pull-preview'
   | 'linked-pulls'
   | 'chat'
-  | 'info'
   | 'changes'
   | 'files'
   | 'terminal'
