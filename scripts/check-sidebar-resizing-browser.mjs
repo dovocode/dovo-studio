@@ -89,11 +89,11 @@ try {
       }
     })
     if (
-      style.radius !== (flat ? '0px' : '18px') ||
+      style.radius !== (flat ? '0px' : '14px') ||
       style.border !== (flat ? '0px' : '1px') ||
       style.inset !== (flat ? '0px' : '6px') ||
       style.clip !== 'hidden' ||
-      style.contentRadius !== (flat ? '0px' : '18px')
+      style.contentRadius !== (flat ? '0px' : '14px')
     )
       throw new Error(
         'Pane must share the linked-projects frame with clipped rounded content: ' +
