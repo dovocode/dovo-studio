@@ -89,6 +89,9 @@ use the known values on their first render. iOS Increase Contrast also enables t
 palette. Caller styles must not override the opaque fallback. Thread rows and scrolling content keep
 their existing solid surfaces.
 
+Mobile workspace modes share one rounded glass pill. Keep each target at least 44px. Unified stays
+available when separate modes are hidden. Tap it again to return to Threads.
+
 Collection and detail routes consume the remaining top safe area from their native screen. This
 protects fixed controls and notices under glass navigation bars. Do not add a second top inset in
 expanded previews. Collections also consume the native bottom inset while the keyboard is hidden.
