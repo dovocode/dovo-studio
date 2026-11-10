@@ -11,7 +11,7 @@ window.addEventListener('message',event=>{const m=event.data;
 if(m.type==='connect'){const ticket=JSON.parse(new URL(m.url).searchParams.get('ticket'));tab=ticket.tabId;url=ticket.url;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
 if(m.type==='fixture-favicon'){favicon=m.favicon;state()}
 if(m.type==='snapshot')window.parent.postMessage({channel:'dovo-browser',type:'snapshot',id:m.id,image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='},'*');
-if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
+if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:{...m.input,tabId:tab}},'*');if(m.input.type==='navigate')url=m.input.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
 if(m.type==='visibility')window.parent.postMessage({channel:'fixture',visibility:m.visible},'*');
 });</script></body></html>`
@@ -1934,6 +1934,35 @@ try {
     )
   await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   await page.locator('[data-browser-preview-background] img').waitFor()
+  const remoteOpenerAddress = await page
+    .locator('[data-browser-preview-background]')
+    .getAttribute('title')
+  assert.equal(
+    await url.inputValue(),
+    remoteOpenerAddress,
+    'Remote previews retain the opener address',
+  )
+  assert.equal(
+    await preview.getByLabel('Link preview URL', { exact: true }).inputValue(),
+    'http://localhost:3000/remote-preview',
+  )
+  await preview
+    .getByLabel('Link preview URL', { exact: true })
+    .fill('http://localhost:3000/remote-preview-edit')
+  await preview.getByLabel('Link preview URL', { exact: true }).press('Enter')
+  await page.waitForFunction(() =>
+    window.browserInputs.some(
+      (input) =>
+        input.type === 'navigate' &&
+        input.tabId === '00000000-0000-4000-8000-000000000999' &&
+        input.url === 'http://localhost:3000/remote-preview-edit',
+    ),
+  )
+  assert.equal(
+    await url.inputValue(),
+    remoteOpenerAddress,
+    'Editing the remote preview must not change the opener address',
+  )
   const remotePreviewFrame = preview
     .locator('iframe[title="Host browser"]')
     .filter({ visible: true })
@@ -2279,6 +2308,8 @@ try {
     'Changing profiles loads the current redirected URL',
   )
   const sourceBeforeOpen = await selected()
+  const originalAddressBar = await url.elementHandle()
+  const addressBarBounds = await url.boundingBox()
   assert.equal(
     await page
       .locator(`[data-browser-tab-id="${sourceBeforeOpen.id}"] .studio-browser-tab-profile`)
@@ -2294,9 +2325,29 @@ try {
   const background = page.locator('[data-browser-preview-background]')
   await background.locator('img').waitFor()
   await assertLiveFrame(background.locator('img'), liveKey)
-  assert(
-    (await background.textContent()).includes(sourceBeforeOpen.url),
-    'The opener remains visible beneath the link',
+  assert.equal(await background.getAttribute('title'), sourceBeforeOpen.url)
+  assert.equal(await page.getByRole('form', { name: 'Browser navigation', exact: true }).count(), 1)
+  const previewUrl = preview.getByLabel('Link preview URL', { exact: true })
+  assert.equal(await previewUrl.count(), 1)
+  assert.equal(
+    await url.evaluate((input, original) => input === original, originalAddressBar),
+    true,
+    'Opening a preview retains the original address input',
+  )
+  const previewAddressBounds = await url.boundingBox()
+  assert.equal(previewAddressBounds.x, addressBarBounds.x)
+  assert.equal(
+    previewAddressBounds.y,
+    addressBarBounds.y,
+    'The address bar stays in its original position',
+  )
+  assert.equal(
+    await url.inputValue(),
+    sourceBeforeOpen.url,
+    'The normal toolbar keeps the opener address',
+  )
+  await page.waitForFunction(() =>
+    document.querySelector('[aria-label="Link preview URL"]').value.includes('/new-window'),
   )
   const viewport = page.locator('[data-browser-viewport]')
   const assertContained = async () => {
@@ -2482,7 +2533,9 @@ try {
   await page.waitForFunction(() =>
     window.calls.some((call) => call.action === 'show' && call.key === 'native-link-preview'),
   )
-  const originalBackground = await page.locator('[data-browser-preview-background]').textContent()
+  const originalBackground = await page
+    .locator('[data-browser-preview-background]')
+    .getAttribute('title')
   await page.screenshot({ path: root + 'work/shared-browser/link-preview.png' })
   assert.equal(
     (await persisted()).tabs.some((tab) => tab.url.endsWith('/cmd-link')),
@@ -2502,7 +2555,7 @@ try {
     window.calls.some((call) => call.action === 'show' && call.key === 'native-nested-preview'),
   )
   assert.equal(
-    await page.locator('[data-browser-preview-background]').textContent(),
+    await page.locator('[data-browser-preview-background]').getAttribute('title'),
     originalBackground,
     'Nested previews retain the original source',
   )
@@ -2553,8 +2606,109 @@ try {
         call.url.endsWith('/deferred-preview'),
     ),
   )
+  await previewUrl.fill('http://localhost:3000/edited-preview')
+  await previewUrl.press('Enter')
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) =>
+        call.action === 'show' &&
+        call.key === 'native-deferred-preview' &&
+        call.url === 'http://localhost:3000/edited-preview',
+    ),
+  )
+  assert(await preview.isVisible(), 'The preview address bar navigates the existing preview')
+  assert.notEqual(
+    await url.inputValue(),
+    await previewUrl.inputValue(),
+    'The opener address stays separate',
+  )
   await preview.getByRole('button', { name: 'Close preview', exact: true }).click()
   await preview.waitFor({ state: 'hidden' })
+  const retainedOpenerKey = await page.evaluate(
+    () => window.calls.filter((call) => call.action === 'show').at(-1).key,
+  )
+  const openerDraft = 'http://localhost:3000/opener-draft'
+  await url.fill(openerDraft)
+  await page.evaluate(async (openerKey) => {
+    window.createdTabs.push({
+      key: 'toolbar-return-preview',
+      url: 'http://localhost:3000/toolbar-return',
+      profileId: 'local-work',
+      openerKey,
+    })
+    await window.pollBrowser()
+  }, retainedOpenerKey)
+  await previewUrl.waitFor({ state: 'visible' })
+  assert.equal(await url.inputValue(), openerDraft, 'Opening a preview keeps the opener draft')
+  await preview.getByRole('button', { name: 'Close preview', exact: true }).click()
+  await preview.waitFor({ state: 'hidden' })
+  // Let a real page-status update run after close; it must not erase the restored draft.
+  await page.evaluate(async () => {
+    await window.pollBrowser()
+  })
+  assert.equal(await url.inputValue(), openerDraft, 'Closing and polling preserve the opener draft')
+  await page.evaluate(async (openerKey) => {
+    window.createdTabs.push({
+      key: 'toolbar-focus-preview',
+      url: 'http://localhost:3000/toolbar-focus',
+      profileId: 'local-work',
+      openerKey,
+    })
+    await window.pollBrowser()
+  }, retainedOpenerKey)
+  await previewUrl.waitFor({ state: 'visible' })
+  await previewUrl.focus()
+  await url.focus()
+  await preview.waitFor({ state: 'hidden' })
+  assert.equal(await url.inputValue(), openerDraft, 'Returning through the toolbar keeps the draft')
+  await url.press('Enter')
+  await page.waitForFunction(
+    (key) =>
+      window.calls.some(
+        (call) =>
+          call.action === 'show' &&
+          call.key === key &&
+          call.url === 'http://localhost:3000/opener-draft',
+      ),
+    retainedOpenerKey,
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) =>
+          call.action === 'show' &&
+          ['toolbar-return-preview', 'toolbar-focus-preview'].includes(call.key) &&
+          call.url === 'http://localhost:3000/opener-draft',
+      ),
+    ),
+    false,
+    'The opener toolbar must never navigate the preview',
+  )
+  await page.evaluate(async (openerKey) => {
+    window.createdTabs.push({
+      key: 'toolbar-reload-preview',
+      url: 'http://localhost:3000/toolbar-reload',
+      profileId: 'local-work',
+      openerKey,
+    })
+    await window.pollBrowser()
+  }, retainedOpenerKey)
+  await previewUrl.waitFor({ state: 'visible' })
+  const reloadsBeforeReturn = await page.evaluate(
+    () => window.calls.filter((call) => call.action === 'reload').length,
+  )
+  await page
+    .getByRole('form', { name: 'Browser navigation', exact: true })
+    .getByRole('button', { name: 'Reload', exact: true })
+    .click()
+  await preview.waitFor({ state: 'hidden' })
+  await page.waitForFunction(
+    ({ key, previous }) => {
+      const reloads = window.calls.filter((call) => call.action === 'reload')
+      return reloads.length > previous && reloads.at(-1).key === key
+    },
+    { key: retainedOpenerKey, previous: reloadsBeforeReturn },
+  )
   // Extension-created pages retain native identity/profile instead of opening a second view.
   await page.evaluate(async () => {
     window.createdTabs.push({

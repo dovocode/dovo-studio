@@ -229,17 +229,18 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
       {value && (
         <>
           {show('tasks') && (
-            <Section title="Prompt suggestions" advanced searchLabels={['Suggest next prompt']}>
+            <Section title="Prompt suggestions">
               <SettingsSwitchRow
                 first
-                label="Suggest next prompt"
+                label="Tab completion"
                 value={value.suggestNextPrompt}
                 disabled={disabled || snapshot?.promptSuggestionsEnabled === undefined}
                 onValueChange={(suggestNextPrompt) => save({ suggestNextPrompt })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Suggest an editable next message after Claude or Codex turns. Each suggestion makes
-                an extra model request and uses plan usage.
+                Suggest a next prompt after a Claude or Codex turn. Tap the suggestion to insert it
+                without sending. On desktop, press Tab to insert it or Escape to dismiss it. Each
+                suggestion makes an extra model request and uses plan usage.
               </Text>
             </Section>
           )}

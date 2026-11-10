@@ -74,7 +74,9 @@ export function BrowserAddressInput({
   onEditing,
   search,
   onNavigate,
+  label = 'Preview URL',
 }: {
+  label?: string
   value: string
   onChange: (value: string) => void
   inputRef: RefObject<HTMLInputElement | null>
@@ -164,7 +166,7 @@ export function BrowserAddressInput({
         aria-expanded={shared ? shown : undefined}
         aria-controls={shown ? id : undefined}
         aria-activedescendant={shown && (active >= 0 || intent) ? `${id}-${active}` : undefined}
-        aria-label="Preview URL"
+        aria-label={label}
         disabled={disabled}
         value={value}
         onFocus={(event) => {

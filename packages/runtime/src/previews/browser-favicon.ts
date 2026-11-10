@@ -1,6 +1,7 @@
 import type { CDPSession } from 'playwright'
 
 const maxBytes = 1024 * 1024
+const iconSize = 128
 export type FaviconFetch = (url: string, signal: AbortSignal) => Promise<Response>
 
 /** Decode on the owner, including ICO/SVG, so viewers receive only small inert PNGs. */
@@ -9,13 +10,18 @@ async function thumbnail(bytes: Uint8Array) {
   if (source[0] === 0 && source[1] === 0 && source[2] === 1 && source[3] === 0) {
     const { decodeIco } = await import('icojs')
     const images = await decodeIco(source, 'image/png')
-    const image = images.sort((a, b) => Math.abs(a.width - 32) - Math.abs(b.width - 32))[0]
+    const image = images.sort((a, b) => b.width - a.width)[0]
     if (!image) throw new Error('Empty icon')
     source = Buffer.from(image.buffer)
   }
   const { default: sharp } = await import('sharp')
-  const png = await sharp(source, { limitInputPixels: 4 * 1024 * 1024 })
-    .resize(32, 32, { fit: 'contain', background: '#00000000' })
+  const image = sharp(source, { limitInputPixels: 4 * 1024 * 1024 })
+  const { format } = await image.metadata()
+  const png = await image
+    .resize(iconSize, iconSize, {
+      fit: 'inside',
+      withoutEnlargement: format !== 'svg',
+    })
     .png()
     .toBuffer()
   return `data:image/png;base64,${png.toString('base64')}`
@@ -216,27 +222,48 @@ export async function fetchRemoteFavicon(
   })
 }
 
-/** Runs in each remote main document; observes SPA badge icons, base URLs and theme changes. */
-export function observeBrowserFavicons() {
+/** Runs in each main document; observes SPA badge icons, base URLs and theme changes. */
+export function observeBrowserFavicons(
+  report?: ((update: { documentId: string; url: string; icons: string[] }) => void) | void,
+) {
   const documentId = `${Date.now()}:${Math.random()}`
   let previous = ''
   let pending = false
   const publish = () => {
     pending = false
+    const size = (link: HTMLLinkElement) => {
+      if (link.type.toLowerCase() === 'image/svg+xml') return Infinity
+      return Math.max(
+        0,
+        ...link.sizes.value
+          .toLowerCase()
+          .split(/\s+/)
+          .map((value) => {
+            if (value === 'any') return Infinity
+            const match = /^(\d+)x(\d+)$/.exec(value)
+            return match ? Math.min(Number(match[1]), Number(match[2])) : 0
+          }),
+      )
+    }
     const icons = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel]'))
       .filter(
         (link) =>
-          /^(?:icon|shortcut icon|apple-touch-icon)$/i.test(link.rel.trim()) &&
+          link.rel
+            .toLowerCase()
+            .split(/\s+/)
+            .some((rel) =>
+              ['icon', 'apple-touch-icon', 'apple-touch-icon-precomposed'].includes(rel),
+            ) &&
           (!link.media || matchMedia(link.media).matches),
       )
-      .sort((a, b) => Number(a.rel.startsWith('apple')) - Number(b.rel.startsWith('apple')))
+      .sort((a, b) => size(b) - size(a))
       .map((link) => link.href)
       .filter(Boolean)
       .slice(0, 8)
     const value = JSON.stringify([location.href, icons])
     if (value === previous) return
     previous = value
-    const binding: unknown = Reflect.get(window, '__dovoBrowserFavicon')
+    const binding: unknown = report ?? Reflect.get(window, '__dovoBrowserFavicon')
     if (typeof binding === 'function') void binding({ documentId, url: location.href, icons })
   }
   new MutationObserver(() => {

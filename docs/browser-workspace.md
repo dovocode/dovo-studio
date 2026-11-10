@@ -145,7 +145,11 @@ tabs are throttled but retain their in-memory page and sign-in data until explic
 Links opened as temporary previews retain the original opener beneath them. **Expand preview** and
 **Contract preview** change the same live preview's size. Clicking the visible opener dismisses the
 preview chain and returns to that retained page; **Close preview** returns to the immediate opener.
-**Keep as tab** retains the preview as a normal tab without creating another session.
+**Keep as tab** retains the preview as a normal tab without creating another session. On desktop and
+web, the normal address bar keeps the opener's address while a preview is open. The floating preview
+has its own address bar. Select the normal toolbar to return to the opener before using its
+controls. Each toolbar controls its own page. Closing a preview also restores the opener's address
+draft.
 
 ## Link routing
 
@@ -375,6 +379,25 @@ verification commands.
 Selecting a tab preserves its position; navigating moves it to the top of the recent list. Desktop
 tabs, bookmarks and history show favicons when available, with a globe fallback. Remote localhost
 icons are never fetched from the local computer.
+
+Desktop and paired-runtime pages use declared regular icons, Apple touch icons and precomposed Apple
+touch icons. Larger declared sizes take priority; SVG and `sizes="any"` icons take first priority.
+The owner decodes the image to PNG at up to 128 × 128 pixels. Smaller raster images keep their size.
+ICO files use their largest image. Icon requests use the page's browser profile. The 1 MiB download
+limit and the 100,000-character viewer limit still apply.
+
+To check icon loading and the desktop preview layout, run:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/runtime... -r build
+pnpm test:browser-favicons:browser
+pnpm test:browser-tabs:browser
+```
+
+The native icon check runs with `node apps/desktop/scripts/check-browser-extensions-native.mjs`. It
+needs Electron's Chromium sandbox and a display or Xvfb. The managed Chromium check verifies remote
+icon discovery. It does not verify Electron's preload or physical mobile devices.
 
 Detached Browser windows contain Browser controls only. Page and selection actions create or append
 an unsent draft, preserving existing draft text. In the main window, workspace synchronization does

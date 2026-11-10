@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
+import { createRequire } from 'node:module'
 import { RemoteBrowsers } from '../packages/runtime/dist/previews/browser.js'
+
+const requireRuntime = createRequire(new URL('../packages/runtime/package.json', import.meta.url))
+const sharp = requireRuntime('sharp')
 
 const svg = (color) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${color}"/></svg>`
@@ -84,8 +88,54 @@ try {
     `document.querySelectorAll('link[rel="icon"]').forEach(link=>link.remove())`,
   )
   await waitFor('work', (state) => state?.favicon === null)
+
+  // Discover Apple icons, tokenized relations and large icons even after many small candidates.
+  const candidates = [
+    ...Array.from({ length: 9 }, () => ({ rel: 'icon', sizes: '16x16', color: 'red' })),
+    { rel: 'APPLE-TOUCH-ICON-PRECOMPOSED', sizes: '180x180', color: 'purple' },
+    { rel: 'shortcut ICON', sizes: '256x256', color: 'orange' },
+    { rel: 'apple-touch-icon', sizes: '512x512', color: 'blue', media: '(max-width: 1px)' },
+  ]
+  await evaluate(
+    'work',
+    `for (const candidate of ${JSON.stringify(candidates)}) {
+    const link = document.createElement('link');
+    Object.assign(link, candidate, { href: 'data:image/svg+xml,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="' + candidate.color + '"/></svg>'
+    ) }); document.head.append(link);
+  }`,
+  )
+  const largeIcon = (await waitFor('work', (state) => typeof state?.favicon === 'string')).favicon
+  const decoded = sharp(Buffer.from(largeIcon.split(',')[1], 'base64'))
+  assert.deepEqual(
+    await decoded.metadata().then(({ width, height }) => [width, height]),
+    [128, 128],
+  )
+  assert.deepEqual([...(await decoded.raw().toBuffer()).subarray(0, 4)], [255, 165, 0, 255])
+  await evaluate(
+    'work',
+    `document.querySelectorAll('link').forEach(link => {
+    if (!link.rel.toLowerCase().includes('apple')) link.remove();
+  })`,
+  )
+  const appleIcon = (
+    await waitFor(
+      'work',
+      (state) => typeof state?.favicon === 'string' && state.favicon !== largeIcon,
+    )
+  ).favicon
+  assert.deepEqual(
+    [
+      ...(
+        await sharp(Buffer.from(appleIcon.split(',')[1], 'base64'))
+          .raw()
+          .toBuffer()
+      ).subarray(0, 4),
+    ],
+    [128, 0, 128, 255],
+  )
   console.log(
-    'Remote favicons passed: profile cookies, broken candidates, inline SVG, blob icons, dynamic updates, reload and missing-icon fallback.',
+    'Remote favicons passed: profile cookies, fallback, SVG, blob icons, dynamic updates, reload, high resolution and Apple touch icons.',
   )
 } finally {
   for (const detach of listeners) detach()

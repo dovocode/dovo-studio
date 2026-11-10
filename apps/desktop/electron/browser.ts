@@ -18,6 +18,7 @@ import {
   dismissDocumentPipWindow,
 } from './browser-document-pip.js'
 import { loadBrowserFaviconModule } from './browser-favicon.js'
+import { createNativeFaviconObserver } from './browser-favicon-observer.js'
 import {
   selectedBrowserText,
   readBrowserElementSnapshot,
@@ -60,7 +61,7 @@ import {
 import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
-const { createBrowserFaviconLoader } = loadBrowserFaviconModule(
+const { createBrowserFaviconLoader, observeBrowserFavicons } = loadBrowserFaviconModule(
   app.isPackaged ? process.resourcesPath : undefined,
 )
 
@@ -293,6 +294,7 @@ export function registerBrowser(
       })
     })
   const sessionCookies = createBrowserSessionCookies()
+  const faviconObserver = createNativeFaviconObserver(observeBrowserFavicons)
   const routingSessions = new Set<Electron.Session>()
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
@@ -957,6 +959,7 @@ export function registerBrowser(
         .catch((error: unknown) => console.error('Could not apply website customization', error))
     })
     let faviconCandidates: string[] = []
+    let declaredFavicons: readonly string[] | undefined
     let navigationRevision = 0
     const faviconLoader = createBrowserFaviconLoader(
       (url, signal) => view.webContents.session.fetch(url, { signal, credentials: 'include' }),
@@ -975,14 +978,19 @@ export function registerBrowser(
       navigationRevision++
       faviconLoader.reset()
       faviconCandidates = []
+      declaredFavicons = undefined
       created.favicon = undefined
     })
     view.webContents.on('page-favicon-updated', (_event, icons) => {
       faviconCandidates = icons
-      void faviconLoader.load(view.webContents.getURL(), icons)
+      void faviconLoader.load(view.webContents.getURL(), declaredFavicons ?? icons)
+    })
+    faviconObserver.attach(view.webContents, (url, icons) => {
+      declaredFavicons = icons
+      void faviconLoader.load(url, icons)
     })
     view.webContents.on('did-finish-load', () => {
-      void faviconLoader.load(view.webContents.getURL(), faviconCandidates)
+      void faviconLoader.load(view.webContents.getURL(), declaredFavicons ?? faviconCandidates)
       void renderBrowserJson(view.webContents)
         .catch((error: unknown) => {
           if (!view.webContents.isDestroyed()) console.error('Could not format browser JSON', error)
@@ -2581,6 +2589,7 @@ export function registerBrowser(
     dispose: async () => {
       disposed = true
       visibility.dispose()
+      faviconObserver.dispose()
       for (const browserSession of routingSessions) browserSession.webRequest.onBeforeRequest(null)
       routingSessions.clear()
       awakeRequests.clear()

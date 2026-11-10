@@ -25,10 +25,43 @@ it('tries broken candidates and root fallback, decoding real bytes despite missi
   const icon = publish.mock.calls[0]![0]!
   expect(icon).toMatch(/^data:image\/png;base64,/)
   expect(await sharp(Buffer.from(icon.split(',')[1]!, 'base64')).metadata()).toMatchObject({
-    width: 32,
-    height: 32,
+    width: 64,
+    height: 64,
     format: 'png',
   })
+})
+
+it('keeps high-resolution detail within the viewer limit and selects the largest ICO image', async () => {
+  const large = await sharp({
+    create: { width: 256, height: 256, channels: 4, background: '#2070e0' },
+  })
+    .png()
+    .toBuffer()
+  const small = await png()
+  const ico = Buffer.alloc(38 + small.length + large.length)
+  ico.writeUInt16LE(1, 2)
+  ico.writeUInt16LE(2, 4)
+  for (const [index, bytes, dimension, offset] of [
+    [0, small, 64, 38],
+    [1, large, 0, 38 + small.length],
+  ] as const) {
+    const entry = 6 + index * 16
+    ico[entry] = dimension
+    ico[entry + 1] = dimension
+    ico.writeUInt16LE(1, entry + 4)
+    ico.writeUInt16LE(32, entry + 6)
+    ico.writeUInt32LE(bytes.length, entry + 8)
+    ico.writeUInt32LE(offset, entry + 12)
+    bytes.copy(ico, offset)
+  }
+  const publish = vi.fn<(icon: string | null) => void>()
+  const fetchIcon = vi.fn<FaviconFetch>().mockResolvedValueOnce(new Response(ico))
+  await createBrowserFaviconLoader(fetchIcon, publish).load('https://example.com', ['/icon.ico'])
+  const icon = publish.mock.calls[0]![0]!
+  expect(icon.length).toBeLessThan(100_000)
+  const image = sharp(Buffer.from(icon.split(',')[1]!, 'base64'))
+  expect(await image.metadata()).toMatchObject({ width: 128, height: 128 })
+  expect((await image.raw().toBuffer()).subarray(0, 4)).toEqual(Buffer.from([32, 112, 224, 255]))
 })
 
 it('loads inline SVG and ICO and rasterizes them before passing them to viewers', async () => {
@@ -43,6 +76,11 @@ it('loads inline SVG and ICO and rasterizes them before passing them to viewers'
   ])
   expect(fetchIcon).not.toHaveBeenCalled()
   expect(publish).toHaveBeenLastCalledWith(expect.stringMatching(/^data:image\/png;base64,/))
+  const vector = publish.mock.calls[0]![0]!
+  expect(await sharp(Buffer.from(vector.split(',')[1]!, 'base64')).metadata()).toMatchObject({
+    width: 128,
+    height: 128,
+  })
   const image = await png()
   const ico = Buffer.alloc(22 + image.length)
   ico.writeUInt16LE(1, 2)

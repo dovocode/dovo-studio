@@ -2730,6 +2730,31 @@ it('captures a bounded website favicon and exposes it in native status', async (
   )
 })
 
+it('uses main-document icon discovery ahead of Chromium favicon events and ignores stale or child-frame updates', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const update = mocks.contents.ipc.on.mock.calls.find(([name]) => name === 'browser:favicon')?.[1]
+  if (typeof update !== 'function') throw new Error('Missing favicon observer')
+  const icon =
+    'data:image/svg+xml,' +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><rect width="180" height="180" fill="blue"/></svg>',
+    )
+  const value = { documentId: 'page-1', url: 'https://example.com/', icons: [icon] }
+  update({ senderFrame: {} }, value)
+  update({ senderFrame: mocks.contents.mainFrame }, { ...value, url: 'https://old.example/' })
+  update({ senderFrame: mocks.contents.mainFrame }, { ...value, icons: Array(9).fill(icon) })
+  expect(mocks.contents.session.fetch).not.toHaveBeenCalled()
+  update({ senderFrame: mocks.contents.mainFrame }, value)
+  await vi.waitFor(async () =>
+    expect(await call(event, { action: 'status', key: 'shared' })).toMatchObject({
+      favicon: expect.stringMatching(/^data:image\/png;base64,/),
+    }),
+  )
+  listener('page-favicon-updated')?.({}, ['https://example.com/small.png'])
+  expect(mocks.contents.session.fetch).not.toHaveBeenCalled()
+})
+
 it('raises the selected native view and returns input focus on a deliberate page click', async () => {
   const call = handler()
   await call(event, { ...workspaceShow, key: 'login' })

@@ -145,13 +145,13 @@ export function RunningTaskPreferences({
         showSaveInfo={showSaveInfo}
       />
       {children}
-      <SettingsGroup advanced title="Prompt suggestions">
+      <SettingsGroup title="Prompt suggestions">
         <SettingRow
-          label="Suggest next prompt"
-          description="After a Claude or Codex turn, suggest an editable next message. Each suggestion makes an extra model request and uses plan usage."
+          label="Tab completion"
+          description="Suggest a next prompt after a Claude or Codex turn. Press Tab to insert it without sending, or Escape to dismiss it. Each suggestion makes an extra model request and uses plan usage."
         >
           <Toggle
-            label="Suggest next prompt"
+            label="Tab completion"
             checked={value?.suggestNextPrompt ?? false}
             disabled={disabled || snapshot?.promptSuggestionsEnabled === undefined}
             onChange={(suggestNextPrompt) => save({ suggestNextPrompt })}

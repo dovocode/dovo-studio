@@ -75,6 +75,7 @@ export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> =
     'Days in Settled before archiving',
   ],
   '/settings/task-behavior': [
+    'Tab completion',
     'Continue interrupted turns after runtime restart',
     'Auto-archive inactive tasks',
     'Keep this computer awake while tasks run',

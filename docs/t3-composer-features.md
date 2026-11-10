@@ -100,7 +100,9 @@ workspace state and Dovo activity records. This adapts
 
 ## Next-prompt suggestions
 
-Enable **Suggest next prompt** in the computer's runtime preferences. It is off by default. A
+Enable **Tab completion** in **Settings → Running threads → Prompt suggestions**. On mobile, open
+**Running tasks** for the selected computer. Search settings for **Tab completion** to find the
+switch. It is off by default and applies to the selected computer across its paired devices. A
 completed Claude or Codex human turn can produce one suggestion when the composer is empty. Queued,
 running, delegated, automated and archived threads do not request suggestions. Settled threads can
 request them. This makes an extra model request and can consume tokens.
