@@ -46,6 +46,10 @@ try {
       '../../../ui/content/text': native,
       '../../ui/controls/action': native,
       '../../ui/controls/field': native,
+      '../screens/settings-controls': `${native}
+        export const SettingsField=Field;
+        export const SettingsChoice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;
+      `,
       '../../../ui/controls/icon': native,
       '../../ui/theme': native,
       '../../../ui/theme': native,
