@@ -526,7 +526,7 @@ const productionRoot=createRoot(document.getElementById('app'));let instance=0;w
             { filter: /^@dovo\/studio-core(?:\/state)?$|^@dovo\/studio-ui$/ },
             (args) => ({ path: args.path, namespace: 'production' }),
           )
-          builder.onResolve({ filter: /^\.\./ }, (args) =>
+          builder.onResolve({ filter: /^\.\.?\// }, (args) =>
             args.importer.endsWith('/detail/task-conversation.tsx') &&
             !['../chat/artifact-open-context', '../chat/conversation-visibility'].includes(
               args.path,
@@ -572,6 +572,8 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
                 'review-findings': 'ReviewFindings',
                 'code-review-card': 'CodeReviewCard',
                 'task-pull-link-dialog': 'TaskPullLinkDialog',
+                // Pipeline progress has a separate cross-client watcher suite.
+                'task-pipeline-progress': 'TaskPipelineProgress',
               }
               const name = names[args.path.split('/').at(-1)]
               if (!name) throw new Error(`Missing production fixture module ${args.path}`)
