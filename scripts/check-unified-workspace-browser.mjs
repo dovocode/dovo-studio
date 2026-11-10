@@ -69,8 +69,8 @@ const read=useCallback(async(profile,path,input)=>{
  if(path==='/api/agents/models/cached')return null;
  if(path==='/api/terminals/shells'){if(window.shellError)throw Error(window.shellError);if(window.delayShellOwner===profile.id)await new Promise(resolve=>window.finishShells=resolve);return {shells:[{id:'default',label:'Default ('+profile.id+')',path:'/bin/bash',args:['-l']},{id:profile.id==='local'?'bash':'fish',label:profile.id==='local'?'Bash':'Fish',path:profile.id==='local'?'/bin/bash':'/usr/bin/fish',args:['-l']}]}}
  if(path==='/api/scm/branches')return {branches:[{ref:'refs/heads/main',name:'main',remote:false,checkedOut:true},{ref:'refs/heads/feature',name:'feature',remote:false,checkedOut:false}],current:'main',revision:'fixture'};
- if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/project/existing',branch:'feature',dirty:true}]};
- if(path==='/api/terminals/workspace'){const id=profile.id+'-created-'+window.calls.length;const session={id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId,shellId:input.shellId,directory:input.existingWorktreePath??(input.repositoryId?'/project':'/home/'+profile.id)};const publish=()=>{owner.snapshot.terminals.push(session);window.refresh()};if(window.delayTerminalSnapshot)window.publishTerminalSnapshot=publish;else publish();return {id}}
+ if(path==='/api/scm/worktrees/choices'){if(window.checkoutError)throw Error(window.checkoutError);return {worktrees:[{path:'/project/existing',branch:'feature',dirty:true}]}};
+ if(path==='/api/terminals/workspace'){if(window.terminalError)throw Error(window.terminalError);const id=profile.id+'-created-'+window.calls.length;const session={id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId,shellId:input.shellId,directory:input.existingWorktreePath??(input.repositoryId?'/project':'/home/'+profile.id)};const publish=()=>{owner.snapshot.terminals.push(session);window.refresh()};if(window.delayTerminalSnapshot)window.publishTerminalSnapshot=publish;else publish();if(window.delayTerminalResponse)await new Promise(resolve=>window.finishTerminalResponse=resolve);return {id}}
  if(path==='/api/terminals/update'){if(window.terminalUpdateError)throw Error(window.terminalUpdateError);const session=owner.snapshot.terminals.find(item=>item.id===input.id);if(input.pinned!==undefined)session.pinned=input.pinned;if(input.settled!==undefined){session.settledAt=input.settled?new Date().toISOString():undefined;session.snoozedUntil=undefined}if(input.snoozedUntil!==undefined){session.snoozedUntil=input.snoozedUntil??undefined;if(input.snoozedUntil)session.settledAt=undefined}window.refresh();return {...session}}
  if(path==='/api/workspace'){let task=owner.snapshot.workspace.tasks.find(item=>item.id===input.id);if(!task&&input.create){task=input.create;owner.snapshot.workspace.tasks.push(task)}for(const [key,value] of Object.entries(input.changes))task[key]=value.after;window.refresh();if(window.delayCreate&&input.create)await new Promise(resolve=>window.finishCreate=resolve);return {applied:true,outcome:'applied',conflicts:[]}}
  return {ok:true};
@@ -529,10 +529,52 @@ try {
     }
   }
   assert.equal(await pinnedSection.getByRole('button', { name: /More|ellipsis/i }).count(), 0)
+  for (const row of await workspaceRows
+    .filter({ has: page.locator('[data-workspace-kind-icon]') })
+    .all()) {
+    const icon = row.locator('[data-workspace-kind-icon]')
+    assert.equal(await icon.count(), 1, 'Each mixed row has one type icon')
+    assert.equal(
+      await icon.evaluate((element) =>
+        element.parentElement.classList.contains('studio-thread-card-title'),
+      ),
+      true,
+      'The type icon belongs to the title rather than floating over the row',
+    )
+  }
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     const css = await vite.transformRequest('/packages/studio-ui/src/styles.css?direct')
     assert.ok(css, 'Compile the current shared stylesheet for visual checks')
     await page.addStyleTag({ content: css.code })
+    const checkTypeIconAlignment = async () => {
+      for (const row of await workspaceRows
+        .filter({ has: page.locator('[data-workspace-kind-icon]') })
+        .all()) {
+        const geometry = await row.locator('[data-workspace-kind-icon]').evaluate((icon) => {
+          const text = icon.nextElementSibling.getBoundingClientRect()
+          const box = icon.getBoundingClientRect()
+          const style = getComputedStyle(icon)
+          return {
+            center: box.y + box.height / 2 - text.y - text.height / 2,
+            gap: text.x - box.right,
+            width: box.width,
+            position: style.position,
+            background: style.backgroundColor,
+            shadow: style.boxShadow,
+          }
+        })
+        assert.ok(Math.abs(geometry.center) <= 1, 'Type icons align with the title')
+        assert.ok(
+          geometry.gap >= 4 && geometry.gap <= 8,
+          'Type icons have a consistent gap from the title',
+        )
+        assert.equal(geometry.width, 14)
+        assert.equal(geometry.position, 'static')
+        assert.equal(geometry.background, 'rgba(0, 0, 0, 0)')
+        assert.equal(geometry.shadow, 'none')
+      }
+    }
+    await checkTypeIconAlignment()
     const unifiedPinGeometry = () =>
       pinnedPages.evaluateAll((rows) =>
         rows.map((row) => {
@@ -604,14 +646,22 @@ try {
       .first()
       .getByRole('img', { name: 'Audio playing in Docs', exact: true })
       .waitFor({ state: 'hidden' })
-    assert.deepEqual(
-      await pinnedPages
-        .first()
-        .getByRole('img', { name: 'Microphone on in Docs', exact: true })
-        .boundingBox(),
-      microphonePosition,
-      'Unified media indicators own stable positions',
+    const microphoneOnly = await pinnedPages
+      .first()
+      .getByRole('img', { name: 'Microphone on in Docs', exact: true })
+      .boundingBox()
+    const microphoneTile = await pinnedPages.first().boundingBox()
+    assert.equal(microphoneOnly.width, microphonePosition.width)
+    assert.equal(microphoneOnly.height, microphonePosition.height)
+    assert.ok(
+      microphoneOnly.x >= microphoneTile.x &&
+        microphoneOnly.x + microphoneOnly.width <= microphoneTile.x + microphoneTile.width &&
+        microphoneOnly.y >= microphoneTile.y &&
+        microphoneOnly.y + microphoneOnly.height <= microphoneTile.y + microphoneTile.height,
+      'Wrapping media indicators stay inside their tile without reserving empty slots',
     )
+    assert.deepEqual(await unifiedPinGeometry(), idleUnifiedPins)
+    await assertCenteredFavicons()
     await page.evaluate(() => window.setBrowserActivity({}))
     await pinnedPages
       .first()
@@ -1367,14 +1417,36 @@ try {
   await page.getByRole('button', { name: 'All', exact: true }).click()
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
-  await page.getByRole('dialog').waitFor()
+  await page.locator('[data-terminal-starter]:visible').waitFor()
+  assert.equal(await page.getByRole('dialog').count(), 0, 'Terminal creation stays inline')
   await assertComposerInteractions('New workspace terminal', 'Startup command', 'Terminal shell')
+  await page.getByLabel('Startup command', { exact: true }).fill('printf retained-inline-draft')
+  await page.getByRole('button', { name: 'Return to workspace', exact: true }).click()
+  assert.equal(
+    await workspaceInput.inputValue(),
+    '',
+    'The workspace draft stays separate from the terminal draft',
+  )
+  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+  assert.equal(
+    await page.getByLabel('Startup command', { exact: true }).inputValue(),
+    'printf retained-inline-draft',
+  )
+  assert.equal(
+    await page
+      .getByLabel('Startup command', { exact: true })
+      .evaluate((node) => node === document.activeElement),
+    true,
+    'Returning to a terminal draft focuses its editor',
+  )
+  await page.getByLabel('Startup command', { exact: true }).fill('')
+
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     await assertComposerDesign('New workspace terminal')
     await page.screenshot({ path: '/tmp/dovo-terminal-starter-dialog.png', animations: 'disabled' })
   }
-  await page.keyboard.press('Escape')
-  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Return to workspace', exact: true }).click()
+  await page.locator('[data-terminal-starter]:visible').waitFor({ state: 'hidden' })
   assert.equal(
     await page.evaluate(
       () => window.calls.filter((call) => call.path === '/api/terminals/workspace').length,
@@ -1963,6 +2035,59 @@ try {
     'fish',
   )
   await assertComposerHidden('terminal')
+  const lastUnifiedCreate = () =>
+    page.evaluate(() =>
+      window.calls.filter((call) => call.path === '/api/terminals/workspace').at(-1),
+    )
+  await returnHome()
+  await page.getByLabel('Workspace destination').selectOption('terminal')
+  await page.getByLabel('Workspace input project').selectOption('project')
+  await page.evaluate(() => {
+    window.checkoutError = 'Checkout catalog unavailable'
+  })
+  await page.getByLabel('Terminal checkout', { exact: true }).selectOption('existing')
+  await page.getByRole('alert').filter({ hasText: 'Checkout catalog unavailable' }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Open terminal', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.checkoutError = undefined
+  })
+  await page.getByRole('button', { name: 'Retry checkout choices', exact: true }).click()
+  await page.getByLabel('Terminal existing worktree').selectOption('/project/existing')
+  await page.getByLabel('Workspace request').fill('  printf existing-checkout  ')
+  await page.getByRole('button', { name: 'Run command', exact: true }).click()
+  await assertComposerHidden('terminal')
+  assert.deepEqual(await lastUnifiedCreate(), {
+    path: '/api/terminals/workspace',
+    owner: 'remote',
+    input: {
+      repositoryId: 'project',
+      command: '  printf existing-checkout  ',
+      shellId: 'fish',
+      execution: 'worktree',
+      existingWorktreePath: '/project/existing',
+      rememberSession: true,
+    },
+  })
+  await returnHome()
+  await page.getByLabel('Workspace destination').selectOption('terminal')
+  await page.getByLabel('Terminal checkout', { exact: true }).selectOption('worktree')
+  await page.getByLabel('Terminal base branch').selectOption('refs/heads/feature')
+  await page.getByRole('button', { name: 'Open terminal', exact: true }).click()
+  await assertComposerHidden('terminal')
+  assert.deepEqual(
+    (await lastUnifiedCreate()).input,
+    {
+      repositoryId: 'project',
+      shellId: 'fish',
+      execution: 'worktree',
+      worktreeBaseBranch: 'refs/heads/feature',
+      rememberSession: true,
+    },
+    'Explicit Terminal mode can open an empty shell in a new worktree',
+  )
   await returnHome()
   await page.getByLabel('Workspace request').fill('Continue this work')
   await page.getByLabel('Workspace destination').selectOption('thread')
@@ -1975,7 +2100,7 @@ try {
     'Continue this work',
   )
   await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
-  await page.getByRole('dialog').waitFor()
+  await page.locator('[data-terminal-starter]:visible').waitFor()
   await page.getByLabel('Terminal computer', { exact: true }).selectOption('local')
   await page.getByLabel('Terminal working directory').selectOption('project')
   await page.getByLabel('Terminal shell', { exact: true }).selectOption('bash')
@@ -2006,14 +2131,14 @@ try {
   )
   const openStarter = async () => {
     await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
-    await page.getByRole('dialog').waitFor()
+    await page.locator('[data-terminal-starter]:visible').waitFor()
   }
   const launchStarter = async () => {
     await page
-      .getByRole('dialog')
+      .locator('[data-terminal-starter]:visible')
       .getByRole('button', { name: 'Open terminal', exact: true })
       .click()
-    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    await page.locator('[data-terminal-starter]:visible').waitFor({ state: 'hidden' })
   }
   const lastCreate = () =>
     page.evaluate(() =>
@@ -2089,7 +2214,7 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Shell catalog unavailable' }).waitFor()
   assert.equal(
     await page
-      .getByRole('dialog')
+      .locator('[data-terminal-starter]:visible')
       .getByRole('button', { name: 'Open terminal', exact: true })
       .isDisabled(),
     true,
@@ -2244,7 +2369,86 @@ try {
     .locator('.studio-thread-card')
     .filter({ hasText: 'remote shell' })
     .click()
+
   await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
+  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+  assert.equal(await page.getByRole('dialog').count(), 0)
+  await page.getByLabel('Startup command', { exact: true }).fill('printf dedicated-draft')
+  await page.getByLabel('Terminal working directory').selectOption('project')
+  await page.getByLabel('Terminal checkout', { exact: true }).selectOption('worktree')
+  await page.getByLabel('Terminal base branch').selectOption('refs/heads/feature')
+  await page.getByRole('button', { name: 'Return to terminal', exact: true }).click()
+  await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
+  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+  assert.equal(
+    await page.getByLabel('Startup command', { exact: true }).inputValue(),
+    'printf dedicated-draft',
+  )
+  await page.getByLabel('Terminal base branch').waitFor()
+  assert.equal(
+    await page.getByLabel('Terminal base branch').inputValue(),
+    'refs/heads/feature',
+    'Returning to a starter preserves its checkout and selected base branch',
+  )
+  await page.getByRole('button', { name: 'Return to terminal', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/terminals/close').length,
+    ),
+    0,
+    'Opening and leaving a starter keeps the shell alive',
+  )
+  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+  await page.evaluate(() => {
+    window.terminalError = 'Could not launch shell'
+  })
+  await page.getByRole('button', { name: 'Open terminal', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Could not launch shell' }).waitFor()
+  assert.equal(
+    await page.getByLabel('Startup command', { exact: true }).inputValue(),
+    'printf dedicated-draft',
+    'A launch failure retains the command for retry',
+  )
+  await page.getByRole('button', { name: 'Return to terminal', exact: true }).click()
+  await page.evaluate(() => {
+    window.terminalError = undefined
+    window.delayTerminalResponse = true
+  })
+  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Open terminal', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishTerminalResponse)
+  const pendingSession = await page.evaluate(
+    () =>
+      window.computers.find((owner) => owner.profile.id === 'remote').snapshot.terminals.at(-1).id,
+  )
+  await page.getByRole('button', { name: 'Return to terminal', exact: true }).click()
+  await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
+  await page.evaluate(() => {
+    window.delayTerminalResponse = false
+    window.finishTerminalResponse()
+  })
+  assert.equal(
+    await page.locator('[data-terminal="shell"]:visible').count(),
+    1,
+    'A background launch does not take over the selected terminal',
+  )
+  const callsBeforeResume = await page.evaluate(
+    () => window.calls.filter((call) => call.path === '/api/terminals/workspace').length,
+  )
+  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+  await page.locator('[data-terminal="' + pendingSession + '"]:visible').waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/terminals/workspace').length,
+    ),
+    callsBeforeResume,
+    'Returning to a completed launch opens the created shell without a duplicate',
+  )
+  await page
+    .getByRole('complementary')
+    .locator('.studio-thread-card')
+    .filter({ hasText: 'remote shell' })
+    .click()
   await rowAction('remote shell', 'Pin')
   await rowAction('remote shell', 'Settle')
   assert.ok(

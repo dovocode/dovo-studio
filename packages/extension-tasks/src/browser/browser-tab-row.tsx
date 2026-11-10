@@ -175,9 +175,7 @@ export function BrowserTabRow({
             tab.pinned
               ? cn(
                   'overflow-hidden rounded-xl border',
-                  active
-                    ? 'border-primary/30 bg-accent text-foreground shadow-sm'
-                    : 'border-border/50 bg-background/50 text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground',
+                  active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                 )
               : active
                 ? 'bg-accent/70 text-foreground'
@@ -304,7 +302,7 @@ export function BrowserTabRow({
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content className="studio-menu-surface studio-browser-tab-menu z-50 min-w-48 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground">
+        <ContextMenu.Content className="studio-menu-surface studio-row-menu studio-browser-tab-menu z-50 min-w-48 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground">
           <ContextMenu.Label className="max-w-64 truncate px-2 py-1.5 text-xs text-muted-foreground">
             {title}
           </ContextMenu.Label>
@@ -406,7 +404,7 @@ export function BrowserTabRow({
                     <ArrowUpRight size={13} className="ml-auto" />
                   </ContextMenu.SubTrigger>
                   <ContextMenu.Portal>
-                    <ContextMenu.SubContent className="studio-menu-surface studio-browser-tab-menu z-50 min-w-44 rounded-2xl border bg-[var(--studio-floating-fill)] p-1">
+                    <ContextMenu.SubContent className="studio-menu-surface studio-row-menu studio-browser-tab-menu z-50 min-w-44 rounded-2xl border bg-[var(--studio-floating-fill)] p-1">
                       {windows.map((window) => (
                         <ContextMenu.Item
                           key={window.id}

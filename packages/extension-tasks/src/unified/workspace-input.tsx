@@ -48,6 +48,7 @@ import {
   cn,
 } from '@dovo/studio-ui'
 import { StartupHeading } from '../task-creation/startup-heading'
+import { TerminalCheckoutControls, useTerminalCheckout } from '../terminal/terminal-checkout'
 import { TerminalRecoveryControl } from '../terminal/terminal-recovery-control'
 import { browserAddress } from '../browser/shared-browser-tabs'
 import type { WorkspaceTab } from './workspace-tabs'
@@ -65,11 +66,13 @@ type Submission = {
 
 export function WorkspaceInput({
   active,
+  visible = true,
   onOpen,
   onBrowser,
   children,
 }: {
   active?: WorkspaceTab
+  visible?: boolean
   children?: ReactNode
   onOpen: (tab: WorkspaceTab) => void
   onBrowser: (url: string, target?: { runtimeId: string; profileId: string }) => Promise<void>
@@ -108,7 +111,7 @@ export function WorkspaceInput({
     shells?: TerminalShell[]
     error?: string
   }>({})
-  const activeKey = active ? JSON.stringify([active.kind, active.runtimeId, active.id]) : ''
+  const activeKey = JSON.stringify([visible, active?.kind, active?.runtimeId, active?.id])
   const navigation = useRef(activeKey)
   navigation.current = activeKey
   const revision = useRef(0)
@@ -122,6 +125,7 @@ export function WorkspaceInput({
   draft.current = text
   const submission = useRef<Submission | undefined>(undefined)
   const entry = store.runtimes.find((entry) => entry.profile.id === runtimeId)
+  const checkout = useTerminalCheckout({ owner: entry, repositoryId, enabled: mode === 'terminal' })
   const connected = runtimeId === store.activeRuntimeId ? store.connected : !!entry?.connected
   const snapshot = runtimeId === store.activeRuntimeId ? store.snapshot : entry?.snapshot
   const workspace =
@@ -281,7 +285,8 @@ export function WorkspaceInput({
   }
   const submit = async (startAfterSuggestion = false) => {
     const original = draft.current
-    if (pending.current || automaticStart.current || !original.trim()) return
+    if (pending.current || automaticStart.current || (!original.trim() && mode !== 'terminal'))
+      return
     if ((mode !== 'browser' || runtimeId !== store.localRuntimeId) && (!entry || !connected)) {
       setError('Choose an online computer before continuing.')
       return
@@ -374,6 +379,7 @@ export function WorkspaceInput({
           mode === 'thread' ? threadId : '',
           repositoryId,
           mode === 'terminal' ? shellId : '',
+          mode === 'terminal' ? checkout.input : null,
           mode === 'thread' && model?.key === modelKey ? model.harness : null,
           mode === 'terminal'
             ? rememberSession && snapshot?.terminalRecoverySupported === true
@@ -393,6 +399,8 @@ export function WorkspaceInput({
         const receipt = submission.current
         submitted = receipt
         if (mode === 'terminal') {
+          if (!checkout.ready)
+            throw new Error('Choose an available checkout before running the command.')
           if (!shellReady) throw new Error('Choose an available shell before running the command.')
           if (repositoryId && !repository)
             throw new Error('This project is no longer available. Choose a project or Home folder.')
@@ -402,8 +410,9 @@ export function WorkspaceInput({
               '/api/terminals/workspace',
               {
                 repositoryId: repositoryId || undefined,
-                command: original,
+                command: original.trim() ? original : undefined,
                 shellId,
+                ...checkout.input,
                 rememberSession: rememberSession && snapshot?.terminalRecoverySupported === true,
               },
               responses.terminal,
@@ -520,10 +529,10 @@ export function WorkspaceInput({
       return
     }
     // Terminal catalogs load after routing to the selected computer. Never run with a stale shell.
-    if (mode === 'terminal' && !shellReady) return
+    if (mode === 'terminal' && (!shellReady || !checkout.ready)) return
     automaticStart.current = undefined
     void submit()
-  }, [phase, mode, runtimeKey, activeKey, shellReady, catalog])
+  }, [phase, mode, runtimeKey, activeKey, shellReady, checkout.ready, catalog])
   const actionLabel = phase
     ? 'Working…'
     : mode === 'auto'
@@ -531,7 +540,9 @@ export function WorkspaceInput({
       : mode === 'browser'
         ? 'Open browser'
         : mode === 'terminal'
-          ? 'Run command'
+          ? text.trim()
+            ? 'Run command'
+            : 'Open terminal'
           : threadId
             ? 'Send to thread'
             : 'Start thread'
@@ -588,7 +599,7 @@ export function WorkspaceInput({
               >
                 <ChoicePicker
                   aria-label="Workspace input project"
-                  className="h-9 max-w-64 border-0 bg-transparent text-sm shadow-none"
+                  className="h-9 w-auto max-w-64 border-0 bg-transparent text-sm shadow-none"
                   icons={Object.fromEntries([
                     ['', <Folder className="size-4" />],
                     ...(workspace?.repositories ?? []).map((repo) => [
@@ -639,7 +650,7 @@ export function WorkspaceInput({
               <>
                 <ChoicePicker
                   aria-label="Workspace destination"
-                  className="h-7 max-w-40 border-0 bg-transparent text-xs shadow-none"
+                  className="h-7 w-auto max-w-40 border-0 bg-transparent text-xs shadow-none"
                   icons={{
                     auto: <Sparkles className="size-3.5" />,
                     browser: <Globe2 className="size-3.5" />,
@@ -658,7 +669,7 @@ export function WorkspaceInput({
                 {mode === 'thread' && !threadId && (
                   <ChoicePicker
                     aria-label="Workspace thread model"
-                    className="h-7 max-w-48 border-0 bg-transparent text-xs shadow-none"
+                    className="h-7 w-auto max-w-48 border-0 bg-transparent text-xs shadow-none"
                     disabled={busy || !connected}
                     value={
                       model?.key === modelKey
@@ -693,7 +704,7 @@ export function WorkspaceInput({
                 {mode === 'browser' && (
                   <ChoicePicker
                     aria-label="Workspace browser profile"
-                    className="h-7 max-w-44 border-0 bg-transparent text-xs shadow-none"
+                    className="h-7 w-auto max-w-44 border-0 bg-transparent text-xs shadow-none"
                     value={profileId}
                     disabled={busy || profiles.ownerId !== runtimeId}
                     onValueChange={(id) => {
@@ -714,7 +725,7 @@ export function WorkspaceInput({
                 {mode === 'terminal' && (
                   <ChoicePicker
                     aria-label="Workspace terminal shell"
-                    className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
+                    className="h-7 w-auto max-w-44 border-0 bg-transparent text-xs shadow-none"
                     value={shellId}
                     disabled={busy || !connected || !shells}
                     onValueChange={(id) => {
@@ -750,9 +761,9 @@ export function WorkspaceInput({
                 busy={!!phase}
                 disabled={
                   !!phase ||
-                  !text.trim() ||
+                  (!text.trim() && mode !== 'terminal') ||
                   ((mode !== 'browser' || runtimeId !== store.localRuntimeId) && !connected) ||
-                  (mode === 'terminal' && !shellReady) ||
+                  (mode === 'terminal' && (!shellReady || !checkout.ready)) ||
                   (mode === 'thread' && !!threadId && !thread)
                 }
               />
@@ -765,11 +776,11 @@ export function WorkspaceInput({
             <ComposerTextarea
               aria-label="Workspace request"
               aria-keyshortcuts="Meta+Enter Control+Enter"
-              autoFocus={!active}
+              autoFocus={!active && visible}
               preview={mode === 'thread'}
               placeholder={
                 mode === 'terminal'
-                  ? 'Write a command to run in a new shell…'
+                  ? 'Run a command, or open a shell…'
                   : mode === 'browser'
                     ? 'Enter a URL or web search…'
                     : mode === 'thread'
@@ -826,7 +837,7 @@ export function WorkspaceInput({
               icons={Object.fromEntries(
                 store.runtimes.map((owner) => [owner.profile.id, <Monitor className="size-3.5" />]),
               )}
-              className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
+              className="h-7 w-auto max-w-44 border-0 bg-transparent text-xs shadow-none"
               value={runtimeId}
               disabled={busy}
               onValueChange={(id) => {
@@ -849,10 +860,13 @@ export function WorkspaceInput({
                 </option>
               ))}
             </ChoicePicker>
+            {mode === 'terminal' && (
+              <TerminalCheckoutControls checkout={checkout} disabled={busy || !connected} />
+            )}
             {mode === 'thread' && (
               <ChoicePicker
                 aria-label="Workspace thread target"
-                className="h-7 max-w-56 border-transparent bg-transparent text-xs shadow-none"
+                className="h-7 w-auto max-w-56 border-0 bg-transparent text-xs shadow-none"
                 value={threadId}
                 disabled={busy}
                 onValueChange={(id) => {

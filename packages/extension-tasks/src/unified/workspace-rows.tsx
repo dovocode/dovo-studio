@@ -41,20 +41,21 @@ type RowShell = {
   actions: ReactNode
 }
 
-/** A small kind mark tucked under a row's primary icon; the row itself names the kind. */
-function KindMark({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
+/** Type identity stays in the title's normal flow, including compact and wrapped rows. */
+function KindMark({ icon: Icon }: { icon: LucideIcon }) {
   return (
     <span
       aria-hidden="true"
-      className={cn(
-        'pointer-events-none flex size-3.5 items-center justify-center rounded-[4px] bg-sidebar text-muted-foreground ring-1 ring-border',
-        className,
-      )}
+      data-workspace-kind-icon
+      className="pointer-events-none inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
     >
-      <Icon className="size-2.5" strokeWidth={2} />
+      <Icon className="size-3.5" strokeWidth={1.7} />
     </span>
   )
 }
+// Keep the shared TaskRow's memoized props stable while other resources stream updates.
+const threadKindIcon = <KindMark icon={MessageSquare} />
+
 function LifecycleMark({ status }: { status: WorkspaceRowStatus }) {
   if (status === 'settled')
     return <Check className="size-3.5 shrink-0 text-muted-foreground" aria-label="Settled" />
@@ -91,7 +92,7 @@ function RowFrame({
       className={cn(
         'studio-workspace-row group/workspace relative min-w-0',
         !pinnedPage &&
-          'mb-[3px] [&:hover_.studio-thread-card-context:first-child]:pr-28 [&:focus-within_.studio-thread-card-context:first-child]:pr-28 has-[[data-state=open]]:[&_.studio-thread-card-context:first-child]:pr-28 [&:hover_.studio-browser-tab-title]:pr-28 [&:focus-within_.studio-browser-tab-title]:pr-28 has-[[data-state=open]]:[&_.studio-browser-tab-title]:pr-28 [@media(hover:none)]:[&_.studio-thread-card-context:first-child]:pr-28 [@media(hover:none)]:[&_.studio-browser-tab-title]:pr-28',
+          'mb-[3px] [&:hover_.studio-thread-card-context:first-child]:pr-28 [&:focus-within_.studio-thread-card-context:first-child]:pr-28 has-[[data-state=open]]:[&_.studio-thread-card-context:first-child]:pr-28 [@media(hover:none)]:[&_.studio-thread-card-context:first-child]:pr-28',
       )}
     >
       <div className={cn('relative min-w-0', compact && '[&_.studio-thread-card-title]:pr-24')}>
@@ -158,16 +159,13 @@ export function WorkspaceThreadRow({
         revealSearch={revealSearch}
         editable={false}
         disabled={disabled}
-      />
-      <KindMark
-        icon={MessageSquare}
-        className={cn('absolute', compact ? 'left-[20px] top-[18px]' : 'left-[17px] top-[40px]')}
+        titleIcon={threadKindIcon}
       />
     </RowFrame>
   )
 }
 
-/** The browser sidebar's page row (favicon, title, computer and profile initials), plus a mini browser mark. */
+/** Page identity and computer context follow the same title hierarchy as threads and terminals. */
 export function WorkspacePageRow({
   page,
   computer,
@@ -217,9 +215,7 @@ export function WorkspacePageRow({
           data-active={selected || undefined}
           className={cn(
             'studio-browser-tab relative flex min-w-0 flex-col overflow-hidden rounded-xl border pb-6 transition-colors',
-            selected
-              ? 'border-primary/30 bg-accent text-foreground shadow-sm'
-              : 'border-border/50 bg-background/50 text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground',
+            selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
           )}
         >
           <button
@@ -280,7 +276,7 @@ export function WorkspacePageRow({
         <div
           data-active={selected || undefined}
           className={cn(
-            'studio-browser-tab relative min-w-0 rounded-xl',
+            'studio-browser-tab studio-workspace-page relative min-w-0 rounded-xl',
             selected
               ? 'bg-accent/70 text-foreground'
               : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
@@ -295,31 +291,24 @@ export function WorkspacePageRow({
             onClick={onSelect}
             className="studio-browser-tab-select min-w-0 text-left text-xs"
           >
-            <span className="studio-browser-tab-source flex w-7 shrink-0 flex-col items-center gap-0.5">
-              <span className="studio-browser-tab-favicon inline-flex size-6 items-center justify-center">
+            <span className="studio-thread-card-context flex min-w-0 items-center gap-1.5">
+              <span className="studio-browser-tab-favicon inline-flex size-4 shrink-0 items-center justify-center">
                 <BrowserFavicon tab={page} />
               </span>
-              <KindMark icon={Globe2} />
-            </span>
-            <span className="studio-browser-tab-title min-w-0 flex-1 truncate text-sm">
-              {title}
-            </span>
-            <span className="col-start-4 row-span-2 flex items-center gap-1">
+              <span className="min-w-0 flex-1 truncate">{computer}</span>
+              <span
+                className="inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground"
+                aria-hidden="true"
+              >
+                <RuntimeIcon icon={runtimeIcon} className="size-3 shrink-0" />
+                <span>{emoji ?? initials}</span>
+              </span>
               {page.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
               <LifecycleMark status={status} />
             </span>
-            <span
-              className="studio-browser-tab-profile flex shrink-0 items-center gap-0.5 text-[8px] leading-none text-muted-foreground"
-              aria-hidden="true"
-            >
-              <span className="studio-browser-tab-identity">
-                <RuntimeIcon icon={runtimeIcon} className="size-2 shrink-0" aria-hidden="true" />
-              </span>
-              <span
-                className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
-              >
-                {emoji ?? initials}
-              </span>
+            <span className="studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5 text-foreground">
+              <KindMark icon={Globe2} />
+              <span className="min-w-0 flex-1 truncate">{title}</span>
             </span>
           </button>
           <BrowserTabActivity state={activity} title={title} onMute={onMute} />
@@ -329,7 +318,7 @@ export function WorkspacePageRow({
   )
 }
 
-/** The thread row's structure for a standalone shell, with the terminal as its primary icon. */
+/** The thread row's structure for a standalone shell, with its type beside the title. */
 export function WorkspaceTerminalRow({
   project,
   checkout,
@@ -360,7 +349,6 @@ export function WorkspaceTerminalRow({
   pinned: boolean
   offline: boolean
 }) {
-  const exited = state.startsWith('Exited')
   const toneClass = {
     muted: 'text-muted-foreground',
     working: 'text-primary',
@@ -384,19 +372,9 @@ export function WorkspaceTerminalRow({
             selected ? 'bg-accent/70 hover:bg-accent/80' : 'hover:bg-accent/40',
           )}
         >
-          <span className="studio-thread-project-icon shrink-0 pt-0.5">
-            <span
-              aria-hidden="true"
-              className={cn(
-                'flex size-7 items-center justify-center rounded-[7px] border bg-background',
-                exited ? 'text-muted-foreground' : 'text-foreground',
-              )}
-            >
-              <SquareTerminal className="size-4" strokeWidth={1.7} />
-            </span>
-          </span>
           <span className="studio-thread-card-body flex min-w-0 flex-1 flex-col items-stretch gap-0.5">
             <span className="studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+              <FolderOpen className="size-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{project}</span>
               {pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
               <LifecycleMark status={status} />
@@ -410,6 +388,7 @@ export function WorkspaceTerminalRow({
                 selected ? 'text-foreground' : 'text-foreground/75 hover:text-foreground',
               )}
             >
+              <KindMark icon={SquareTerminal} />
               <span className="min-w-0 flex-1 truncate">{title}</span>
             </span>
             <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">

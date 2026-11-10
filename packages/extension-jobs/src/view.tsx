@@ -266,7 +266,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
         <div
           style={selected && !sidebarVisible ? { display: 'none' } : undefined}
           className={cn(
-            'studio-side-panel min-h-0 min-w-0 flex-col bg-background',
+            'studio-navigation-sidebar studio-side-panel min-h-0 min-w-0 flex-col bg-background',
             selected ? 'hidden w-72 shrink-0 lg:flex' : 'flex flex-1',
           )}
         >
@@ -274,7 +274,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
           <div
             className={cn(
               'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
-              selected ? 'studio-overview-pane bg-sidebar' : 'bg-background',
+              selected ? 'studio-overview-pane bg-sidebar' : 'studio-page-surface bg-background',
             )}
           >
             <div className="shrink-0 border-b border-border/70 px-3 py-2">

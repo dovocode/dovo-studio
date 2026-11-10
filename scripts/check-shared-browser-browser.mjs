@@ -55,7 +55,7 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
           '../view': 'export default function Thread(){return <div>Thread surface</div>}',
           '../list/task-row-actions':
             'export const useTaskActionStore=()=>({});export const taskActionClient=()=>({patch:async()=>{}})',
-          '../terminal/terminal-workspace': `import {useWorkspace} from '@dovo/studio-core';export const useWorkspaceComputers=()=>[...useWorkspace().runtimes];export const NewWorkspaceTerminalDialog=()=>null;export const WorkspaceTerminalSurface=()=>null;export const terminalContext=()=>''`,
+          '../terminal/terminal-workspace': `import {useWorkspace} from '@dovo/studio-core';export const useWorkspaceComputers=()=>[...useWorkspace().runtimes];export const NewWorkspaceTerminal=()=>null;export const WorkspaceTerminalSurface=()=>null;export const terminalContext=()=>''`,
           './workspace-input':
             'export const WorkspaceInput=()=> <textarea aria-label="Workspace draft"/>',
           './workspace-resource-menu': 'export const WorkspaceResourceMenu=()=>null',
@@ -266,7 +266,50 @@ async function captureBrowserSidebar(browser) {
   for (let step = 0; step < 6; step++) await resize.press('ArrowLeft')
   await preview.mouse.click(1000, 700)
   await sidebar.screenshot({ path: root + 'work/browser-sidebar/narrow.png' })
+
+  const previousTab = await sidebar
+    .locator('[data-browser-tab-id][data-active]')
+    .getAttribute('data-browser-tab-id')
   await sidebar.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  assert.equal(await preview.getByRole('menu').count(), 0, 'New opens an inline starter directly')
+  const starter = preview.getByRole('combobox', { name: 'New browser address', exact: true })
+  await starter.waitFor()
+  assert.equal(await starter.evaluate((node) => node === document.activeElement), true)
+  const draftTab = await sidebar
+    .locator('[data-browser-tab-id][data-active]')
+    .getAttribute('data-browser-tab-id')
+  await starter.fill('http://localhost:4000/retained')
+  assert.equal(
+    await preview.getByLabel('Preview URL', { exact: true }).inputValue(),
+    'http://localhost:4000/retained',
+  )
+  await sidebar.locator(`[data-browser-tab-id="${previousTab}"] .studio-browser-tab-select`).click()
+  await sidebar.locator(`[data-browser-tab-id="${draftTab}"] .studio-browser-tab-select`).click()
+  assert.equal(
+    await starter.inputValue(),
+    'http://localhost:4000/retained',
+    'Switching tabs preserves a browser draft',
+  )
+  const suggestion = preview
+    .getByRole('listbox', { name: 'Address suggestions' })
+    .getByRole('option', { selected: true })
+  await starter.fill('localhost:4000/retained')
+  await suggestion.waitFor()
+  assert.equal(
+    await suggestion.evaluate((node) => {
+      const box = node.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      return node.contains(hit)
+    }),
+    true,
+    'The central address suggestions remain visible outside the composer',
+  )
+  await starter.press('Enter')
+  await preview.waitForFunction((id) => {
+    const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    return state.tabs.find((tab) => tab.id === id)?.url === 'http://localhost:4000/retained'
+  }, draftTab)
+  await sidebar.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await preview.mouse.move(1000, 700)
   await preview.screenshot({
     path: root + 'work/browser-sidebar/new-tab-menu.png',
@@ -1144,7 +1187,7 @@ async function checkAwakeDefaultsAndDetaching() {
     await row('gmail').getByRole('button').first().click()
     await page
       .getByRole('complementary', { name: 'Recent browser tabs' })
-      .getByRole('button', { name: 'New browser tab', exact: true })
+      .getByRole('button', { name: 'New browser tab options', exact: true })
       .click()
     assert.equal(
       await page.getByRole('menuitem', { name: 'Detach browser', exact: true }).count(),
@@ -1718,7 +1761,7 @@ try {
   await nativeAction('hide')
   await extensionsDialog.getByRole('button', { name: 'Close', exact: true }).click()
   await nativeAction('show')
-  await recent.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await recent.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New browser window', exact: true }).click()
   await page.waitForFunction(
     () => window.calls.filter((call) => call.openBrowserWindow).length === 1,
@@ -1850,7 +1893,7 @@ try {
   )
     throw new Error('Missing empty-selection feedback')
   // Each remote tab belongs to its chosen computer, independent of the active runtime.
-  await recent.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await recent.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Mac Studio', exact: true }).click()
   await page.waitForFunction(() =>
     window.calls.some((call) => call.owner === 'mac' && call.path === '/api/previews/browser/open'),
@@ -2905,7 +2948,7 @@ try {
   await pageAction('Unpin tab')
   await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
   const beforePrivate = (await persisted()).tabs.length
-  await recent.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await recent.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New private tab', exact: true }).click()
   await page.getByLabel('Preview URL', { exact: true }).fill('http://localhost:3000/private-secret')
   await page.getByRole('button', { name: 'Go to address', exact: true }).click()
@@ -4569,7 +4612,7 @@ try {
     0,
     'Moves must not drop simultaneous extension creation or closure events',
   )
-  await compactSidebar.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await compactSidebar.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await controlsPage.getByRole('menuitem', { name: 'Mac Studio', exact: true }).click()
   await controlsPage
     .getByLabel('Preview URL', { exact: true })

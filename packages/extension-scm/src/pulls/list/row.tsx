@@ -275,7 +275,7 @@ export function PullRow({
           </ContextMenu.Trigger>
           <ContextMenu.Portal>
             <ContextMenu.Content
-              className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+              className="studio-menu-surface studio-row-menu z-50 min-w-48 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground"
               collisionPadding={8}
             >
               {menu(ContextMenu)}
@@ -297,7 +297,7 @@ export function PullRow({
               align="end"
               sideOffset={4}
               collisionPadding={8}
-              className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+              className="studio-menu-surface studio-row-menu z-50 min-w-48 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground"
             >
               {menu(DropdownMenu)}
             </DropdownMenu.Content>

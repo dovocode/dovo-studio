@@ -1,4 +1,5 @@
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
+import { BrowserStarter } from './browser-starter'
 import { BrowserAddressInput } from './browser-address-input'
 import { BrowserElementFeedback } from './browser-element-feedback'
 import { browserElementCaptureSchema, browserElementResultSchema } from '@dovo/protocol'
@@ -76,7 +77,6 @@ import {
   Smartphone,
   PanelRightClose,
   Ellipsis,
-  Globe2,
   ArrowUpRight,
   Plus,
   MonitorUp,
@@ -393,6 +393,7 @@ function BrowserContent({
   const initialUrl =
     saved?.tabs.find((tab) => tab.id === saved.active)?.url ?? addresses.get(scope) ?? ''
   const [input, setInput] = useApplicationState(initialUrl)
+  const [addressDrafts, setAddressDrafts] = useApplicationState<Record<string, string>>({})
   const [url, setUrl] = useApplicationState(initialUrl)
   const [history, setHistory] = useApplicationState({
     url: '',
@@ -682,6 +683,16 @@ function BrowserContent({
         )
       return
     }
+    setAddressDrafts((previous) => {
+      const next = { ...previous }
+      if (currentTabs.current.some((item) => item.id === activeTab) && input !== selectedTab.url)
+        next[activeTab] = input
+      else delete next[activeTab]
+      delete next[tab.id]
+      return next
+    })
+    const savedDraft = addressDrafts[tab.id]
+    restoredAddressDraft.current = savedDraft !== undefined ? { tabId: tab.id, url: tab.url } : null
     const now = Date.now()
     setTabs((previous) =>
       previous.map((item) =>
@@ -704,7 +715,7 @@ function BrowserContent({
     setInput(
       selectedTab.previewOf && previewBackground?.tabId === tab.id
         ? (openerInput ?? tab.url)
-        : tab.url,
+        : (savedDraft ?? tab.url),
     )
     setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
   }
@@ -829,6 +840,10 @@ function BrowserContent({
   const editing = useRef(false)
   const addressField = useRef<HTMLInputElement>(null)
   const openerAddressField = useRef<HTMLInputElement>(null)
+  const starterAddressField = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (paneVisible && !url && initialMode !== 'devices') starterAddressField.current?.focus()
+  }, [activeTab, paneVisible, url, initialMode])
   const mode =
     initialMode === 'devices'
       ? 'devices'
@@ -1157,7 +1172,7 @@ function BrowserContent({
   const changeProfile = (next: string) => {
     const target = history.url || selectedTab.url || url
     setUrl(target)
-    setInput(target)
+    if (target) setInput(target)
     addresses.set(scope, target)
     setHistory({
       url: '',
@@ -1728,6 +1743,11 @@ function BrowserContent({
   }
   const removeTab = (tab: BrowserTab, dispose = true) => {
     if (tab.pinned && dispose) return
+    setAddressDrafts((previous) => {
+      const next = { ...previous }
+      delete next[tab.id]
+      return next
+    })
     if (dispose && shared && restorableTab(tab))
       setClosed((previous) => [tab, ...previous].slice(0, 20))
     const remaining = currentTabs.current.filter((item) => item.id !== tab.id)
@@ -1945,7 +1965,7 @@ function BrowserContent({
       if (shift) reopenTab()
       else {
         newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
-        requestAnimationFrame(() => addressField.current?.focus())
+        requestAnimationFrame(() => (starterAddressField.current ?? addressField.current)?.focus())
       }
     }
     if (key === 'w') closeTab(selectedTab)
@@ -2268,99 +2288,110 @@ function BrowserContent({
     />
   )
   const newTabMenu = (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <IconButton
-          type="button"
-          label="New browser tab"
-          variant="ghost"
-          className="studio-browser-library-button ml-auto size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
-        >
-          <Plus size={14} />
-        </IconButton>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          collisionPadding={8}
-          className="studio-menu-surface studio-browser-tab-menu z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-sm"
-        >
-          <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
-            New tab
-          </DropdownMenu.Label>
-          {browser ? (
-            profiles.map((profile) => (
-              <DropdownMenu.Item
-                key={profile.id}
-                aria-label={`New local tab · ${profile.name}`}
-                className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
-                onSelect={() => newTab('', 'web', profile.id)}
-              >
-                {profile.name}
-              </DropdownMenu.Item>
-            ))
-          ) : (
-            <DropdownMenu.Item
-              className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
-              onSelect={() => newTab()}
-            >
-              New tab
-            </DropdownMenu.Item>
-          )}
-          <DropdownMenu.Item
-            className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
-            onSelect={() =>
-              newTab('', selectedTab.kind, `private-${randomUUID()}`, selectedTab.runtimeId)
-            }
+    <div className="ml-auto flex shrink-0 items-center gap-0.5">
+      <IconButton
+        type="button"
+        label="New browser tab"
+        variant="ghost"
+        className="studio-browser-library-button size-8"
+        onClick={() => newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)}
+      >
+        <Plus size={14} />
+      </IconButton>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <IconButton
+            type="button"
+            label="New browser tab options"
+            variant="ghost"
+            className="studio-browser-library-button ml-auto size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
           >
-            New private tab
-          </DropdownMenu.Item>
-          <DropdownMenu.Separator className="my-1 h-px bg-border" />
-          <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
-            New remote tab
-          </DropdownMenu.Label>
-          {shared
-            ? runtimes.map((entry) => (
-                <DropdownMenu.Item
-                  key={entry.profile.id}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
-                  disabled={!entry.connected}
-                  onSelect={() => newTab('', 'remote', 'default', entry.profile.id)}
-                >
-                  <MonitorUp size={14} /> {runtimeComputerName(entry)}
-                  {!entry.connected ? ' · Offline' : ''}
-                </DropdownMenu.Item>
-              ))
-            : remoteProfiles.profiles?.map((profile) => (
+            <ChevronDown size={12} />
+          </IconButton>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            collisionPadding={8}
+            className="studio-menu-surface studio-row-menu studio-browser-tab-menu z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-sm"
+          >
+            <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
+              New tab
+            </DropdownMenu.Label>
+            {browser ? (
+              profiles.map((profile) => (
                 <DropdownMenu.Item
                   key={profile.id}
-                  aria-label={`New remote tab · ${profile.name}`}
-                  disabled={!connected}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
-                  onSelect={() => newTab('', 'remote', profile.id)}
+                  aria-label={`New local tab · ${profile.name}`}
+                  className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  onSelect={() => newTab('', 'web', profile.id)}
                 >
-                  <MonitorUp size={14} /> {profile.name}
+                  {profile.name}
                 </DropdownMenu.Item>
-              ))}
-          {!shared && !remoteProfiles.profiles && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">
-              {remoteProfiles.error || 'Loading remote profiles…'}
-            </p>
-          )}
-          {shared && openBrowserWindow && (
-            <>
-              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              ))
+            ) : (
               <DropdownMenu.Item
                 className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
-                onSelect={() => void act(openBrowserWindow)}
+                onSelect={() => newTab()}
               >
-                New browser window
+                New tab
               </DropdownMenu.Item>
-            </>
-          )}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+            )}
+            <DropdownMenu.Item
+              className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+              onSelect={() =>
+                newTab('', selectedTab.kind, `private-${randomUUID()}`, selectedTab.runtimeId)
+              }
+            >
+              New private tab
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+            <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
+              New remote tab
+            </DropdownMenu.Label>
+            {shared
+              ? runtimes.map((entry) => (
+                  <DropdownMenu.Item
+                    key={entry.profile.id}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                    disabled={!entry.connected}
+                    onSelect={() => newTab('', 'remote', 'default', entry.profile.id)}
+                  >
+                    <MonitorUp size={14} /> {runtimeComputerName(entry)}
+                    {!entry.connected ? ' · Offline' : ''}
+                  </DropdownMenu.Item>
+                ))
+              : remoteProfiles.profiles?.map((profile) => (
+                  <DropdownMenu.Item
+                    key={profile.id}
+                    aria-label={`New remote tab · ${profile.name}`}
+                    disabled={!connected}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                    onSelect={() => newTab('', 'remote', profile.id)}
+                  >
+                    <MonitorUp size={14} /> {profile.name}
+                  </DropdownMenu.Item>
+                ))}
+            {!shared && !remoteProfiles.profiles && (
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                {remoteProfiles.error || 'Loading remote profiles…'}
+              </p>
+            )}
+            {shared && openBrowserWindow && (
+              <>
+                <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                <DropdownMenu.Item
+                  className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  onSelect={() => void act(openBrowserWindow)}
+                >
+                  New browser window
+                </DropdownMenu.Item>
+              </>
+            )}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
   )
   const takeScreenshot = () =>
     void act(async () => {
@@ -3426,11 +3457,11 @@ function BrowserContent({
             maxFraction={0.4}
             maxWidth={480}
             aria-label="Recent browser tabs"
-            className="flex min-h-0 shrink-0 flex-col bg-background"
+            className="studio-navigation-sidebar flex min-h-0 shrink-0 flex-col bg-background"
           >
             <SidebarHeader enabled={!browserWindowId} />
             <div className="studio-browser-sidebar studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
-              <div className="studio-browser-sidebar-library shrink-0 p-2">
+              <div className="studio-browser-sidebar-library studio-sidebar-controls shrink-0 p-2">
                 <div className="studio-browser-library flex items-center gap-2">
                   <Button
                     size="sm"
@@ -3444,7 +3475,7 @@ function BrowserContent({
                   {newTabMenu}
                 </div>
               </div>
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5">
+              <div className="studio-sidebar-list flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5">
                 {tabSections.map(({ category, tabs: groupTabs, open }, index) => {
                   return (
                     <BrowserTabGroup
@@ -3721,7 +3752,9 @@ function BrowserContent({
           <div
             key={tab.id}
             className={
-              mode === 'remote' && activeTab === tab.id ? 'flex min-h-0 flex-1 flex-col' : 'hidden'
+              mode === 'remote' && activeTab === tab.id && !!url
+                ? 'flex min-h-0 flex-1 flex-col'
+                : 'hidden'
             }
           >
             <BrowserOwner shared={shared} runtimeId={tab.runtimeId}>
@@ -3752,7 +3785,7 @@ function BrowserContent({
                 initialUrl={tab.url}
                 tabId={tab.id}
                 // A background pane pauses the remote stream and input; tab state still updates.
-                active={paneVisible && mode === 'remote' && activeTab === tab.id}
+                active={paneVisible && mode === 'remote' && activeTab === tab.id && !!url}
                 reloadToken={activeTab === tab.id ? turnReload : undefined}
                 onClosed={() => closeTab(tab)}
                 onState={(state) => {
@@ -3842,41 +3875,104 @@ function BrowserContent({
             </BrowserOwner>
           </div>
         ))}
-      {mode === 'web' ? (
-        <div className="min-h-0 flex-1 overflow-auto">
-          {!url ? (
-            <div className="flex min-h-full flex-col items-center justify-center px-6 py-10 text-center text-sm text-muted-foreground">
-              <div className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-border/60 bg-muted/40 text-foreground">
-                <Globe2 size={24} strokeWidth={1.5} />
-              </div>
-              <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                Your project, live.
-              </h2>
-              <p className="mt-2 max-w-64 text-xs leading-relaxed">
-                {shared
-                  ? 'Open a website, then copy a selection or add it to a thread draft. Tabs stay independent of threads.'
-                  : 'Open a website or preview your development server. Its browser stays with this thread.'}
-              </p>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {['localhost:3000', 'localhost:5173'].map((address) => (
-                  <Button
-                    key={address}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 text-xs font-normal"
-                    onClick={() => navigate(address)}
-                  >
-                    <Globe2 size={12} />
-                    {address}
-                  </Button>
+      {!url && mode !== 'devices' && (
+        <BrowserStarter
+          busy={busy}
+          address={{
+            value: input,
+            onChange: setInput,
+            inputRef: starterAddressField,
+            label: 'New browser address',
+            disabled: mode === 'remote' && !remoteConnected,
+            shared,
+            tabs,
+            bookmarks,
+            visits,
+            profileId,
+            search: (websiteProfile ?? tabProfiles.find((profile) => profile.id === 'default'))
+              ?.search,
+            onNavigate: (target, openInNewTab) =>
+              openInNewTab
+                ? newTab(target, selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
+                : navigate(target),
+            onChoose: (tab, openInNewTab) =>
+              openInNewTab
+                ? newTab(tab.url, selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
+                : navigate(tab.url),
+            onEditing: (value) => {
+              editing.current = value
+            },
+          }}
+          controls={
+            <>
+              {shared && (
+                <ChoicePicker
+                  aria-label="Browser computer"
+                  className="h-7 w-auto max-w-full border-0 bg-transparent text-xs shadow-none"
+                  value={
+                    selectedTab.kind === 'web'
+                      ? 'web'
+                      : `remote:${selectedTab.runtimeId ?? activeRuntimeId}`
+                  }
+                  disabled={busy}
+                  onValueChange={(value) => {
+                    setRemoteOnline(false)
+                    setTabs((previous) =>
+                      previous.map((tab) =>
+                        tab.id === activeTab
+                          ? {
+                              ...tab,
+                              kind: value === 'web' ? 'web' : 'remote',
+                              runtimeId:
+                                value === 'web'
+                                  ? (store.localRuntimeId ?? undefined)
+                                  : value.slice(7),
+                              profileId: 'default',
+                            }
+                          : tab,
+                      ),
+                    )
+                  }}
+                >
+                  {browser && <option value="web">This computer</option>}
+                  {runtimes.map((entry) => (
+                    <option key={entry.profile.id} value={`remote:${entry.profile.id}`}>
+                      {runtimeComputerName(entry)}
+                      {entry.connected ? '' : ' · offline'}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              )}
+              <ChoicePicker
+                aria-label="Browser starter profile"
+                className="h-7 w-auto max-w-full border-0 bg-transparent text-xs shadow-none"
+                value={profileId}
+                disabled={
+                  busy ||
+                  isPrivateBrowserProfile(profileId) ||
+                  (mode === 'remote' && !remoteProfiles.profiles)
+                }
+                onValueChange={changeProfile}
+              >
+                {!tabProfiles.some((profile) => profile.id === profileId) && (
+                  <option value={profileId}>
+                    {isPrivateBrowserProfile(profileId) ? 'Private · temporary' : 'Default'}
+                  </option>
+                )}
+                {tabProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.emoji ? `${profile.emoji} ` : ''}
+                    {profile.name}
+                  </option>
                 ))}
-              </div>
-              <p className="mt-4 text-xs text-muted-foreground">
-                Enter an address above and press Enter.
-              </p>
-            </div>
-          ) : (
+              </ChoicePicker>
+            </>
+          }
+        />
+      )}
+      {mode === 'web' ? (
+        <div className="min-h-0 flex-1 overflow-auto" hidden={!url}>
+          {!url ? null : (
             <>
               {!browser && (
                 <p className="px-3 py-2 text-xs text-muted-foreground">

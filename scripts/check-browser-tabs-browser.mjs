@@ -144,7 +144,13 @@ try {
   const inputBox = await input.boundingBox()
   if (!inputBox || inputBox.width < 160) throw new Error('Address bar is squeezed by controls')
   await page.screenshot({ path: root + 'work/browser-tabs/compact-browser.png' })
+  const starterInput = page.getByRole('textbox', { name: 'New browser address', exact: true })
+  await starterInput.fill('http://localhost:4000/draft')
+  if ((await input.inputValue()) !== 'http://localhost:4000/draft')
+    throw new Error('Starter and toolbar must share one address draft')
   await input.fill('http://localhost:3000')
+  if ((await starterInput.inputValue()) !== 'http://localhost:3000')
+    throw new Error('Toolbar edits must reach the starter')
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'Agent browser access', exact: true }).click()
   await page.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('phone')
@@ -396,7 +402,7 @@ try {
   await page.getByRole('button', { name: 'Close current tab', exact: true }).click()
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'close'))
-  await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New remote tab · Remote Work', exact: true }).click()
   await page.getByRole('tab', { name: /Page/ }).waitFor()
   if ((await toolbar.count()) !== 1)
@@ -439,7 +445,7 @@ try {
   if (await page.getByText('Choose a device', { exact: true }).count())
     throw new Error('Device panel leaked into remote browser')
   const first = await page.getByRole('tab', { name: /Page/ }).textContent()
-  await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New remote tab · Remote Default', exact: true }).click()
   await page.waitForFunction(
     () => window.calls.filter((c) => c.path === '/api/previews/browser/open').length === 2,
@@ -464,7 +470,7 @@ try {
   await page.waitForFunction(
     () => window.calls.filter((c) => c.path === '/api/previews/browser/open').length === 3,
   )
-  await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New local tab · Local Work', exact: true }).click()
   await page.getByLabel('Browser options', { exact: true }).click()
   if ((await picker.inputValue()) !== 'local-work')

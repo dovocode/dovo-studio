@@ -1295,7 +1295,7 @@ export default function TasksView({
               browserDetached
                 ? 'contents'
                 : cn(
-                    'min-h-0 min-w-0 flex-col bg-background',
+                    'studio-page-surface min-h-0 min-w-0 flex-col bg-background',
                     surface === 'chat' ? 'hidden' : 'flex',
                     compact
                       ? 'flex-1'

@@ -75,7 +75,7 @@ import {
 import { buildThreadTree, threadDescendants } from '../list/thread-tree'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
 import {
-  NewWorkspaceTerminalDialog,
+  NewWorkspaceTerminal,
   WorkspaceTerminalSurface,
   terminalContext,
   useWorkspaceComputers,
@@ -280,6 +280,7 @@ function WorkspaceContent() {
   const threadRoots = new Map(threadTree.roots.map((entry) => [entry.key, entry]))
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [creatingTerminal, setCreatingTerminal] = useState(false)
+  const [terminalStarterVersion, setTerminalStarterVersion] = useState(0)
   const [error, setError] = useState(restored.error ?? '')
   const [lifecycleError, setLifecycleError] = useState('')
   const [switching, setSwitching] = useState(false)
@@ -379,6 +380,7 @@ function WorkspaceContent() {
   ])
   const open = useCallback(
     (tab: WorkspaceTab) => {
+      setCreatingTerminal(false)
       const page =
         tab.kind === 'browser' ? browserTabs?.find((page) => page.id === tab.id) : undefined
       if (page?.detached && host.browser) {
@@ -825,6 +827,7 @@ function WorkspaceContent() {
     )
     .slice(0, 6)
   const showHome = () => {
+    setCreatingTerminal(false)
     setState(showWorkspaceOverview)
     requestAnimationFrame(() =>
       document.querySelector<HTMLElement>('[data-workspace-input] textarea')?.focus(),
@@ -902,7 +905,7 @@ function WorkspaceContent() {
           >
             <SidebarHeader />
             <div className="studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
-              <div className="studio-thread-sidebar-controls shrink-0 space-y-2 border-b px-3 pb-2 pt-3">
+              <div className="studio-thread-sidebar-controls studio-sidebar-controls shrink-0 space-y-2 border-b px-3 pb-2 pt-3">
                 <div className="flex items-center gap-2">
                   <div className="studio-thread-search relative min-w-0 flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1011,7 +1014,7 @@ function WorkspaceContent() {
                   </div>
                 )}
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              <div className="studio-sidebar-list min-h-0 flex-1 overflow-y-auto p-2">
                 {sidebarSections.map((section) => {
                   const expanded = searching || openSections[section.id]
                   return (
@@ -1116,12 +1119,35 @@ function WorkspaceContent() {
               {lifecycleError}
             </p>
           )}
+          <Activity mode={creatingTerminal ? 'visible' : 'hidden'}>
+            <div className="flex min-h-0 flex-1 flex-col" data-terminal-starter>
+              <div className="flex h-10 shrink-0 items-center justify-end border-b px-3">
+                <Button size="sm" variant="ghost" onClick={() => setCreatingTerminal(false)}>
+                  {active ? 'Return to work' : 'Return to workspace'}
+                </Button>
+              </div>
+              <NewWorkspaceTerminal
+                key={terminalStarterVersion}
+                onOpen={(target) => {
+                  open({ ...target, kind: 'terminal' })
+                  setTerminalStarterVersion((value) => value + 1)
+                }}
+              />
+            </div>
+          </Activity>
           {/* Keep the Home draft mounted without taking space above an active workspace tab. */}
           <div
-            hidden={!!active}
-            className={active ? 'hidden' : 'flex min-h-0 flex-1 flex-col overflow-y-auto'}
+            hidden={!!active || creatingTerminal}
+            className={
+              active || creatingTerminal ? 'hidden' : 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+            }
           >
-            <WorkspaceInput active={active} onOpen={open} onBrowser={openBrowserLink}>
+            <WorkspaceInput
+              visible={!creatingTerminal}
+              active={active}
+              onOpen={open}
+              onBrowser={openBrowserLink}
+            >
               <details
                 className="mx-auto mt-3 w-full max-w-[var(--chat-max)] text-xs text-muted-foreground"
                 data-workspace-browse
@@ -1184,7 +1210,10 @@ function WorkspaceContent() {
                 : undefined
             }
             tabIndex={-1}
-            className={cn('flex min-h-0 min-w-0 flex-1 flex-col', !active && 'hidden')}
+            className={cn(
+              'flex min-h-0 min-w-0 flex-1 flex-col',
+              (!active || creatingTerminal) && 'hidden',
+            )}
           >
             {switching && (
               <p role="status" className="p-3 text-xs text-muted-foreground">
@@ -1219,6 +1248,7 @@ function WorkspaceContent() {
                     key={key}
                     mode={
                       selected &&
+                      !creatingTerminal &&
                       (tab.kind !== 'thread' || !owner || store.activeRuntimeId === tab.runtimeId)
                         ? 'visible'
                         : 'hidden'
@@ -1263,7 +1293,7 @@ function WorkspaceContent() {
                 onLinkOpened={() => setBrowserLink(null)}
                 workspaceControl={{
                   onActivityChange: setBrowserActivity,
-                  visible: active?.kind === 'browser',
+                  visible: active?.kind === 'browser' && !creatingTerminal,
                   lifecycleRequest: browserLifecycleRequest,
                   onLifecycleHandled: (requestId) =>
                     setBrowserLifecycleRequest((previous) =>
@@ -1295,11 +1325,6 @@ function WorkspaceContent() {
             </div>
           </div>
         </div>
-        <NewWorkspaceTerminalDialog
-          open={creatingTerminal}
-          onOpenChange={setCreatingTerminal}
-          onOpen={(target) => open({ ...target, kind: 'terminal' })}
-        />
       </section>
     </StudioHostProvider>
   )

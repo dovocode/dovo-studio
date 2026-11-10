@@ -26,7 +26,7 @@ const built = await bundleBrowser(
       import {Switch} from './src/components/ui/switch';
       window.palettes=studioThemes;window.colors=accessibleThemeColors;
       function Density(){const [value,setValue]=useState('compact');return <Segmented label="Density" value={value} options={[["compact","Compact"],["comfortable","Comfortable"],["automatic","Automatic"]]} onChange={setValue}/>;}
-      createRoot(document.getElementById('app')).render(<main className="p-6 space-y-4"><Card className="space-y-4"><Density/><div className="studio-menu-surface bg-transparent" data-test="menu-override">Custom surface</div><div className="flex flex-wrap gap-2"><Button>Save</Button><Button variant="ghost">Ghost</Button><Button size="icon" aria-label="Icon">+</Button><Button disabled>Disabled</Button></div><Input aria-label="Field"/><Input aria-label="Custom" className="bg-transparent"/><Input aria-label="Invalid" aria-invalid="true"/><Input aria-label="Rounded search" type="search" className="rounded-full" placeholder="Search"/><Input aria-label="Rounded URL" type="url" className="rounded-full" placeholder="http://localhost:3000"/><Textarea aria-label="Notes"/><Select defaultValue="one"><SelectTrigger aria-label="Choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem><SelectItem value="two">Two</SelectItem></SelectContent></Select><ChoicePicker aria-label="Computer" value="local" onValueChange={()=>{}}><option value="local">This computer</option></ChoicePicker><select aria-label="Native"><option>Native option</option></select><div className="flex gap-4"><Checkbox aria-label="Check" defaultChecked/><Switch aria-label="Switch" defaultChecked/></div><Dialog><DialogTrigger asChild><Button variant="outline">Open control dialog</Button></DialogTrigger><DialogContent><DialogTitle>Project settings</DialogTitle><DialogDescription>Shared controls in a production dialog.</DialogDescription><Input aria-label="Dialog name" defaultValue="Dovo Studio"/><Select defaultValue="one"><SelectTrigger aria-label="Dialog choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem></SelectContent></Select><div className="flex justify-end gap-2"><Button disabled>Unavailable action</Button><Button>Save project</Button></div></DialogContent></Dialog></Card><div className="studio-sidebar-brand-row"><header className="studio-titlebar" data-sidebar-brand="true" data-test="sidebar-brand">Sidebar</header></div><div className="studio-window-header-content"><header className="studio-browser-header" data-test="window-browser"><div className="studio-browser-toolbar">Browser</div></header></div></main>);
+      createRoot(document.getElementById('app')).render(<main className="p-6 space-y-4"><Card className="space-y-4"><Density/><div className="studio-menu-surface bg-transparent" data-test="menu-override">Custom surface</div><div className="flex flex-wrap gap-2"><Button>Save</Button><Button variant="ghost">Ghost</Button><Button size="icon" aria-label="Icon">+</Button><Button disabled>Disabled</Button></div><Input aria-label="Field"/><Input aria-label="Custom" className="bg-transparent"/><Input aria-label="Invalid" aria-invalid="true"/><Input aria-label="Rounded search" type="search" className="rounded-full" placeholder="Search"/><Input aria-label="Rounded URL" type="url" className="rounded-full" placeholder="http://localhost:3000"/><Textarea aria-label="Notes"/><Select defaultValue="one"><SelectTrigger aria-label="Choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem><SelectItem value="two">Two</SelectItem></SelectContent></Select><ChoicePicker aria-label="Computer" value="local" onValueChange={()=>{}}><option value="local">This computer</option></ChoicePicker><select aria-label="Native"><option>Native option</option></select><div className="flex gap-4"><Checkbox aria-label="Check" defaultChecked/><Switch aria-label="Switch" defaultChecked/></div><Dialog><DialogTrigger asChild><Button variant="outline">Open control dialog</Button></DialogTrigger><DialogContent><DialogTitle>Project settings</DialogTitle><DialogDescription>Shared controls in a production dialog.</DialogDescription><Input aria-label="Dialog name" defaultValue="Dovo Studio"/><Select defaultValue="one"><SelectTrigger aria-label="Dialog choice"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="one">One</SelectItem></SelectContent></Select><div className="flex justify-end gap-2"><Button disabled>Unavailable action</Button><Button>Save project</Button></div></DialogContent></Dialog></Card><div className="studio-sidebar-brand-row"><header className="studio-titlebar" data-sidebar-brand="true" data-test="sidebar-brand">Sidebar</header></div><div className="studio-window-header-content"><header className="studio-browser-header" data-test="window-browser"><div className="studio-browser-toolbar">Browser</div></header></div><div className="studio-page-surface"><header className="studio-page-header">Page</header><header className="studio-task-thread-header">Thread</header><header className="studio-settings-toolbar">Settings</header><header className="studio-agent-profile-header">Agent</header><div className="studio-thread-tools-panel"><header className="studio-thread-tools-header">Tools</header></div></div><section data-test="navigation" className="studio flex"><div className="studio-task-sidebar"><div data-pane="threads" className="studio-overview-pane"><div className="studio-sidebar-controls">Search</div><div className="studio-sidebar-list">Rows</div><div className="studio-thread-row" data-highlighted><button data-row="thread" className="studio-thread-card">Thread</button></div></div></div><div className="studio-navigation-sidebar"><div data-pane="browser" className="studio-overview-pane studio-browser-sidebar"><div data-row="browser" className="studio-browser-tab" data-active><button className="studio-browser-tab-select">Browser</button></div><div data-row="idle" className="studio-browser-tab"><button className="studio-browser-tab-select">Idle tab</button></div><div data-row="pin" className="studio-browser-tab" data-pinned><button className="studio-browser-tab-select">Pin</button></div></div></div><div className="studio-task-sidebar"><div data-pane="unified" className="studio-overview-pane"><div data-row="unified" className="studio-browser-tab" data-active><button className="studio-browser-tab-select">Unified</button></div></div></div><div className="studio-task-sidebar"><div data-pane="terminal" className="studio-overview-pane">Terminal</div></div><nav className="studio-navigation-sidebar" aria-label="Settings sections"><div data-pane="settings" className="studio-overview-pane">Settings</div></nav><div className="studio-browser-address"><input aria-label="Browser address" defaultValue="http://localhost:3000"/></div></section></main>);
     `,
       resolveDir: root + 'packages/studio-ui',
       loader: 'tsx',
@@ -213,7 +213,84 @@ try {
       'none',
       'The collapsed Browser header stays continuous with its window titlebar',
     )
-    assert.equal(await style('[data-test="window-browser"]', 'backgroundImage'), 'none')
+    assert.equal(
+      await style('[data-test="window-browser"]', 'backgroundImage'),
+      await style('[data-test="navigation"]', 'backgroundImage'),
+      'Browser header continues the page tint',
+    )
+    for (const property of ['backgroundColor', 'backgroundImage', 'boxShadow'])
+      assert.equal(
+        await style('[data-test="window-browser"] .studio-browser-toolbar', property),
+        await style('[data-test="window-browser"]', property),
+        `Browser toolbar shares its header's ${property}`,
+      )
+    const viewport = page.viewportSize()
+    assert.equal(
+      await style('[data-test="navigation"]', 'backgroundSize'),
+      `${viewport.width}px ${viewport.height}px`,
+    )
+    for (const selector of [
+      '.studio-page-surface',
+      '.studio-page-header',
+      '.studio-task-thread-header',
+      '.studio-settings-toolbar',
+      '.studio-agent-profile-header',
+      '.studio-thread-tools-header',
+    ])
+      for (const property of [
+        'backgroundImage',
+        'backgroundSize',
+        'backgroundPosition',
+        'backgroundAttachment',
+      ])
+        assert.equal(
+          await style(selector, property),
+          await style('[data-test="navigation"]', property),
+          `${selector} continues page ${property}`,
+        )
+    for (const selector of ['.studio-sidebar-controls']) {
+      assert.equal(await style(selector, 'paddingTop'), '12px')
+      assert.equal(await style(selector, 'paddingInline'), '12px')
+      assert.equal(await style(selector, 'paddingBottom'), '8px')
+    }
+    assert.equal(await style('.studio-sidebar-list', 'paddingInline'), '6px')
+    assert.equal(
+      (await style('[data-test="navigation"]', 'backgroundImage')) === 'none',
+      !effects || highContrast,
+      'Background tint follows the effects preferences without a fixed-width cutoff',
+    )
+    for (const pane of ['browser', 'unified', 'terminal', 'settings'])
+      for (const property of ['backgroundColor', 'backdropFilter', 'borderColor', 'borderRadius'])
+        assert.equal(
+          await style(`[data-pane="${pane}"]`, property),
+          await style('[data-pane="threads"]', property),
+          `${mode}: ${pane} and Threads share pane ${property}`,
+        )
+    for (const row of ['browser', 'unified'])
+      for (const property of ['backgroundColor', 'backgroundImage', 'boxShadow', 'borderRadius'])
+        assert.equal(
+          await style(`[data-row="${row}"]`, property),
+          await style('[data-row="thread"]', property),
+          `${mode}: ${row} and Threads share selected ${property}`,
+        )
+    for (const row of ['idle', 'pin']) {
+      assert.equal(await style(`[data-row="${row}"]`, 'borderColor'), 'rgba(0, 0, 0, 0)')
+      assert.equal(await style(`[data-row="${row}"]`, 'backgroundColor'), 'rgba(0, 0, 0, 0)')
+      assert.equal(await style(`[data-row="${row}"]`, 'backgroundImage'), 'none')
+      assert.equal(await style(`[data-row="${row}"]`, 'boxShadow'), 'none')
+    }
+    assert.equal(await style('[data-row="pin"]', 'height'), '56px')
+    assert.equal(await style('.studio-browser-address', 'backgroundImage'), 'none')
+    assert.equal(await style('.studio-browser-address', 'backdropFilter'), 'none')
+    const address = page.getByRole('textbox', { name: 'Browser address', exact: true })
+    await address.scrollIntoViewIfNeeded()
+    const addressBounds = await address.boundingBox()
+    await address.focus()
+    assert.equal(await address.evaluate((node) => node === document.activeElement), true)
+    assert.notEqual(await style('.studio-browser-address', 'borderColor'), 'rgba(0, 0, 0, 0)')
+    assert.deepEqual(await address.boundingBox(), addressBounds, 'Address focus preserves layout')
+    await compact.focus()
+
     assert.equal(await style('[data-variant="ghost"]', 'backgroundImage'), 'none')
     assert.equal(await style('[data-size="icon"]', 'backgroundImage'), 'none')
     assert.equal((await style('[data-variant="default"]', 'backgroundImage')) === 'none', !effects)
@@ -348,6 +425,14 @@ try {
     })
     assert.deepEqual(surface, { filter: 'none', image: 'none' }, `${mode}: reduced transparency`)
     await page.keyboard.press('Escape')
+    for (const pane of ['threads', 'browser', 'unified', 'terminal', 'settings']) {
+      assert.equal(
+        await page
+          .locator(`[data-pane="${pane}"]`)
+          .evaluate((node) => getComputedStyle(node).backdropFilter),
+        'none',
+      )
+    }
     assert.equal(await compact.evaluate((node) => getComputedStyle(node).backgroundImage), 'none')
     assert.equal(await compact.evaluate((node) => getComputedStyle(node).boxShadow), 'none')
   }

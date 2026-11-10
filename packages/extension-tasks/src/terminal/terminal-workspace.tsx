@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, ChevronDown, Monitor, Pencil, Plus, Search, Terminal } from 'lucide-react'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -76,33 +76,6 @@ export function useWorkspaceComputers() {
 export function NewWorkspaceTerminal({ onOpen }: { onOpen: (target: TerminalTarget) => void }) {
   const computers = useWorkspaceComputers()
   return <TerminalStarter computers={computers} onOpen={onOpen} />
-}
-
-export function NewWorkspaceTerminalDialog({
-  open,
-  onOpenChange,
-  onOpen,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onOpen: (target: TerminalTarget) => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogTitle className="sr-only">New terminal</DialogTitle>
-        <DialogDescription className="sr-only">
-          Open a shell on a paired computer.
-        </DialogDescription>
-        <NewWorkspaceTerminal
-          onOpen={(target) => {
-            onOpen(target)
-            onOpenChange(false)
-          }}
-        />
-      </DialogContent>
-    </Dialog>
-  )
 }
 
 /** Terminal workflow metadata never changes the lifetime of its shell. */
@@ -434,6 +407,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
   )
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  const [starterVersion, setStarterVersion] = useState(0)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     Pinned: true,
     'Needs input': true,
@@ -461,7 +435,10 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
   )
   useEffect(() => {
     const next = readTerminalTarget(entityId)
-    if (next) setSelected(next)
+    if (next) {
+      setSelected(next)
+      setCreating(false)
+    }
   }, [entityId])
   return (
     <section className="flex min-h-0 min-w-0 flex-1" aria-label="Terminals workspace">
@@ -476,7 +453,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
         >
           <SidebarHeader />
           <div className="studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
-            <div className="studio-thread-sidebar-controls space-y-2 border-b px-3 pb-2 pt-3">
+            <div className="studio-thread-sidebar-controls studio-sidebar-controls space-y-2 border-b px-3 pb-2 pt-3">
               <div className="flex items-center gap-2">
                 <div className="studio-thread-search relative min-w-0 flex-1">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -502,7 +479,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                 <span className="tabular-nums">{sessions.length}</span>
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            <div className="studio-sidebar-list min-h-0 flex-1 overflow-y-auto p-2">
               {(['Pinned', 'Needs input', 'Working', 'Active', 'Snoozed', 'Settled'] as const).map(
                 (group) => {
                   const entries = matches.filter(({ owner, session }) => {
@@ -573,9 +550,10 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                                     ? 'snoozed'
                                     : 'active'
                               }
-                              onSelect={() =>
+                              onSelect={() => {
                                 setSelected({ runtimeId: owner.profile.id, id: session.id })
-                              }
+                                setCreating(false)
+                              }}
                               project={repository?.name ?? 'Home folder'}
                               checkout={
                                 branch ??
@@ -620,32 +598,40 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
             {lifecycleError}
           </p>
         )}
-        {selected ? (
-          <WorkspaceTerminalSurface
-            target={selected}
-            onHide={() => setSelected(undefined)}
-            onNew={() => setCreating(true)}
-            onLifecycleError={setLifecycleError}
-          />
-        ) : (
-          <>
-            <HeaderContent>
-              <header className="studio-task-thread-header" data-window-edge data-window-right-edge>
-                <Terminal className="size-4 text-muted-foreground" />
-                <h1 className="flex-1 text-sm font-medium">Terminals</h1>
-                <Button size="sm" variant="ghost" onClick={() => setCreating(true)}>
-                  <Plus className="size-4" />
-                  New terminal
+        <Activity mode={selected && !creating ? 'visible' : 'hidden'}>
+          {selected && (
+            <WorkspaceTerminalSurface
+              target={selected}
+              onHide={() => setSelected(undefined)}
+              onNew={() => setCreating(true)}
+              onLifecycleError={setLifecycleError}
+            />
+          )}
+        </Activity>
+        <Activity mode={!selected || creating ? 'visible' : 'hidden'}>
+          <HeaderContent>
+            <header className="studio-task-thread-header" data-window-edge data-window-right-edge>
+              <Terminal className="size-4 text-muted-foreground" />
+              <h1 className="flex-1 text-sm font-medium">New terminal</h1>
+              {selected && (
+                <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>
+                  Return to terminal
                 </Button>
-              </header>
-            </HeaderContent>
-            <div className="flex min-h-0 flex-1 flex-col">
-              <NewWorkspaceTerminal onOpen={setSelected} />
-            </div>
-          </>
-        )}
+              )}
+            </header>
+          </HeaderContent>
+          <div className="flex min-h-0 flex-1 flex-col" data-terminal-starter>
+            <NewWorkspaceTerminal
+              key={starterVersion}
+              onOpen={(target) => {
+                setSelected(target)
+                setCreating(false)
+                setStarterVersion((value) => value + 1)
+              }}
+            />
+          </div>
+        </Activity>
       </div>
-      <NewWorkspaceTerminalDialog open={creating} onOpenChange={setCreating} onOpen={setSelected} />
     </section>
   )
 }

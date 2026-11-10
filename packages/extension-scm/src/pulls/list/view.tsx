@@ -329,11 +329,11 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
         <nav
           style={sidebarVisible || (!selected && !urlSelection) ? undefined : { display: 'none' }}
           aria-label="Pull request sidebar"
-          className={`min-h-0 min-w-0 flex-col overflow-hidden bg-background ${hasDetail ? 'hidden w-full shrink-0 md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
+          className={`studio-navigation-sidebar min-h-0 min-w-0 flex-col overflow-hidden bg-background ${hasDetail ? 'hidden w-full shrink-0 md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
           <SidebarHeader enabled={hasDetail} />
           <div
-            className={`@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${hasDetail ? 'studio-overview-pane bg-sidebar' : 'bg-background'}`}
+            className={`@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${hasDetail ? 'studio-overview-pane bg-sidebar' : 'studio-page-surface bg-background'}`}
           >
             <PageHeader title="Pull requests" embedded={hasDetail}>
               <Button

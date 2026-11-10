@@ -70,10 +70,14 @@
   --studio-navigation-fill: var(--sidebar);
   --studio-navigation-filter: none;
   --studio-navigation-light: radial-gradient(
-    ellipse at 0 0,
-    color-mix(in srgb, var(--primary) 9%, transparent),
-    transparent 65%
+    ellipse 900px 780px at 0 0,
+    color-mix(in srgb, var(--primary) calc(18% * var(--studio-glow-strength)), transparent) 0%,
+    color-mix(in srgb, var(--primary) calc(6% * var(--studio-glow-strength)), transparent) 45%,
+    transparent 100%
   );
+  /* Reuse viewport coordinates so opaque headers and pages continue the same tint. */
+  --studio-page-background: var(--studio-navigation-light) 0 0 / 100vw 100vh no-repeat fixed
+    var(--background);
   --studio-surface-filter: blur(24px) saturate(1.4);
   --studio-control-rim: inset 0 1px 0 #ffffff24, inset 0 -1px 3px #00000020;
   --studio-inset-fill: color-mix(in srgb, var(--background) 70%, var(--card));
@@ -200,6 +204,7 @@
   --studio-glow-wide: 0 0 0 transparent;
   --studio-icon-glow: none;
   --studio-capsule-shadow: none;
+  --studio-navigation-light: none;
 }
 
 /* Navigation blurs once per surface. Dense rows and their controls do not blur. */

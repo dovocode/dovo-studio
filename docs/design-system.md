@@ -54,12 +54,18 @@ ellipsis directly against the suffix. Resizing refits the text without changing 
 tooltip, accessible label or copy text. The MIT notice is included in **Settings → About → Open
 source notices**.
 
+Unified sidebar and overview rows put one small type icon beside the title. Use the same 14px size
+and 6px gap for Thread, Browser and Terminal. Keep the icon in the title's normal layout. Project
+icons and favicons stay on the context line. Avoid floating badges and separate icon boxes. Pinned
+browser tiles keep their centered favicons.
+
 Build and check the real sidebar with synthetic runtime data. Add the preview variable to save
 light, dark and narrow examples:
 
 ```sh
 pnpm exec playwright install chromium
 pnpm --filter @dovo/desktop build
+node scripts/check-shared-controls-appearance-browser.mjs
 DOVO_SIDEBAR_PREVIEWS=/tmp/dovo-sidebar-t3-previews node scripts/check-sidebar-rendering-browser.mjs
 node scripts/check-desktop-audit-layout-browser.mjs
 ```
@@ -81,8 +87,16 @@ thread rows. Hosted service chrome keeps its plain presentation.
 
 Floating surfaces use a 24px blur, richer color and layered edge highlights. Desktop navigation uses
 a transparent fill over a soft palette tint inside the app. It does not show the desktop wallpaper.
-Do not stack bevels or shadows on its header and controls. Keep the Gradients, Glow, high-contrast
-and reduced-transparency preferences active.
+The background tint fades across the window and follows the Glow intensity. It has no fixed-width
+edge. Page headers, sticky settings headers and full-page lists paint the same tint at the same
+window position. Headers retain an opaque base when content scrolls below them. Threads, Browser,
+Terminals, Settings and Unified workspace share the pane fill and blur. Desktop sidebar controls use
+12px top and side insets and an 8px bottom inset. Resource lists use 6px side insets. Settings
+search uses the same 12px side inset. Browser tabs use the thread selection fill, gradient and glow
+in both Browser and Unified workspace. Idle tabs stay transparent and borderless. Pinned tabs keep
+their 56px size and centered favicon. The Browser address uses the shared inset fill without a
+separate gradient or blur. Do not stack bevels or shadows on its header and controls. Keep the
+Gradients, Glow, high-contrast and reduced-transparency preferences active.
 
 Desktop sidebars have a floating glass toggle over their brand row. The toggle stays available in
 the window header when the sidebar is hidden. Keyboard focus follows it during collapse and restore.
@@ -173,6 +187,31 @@ sides by 24px on desktop and 20px on mobile. Keep the input's rounded top corner
 activity inside the input box. Toolbar controls retain their own focus indicator. Never fix a glow
 by removing all focus feedback. Respect reduced motion, light mode, high contrast and native dynamic
 type.
+
+Threads, Unified workspace, Browser and Terminal use the Threads starter layout: one shared heading,
+composer width, focus border and compact control rows. Keep each starter's launch logic with its
+workspace. Browser's main **+** opens a blank page directly. Its adjacent menu retains profile,
+private-tab and window choices. The central address and toolbar share one draft. Terminal creation
+stays inline and retains its command and checkout choices when the user returns to an open session.
+Returning does not close the shell. A launch that finishes in the background opens its result when
+the user returns to the starter. Unified keeps Auto and explicit destinations. Its Terminal
+destination uses the same home, project, local checkout, existing worktree and new worktree choices
+as Terminal. An explicit Terminal destination can open an empty shell. Auto still needs a request.
+
+Check starter navigation and launch behavior with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/desktop build
+pnpm --filter @dovo/extension-tasks typecheck
+node scripts/check-unified-workspace-browser.mjs
+node scripts/check-browser-tabs-browser.mjs
+node scripts/check-shared-browser-browser.mjs
+```
+
+These browser fixtures check UI behavior and runtime request payloads. They do not verify a live
+Electron browser or a real shell on a paired computer. Review all four starters in light and dark
+themes with Glow at 50%, including narrow and short windows, before pushing visual changes.
 
 Verify shared surface changes with:
 

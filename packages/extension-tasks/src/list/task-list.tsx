@@ -890,7 +890,7 @@ export function TaskList({
     >
       <SidebarHeader />
       <div className="studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
-        <div className="studio-thread-sidebar-controls shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
+        <div className="studio-thread-sidebar-controls studio-sidebar-controls shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
           <div className="flex items-center gap-2">
             <SearchField
               aria-label="Search threads"
@@ -976,7 +976,7 @@ export function TaskList({
           onScroll={(event) => {
             scrollTop.current = event.currentTarget.scrollTop
           }}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5"
+          className="studio-sidebar-list flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5"
           aria-busy={busy || search.loading}
         >
           {search.loading && (

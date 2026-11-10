@@ -453,11 +453,11 @@ function WorkView({
     >
       <nav
         aria-label={`${isJira ? 'Jira' : mode} list`}
-        className={`${selected && (compact || !sidebarVisible) ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-col bg-background ${selected ? 'w-80 shrink-0' : 'flex-1'}`}
+        className={`studio-navigation-sidebar ${selected && (compact || !sidebarVisible) ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-col bg-background ${selected ? 'w-80 shrink-0' : 'flex-1'}`}
       >
         <SidebarHeader enabled={!!selected} />
         <div
-          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${selected ? 'studio-overview-pane bg-sidebar' : 'bg-background'}`}
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${selected ? 'studio-overview-pane bg-sidebar' : 'studio-page-surface bg-background'}`}
         >
           <div className="contents">
             <PageHeader
@@ -1018,7 +1018,7 @@ function WorkView({
           style={detailStyle}
           tabIndex={-1}
           aria-label={isJira ? 'Jira issue preview' : `${mode} detail`}
-          className="studio-detail-transition flex min-h-0 min-w-0 flex-1 flex-col bg-background outline-none"
+          className="studio-page-surface studio-detail-transition flex min-h-0 min-w-0 flex-1 flex-col bg-background outline-none"
         >
           {detail}
         </aside>

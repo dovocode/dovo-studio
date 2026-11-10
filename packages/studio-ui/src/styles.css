@@ -92,7 +92,7 @@
 .task-composer {
   --composer-accent: var(--primary);
 }
-.startup-draft [data-thread-start] {
+.startup-draft [data-startup-heading] {
   gap: 12px;
   padding-bottom: 24px;
 }
@@ -283,6 +283,13 @@
 .composer-add-actions .composer-add-menu svg {
   width: 0.75rem;
   height: 0.75rem;
+}
+.task-composer [data-composer-controls] [data-choice-picker] {
+  background: transparent;
+  box-shadow: none;
+}
+.task-composer [data-composer-controls] [data-choice-picker]:hover:not(:disabled) {
+  background: var(--accent);
 }
 .task-composer [data-composer-controls] {
   justify-content: flex-end;
@@ -1379,25 +1386,18 @@ textarea {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
+/* Browser and Unified rows use the same quiet idle surface as Threads. */
+.studio-browser-tab {
+  border: 1px solid transparent;
+  border-radius: var(--dovo-radius-control);
+  background: transparent;
+  box-shadow: none;
+}
 .studio-browser-sidebar .studio-browser-tab {
   margin-bottom: 5px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background-color: color-mix(in srgb, var(--foreground) 3%, var(--sidebar));
 }
-.studio-browser-sidebar .studio-browser-tab[data-pinned] {
-  margin-bottom: 0;
-  border-color: transparent;
-  border-radius: 12px;
-  background-image: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--foreground) 4%, transparent),
-    transparent
-  );
-  box-shadow: inset 0 1px color-mix(in srgb, var(--foreground) 3%, transparent);
-}
-.studio-browser-sidebar .studio-browser-tab:not([data-active]):hover {
-  background-color: color-mix(in srgb, var(--foreground) 4%, transparent);
+.studio-browser-tab:not([data-active]):is(:hover, :focus-within) {
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 .studio-selected-surface,
 .studio-filter-selected {
@@ -1449,37 +1449,38 @@ textarea {
   border-radius: 8px;
   background: color-mix(in srgb, var(--foreground) 5%, var(--sidebar));
 }
+/* Mixed rows keep the type beside the title and identity on the context line. */
+.studio-workspace-page.studio-browser-tab:not([data-pinned]) {
+  display: block;
+  padding: 0;
+  border-left-width: 2px;
+}
+.studio-workspace-page.studio-browser-tab:not([data-pinned]) .studio-browser-tab-select {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 10px;
+}
+.studio-workspace-page .studio-browser-tab-favicon > :is(img, svg) {
+  width: 16px;
+  height: 16px;
+}
+.studio-workspace-page .studio-thread-card-title {
+  font-size: var(--dovo-type-row-size);
+  line-height: var(--dovo-type-row-line);
+  font-weight: var(--dovo-type-row-weight);
+}
+.studio-workspace-page.studio-browser-tab:not([data-pinned]) .studio-browser-tab-activity {
+  width: fit-content;
+  margin: 0 10px 6px auto;
+}
 /* Compact browser pins show the page first. Identity stays in the tooltip and accessible name. */
 .studio-browser-tab[data-pinned] {
   height: 56px;
+  margin-bottom: 0;
   padding: 0;
   border-radius: 12px;
-  border-color: transparent;
-  background:
-    radial-gradient(
-      ellipse at 10% 70%,
-      color-mix(in srgb, var(--primary) 12%, transparent),
-      transparent 75%
-    ),
-    linear-gradient(145deg, color-mix(in srgb, var(--foreground) 5%, transparent), transparent 65%),
-    var(--sidebar);
-  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent);
-}
-.studio-browser-sidebar .studio-browser-tab[data-pinned] {
-  border-radius: 12px;
-  background-image:
-    radial-gradient(
-      ellipse at 10% 70%,
-      color-mix(in srgb, var(--primary) 12%, transparent),
-      transparent 75%
-    ),
-    linear-gradient(145deg, color-mix(in srgb, var(--foreground) 5%, transparent), transparent 65%);
-}
-.studio-browser-tab[data-pinned][data-active],
-.studio-browser-sidebar .studio-browser-tab[data-pinned][data-active] {
-  border-radius: 12px;
-  border-color: color-mix(in srgb, var(--primary) 65%, var(--border));
-  box-shadow: inset 0 0 10px color-mix(in srgb, var(--primary) 12%, transparent);
 }
 .studio-browser-tab[data-pinned][data-active] > .studio-browser-tab-select::before {
   display: none;
@@ -1599,16 +1600,11 @@ textarea {
   border-radius: 50%;
   background: var(--sidebar);
 }
-.studio-browser-tab[data-pinned]:not([data-active]):hover {
-  box-shadow:
-    inset 0 1px color-mix(in srgb, var(--foreground) 8%, transparent),
-    0 3px 10px #0003;
-}
 .studio-browser-tab[data-active] .studio-browser-tab-badge {
   background: var(--primary);
   color: var(--primary-foreground);
 }
-.studio-browser-sidebar .studio-browser-tab[data-active] .studio-browser-tab-title {
+.studio-browser-tab[data-active] .studio-browser-tab-title {
   font-weight: 500;
 }
 .studio-browser-tab-select:focus-visible {
@@ -1630,22 +1626,16 @@ textarea {
   background: color-mix(in srgb, var(--destructive) 12%, transparent);
   color: var(--destructive);
 }
-[data-high-contrast='true'] .studio-browser-sidebar .studio-browser-tab[data-active] {
+[data-high-contrast='true'] .studio-browser-tab[data-active] {
   border-color: var(--primary);
 }
-.studio-browser-tab-menu {
-  padding: 5px;
-  border-radius: var(--dovo-radius-card);
-  border-color: color-mix(in srgb, var(--border) 75%, var(--foreground) 10%);
-  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
-}
-.studio-browser-tab-menu [role^='menuitem'] {
+.studio-row-menu [role^='menuitem'] {
   min-height: 28px;
-  border-radius: 7px;
+  border-radius: 8px;
   font-size: 12px;
 }
-.studio-browser-tab-menu [role^='menuitem'][data-highlighted] {
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
+.studio-row-menu [role^='menuitem'][data-highlighted] {
+  background: color-mix(in srgb, var(--accent) 65%, transparent);
 }
 .studio-browser-site-controls {
   border-color: color-mix(in srgb, var(--border) 75%, var(--foreground) 10%);
@@ -1726,6 +1716,8 @@ textarea {
   border: 1px solid color-mix(in srgb, var(--border) 80%, var(--foreground) 8%);
   border-radius: 24px;
   background: var(--studio-inset-fill);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   box-shadow: var(--studio-inset-shadow);
 }
 .studio-browser-address:focus-within {
@@ -1957,16 +1949,6 @@ textarea {
 .studio-browser-secondary-actions button {
   justify-content: flex-start;
   font-weight: 400;
-}
-.dark .studio-task-sidebar .studio-overview-pane,
-.dark .studio-browser-sidebar,
-.dark .studio-browser-toolbar {
-  border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
-  background: var(--sidebar);
-}
-.dark .studio-browser-address {
-  background: var(--sidebar);
-  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
 }
 .dark .studio-browser-tab[data-active] .studio-browser-tab-profile {
   color: color-mix(in srgb, var(--foreground) 65%, var(--primary));
@@ -2391,7 +2373,8 @@ select:focus-visible,
   border-color: var(--ring);
   box-shadow: none;
 }
-.studio-composer textarea:focus-visible {
+.studio-composer textarea:focus-visible,
+.task-composer .studio-composer [data-composer-input] input:focus-visible {
   outline: none;
   box-shadow: none;
 }
@@ -2499,16 +2482,11 @@ select:focus-visible,
   transition: outline-color 1.2s ease-out;
 }
 
-/* Keep task navigation and its project panel a step darker than the conversation. */
-:root:not([data-theme='light']) [aria-label='Settings sections'] > .studio-overview-pane,
-:root:not([data-theme='light']) [aria-label='Pull request sidebar'] > .studio-overview-pane,
+/* Keep the project panel a step darker than the conversation. */
 :root:not([data-theme='light']) [aria-label='Thread project'] {
   background: var(--sidebar);
 }
 
-.studio-task-sidebar .studio-overview-pane {
-  border-color: color-mix(in srgb, var(--border) 80%, var(--foreground) 6%);
-}
 .studio-thread-sidebar-controls {
   border-color: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
@@ -2582,7 +2560,7 @@ select:focus-visible,
 .studio-nav-selected,
 .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
 .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
-.studio-browser-sidebar .studio-browser-tab[data-active],
+.studio-browser-tab[data-active],
 .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
 .studio-task-sidebar .studio-thread-child[aria-current='true'] {
   position: relative;
@@ -2611,9 +2589,8 @@ select:focus-visible,
 .studio-browser-tab-select {
   position: relative;
 }
-.studio-browser-sidebar .studio-browser-tab[data-active] {
+.studio-browser-tab[data-pinned][data-active] {
   border-radius: 12px;
-  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
 }
 .studio-task-sidebar .studio-list-section-header,
 .studio-browser-sidebar .studio-list-section-header {
@@ -2673,7 +2650,7 @@ select:focus-visible,
 [data-high-contrast='true'] .studio-task-sidebar .studio-thread-child[aria-current='true'],
 :root[data-high-contrast='true'] .studio-selected-surface,
 :root[data-high-contrast='true'] .studio-nav-selected,
-:root[data-high-contrast='true'] .studio-browser-sidebar .studio-browser-tab[data-active],
+:root[data-high-contrast='true'] .studio-browser-tab[data-active],
 :root[data-high-contrast='true']
   .studio-navigation[aria-label='Main navigation']
   .studio-navigation-item[aria-current='page'],
@@ -3037,7 +3014,7 @@ a.studio-project-row:hover {
     .studio-navigation-item[aria-current='page'],
   :root .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
   :root:root .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]),
-  :root .studio-browser-sidebar .studio-browser-tab[data-active],
+  :root .studio-browser-tab[data-active],
   :root .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
   :root .studio-task-sidebar .studio-thread-child[aria-current='true'] {
     border-color: Highlight;
@@ -3593,12 +3570,10 @@ a.studio-project-row:hover {
 /* One translucent navigation surface; controls and rows do not add glass layers. */
 @media (min-width: 768px) {
   .studio {
-    background-color: var(--background);
-    background-image: var(--studio-navigation-light);
-    background-size: 480px 100%;
-    background-repeat: no-repeat;
+    background: var(--studio-page-background);
   }
-  .studio-task-sidebar {
+  .studio-task-sidebar,
+  .studio-navigation-sidebar {
     background: transparent;
   }
   .studio-overview-pane,
@@ -3608,7 +3583,7 @@ a.studio-project-row:hover {
     border-radius: 14px;
     overflow: hidden;
   }
-  .studio-task-sidebar .studio-overview-pane,
+  .studio-overview-pane,
   .studio-navigation[aria-label='Main navigation'] {
     border-color: color-mix(in srgb, var(--foreground) 7%, transparent);
     background: var(--studio-navigation-fill);
@@ -3650,16 +3625,32 @@ a.studio-project-row:hover {
   }
 }
 
-/* The window header is one continuous surface, including the Browser address controls. */
-.studio-browser-header,
-.studio-browser-header .studio-browser-toolbar {
-  background: var(--background);
-  background-image: var(--studio-surface-sheen);
-  box-shadow: var(--studio-control-rim);
-}
-.studio-window-header-content > .studio-browser-header {
-  background-image: none;
-  box-shadow: none;
+/* Headers and opaque page surfaces continue the shell tint in viewport coordinates.
+   Sticky headers keep an opaque base so scrolling content never shows through. */
+@media (min-width: 768px) {
+  .studio-page-surface,
+  .studio-window-header-content > header,
+  .studio-titlebar,
+  .studio-task-thread-header,
+  .studio-page-header,
+  .studio-settings-toolbar,
+  .studio-agent-profile-header,
+  .studio-thread-tools-panel .studio-thread-tools-header,
+  .studio-browser-header,
+  .studio-browser-header .studio-browser-toolbar,
+  .studio-window-header-content .studio-browser-header .studio-browser-toolbar {
+    background: var(--studio-page-background);
+    box-shadow: none;
+  }
+  .studio-overview-pane .studio-page-header[data-embedded] {
+    background: transparent;
+  }
+  .studio-sidebar-controls {
+    padding: 12px 12px 8px;
+  }
+  .studio-sidebar-list {
+    padding-inline: 6px;
+  }
 }
 .studio-thread-info-links {
   border-bottom: 0;

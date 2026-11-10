@@ -334,10 +334,10 @@ export function SettingsNav({
       }}
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-[280px]"
+      className="studio-navigation-sidebar studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-[280px]"
     >
       <SidebarHeader />
-      <div className="studio-overview-pane flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sidebar px-4 py-3 md:px-3 md:py-4">
+      <div className="studio-overview-pane flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sidebar px-4 py-3 md:px-1.5">
         <div className="md:hidden">
           <Select value={activeId} onValueChange={select}>
             <SelectTrigger aria-label="Settings section" className="h-9">
@@ -362,7 +362,7 @@ export function SettingsNav({
           </Select>
           <p className="mt-2 text-xs text-muted-foreground">{scopeLabel}</p>
         </div>
-        <div className="shrink-0 px-1">
+        <div className="shrink-0 px-1 md:px-1.5">
           <h1 className="mb-2 hidden px-1 text-base font-semibold tracking-tight md:block">
             Settings
           </h1>

@@ -75,7 +75,9 @@ export function BrowserAddressInput({
   search,
   onNavigate,
   label = 'Preview URL',
+  suggestOnFocus = true,
 }: {
+  suggestOnFocus?: boolean
   label?: string
   value: string
   onChange: (value: string) => void
@@ -96,7 +98,7 @@ export function BrowserAddressInput({
   const [typed, setTyped] = useState(false)
   const [active, setActive] = useState(-1)
   const suggestions =
-    shared && open
+    shared && open && (suggestOnFocus || typed)
       ? browserAddressSuggestions(typed ? value : '', tabs, bookmarks, visits, profileId)
       : []
   const query = value.trim()
