@@ -1,5 +1,5 @@
 import { Schema } from 'effect'
-import { mutableStruct, minValue, maxValue } from '@dovo/protocol'
+import { mutableStruct, minValue, maxValue } from '@dovo/protocol/agent-tools'
 import { browserObservationSchema } from './browser-observation.js'
 
 const text = maxValue(minValue(Schema.String, 1), 16000)

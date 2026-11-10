@@ -1,5 +1,5 @@
 import { Schema } from 'effect'
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct } from '@dovo/protocol/agent-tools'
 
 export const browserObservationSchema = mutableStruct({
   elements: Schema.Array(

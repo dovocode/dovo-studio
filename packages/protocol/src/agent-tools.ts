@@ -1,6 +1,6 @@
 // Narrow entry for the per-agent MCP tool bridge. Keep it to schema leaves so each bridge process
 // avoids loading the full protocol barrel.
-export { decode, mutableArray, mutableStruct } from './shared/schema.js'
+export { decode, mutableArray, mutableStruct, minValue, maxValue } from './shared/schema.js'
 export { runtimeRequestTimeout } from './shared/request-timeout.js'
 export { memoryScopeSchema } from './runtime/memory.js'
 export { previewDevicesSchema, previewResultSchema } from './runtime/previews/previews.js'
