@@ -24,7 +24,7 @@ const mocks = {
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>window.host;
     export const WorkspaceScope=({children})=>children;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
+    export const readAppPreferences=()=>({runtimeDictationIds:[],taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});

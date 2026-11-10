@@ -88,6 +88,7 @@ const mocks = {
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
   'expo-router': `export const usePreventRemove=()=>{};export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),replace:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId,setting:window.requestedSetting});`,
   expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE','el-GR']})});`,
+  'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
   'expo-speech': `export const getAvailableVoicesAsync=async()=>[{identifier:'siri',name:'Siri',language:'en-US',quality:'Enhanced'}];`,
   'expo-constants': `export default {expoConfig:{version:'test'}};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async()=>null,setItem:async(key,value)=>{window.savedPreferences=JSON.parse(value)}};`,
