@@ -1044,6 +1044,18 @@ try {
     await branch.locator(':scope > span').last().textContent(),
     longBranch.slice(Math.ceil(longBranch.length / 2)),
   )
+  for (const width of [420, 300, 220]) {
+    await page.setViewportSize({ width, height: 700 })
+    const layout = await branch.evaluate((node) => ({
+      height: node.getBoundingClientRect().height,
+      lineHeight: Number.parseFloat(getComputedStyle(node).lineHeight),
+    }))
+    assert.ok(
+      layout.height <= layout.lineHeight + 1,
+      `Branch must stay on one line at ${width}px: ${JSON.stringify(layout)}`,
+    )
+  }
+  await page.setViewportSize({ width: 420, height: 700 })
   const draftStateRow = page
     .locator('.studio-thread-card')
     .filter({ has: page.getByText('State draft', { exact: true }) })

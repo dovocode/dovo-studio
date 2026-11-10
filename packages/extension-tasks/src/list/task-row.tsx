@@ -383,7 +383,10 @@ function TaskRowView({
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
                     <span
-                      className={cn('flex min-w-0 flex-1 text-left', branch && 'font-mono')}
+                      className={cn(
+                        'flex min-w-0 flex-1 whitespace-nowrap text-left',
+                        branch && 'font-mono',
+                      )}
                       title={branch || 'Local checkout'}
                       aria-label={branch || 'Local checkout'}
                       data-thread-branch
