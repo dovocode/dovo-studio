@@ -204,6 +204,8 @@ try {
     .getByRole('button', { name: 'Open child thread Child thread', exact: true })
     .waitFor({ state: 'detached' })
   await threadSearch.fill('')
+  // Wait for the deferred filter to restore the full list before testing its controls.
+  await page.getByText('Running thread', { exact: true }).waitFor()
   const childToggle = page.getByRole('button', {
     name: 'Subthreads for Parent thread',
     exact: true,
@@ -214,6 +216,7 @@ try {
     0,
   )
   await childToggle.press('Enter')
+  assert.equal(await childToggle.getAttribute('aria-expanded'), 'true')
   assert.equal(await page.evaluate(() => window.selected), undefined)
   await page.evaluate(() => window.setMounted(false))
   await page.evaluate(() => window.setMounted(true))
