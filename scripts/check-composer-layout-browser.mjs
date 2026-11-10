@@ -16,6 +16,7 @@ const mocks = {
   '@dovo/studio-core': `
     export * from '../studio-core/src/index';
     export {useWorkspace} from '../studio-core/src/workspace/context';
+    export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
     const preferences={showSendOptions:true,threadInfoSections:{},sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,minimalComposer:true,showSkillsInSlashMenu:true};

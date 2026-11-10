@@ -2,7 +2,11 @@ import { EmptyState } from '../ui/content/empty-state'
 import { contentColumn } from '../ui/layout/content-column'
 import { PullRequestIcon } from '../ui/content/pull-request-icon'
 import { AuthorAvatar } from '../scm/pulls/author-avatar'
-import { uniquePulls } from '@dovo/protocol'
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../runtime/preferences/app-preferences'
+import { uniquePulls, pullRepositoryKey } from '@dovo/protocol'
 import { AddPullsToThread } from '../scm/pulls/list/add-to-thread'
 import type { PullSummary } from '@dovo/protocol'
 import { pullStackLabel } from '@dovo/protocol'
@@ -55,6 +59,7 @@ const pullPreferences = createDetailDrafts<{
 }>({ isClean: () => true })
 export default function PullsScreen() {
   const { colors, styles } = useTheme()
+  const { pullProjectVisibility } = useMobilePreferences()
 
   const { overviews, cacheForRuntime } = useRuntime()
   const { focused } = useNavigation()
@@ -96,7 +101,8 @@ export default function PullsScreen() {
     repositoryId ||
     draft !== 'all' ||
     attention ||
-    state !== 'open'
+    state !== 'open' ||
+    Object.values(pullProjectVisibility).some((value) => value !== 'all')
   )
   const clearFilters = () => {
     setMarked([])
@@ -111,6 +117,7 @@ export default function PullsScreen() {
   const { pages, sources, busy, connected, more, refresh, chooseSource } = usePulls(
     repositoryId,
     state,
+    pullProjectVisibility,
   )
   const openPull = (runtimeId: string, repositoryId: string, number: number) => {
     retainPosition()
@@ -674,6 +681,43 @@ export default function PullsScreen() {
       />
       {filters && (
         <Sheet title="PR filters" onClose={() => setFilters(false)}>
+          <Text style={styles.text}>Projects in overview</Text>
+          <Text style={styles.muted}>
+            Choose which PRs appear for each project on this device. My PRs uses the project
+            account. Hidden projects remain available in the repository picker.
+          </Text>
+          {sources.map((source) => {
+            const key = pullRepositoryKey(source.repository, source.key)
+            return (
+              <Choice
+                key={source.key}
+                label={`PR visibility for ${source.repository.name} · ${source.computerName}`}
+                value={pullProjectVisibility[key] ?? 'all'}
+                items={[
+                  { id: 'all', name: 'All PRs' },
+                  { id: 'mine', name: 'My PRs' },
+                  { id: 'hidden', name: 'Hidden' },
+                ]}
+                onChange={(value) => {
+                  if (value !== 'all' && value !== 'mine' && value !== 'hidden') return
+                  setMarked([])
+                  updateMobilePreferences({
+                    pullProjectVisibility: { ...pullProjectVisibility, [key]: value },
+                  })
+                }}
+              />
+            )
+          })}
+          {Object.values(pullProjectVisibility).some((value) => value !== 'all') && (
+            <Action
+              secondary
+              label="Show all projects"
+              onPress={() => {
+                setMarked([])
+                updateMobilePreferences({ pullProjectVisibility: {} })
+              }}
+            />
+          )}
           <Choice
             label="Repository"
             value={repositoryId}

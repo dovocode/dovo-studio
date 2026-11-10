@@ -48,6 +48,7 @@ createRoot(root).render(
             ) : undefined
           }
           browserWindowId={browserWindowId}
+          browserPageOnly={!!browserWindowId && window.dovo?.browserPageOnly}
           openBrowserWindow={window.dovo?.openBrowserWindow}
           onBrowserWorkspaceFocus={window.dovo?.onBrowserWorkspaceFocus}
           popOutThread={window.dovo?.popOutThread}

@@ -1,4 +1,5 @@
 import {
+  pullProjectVisibilitySchema,
   defaultTaskSnoozeMinutes,
   taskSnoozeMinutesSchema,
   defaultTaskSnoozeSchedule,
@@ -144,6 +145,7 @@ const schema = mutableStruct({
   chatWidth: Schema.Literals(['standard', 'wide', 'full']),
   mergeMethod: Schema.Literals(['auto', 'merge', 'squash', 'rebase']),
   pullDraft: Schema.Boolean,
+  pullProjectVisibility: pullProjectVisibilitySchema,
   browserProfiles: browserProfilesSchema,
   // Legacy initial-tab default; new profile selections belong to individual tabs.
   browserProfileByThread: Schema.Record(Schema.String, Schema.String),
@@ -248,6 +250,7 @@ export const defaultAppPreferences: AppPreferences = {
   chatWidth: 'standard',
   mergeMethod: 'auto',
   pullDraft: false,
+  pullProjectVisibility: {},
   browserProfiles: defaultBrowserProfiles(),
   browserProfileByThread: {},
   browserAgentAccess: {},

@@ -611,6 +611,7 @@ function TaskListRowView({
                     <GitBranch size={12} color={colors.muted} />
                     <Text
                       numberOfLines={1}
+                      ellipsizeMode="middle"
                       style={[styles.muted, { flexShrink: 1, ...metadataText }]}
                     >
                       {branch}

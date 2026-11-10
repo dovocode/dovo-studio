@@ -3,6 +3,7 @@
 interface Window {
   dovo: {
     terminalPorts: true
+    browserPageOnly: boolean
     accountStorage: import('@dovo/protocol').AccountStorage
     runtimeSync: import('@dovo/protocol').DesktopRuntimeSyncBridge
     popOutThread: import('@dovo/protocol').ThreadWindowBridge

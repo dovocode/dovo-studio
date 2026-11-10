@@ -136,6 +136,20 @@ it('bounds windows and releases slots after close', async () => {
   await f.invoke!(event, undefined)
   expect(f.windows).toHaveLength(11)
 })
+it('opens a smaller pinned-page window with a durable preload mode and the same trusted route', async () => {
+  await registration.create(true)
+  const window = f.windows[0]!
+  expect(window.options.minWidth).toBe(480)
+  expect(window.options.webPreferences).toMatchObject({
+    contextIsolation: true,
+    sandbox: true,
+    nodeIntegration: false,
+    additionalArguments: ['--dovo-browser-page'],
+  })
+  expect(window.loadFile).toHaveBeenCalledWith('/app/index.html', {
+    hash: expect.stringMatching(/^browser-window=[a-f0-9-]{36}$/),
+  })
+})
 it('destroys a failed-load window and keeps the registry usable', async () => {
   f.load.mockRejectedValueOnce(new Error('load failed'))
   await expect(f.invoke!(event, undefined)).rejects.toThrow('load failed')

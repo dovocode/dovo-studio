@@ -9,7 +9,7 @@ const setup = `const pull=number=>({number,title:'PR '+number,url:'https://githu
 const browser = await chromium.launch()
 async function bundle(contents, mobile = false) {
   const mocks = {
-    '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({goBack:()=>window.goBack?.()??false,navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);export const formatDateTime=x=>x;`,
+    '@dovo/studio-core': `export const useAppPreferences=()=>({pullProjectVisibility:{}});export const updateAppPreferences=()=>{};export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({goBack:()=>window.goBack?.()??false,navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);export const formatDateTime=x=>x;`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
     './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:[{source:window.sources[0],reader:window.sources[0],pulls:window.pulls}],busy:false,connected:true,more:()=>{},refresh:()=>{}});`,

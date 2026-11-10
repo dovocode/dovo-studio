@@ -1,4 +1,5 @@
 import {
+  pullProjectVisibilitySchema,
   defaultTaskSnoozeMinutes,
   taskSnoozeMinutesSchema,
   defaultTaskSnoozeSchedule,
@@ -63,6 +64,7 @@ const schema = mutableStruct({
   toolActivity: Schema.Literals(['collapsed', 'expanded']),
   mergeMethod: Schema.Literals(['auto', 'merge', 'squash', 'rebase']),
   pullDraft: Schema.Boolean,
+  pullProjectVisibility: pullProjectVisibilitySchema,
   keepScreenOn: Schema.Boolean,
   browserWorkspaceEnabled: Schema.Boolean,
   terminalWorkspaceEnabled: Schema.Boolean,
@@ -125,6 +127,7 @@ const defaults: MobilePreferences = {
   toolActivity: 'collapsed',
   mergeMethod: 'auto',
   pullDraft: false,
+  pullProjectVisibility: {},
   keepScreenOn: false,
   browserWorkspaceEnabled: false,
   terminalWorkspaceEnabled: true,

@@ -5,7 +5,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import {createRoot} from 'react-dom/client';import {PreferenceSaveNotice} from './packages/studio-shell/src/preference-save-notice.tsx';import {ServiceUrlSettings} from './packages/extension-runtime/src/service-url-settings.tsx';createRoot(document.getElementById('app')).render(<><PreferenceSaveNotice/><ServiceUrlSettings/></>);`,
+      contents: `import {updateAppPreferences,readAppPreferences} from './packages/studio-core/src/preferences';window.setProjectVisibility=()=>updateAppPreferences({pullProjectVisibility:{'github.com/team/one':'mine','github.com/team/two':'hidden'}});window.readPrefs=readAppPreferences;import {createRoot} from 'react-dom/client';import {PreferenceSaveNotice} from './packages/studio-shell/src/preference-save-notice.tsx';import {ServiceUrlSettings} from './packages/extension-runtime/src/service-url-settings.tsx';createRoot(document.getElementById('app')).render(<><PreferenceSaveNotice/><ServiceUrlSettings/></>);`,
       resolveDir: root,
       loader: 'tsx',
     },
@@ -115,6 +115,23 @@ try {
     await page.getByRole('button', { name: 'Retry saving settings', exact: true }).click()
     await page.waitForFunction(() => window.saved.connectOrigin === 'https://retry.example.test')
     await page.getByRole('alert').waitFor({ state: 'detached' })
+    assert.deepEqual(await page.evaluate(() => window.readPrefs().pullProjectVisibility), {})
+    await page.evaluate(() => window.setProjectVisibility())
+    assert.deepEqual(await page.evaluate(() => window.saved.pullProjectVisibility), {
+      'github.com/team/one': 'mine',
+      'github.com/team/two': 'hidden',
+    })
+    const prefs = await page.evaluate(() => window.saved)
+    await page.reload()
+    if (desktop)
+      await page.evaluate((prefs) => {
+        window.dovo = { readAppSettings: () => prefs, writeAppSettings: () => {} }
+      }, prefs)
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    assert.deepEqual(
+      await page.evaluate(() => window.readPrefs().pullProjectVisibility),
+      prefs.pullProjectVisibility,
+    )
     await page.close()
   }
   console.log(

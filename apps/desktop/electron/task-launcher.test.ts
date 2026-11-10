@@ -7,6 +7,7 @@ const f = vi.hoisted(() => ({
     options: Electron.BrowserWindowConstructorOptions
     visible: boolean
     destroyed: boolean
+    callbacks: Map<string, (event: Electron.Event) => void>
     webContents: { getURL: () => string; send: ReturnType<typeof vi.fn<(channel: string) => void>> }
   }>,
   available: true,
@@ -57,7 +58,10 @@ vi.mock('electron', () => ({
     }
     setPosition() {}
     setVisibleOnAllWorkspaces() {}
-    on() {}
+    callbacks = new Map<string, (event: Electron.Event) => void>()
+    on(name: string, callback: (event: Electron.Event) => void) {
+      this.callbacks.set(name, callback)
+    }
     loadFile() {
       return Promise.resolve()
     }
@@ -142,4 +146,20 @@ it('reports shortcut conflicts and supports disabling and changing the shortcut'
   expect(f.unregister).toHaveBeenCalledWith('CommandOrControl+Alt+N')
   invoke('configure', '')
   expect(f.unregister).toHaveBeenCalledWith('CommandOrControl+Shift+Space')
+})
+
+it('allows updater panel closes before app.before-quit and restores hiding after recovery', () => {
+  const { bridge, invoke } = fixture()
+  invoke('open')
+  const close = f.windows[0].callbacks.get('close')!
+  const preventDefault = vi.fn<() => void>()
+  close({ preventDefault, defaultPrevented: false })
+  expect(preventDefault).toHaveBeenCalledOnce()
+  preventDefault.mockClear()
+  bridge.setQuitting(true)
+  close({ preventDefault, defaultPrevented: false })
+  expect(preventDefault).not.toHaveBeenCalled()
+  bridge.setQuitting(false)
+  close({ preventDefault, defaultPrevented: false })
+  expect(preventDefault).toHaveBeenCalledOnce()
 })

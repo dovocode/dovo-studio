@@ -9,6 +9,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '../task-creation/task-empty-state': 'export const TaskEmptyState=()=>null;',
+  './task-pipeline-progress': 'export const TaskPipelineProgress=()=>null;',
   // Sharing is verified separately from scroll anchoring and composer collapse.
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',

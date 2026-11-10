@@ -145,7 +145,7 @@ throw Error('Unexpected request '+path);
 function PipelineCollection(){const[sha,setSha]=useState(window.sameSha);window.setCollectionSha=setSha;const value=useWorkCollection('pipelines',JSON.stringify(['one','repo']),'all','',undefined,sha);window.pipelineCollection=value;return <div>{value.pages.flatMap(page=>page.items).map(item=><span key={item.id}>{item.title}</span>)}</div>}
 function JiraCollection(){const value=useWorkCollection('issues',JSON.stringify(['one','jira','jira']),'open','TEAM-7');window.jiraCollection=value;return <div>{value.pages.flatMap(page=>page.items).map(item=><span key={item.id}>{item.title}</span>)}</div>}
 function Reader(){const value=usePullDetail('repo',7);window.reader=value;return <div aria-label="reader">{value.detail?.pull.title}{value.error}</div>}
-function List(){const value=usePulls('','open');window.list=value;return <div aria-label="list">{value.pages.map(page=>page.runtimeName+':'+page.pulls.length).join(',')}</div>}
+function List(){const[,render]=useState(0);window.renderList=()=>render(value=>value+1);const value=usePulls(window.selectedRepository??'','open',window.visibility??{});window.list=value;return <div aria-label="list">{value.pages.map(page=>page.runtimeName+':'+page.pulls.length).join(',')}</div>}
 function Task(){const value=usePullTaskCreation('repo',pull.pull);return <><button onClick={()=>value.start('new-branch')}>Create task</button><span>{value.error}</span></>}
 // A refreshed detail can report a new PR head; each newly opened sheet receives it.
 const atHead=detail=>window.headSha?{...detail,pull:{...detail.pull,headSha:window.headSha}}:detail;
@@ -417,6 +417,29 @@ try {
     'one',
     'Owner persists through remount after global selection changes',
   )
+  await page.evaluate(() => {
+    window.visibility = { 'github.com/team/project': 'hidden' }
+    window.renderList()
+  })
+  await page.waitForFunction(() => window.list.pages.length === 0)
+  await page.evaluate(() => {
+    window.selectedRepository = window.list.sources[0].key
+    window.renderList()
+  })
+  await page.waitForFunction(() => window.list.pages.length > 0)
+  await page.evaluate(() => {
+    window.selectedRepository = ''
+    window.visibility = { 'github.com/team/project': 'mine' }
+    window.renderList()
+  })
+  await page.waitForFunction(() =>
+    window.list.pages.every((page) => page.pulls.every((pull) => pull.viewerIsAuthor === true)),
+  )
+  await page.evaluate(() => {
+    window.visibility = {}
+    window.renderList()
+  })
+  await page.waitForFunction(() => window.list.pages.some((page) => page.pulls.length > 0))
   await page.evaluate(() => {
     window.account = 'account-two'
     window.blockedPipeline = ['jobs', 'graph', 'options']

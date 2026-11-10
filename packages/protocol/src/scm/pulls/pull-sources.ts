@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import type { Repository } from '../../workspace.js'
 import { gitRemoteIdentity } from '../../runtime/connection/project-machines.js'
 import type { ForgeConnection } from '../forges/forges.js'
@@ -246,3 +247,10 @@ export function assignRemoteSources<
     owners,
   }
 }
+
+/** Per-device overview choices, keyed by canonical repository identity. */
+export const pullProjectVisibilitySchema = Schema.Record(
+  Schema.String,
+  Schema.Literals(['all', 'mine', 'hidden']),
+)
+export type PullProjectVisibility = typeof pullProjectVisibilitySchema.Type

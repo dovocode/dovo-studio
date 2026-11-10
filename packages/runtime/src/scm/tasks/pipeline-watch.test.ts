@@ -103,6 +103,45 @@ it('shows only active pipelines in project info without erasing watch history', 
   })
 })
 
+it('publishes job progress from the watched snapshot and removes finished bars', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  const job = (id: string, status: string) => ({ id, name: id, status, url: detail().run.url })
+  f.read.mockResolvedValue(
+    detail('7', 'in_progress', {
+      jobs: [job('build', 'success'), job('test', 'running'), job('package', 'queued')],
+    }),
+  )
+  await f.watch()
+  const { taskWaiting } = await import('../../http/endpoints/task-waiting.js')
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toMatchObject([
+    { label: 'Build', progress: { completed: 1, total: 3, partial: false } },
+  ])
+  f.read.mockImplementation(async (_repo, _operation, input) => {
+    const cursor = decode(mutableStruct({ cursor: Schema.optional(Schema.String) }), input).cursor
+    return detail(
+      '7',
+      'in_progress',
+      cursor
+        ? { jobs: [job('package', 'queued')] }
+        : { jobs: [job('build', 'success'), job('test', 'skipped')], next: 'page-2' },
+    )
+  })
+  await f.s.pipelineWatch.tick()
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toMatchObject([
+    { progress: { completed: 2, total: 3, partial: false } },
+  ])
+  // Read failure keeps the last confirmed progress and reports the stale source.
+  f.read.mockRejectedValue(new Error('Temporary forge outage'))
+  await f.s.pipelineWatch.tick()
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toMatchObject([
+    { progress: { completed: 2, total: 3, partial: false }, error: 'Temporary forge outage' },
+  ])
+  f.read.mockResolvedValue(detail('7', 'success', { jobs: [job('build', 'success')] }))
+  await f.s.pipelineWatch.tick()
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toEqual([])
+})
+
 it('skips watch scans during streaming and restores ownership after a rolled-back archive', async () => {
   const f = await setup()
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))

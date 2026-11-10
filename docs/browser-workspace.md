@@ -417,3 +417,27 @@ VSCodium, Cursor, Windsurf, Antigravity, or Devin Desktop. The chosen editor mus
 support installed and the client must have SSH access. Missing SSH settings, unsupported remote
 targets and missing client applications produce explicit errors. Browser-only clients explain that
 the desktop app is required; they never silently launch an application on the server.
+
+### Pinned windows without sidebars
+
+Right-click a pinned tab and choose **Detach without sidebars**. The window shows the address bar,
+page controls and page. The existing **Detach to new window** option keeps the tab sidebar. Both
+options keep the same page and browser profile. Closing a detached pinned window returns its page to
+the source window.
+
+In a window without sidebars, new-page links (`target="_blank"` and `window.open`) open another
+window. Studio asks for **Main window**, **New window**, or another open browser window. A new
+window has no sidebars. The opener and any current preview stay open. Studio shows a notice in the
+source window. A failed move keeps the picker open for retry. Cancel closes only the child page.
+Local pages retain their native page and opener session; paired-runtime pages retain their runtime
+and profile. The normal browser workspace keeps its floating link previews.
+
+Verify with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/protocol build
+pnpm --filter @dovo/desktop build
+node scripts/check-shared-browser-browser.mjs
+pnpm exec vp test apps/desktop/electron/browser-window.test.ts apps/desktop/electron/browser.test.ts
+```

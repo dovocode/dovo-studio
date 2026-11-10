@@ -5,6 +5,7 @@ import { startPolling, clientTaskScope, runClientEffect } from '@dovo/client-run
 import {
   assignRemoteSources,
   pullRepositoryKey,
+  type PullProjectVisibility,
   pullListCacheKey,
   publicPullSummaries,
   retainNewerPullSnapshot,
@@ -45,14 +46,19 @@ const cachedPullPageSchema = mutableStruct({
 })
 const cacheKey = (source: PullSource, state: string) =>
   pullListCacheKey(source.repository, state, source.reader.readerIdentity)
-export function usePulls(repositoryId: string, state: string) {
+const defaultVisibility: PullProjectVisibility = {}
+export function usePulls(repositoryId: string, state: string, visibility = defaultVisibility) {
   const { focused: enabled } = useNavigation()
   const { readRuntimeEffect: rawRead, overviews, cacheForRuntime, activeId } = useRuntime()
   const available = collectionSources(overviews)
   const [revision, setRevision] = useApplicationState(0)
   const requested = available.find((source) => source.key === repositoryId)
   const remote = requested && pullRepositoryKey(requested.repository, requested.key)
-  const allSources = available.filter((source) => !repositoryId || source.key === repositoryId)
+  const allSources = available.filter((source) =>
+    repositoryId
+      ? source.key === repositoryId
+      : visibility[pullRepositoryKey(source.repository, source.key)] !== 'hidden',
+  )
   const identified = useSourceIdentities(
     allSources,
     projectContentIdentity,
@@ -490,8 +496,20 @@ export function usePulls(repositoryId: string, state: string) {
     })
   }
   return {
-    pages: values,
-    sources: allSources,
+    pages: values
+      .filter((page) => repositoryId || visibility[page.remoteKey] !== 'hidden')
+      .map((page) =>
+        visibility[page.remoteKey] === 'mine'
+          ? {
+              ...page,
+              pulls: page.pulls.filter((pull) => pull.viewerIsAuthor === true),
+              paginationNotice: page.pulls.some((pull) => pull.viewerIsAuthor === undefined)
+                ? 'Some PRs have no author relationship. Verify the project account to show your PRs.'
+                : page.paginationNotice,
+            }
+          : page,
+      ),
+    sources: available,
     busy,
     connected,
     more: (id: string) => moreRef.current(id),

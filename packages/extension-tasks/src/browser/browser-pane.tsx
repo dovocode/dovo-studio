@@ -330,6 +330,7 @@ function BrowserContent({
       browser,
       browserFrames,
       browserWindowId,
+      browserPageOnly,
       openBrowserWindow,
       onBrowserContextAction,
       onBrowserWorkspaceFocus,
@@ -700,6 +701,48 @@ function BrowserContent({
         : tab.url,
     )
     setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
+  }
+  const [windowNotice, setWindowNotice] = useApplicationState('')
+  const pendingWindows = browserPageOnly ? tabs.filter((tab) => tab.pendingWindow) : []
+  const pendingWindowId = pendingWindows[0]?.id
+  const [windowMoving, setWindowMoving] = useApplicationState(false)
+  const [windowMoveError, setWindowMoveError] = useApplicationState('')
+  useEffect(() => {
+    setWindowMoveError('')
+    if (pendingWindowId) loadBrowserWindows()
+  }, [pendingWindowId])
+  const openCreatedWindow = async (tab: BrowserTab, destination: 'main' | 'new' | number) => {
+    if (!browser) return
+    setWindowMoving(true)
+    setWindowMoveError('')
+    const moving = { ...tab, pendingWindow: undefined, previewOf: undefined }
+    try {
+      await browser({
+        action: 'move-tab',
+        key: tab.nativeKey ?? nativeKey(tab.id),
+        tab: moving,
+        ...(destination === 'main'
+          ? { targetMain: true }
+          : destination === 'new'
+            ? { pageOnly: true }
+            : { targetWindowId: destination }),
+      })
+      if (!mount.current) return
+      nativeTabKeys.delete(`${scope}:${tab.id}`)
+      currentTabs.current = currentTabs.current.filter((item) => item.id !== tab.id)
+      setTabs((previous) => previous.filter((item) => item.id !== tab.id))
+      setWindowNotice('Link opened in another window. This page stays open.')
+    } catch (cause) {
+      if (!mount.current) return
+      setWindowMoveError(`Could not open another window: ${String(cause)}`)
+    } finally {
+      if (mount.current) setWindowMoving(false)
+    }
+  }
+  const cancelCreatedWindow = () => {
+    if (windowMoving || !pendingWindows[0]) return
+    closeTab(pendingWindows[0])
+    setWindowMoveError('')
   }
   const showLinkPreview = async (tab: BrowserTab, source = selectedTab) => {
     if (!previewLinks.current) {
@@ -1267,14 +1310,16 @@ function BrowserContent({
               nativeTabKeys.set(`${scope}:${id}`, tab.key)
               return {
                 id,
+                nativeKey: tab.key,
                 url: tab.url,
                 title: '',
                 kind: 'web' as const,
                 runtimeId: store.localRuntimeId ?? undefined,
                 profileId: tab.profileId,
                 visitedAt: 0,
+                pendingWindow: !!browserPageOnly,
                 previewOf:
-                  previewLinks.current && tab.openerKey
+                  !browserPageOnly && previewLinks.current && tab.openerKey
                     ? (identities.get(tab.openerKey) ??
                       currentTabs.current.find((item) => nativeKey(item.id) === tab.openerKey)
                         ?.id ??
@@ -1324,7 +1369,7 @@ function BrowserContent({
               additions.slice(0, capacity).forEach((tab, index) => {
                 if (tab.active || (previewLinks.current && tab.openerKey)) foreground = index
               })
-              if (foreground >= 0) {
+              if (!browserPageOnly && foreground >= 0) {
                 void showLinkPreview(adopted[foreground], previousSelected)
               }
               for (const [key, value] of nativeTabKeys)
@@ -1445,7 +1490,17 @@ function BrowserContent({
       stopHandoff?.()
       void polling.stop()
     }
-  }, [browser, url, mode, scope, browserKey, profileId, shared, onBrowserWorkspaceFocus])
+  }, [
+    browser,
+    url,
+    mode,
+    scope,
+    browserKey,
+    profileId,
+    shared,
+    browserPageOnly,
+    onBrowserWorkspaceFocus,
+  ])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   useEffect(() => {
     if (!browser || mode !== 'web') return
@@ -1934,9 +1989,9 @@ function BrowserContent({
     window.addEventListener('keydown', shortcuts)
     return () => window.removeEventListener('keydown', shortcuts)
   })
-  const [browserWindows, setBrowserWindows] = useApplicationState<{ id: number; title: string }[]>(
-    [],
-  )
+  const [browserWindows, setBrowserWindows] = useApplicationState<
+    { id: number; title: string; main?: boolean }[]
+  >([])
   const loadBrowserWindows = () => {
     if (browser && shared)
       void browser({ action: 'browser-windows', key: browserKey })
@@ -2156,7 +2211,7 @@ function BrowserContent({
       onClose={() => closeTab(tab)}
       onMove={
         browser && shared
-          ? (targetWindowId) =>
+          ? (targetWindowId, pageOnly) =>
               void act(async () => {
                 if (
                   tab.pinned &&
@@ -2171,6 +2226,7 @@ function BrowserContent({
                   key,
                   tab: { ...tab, title: tab.title.slice(0, 4096) },
                   targetWindowId,
+                  ...(pageOnly ? { pageOnly: true } : {}),
                 })
                 if (result?.detachedTabs?.includes(key)) {
                   const next = currentTabs.current.map((item) =>
@@ -3012,7 +3068,7 @@ function BrowserContent({
             onBrowseStore={() => newTab('https://chromewebstore.google.com/', 'web', profileId)}
           />
         )}
-        {shared && (
+        {shared && !browserPageOnly && (
           <>
             <IconButton
               type="button"
@@ -3106,7 +3162,7 @@ function BrowserContent({
           )
         }}
       >
-        {(actions) => renderNavigation(actions, opener)}
+        {(actions) => renderNavigation(browserPageOnly ? undefined : actions, opener)}
       </SharedBrowserActions>
     ) : (
       renderNavigation(undefined, opener)
@@ -3259,7 +3315,7 @@ function BrowserContent({
         </>
       }
       threadPanel={
-        shared && mode !== 'devices' && threadPanels.has(activeTab) ? (
+        shared && !browserPageOnly && mode !== 'devices' && threadPanels.has(activeTab) ? (
           <BrowserThreadPanel
             key={selectedTab.id}
             runtimeId={tabRuntimeId}
@@ -3293,6 +3349,7 @@ function BrowserContent({
         ) : undefined
       }
       editor={
+        !browserPageOnly &&
         customization && (
           <WebsiteCustomizationEditor
             key={`${activeTab}:${profileId}:${customization.origin}:${customization.css}:${customization.script}`}
@@ -3331,7 +3388,7 @@ function BrowserContent({
           : undefined
       }
       sidebar={
-        shared && !workspaceControl ? (
+        shared && !workspaceControl && !browserPageOnly ? (
           <ResizableSidebar
             preference="browserSidebarWidth"
             side="left"
@@ -3417,6 +3474,61 @@ function BrowserContent({
           }
           onClearHistory={() => setVisits([])}
         />
+      )}
+      {!!pendingWindows.length && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) cancelCreatedWindow()
+          }}
+        >
+          <DialogContent>
+            <DialogTitle>Open link in another window</DialogTitle>
+            <DialogDescription>
+              This page stays open. Choose where to open the link.
+            </DialogDescription>
+            <p className="break-all text-xs text-muted-foreground">
+              {pendingWindows[0].url || 'New page'}
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                disabled={windowMoving}
+                onClick={() => void openCreatedWindow(pendingWindows[0], 'main')}
+              >
+                Main window
+              </Button>
+              <Button
+                disabled={windowMoving}
+                onClick={() => void openCreatedWindow(pendingWindows[0], 'new')}
+              >
+                New window
+              </Button>
+              {browserWindows
+                .filter((window) => !window.main)
+                .map((window) => (
+                  <Button
+                    key={window.id}
+                    disabled={windowMoving}
+                    variant="outline"
+                    onClick={() => void openCreatedWindow(pendingWindows[0], window.id)}
+                  >
+                    {window.title}
+                  </Button>
+                ))}
+              <Button disabled={windowMoving} variant="ghost" onClick={loadBrowserWindows}>
+                Refresh windows
+              </Button>
+              <Button disabled={windowMoving} variant="ghost" onClick={cancelCreatedWindow}>
+                Cancel
+              </Button>
+            </div>
+            {!!windowMoveError && (
+              <p role="alert" className="text-xs text-destructive">
+                {windowMoveError}
+              </p>
+            )}
+          </DialogContent>
+        </Dialog>
       )}
       {homeEditor && (
         <Dialog
@@ -3526,6 +3638,22 @@ function BrowserContent({
           {remoteProfiles.error}
         </p>
       )}
+      {!!windowNotice && (
+        <div
+          role="status"
+          className="flex shrink-0 items-center justify-between gap-2 px-3 py-2 text-xs"
+        >
+          <span>{windowNotice}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Dismiss new window notice"
+            onClick={() => setWindowNotice('')}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="p-3 text-xs text-destructive">
           {error}
@@ -3599,19 +3727,22 @@ function BrowserContent({
                     const adopted = additions.slice(0, capacity).map((child) => ({
                       ...tab,
                       id: child.id,
+                      nativeKey: undefined,
+                      detached: undefined,
                       url: child.url,
                       title: '',
                       favicon: undefined,
                       pinned: false,
                       homeUrl: undefined,
-                      previewOf: previewLinks.current ? tab.id : undefined,
+                      pendingWindow: !!browserPageOnly,
+                      previewOf: !browserPageOnly && previewLinks.current ? tab.id : undefined,
                     }))
                     currentTabs.current = [...currentTabs.current, ...adopted]
                     setTabs((previous) => [
                       ...previous,
                       ...adopted.filter((child) => !previous.some((item) => item.id === child.id)),
                     ])
-                    if (adopted.length) {
+                    if (!browserPageOnly && adopted.length) {
                       void showLinkPreview(adopted[adopted.length - 1], tab)
                     }
                   }

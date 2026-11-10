@@ -4,6 +4,7 @@ import {
   uniquePulls,
   forgePullTarget,
   pullRepositoryIdentity,
+  pullRepositoryKey,
   type PullSummary,
 } from '@dovo/protocol'
 import { AddPullsToThread } from './add-to-thread'
@@ -15,6 +16,8 @@ import {
   matchesPull,
   pullNeedsAttention,
   useWorkspace,
+  useAppPreferences,
+  updateAppPreferences,
   useStudioHost,
   WorkspaceRuntimeScope,
   repositorySourceKey,
@@ -55,6 +58,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   const { transition, style: detailStyle } = useDetailTransition()
   const { activeRuntimeId, runtimes } = useWorkspace()
   // This is a merged collection, independent of the computer selected for task execution.
+  const { pullProjectVisibility } = useAppPreferences()
   const listKey = 'merged-pulls'
   const [repositoryId, setRepository] = useRetainedPullState(
       filterCache,
@@ -98,7 +102,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     more,
     refresh,
     chooseReader,
-  } = usePulls(state, repositoryId)
+  } = usePulls(state, repositoryId, pullProjectVisibility)
   const repositoryFilter = sources.find((source) => source.key === repositoryId)
   const filterIdentity = repositoryFilter && pullRepositoryIdentity(repositoryFilter.repository)
   const pages = allPages.filter(
@@ -312,7 +316,8 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     Number(state !== 'open') +
     Number(sort !== 'updated') +
     Number(draft !== 'all') +
-    Number(attention)
+    Number(attention) +
+    Number(Object.values(pullProjectVisibility).some((value) => value !== 'all'))
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {openError && (
@@ -449,6 +454,52 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                   </Button>
                 </div>
                 <div id="pr-list-filters" hidden={!filtersOpen}>
+                  <fieldset className="flex flex-col gap-2 px-3 py-3 text-xs">
+                    <legend className="pt-2 font-medium">Projects in overview</legend>
+                    <p className="text-muted-foreground">
+                      Choose which PRs appear for each project on this device. My PRs uses the
+                      project account. Hidden projects remain available in the repository picker.
+                    </p>
+                    {sources.map((source) => {
+                      const key = pullRepositoryKey(source.repository, source.key)
+                      return (
+                        <label key={source.key} className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1">
+                            {source.repository.name} · {source.runtimeName}
+                          </span>
+                          <ChoicePicker
+                            aria-label={`PR visibility for ${source.repository.name} · ${source.runtimeName}`}
+                            className={selectStyle}
+                            value={pullProjectVisibility[key] ?? 'all'}
+                            onValueChange={(value) => {
+                              if (value !== 'all' && value !== 'mine' && value !== 'hidden') return
+                              setMarked([])
+                              updateAppPreferences({
+                                pullProjectVisibility: { ...pullProjectVisibility, [key]: value },
+                              })
+                            }}
+                          >
+                            <option value="all">All PRs</option>
+                            <option value="mine">My PRs</option>
+                            <option value="hidden">Hidden</option>
+                          </ChoicePicker>
+                        </label>
+                      )
+                    })}
+                    {Object.values(pullProjectVisibility).some((value) => value !== 'all') && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="self-start"
+                        onClick={() => {
+                          setMarked([])
+                          updateAppPreferences({ pullProjectVisibility: {} })
+                        }}
+                      >
+                        Show all projects
+                      </Button>
+                    )}
+                  </fieldset>
                   <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pb-2 pt-3">
                     <ChoicePicker
                       aria-label="PR repository"

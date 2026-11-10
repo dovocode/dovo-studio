@@ -1,3 +1,4 @@
+import { TaskPipelineProgress } from './task-pipeline-progress'
 import type { WorkspaceControls } from '../chat/composer/composer-workspace'
 import { InlineThreadSuggestions } from '../chat/thread-sharing'
 import { CodeReviewCard } from '../review/code-review-card'
@@ -231,6 +232,9 @@ export function TaskConversation({
           data-conversation-pane
           className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : ''}`}
         >
+          {!!task.watchCounts?.pipelines && (
+            <TaskPipelineProgress key={task.id} taskId={task.id} active={visible} />
+          )}
           {temporary ? (
             <TaskEmptyState
               task={task}

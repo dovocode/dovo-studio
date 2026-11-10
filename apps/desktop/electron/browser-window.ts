@@ -9,9 +9,10 @@ import { registerQuitShortcut } from './quit-shortcut.js'
 /** Each browser window hosts browser-only controls and its own independent tab workspace. */
 export function registerBrowserWindows(rendererPath: string, preload: string) {
   const windows = new Set<BrowserWindow>()
+  const pageWindows = new Set<BrowserWindow>()
   let returnTabs: ((window: BrowserWindow) => Promise<void>) | undefined
   let quitting = false
-  const create = async () => {
+  const create = async (pageOnly = false) => {
     const settings = readLocalSettingsSection('app')
     if (
       !settings ||
@@ -31,7 +32,7 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
     const window = new BrowserWindow({
       width: 1180,
       height: 800,
-      minWidth: 840,
+      minWidth: pageOnly ? 480 : 840,
       minHeight: 560,
       title: 'Dovo Browser',
       show: false,
@@ -41,9 +42,16 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
       ...(process.platform === 'darwin'
         ? { trafficLightPosition: { x: 16, y: 15 } }
         : { titleBarOverlay: titleBarOverlay(colors), autoHideMenuBar: true }),
-      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload },
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        preload,
+        ...(pageOnly ? { additionalArguments: ['--dovo-browser-page'] } : {}),
+      },
     })
     windows.add(window)
+    if (pageOnly) pageWindows.add(window)
     let returned = false
     let returning = false
     window.on('close', (event) => {
@@ -66,7 +74,10 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
             })
         })
     })
-    window.once('closed', () => windows.delete(window))
+    window.once('closed', () => {
+      windows.delete(window)
+      pageWindows.delete(window)
+    })
     window.webContents.setWindowOpenHandler(({ url }) => {
       void offerLink(window, url)
       return { action: 'deny' }
@@ -103,6 +114,7 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
   })
   return {
     create,
+    pageOnly: (window: BrowserWindow) => pageWindows.has(window),
     list: () => [...windows].filter((window) => !window.isDestroyed()),
     onClose: (handler: (window: BrowserWindow) => Promise<void>) => {
       returnTabs = handler
@@ -117,6 +129,7 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
     dispose: () => {
       for (const window of windows) window.destroy()
       windows.clear()
+      pageWindows.clear()
     },
   }
 }

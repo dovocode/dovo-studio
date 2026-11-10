@@ -1013,6 +1013,37 @@ try {
       )
     }
   }
+  const longBranch =
+    'feature/a-very-long-branch-name-that-needs-middle-truncation-and-keeps-the-final-ticket-482'
+  await page.evaluate(
+    (branch) =>
+      window.publish(
+        window.tasks.map((task) =>
+          task.id === 'state-running' ? { ...task, checkoutBranch: branch } : task,
+        ),
+      ),
+    longBranch,
+  )
+  const branch = page
+    .locator('.studio-thread-card')
+    .filter({ has: page.getByText('State running', { exact: true }) })
+    .locator('[data-thread-branch]')
+  await branch
+    .getByText(longBranch.slice(0, Math.ceil(longBranch.length / 2)), { exact: true })
+    .waitFor()
+  assert.equal(await branch.textContent(), longBranch)
+  assert.equal(await branch.getAttribute('title'), longBranch)
+  assert.equal(
+    await branch
+      .locator(':scope > span')
+      .first()
+      .evaluate((node) => getComputedStyle(node).textOverflow),
+    'ellipsis',
+  )
+  assert.equal(
+    await branch.locator(':scope > span').last().textContent(),
+    longBranch.slice(Math.ceil(longBranch.length / 2)),
+  )
   const draftStateRow = page
     .locator('.studio-thread-card')
     .filter({ has: page.getByText('State draft', { exact: true }) })

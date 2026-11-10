@@ -383,13 +383,24 @@ function TaskRowView({
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
                     <span
-                      className={cn('min-w-0 flex-1 truncate text-left', branch && 'font-mono')}
-                      dir={branch ? 'rtl' : undefined}
+                      className={cn('flex min-w-0 flex-1 text-left', branch && 'font-mono')}
+                      title={branch || 'Local checkout'}
+                      aria-label={branch || 'Local checkout'}
                       data-thread-branch
                       data-thread-copy=""
                     >
-                      {/* Keep the branch tail visible without reversing its text or metadata. */}
-                      <bdi dir="ltr">{branch || 'Local checkout'}</bdi>
+                      {branch ? (
+                        <>
+                          <span className="min-w-0 truncate">
+                            {branch.slice(0, Math.ceil(branch.length / 2))}
+                          </span>
+                          <span className="max-w-[50%] shrink-0 overflow-hidden" dir="rtl">
+                            <bdi dir="ltr">{branch.slice(Math.ceil(branch.length / 2))}</bdi>
+                          </span>
+                        </>
+                      ) : (
+                        'Local checkout'
+                      )}
                     </span>
                     {pullIndicators}
                     <span className="flex items-center gap-1">

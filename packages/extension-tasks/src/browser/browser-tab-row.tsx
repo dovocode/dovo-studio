@@ -59,7 +59,7 @@ export function BrowserTabRow({
   onSettle: () => void
   onSnooze: () => void
   onClose: () => void
-  onMove?: (windowId?: number) => void
+  onMove?: (windowId?: number, pageOnly?: boolean) => void
   onMenuOpen: () => void
   onKeepAwake?: () => void
   state?: BrowserTabState
@@ -377,6 +377,16 @@ export function BrowserTabRow({
                 <ExternalLink size={13} />
                 {tab.pinned ? 'Detach to new window' : 'Move to new window'}
               </ContextMenu.Item>
+              {tab.pinned && (
+                <ContextMenu.Item
+                  className={menuItem}
+                  disabled={busy}
+                  onSelect={() => onMove(undefined, true)}
+                >
+                  <ExternalLink size={13} />
+                  Detach without sidebars
+                </ContextMenu.Item>
+              )}
               {windows.length > 0 && (
                 <ContextMenu.Sub>
                   <ContextMenu.SubTrigger className={menuItem}>

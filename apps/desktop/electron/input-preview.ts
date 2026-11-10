@@ -193,5 +193,10 @@ export function registerInputPreview(rendererPath: string, preload: string) {
       submitting.delete(input.key)
     }
   })
-  return { dispose: () => popup?.destroy() }
+  return {
+    setQuitting: (ready: boolean) => {
+      quitting = ready
+    },
+    dispose: () => popup?.destroy(),
+  }
 }

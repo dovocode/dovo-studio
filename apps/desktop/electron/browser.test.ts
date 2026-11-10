@@ -1881,6 +1881,37 @@ it('keeps app-menu accelerators away from workspace pages and popups, except edi
   expect(mocks.contents.setIgnoreMenuShortcuts).not.toHaveBeenCalled()
 })
 
+it('keeps new-page POST navigation off the opener in windows without sidebars', async () => {
+  mocks.linkProfile.mockReturnValue('work')
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create: async () => mocks.window as never,
+    list: () => [],
+    pageOnly: () => true,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  await call(event, workspaceShow)
+  mocks.contents.loadURL.mockClear()
+  for (const disposition of ['foreground-tab', 'new-window']) {
+    const result = openHandler()({
+      url: 'https://example.com/result',
+      disposition,
+      features: disposition === 'new-window' ? 'width=500' : '',
+      postBody: {
+        contentType: 'application/x-www-form-urlencoded',
+        data: [{ type: 'rawData', bytes: Buffer.from('q=dovo') }],
+      },
+    })
+    expect(result.action).toBe('allow')
+    expect(result.createWindow).toBeTypeOf('function')
+  }
+  expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+  expect(mocks.linkProfile).not.toHaveBeenCalled()
+  expect(
+    openHandler()({ url: 'javascript:alert(1)', disposition: 'foreground-tab', features: '' }),
+  ).toEqual({ action: 'deny' })
+})
+
 it('loads validated form POST new-tab requests in the same tab and never replays them as GET', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -2949,6 +2980,40 @@ it.each(['window', 'page'] as const)(
   },
 )
 
+it('moves a child page to the main window without creating another window', async () => {
+  const target = workspaceTarget(2)
+  const main = vi.fn<() => Promise<import('electron').BrowserWindow>>(async () => target as never)
+  const create = vi.fn<() => Promise<import('electron').BrowserWindow>>(async () => target as never)
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create,
+    list: () => [],
+    main,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  await call(event, workspaceShow)
+  const tab = {
+    id: 'child',
+    url: workspaceShow.url,
+    title: 'Child',
+    kind: 'web',
+    profileId: 'default',
+  }
+  await call(event, { action: 'move-tab', key: workspaceShow.key, tab, targetMain: true })
+  expect(main).toHaveBeenCalledOnce()
+  expect(create).not.toHaveBeenCalled()
+  expect(target.focus).toHaveBeenCalled()
+  await expect(
+    call(event, {
+      action: 'move-tab',
+      key: workspaceShow.key,
+      tab,
+      targetMain: true,
+      pageOnly: true,
+    }),
+  ).rejects.toThrow('Choose one destination')
+})
+
 it('refuses unavailable destinations without releasing an active call', async () => {
   const target = { ...mocks.window, id: 2 }
   const createWindow = vi.fn<() => Promise<import('electron').BrowserWindow>>(
@@ -3459,20 +3524,23 @@ it.each(['web', 'remote'] as const)(
 )
 
 it.each([
-  ['web', false, false],
-  ['remote', false, false],
-  ['web', true, false],
-  ['web', false, true],
+  ['web', false, false, false],
+  ['remote', false, false, false],
+  ['web', true, false, false],
+  ['web', false, true, false],
+  ['web', false, false, true],
+  ['remote', false, false, true],
 ] as const)(
   'returns only the detached pinned %s tab (source closed: %s, reloaded: %s)',
-  async (kind, sourceClosed, sourceReloaded) => {
+  async (kind, sourceClosed, sourceReloaded, pageOnly) => {
     const source = workspaceTarget(3)
     const target = workspaceTarget(2)
     const main = vi.fn<() => Promise<import('electron').BrowserWindow>>(
       async () => mocks.window as never,
     )
     const bridge = registerBrowser('/app/index.html', undefined, undefined, {
-      create: async () => {
+      create: async (compact) => {
+        expect(compact).toBe(pageOnly)
         mocks.windowFor = target
         await call(event, placeholderState)
         mocks.windowFor = source
@@ -3517,7 +3585,7 @@ it.each([
     })
     if (kind === 'web') await call(event, { ...workspaceShow, url: pinned.tab.url })
     expect(
-      await call(event, { action: 'move-tab', key: pinned.key, tab: pinned.tab }),
+      await call(event, { action: 'move-tab', key: pinned.key, tab: pinned.tab, pageOnly }),
     ).toMatchObject({ detachedTabs: [pinned.key] })
     mocks.contents.setAudioMuted.mockClear()
     target.focus.mockClear()

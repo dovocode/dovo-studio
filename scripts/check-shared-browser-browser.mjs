@@ -124,7 +124,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.remoteVisibility=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport);if(event.data.visibility!==undefined)window.remoteVisibility.push(event.data.visibility)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);if(window.failWindowMove)throw Error('Destination closed');window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -153,7 +153,7 @@ export const useSettingsTarget=()=>{
 const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
 window.studioCommands=new Map();const registerCommand=command=>{window.studioCommands.set(command.id,command);return ()=>window.studioCommands.delete(command.id)};
 const HostContext=createContext(null);export const StudioHostProvider=({api,children})=>createElement(HostContext.Provider,{value:api},children);
-export const useStudioHost=()=>useContext(HostContext)||({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+export const useStudioHost=()=>useContext(HostContext)||({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserPageOnly:!!window.fixturePageOnly,browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -1963,6 +1963,58 @@ try {
     remoteOpenerAddress,
     'Editing the remote preview must not change the opener address',
   )
+  await page.evaluate(() => {
+    window.fixturePageOnly = true
+    window.renderBrowser()
+  })
+  await preview
+    .locator('iframe[title="Host browser"]')
+    .filter({ visible: true })
+    .contentFrame()
+    .locator('body')
+    .evaluate(() =>
+      window.parent.postMessage(
+        {
+          channel: 'dovo-browser',
+          type: 'state',
+          url: 'http://localhost:3000/remote-preview-edit',
+          title: 'Remote preview',
+          back: true,
+          forward: false,
+          loading: false,
+          editable: false,
+          createdTabs: [
+            {
+              id: '00000000-0000-4000-8000-000000000998',
+              url: 'http://localhost:3000/other-window',
+            },
+          ],
+        },
+        '*',
+      ),
+    )
+  const remoteChooser = page.getByRole('dialog', {
+    name: 'Open link in another window',
+    exact: true,
+  })
+  await remoteChooser.getByRole('button', { name: 'Main window', exact: true }).click()
+  await remoteChooser.waitFor({ state: 'detached' })
+  const remoteTransfer = await page.evaluate(() =>
+    window.calls.findLast((command) => command.action === 'move-tab'),
+  )
+  assert.equal(remoteTransfer.targetMain, true)
+  assert.equal(remoteTransfer.tab.runtimeId, 'mac')
+  assert.equal(remoteTransfer.tab.profileId, 'remote-work')
+  assert.equal(remoteTransfer.tab.id, '00000000-0000-4000-8000-000000000998')
+  assert.equal(
+    await preview.getByLabel('Link preview URL', { exact: true }).inputValue(),
+    'http://localhost:3000/remote-preview-edit',
+    'The active preview stays open',
+  )
+  await page.evaluate(() => {
+    window.fixturePageOnly = false
+    window.renderBrowser()
+  })
   const remotePreviewFrame = preview
     .locator('iframe[title="Host browser"]')
     .filter({ visible: true })
@@ -4174,9 +4226,15 @@ try {
     'Moving retains the native page',
   )
   await compactSidebar.getByRole('button', { name: /^Website 2 Local/ }).click({ button: 'right' })
-  await controlsPage.getByRole('menuitem', { name: 'Detach to new window', exact: true }).click()
+  await controlsPage.getByRole('menuitem', { name: 'Detach without sidebars', exact: true }).click()
   await controlsPage.waitForFunction(() => window.transferredTab?.tab.id === 'compact-2')
   assert.equal(await controlsPage.evaluate(() => window.transferredTab.tab.pinned), true)
+  assert.equal(
+    await controlsPage.evaluate(
+      () => window.calls.findLast((command) => command.action === 'move-tab').pageOnly,
+    ),
+    true,
+  )
   assert.equal(await controlsPage.evaluate(() => window.transferredTab.targetWindowId), undefined)
   await controlsPage.waitForFunction(
     () =>
@@ -4184,6 +4242,140 @@ try {
         (tab) => tab.id === 'compact-2',
       )?.detached === window.transferredTab.key,
   )
+  await controlsPage.evaluate(() => {
+    window.fixturePageOnly = true
+    window.renderBrowser()
+  })
+  await controlsPage.getByLabel('Preview URL', { exact: true }).waitFor()
+  assert.equal(await controlsPage.getByLabel('Recent browser tabs', { exact: true }).count(), 0)
+  assert.equal(
+    await controlsPage.getByRole('button', { name: 'Thread for this tab', exact: true }).count(),
+    0,
+  )
+  assert.equal(
+    await controlsPage.getByRole('button', { name: 'Customize website', exact: true }).count(),
+    0,
+  )
+  const opener = await controlsPage.getByLabel('Preview URL', { exact: true }).inputValue()
+  const originalPinTransfer = await controlsPage.evaluate(() => window.transferredTab)
+  for (const [destination, expected] of [
+    ['Main window', { targetMain: true }],
+    ['New window', { pageOnly: true }],
+    ['Other browser window', { targetWindowId: 2 }],
+  ]) {
+    const windowTransfers = await controlsPage.evaluate(
+      () => window.calls.filter((command) => command.action === 'move-tab').length,
+    )
+    await controlsPage.evaluate(async () => {
+      window.createdTabs.push({
+        key: 'compact-blank-link',
+        url: 'https://example.test/new-window',
+        profileId: 'default',
+        active: true,
+        openerKey: 'compact-source',
+      })
+      await window.pollBrowser()
+    })
+    const chooser = controlsPage.getByRole('dialog', {
+      name: 'Open link in another window',
+      exact: true,
+    })
+    await chooser.waitFor()
+    assert.equal(
+      await controlsPage.evaluate(
+        () => window.calls.filter((command) => command.action === 'move-tab').length,
+      ),
+      windowTransfers,
+      'No move before choosing a destination',
+    )
+    if (destination === 'New window') {
+      await controlsPage.evaluate(() => {
+        window.fixtureNavigatedAway = true
+        window.renderBrowser()
+      })
+      await chooser.waitFor({ state: 'detached' })
+      await controlsPage.evaluate(() => {
+        window.fixtureNavigatedAway = false
+        window.renderBrowser()
+      })
+      await chooser.waitFor()
+    }
+    await chooser.getByRole('button', { name: destination, exact: true }).click()
+    await controlsPage.waitForFunction(
+      (before) => window.calls.filter((command) => command.action === 'move-tab').length > before,
+      windowTransfers,
+    )
+    await chooser.waitFor({ state: 'detached' })
+    const blankTransfer = await controlsPage.evaluate(() =>
+      window.calls.findLast((command) => command.action === 'move-tab'),
+    )
+    for (const [key, value] of Object.entries(expected)) assert.equal(blankTransfer[key], value)
+    assert.equal(blankTransfer.key, 'compact-blank-link')
+    assert.equal(blankTransfer.tab.url, 'https://example.test/new-window')
+    assert.equal(blankTransfer.tab.previewOf, undefined)
+    await controlsPage
+      .getByRole('status')
+      .filter({ hasText: 'Link opened in another window' })
+      .waitFor()
+    assert.equal(
+      await controlsPage.getByLabel('Preview URL', { exact: true }).inputValue(),
+      opener,
+      'New-window links keep the opener address',
+    )
+    await controlsPage.getByRole('button', { name: 'Dismiss new window notice' }).click()
+  }
+  await controlsPage.evaluate(async () => {
+    window.createdTabs.push({
+      key: 'compact-cancel-link',
+      url: 'https://example.test/cancel-window',
+      profileId: 'default',
+      active: true,
+    })
+    await window.pollBrowser()
+  })
+  await controlsPage
+    .getByRole('dialog', { name: 'Open link in another window', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
+  await controlsPage.waitForFunction(() =>
+    window.calls.some(
+      (command) => command.action === 'close' && command.key === 'compact-cancel-link',
+    ),
+  )
+  assert.equal(await controlsPage.getByLabel('Preview URL', { exact: true }).inputValue(), opener)
+  await controlsPage.evaluate(async () => {
+    window.failWindowMove = true
+    window.createdTabs.push({
+      key: 'compact-failed-link',
+      url: 'https://example.test/retry-window',
+      profileId: 'default',
+      active: true,
+    })
+    await window.pollBrowser()
+  })
+  const retryChooser = controlsPage.getByRole('dialog', {
+    name: 'Open link in another window',
+    exact: true,
+  })
+  await retryChooser.getByRole('button', { name: 'Other browser window', exact: true }).click()
+  await retryChooser.getByRole('alert').filter({ hasText: 'Destination closed' }).waitFor()
+  assert.equal(await controlsPage.getByLabel('Preview URL', { exact: true }).inputValue(), opener)
+  assert.equal(
+    await controlsPage.evaluate(() =>
+      window.calls.some(
+        (command) => command.action === 'close' && command.key === 'compact-failed-link',
+      ),
+    ),
+    false,
+  )
+  await controlsPage.evaluate(() => (window.failWindowMove = false))
+  await retryChooser.getByRole('button', { name: 'Main window', exact: true }).click()
+  await retryChooser.waitFor({ state: 'detached' })
+  await controlsPage.evaluate((original) => (window.transferredTab = original), originalPinTransfer)
+  await controlsPage.evaluate(() => {
+    window.fixturePageOnly = false
+    window.renderBrowser()
+  })
   const detachedPin = compactSidebar.locator('[data-browser-tab-id="compact-2"]')
   assert.equal(await detachedPin.getAttribute('data-detached'), 'true')
   const beforeFocus = await controlsPage.evaluate(() => window.calls.length)

@@ -84,6 +84,7 @@ import { TaskReview, type FileEditDraft } from './task-review'
 import { TerminalPane } from '../../terminal/terminal-pane'
 import { useTaskViewed } from './use-task-viewed'
 import { copyText } from '../../ui/content/clipboard'
+import { TaskPipelineProgress } from './task-pipeline-progress'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
 import { PlanApproval } from '../conversation/components/plan-approval'
@@ -1053,6 +1054,13 @@ function TaskDetailContent({
               display: pane === 'chat' ? 'flex' : 'none',
             }}
           >
+            {!!task.watchCounts?.pipelines && (
+              <TaskPipelineProgress
+                key={task.id}
+                taskId={task.id}
+                active={pane === 'chat' && focused}
+              />
+            )}
             <Composer
               onHistoryBrowsingChange={setHistoryBrowsing}
               onStartInBackground={startup?.onStartInBackground}

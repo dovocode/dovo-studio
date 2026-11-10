@@ -122,6 +122,9 @@ export function registerTaskLauncher(rendererPath: string, preload: string) {
     }
   })
   return {
+    setQuitting: (ready: boolean) => {
+      quitting = ready
+    },
     dispose: () => {
       if (shortcut) globalShortcut.unregister(shortcut)
       popup?.destroy()
