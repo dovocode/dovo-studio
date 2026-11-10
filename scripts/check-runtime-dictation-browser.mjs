@@ -92,7 +92,15 @@ try {
     void window.dictation.start()
   })
   await page.waitForFunction(() => !!window.finishPrepare)
+  const cancellations = await page.evaluate(
+    () => window.requests.filter((request) => request.path.endsWith('/cancel')).length,
+  )
   await page.evaluate(() => window.setState({ taskId: 'task-two', runtimeId: 'computer-two' }))
+  await page.waitForFunction(
+    (before) =>
+      window.requests.filter((request) => request.path.endsWith('/cancel')).length > before,
+    cancellations,
+  )
   await page.evaluate(() => window.finishPrepare())
   await page.waitForFunction(() => window.released === 3)
   assert.equal(

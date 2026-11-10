@@ -569,7 +569,9 @@ try {
       .waitFor({ state: 'hidden' })
     const mentionField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await mentionField.fill('@src')
-    await page.getByRole('listbox', { name: 'Files and MCP servers', exact: true }).waitFor()
+    await page
+      .getByRole('listbox', { name: 'Files, models and MCP servers', exact: true })
+      .waitFor()
     await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
     assert.ok((await composerText(mentionField)).includes('src/App.tsx'))
     await page.getByRole('button', { name: 'Idle task', exact: true }).click()

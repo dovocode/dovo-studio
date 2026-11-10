@@ -222,9 +222,13 @@ export function useAttachmentPicker(
         setPendingUploads({ scope: scopeKey, files: batch.map((item) => item.attachment) })
       }
       let held = 0
+      let stopped = false
       for (const item of batch) {
         yield* mobileWorkflow(function* () {
+          if (stopped)
+            throw new Error('not uploaded because the previous attachment did not complete.')
           if (!owns()) throw new Error('Attachment cancelled because the conversation changed.')
+          stopped = true
           const result = yield* requestAttachmentEffect(
             profile,
             {
@@ -245,20 +249,28 @@ export function useAttachmentPicker(
             if (!detached.uploaded(result.attachment)) {
               held++
               reviewAttachments(profile)
-            }
+            } else stopped = false
           } else if (editing) {
             if (!editing.uploaded(result.attachment, replaceId)) {
               held++
               reviewAttachments(profile)
-            }
+            } else stopped = false
           } else {
-            const committed = yield* readRuntimeEffect(
-              profile,
-              '/api/attachments/commit-upload',
-              { id: result.attachment.id, guard },
-              attachmentCommitResultSchema,
+            const committed = yield* Effect.result(
+              readRuntimeEffect(
+                profile,
+                '/api/attachments/commit-upload',
+                { id: result.attachment.id, guard },
+                attachmentCommitResultSchema,
+              ),
             )
-            guard = committed.nextGuard
+            if (committed._tag === 'Failure') {
+              held++
+              reviewAttachments(profile)
+              return yield* Effect.fail(committed.failure)
+            }
+            guard = committed.success.nextGuard
+            stopped = false
             yield* refreshRuntimeEffect(profile)
             yield* finishAttachmentEffect(profile, result.attachment.id).pipe(
               Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),

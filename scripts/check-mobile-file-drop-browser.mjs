@@ -8,7 +8,7 @@ const result = await bundleBrowser(
     stdin: {
       resolveDir: mobile,
       loader: 'tsx',
-      contents: `import {createRoot} from 'react-dom/client';import {FileDropTarget} from './src/tasks/composer/file-drop-target';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';import {useState} from 'react';window.uploads=[];window.released=[];window.optimized=[];window.deleted=[];window.imageRefsReleased=0;window.contextsReleased=0;window.alerts=[];window.count=0;function App(){const picker=useAttachmentPicker('task');const [enabled,setEnabled]=useState(true);window.enableDrop=setEnabled;window.uploadAssets=picker.upload;return <FileDropTarget enabled={enabled&&!picker.busy} upload={picker.upload}><textarea aria-label="Message" defaultValue="Keep my draft"/><div role="alert">{picker.error}</div></FileDropTarget>};createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {createRoot} from 'react-dom/client';import {FileDropTarget} from './src/tasks/composer/file-drop-target';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';import {useState} from 'react';window.uploads=[];window.released=[];window.optimized=[];window.deleted=[];window.imageRefsReleased=0;window.contextsReleased=0;window.alerts=[];window.count=0;function App(){const picker=useAttachmentPicker('task');window.picker=picker;const [enabled,setEnabled]=useState(true);window.enableDrop=setEnabled;window.uploadAssets=picker.upload;return <FileDropTarget enabled={enabled&&!picker.busy} upload={picker.upload}><textarea aria-label="Message" defaultValue="Keep my draft"/><div role="alert">{picker.error}</div></FileDropTarget>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -51,7 +51,7 @@ const result = await bundleBrowser(
     },
     {
       path: 'expo-file-system',
-      contents: `export const Paths={cache:'file:///cache'};export class File{constructor(uri){this.uri=uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}async bytes(){return new Uint8Array(20)}async base64(){return btoa(this.uri)}delete(){window.deleted.push(this.uri)}}`,
+      contents: `export const Paths={cache:'file:///cache'};export class File{constructor(...parts){this.uri=parts.join('/');const uri=this.uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}get exists(){return true}write(){}async bytes(){return new Uint8Array(20)}async base64(){return btoa(this.uri)}delete(){window.deleted.push(this.uri)}}`,
     },
     {
       path: 'expo-clipboard',
@@ -159,6 +159,11 @@ try {
   assert.equal(await page.evaluate(() => window.finished), 5)
   assert.ok(await page.evaluate(() => window.reviews > 0))
   assert.equal(await page.evaluate(() => window.alerts.at(-1)[0]), 'Attachments saved for review')
+  assert.deepEqual(
+    await page.evaluate(() => window.picker.failedUploads.map((file) => file.name)),
+    ['lost.txt', 'after-lost.txt'],
+    'Keep both the uncertain upload and the unattempted file available for recovery',
+  )
   const beforeBatch = await page.evaluate(() => ({
     uploads: window.uploads.length,
     commits: window.commits.length,
