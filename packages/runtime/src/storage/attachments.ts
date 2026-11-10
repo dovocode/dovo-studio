@@ -409,9 +409,22 @@ export class Attachments {
           !task.draftAttachments?.some((file) => file.id === input.id))
       )
         throw new HttpError(409, 'The draft attachment has changed. Reopen the image to edit it.')
+      if (
+        input.draftGuard !== undefined &&
+        !input.detached &&
+        !input.queuedMessageId &&
+        !task.draftAttachments?.some((file) => file.id === input.id)
+      )
+        throw new HttpError(
+          409,
+          'This file already left the draft. Review the conversation before attaching it again.',
+        )
       return {
         attachment: previous.attachment,
         revision: this.store.version(),
+        ...(input.draftGuard !== undefined
+          ? { nextGuard: this.draftUploadGuard(input.taskId) }
+          : {}),
       }
     }
     const detected = await fileTypeFromBuffer(data).catch((error) => {
@@ -445,7 +458,13 @@ export class Attachments {
         const previous = this.read(input.taskId, input.id)
         if (previous.data !== input.data || previous.attachment.name !== attachment.name)
           throw new HttpError(409, 'Upload ID already has different contents')
-        return { attachment: previous.attachment, revision: this.store.version() }
+        return {
+          attachment: previous.attachment,
+          revision: this.store.version(),
+          ...(input.draftGuard !== undefined
+            ? { nextGuard: this.draftUploadGuard(input.taskId) }
+            : {}),
+        }
       }
       if (
         input.queuedMessageId &&

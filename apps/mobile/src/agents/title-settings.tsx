@@ -1,3 +1,4 @@
+import { SecretReferenceFields } from './secret-reference-fields'
 import { SettingsSaveBar } from '../screens/settings-save-bar'
 import { useSettingsDraft } from '../runtime/preferences/settings-target'
 import { settingsChanges, supportsUtilities } from '@dovo/protocol'
@@ -126,8 +127,92 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
       <Text style={styles.muted}>
         {selection
           ? 'Selects projects, harnesses and coding models. Inherits the explicit title model unless overridden.'
-          : 'Choose an explicit harness and model for task titles and dictation cleanup.'}
+          : 'Choose a coding harness or direct API model for titles, commit and PR text, and dictation cleanup.'}
       </Text>
+      {snapshot?.textGeneratorsSupported && !(selection && settings.inheritTitleModel) && (
+        <View style={{ gap: 10 }}>
+          <Choice
+            label="Generate text with"
+            value={settings.generator?.kind ?? 'harness'}
+            disabled={busy}
+            items={[
+              { id: 'harness', name: 'Coding harness' },
+              { id: 'openai', name: 'OpenAI-compatible API' },
+              { id: 'anthropic', name: 'Anthropic API' },
+            ]}
+            onChange={(kind) => {
+              if (kind === 'harness') setSettings({ ...settings, generator: undefined })
+              else if (kind === 'openai' || kind === 'anthropic')
+                setSettings({
+                  ...settings,
+                  generator: {
+                    kind,
+                    model: '',
+                    baseUrl:
+                      kind === 'openai'
+                        ? 'https://api.openai.com/v1'
+                        : 'https://api.anthropic.com/v1',
+                    apiKey: {
+                      provider: 'environment',
+                      reference: kind === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY',
+                    },
+                  },
+                })
+            }}
+          />
+          {settings.generator && (
+            <>
+              <Field
+                label="API base URL"
+                value={settings.generator.baseUrl}
+                onChangeText={(baseUrl) =>
+                  setSettings({ ...settings, generator: { ...settings.generator!, baseUrl } })
+                }
+              />
+              <Field
+                label="API model ID"
+                value={settings.generator.model}
+                onChangeText={(model) =>
+                  setSettings({ ...settings, generator: { ...settings.generator!, model } })
+                }
+              />
+              <Choice
+                label="API key"
+                value={settings.generator.apiKey ? 'reference' : 'none'}
+                items={[
+                  { id: 'reference', name: 'Host or vault reference' },
+                  { id: 'none', name: 'No key (local API)' },
+                ]}
+                onChange={(value) =>
+                  setSettings({
+                    ...settings,
+                    generator: {
+                      ...settings.generator!,
+                      apiKey:
+                        value === 'none'
+                          ? undefined
+                          : { provider: 'environment', reference: 'OPENAI_API_KEY' },
+                    },
+                  })
+                }
+              />
+              {settings.generator.apiKey && (
+                <SecretReferenceFields
+                  value={settings.generator.apiKey}
+                  onChange={(apiKey) =>
+                    setSettings({ ...settings, generator: { ...settings.generator!, apiKey } })
+                  }
+                  disabled={busy}
+                />
+              )}
+              <Text style={styles.muted}>
+                Sends utility text to this API. The harness below handles work that needs checkout
+                tools.
+              </Text>
+            </>
+          )}
+        </View>
+      )}
       <Choice
         label={selection ? 'Scope, Tune & Maestro selector harness' : 'Title harness'}
         value={
@@ -300,7 +385,8 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
           busy ||
           !baseline ||
           JSON.stringify(settings) === JSON.stringify(baseline) ||
-          (!(selection && settings.inheritTitleModel) &&
+          (!settings.generator &&
+            !(selection && settings.inheritTitleModel) &&
             (!settings.model.trim() || (!settings.harness && !settings.agentId)))
         }
         onSave={() =>

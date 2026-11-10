@@ -1,8 +1,12 @@
+import { SecretReferenceFields } from './secret-reference-fields'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { MessageCircleQuestion, LoaderCircle } from 'lucide-react'
 import {
   questionAnswerError,
+  questionReferenceAnswers,
+  defaultSecretReference,
+  type QuestionSecretReferences,
   questionDraftAnswers,
   toggleQuestionChoice,
   type QuestionAnswers,
@@ -25,7 +29,11 @@ export function QuestionForm({
 }: {
   request: PendingQuestion
   connected: boolean
-  onAnswer: (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => Promise<void>
+  onAnswer: (
+    answers: QuestionAnswers | null,
+    outcomes?: QuestionOutcomes,
+    references?: QuestionSecretReferences,
+  ) => Promise<void>
   attachmentIdsByQuestion?: QuestionAttachmentIds
   renderAttachments?: (question: AgentQuestion, disabled: boolean) => ReactNode
   attachmentsBusy?: boolean
@@ -43,6 +51,7 @@ export function QuestionForm({
     ),
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
+  const [references, setReferences] = useApplicationState<QuestionSecretReferences>({})
   const submitting = useRef(false)
   const form = useRef<HTMLFormElement>(null)
   useEffect(() => {
@@ -76,7 +85,12 @@ export function QuestionForm({
   const submit = async (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => {
     if (submitting.current || !connected || attachmentsBusy) return
     const invalid =
-      answers && questionAnswerError(request.prompt.questions, answers, attachmentIdsByQuestion)
+      answers &&
+      questionAnswerError(
+        request.prompt.questions,
+        questionReferenceAnswers(answers, outcomes ? {} : references),
+        attachmentIdsByQuestion,
+      )
     if (invalid) {
       setError(invalid)
       return
@@ -85,7 +99,7 @@ export function QuestionForm({
     setError('')
     setBusy(true)
     try {
-      await onAnswer(answers, outcomes)
+      await onAnswer(answers, outcomes, answers && !outcomes ? references : {})
     } catch (error) {
       setError(String(error))
       submitting.current = false
@@ -120,7 +134,7 @@ export function QuestionForm({
         {request.prompt.questions.map((q, index) => (
           <div key={q.id} className="space-y-2">
             <QuestionField
-              question={q}
+              question={Object.hasOwn(references, q.id) ? { ...q, custom: false, options: [] } : q}
               value={drafts[q.id]}
               disabled={busy || !connected || attachmentsBusy}
               shortcutNumbers={index === 0}
@@ -132,6 +146,45 @@ export function QuestionForm({
                 setError('')
               }}
             />
+            {request.secretReferences && q.secret && q.custom && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || !connected}
+                  onClick={() => {
+                    setReferences((current) => {
+                      const next = { ...current }
+                      if (Object.hasOwn(next, q.id)) delete next[q.id]
+                      else next[q.id] = defaultSecretReference('onepassword')
+                      return next
+                    })
+                    setDrafts((current) => ({ ...current, [q.id]: { selected: [], text: '' } }))
+                    setError('')
+                  }}
+                >
+                  {Object.hasOwn(references, q.id)
+                    ? 'Type secret instead'
+                    : 'Use a secret reference'}
+                </Button>
+                {Object.hasOwn(references, q.id) && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      The computer reads this value and sends it to the agent’s secret response.
+                      Dovo hides it from the activity log.
+                    </p>
+                    <SecretReferenceFields
+                      value={references[q.id]}
+                      disabled={busy || !connected}
+                      onChange={(value) =>
+                        setReferences((current) => ({ ...current, [q.id]: value }))
+                      }
+                    />
+                  </div>
+                )}
+              </>
+            )}
             {renderAttachments?.(q, busy || !connected || attachmentsBusy)}
           </div>
         ))}

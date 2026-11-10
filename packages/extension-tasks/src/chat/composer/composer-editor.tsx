@@ -65,7 +65,11 @@ export const ComposerEditor = memo(function ComposerEditor({
   historyScope,
   loadHistory,
   onInputElement,
+  suggestion,
+  onDismissSuggestion,
 }: {
+  suggestion?: string
+  onDismissSuggestion?: () => void
   controller: ReturnType<typeof createComposerDraft>
   taskId: string
   input: RefObject<HTMLElement | null>
@@ -260,6 +264,20 @@ export const ComposerEditor = memo(function ComposerEditor({
     ) {
       event.preventDefault()
       void toggleComposerMode(input)
+      return
+    }
+    if (
+      !draft &&
+      suggestion &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      (event.key === 'Tab' || event.key === 'Escape')
+    ) {
+      event.preventDefault()
+      if (event.key === 'Tab') controller.update(suggestion)
+      onDismissSuggestion?.()
       return
     }
     mentions.onKeyDown(event)

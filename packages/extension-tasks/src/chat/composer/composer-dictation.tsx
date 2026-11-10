@@ -6,7 +6,8 @@ import {
   decode,
   randomUUID,
 } from '@dovo/protocol'
-import { useAppPreferences } from '@dovo/studio-core'
+import { useAppPreferences, useWorkspace } from '@dovo/studio-core'
+import { useRuntimeDictationBridge } from '@dovo/studio-core/runtime-dictation'
 import { Button, IconButton } from '@dovo/studio-ui'
 import { Mic, Square, X, LoaderCircle } from 'lucide-react'
 import type { createComposerDraft } from './composer-draft'
@@ -26,17 +27,29 @@ type Session = {
 }
 export function ComposerDictation({
   controller,
+  taskId,
   input,
   disabled,
   onActive,
 }: {
+  taskId: string
   controller: ReturnType<typeof createComposerDraft>
   input: RefObject<HTMLElement | null>
   disabled: boolean
   onActive: (active: boolean) => void
 }) {
-  const bridge = desktopDictationBridge()
-  const { dictationEnabled, dictationLanguage } = useAppPreferences()
+  const { request, connection, snapshot } = useWorkspace()
+  const preferences = useAppPreferences()
+  const runtimeBridge = useRuntimeDictationBridge(
+    request,
+    taskId,
+    JSON.stringify([connection?.runtimeId, connection?.address, connection?.token]),
+  )
+  const runtimeId = snapshot?.runtimeId ?? connection?.runtimeId
+  const remote = !!runtimeId && preferences.runtimeDictationIds.includes(runtimeId)
+  const bridge = remote ? runtimeBridge : desktopDictationBridge()
+  const dictationEnabled = remote || preferences.dictationEnabled
+  const { dictationLanguage } = preferences
   const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle')
   const [preview, setPreview] = useState('')
   const [error, setError] = useState('')
@@ -133,6 +146,10 @@ export function ComposerDictation({
     setPhase('starting')
     callbacks.current.onActive(true)
     try {
+      if (remote && !snapshot?.runtimeDictationSupported)
+        throw new Error(
+          'Reconnect to the selected speech computer. Runtime dictation is unavailable.',
+        )
       const value = decode(dictationStatusSchema, await bridge.status())
       if (active.current !== current) return
       if (!value.engine || !value.model)
@@ -213,10 +230,10 @@ export function ComposerDictation({
       {(phase !== 'idle' || error || retained) && (
         <div
           className="absolute bottom-full right-0 z-30 mb-2 w-72 rounded-lg border border-border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
-          aria-label="Local dictation"
+          aria-label="Dictation"
         >
           <div className="mb-2 flex items-center justify-between gap-2">
-            <strong>Local dictation</strong>
+            <strong>{remote ? 'Computer dictation' : 'Local dictation'}</strong>
             <IconButton
               type="button"
               className="size-6"
@@ -235,7 +252,7 @@ export function ComposerDictation({
             {phase === 'recording' && (
               <p>Recording… Click Stop when finished. Escape cancels. Maximum 5 minutes.</p>
             )}
-            {phase === 'transcribing' && <p>Transcribing on this computer…</p>}
+            {phase === 'transcribing' && <p>Transcribing on the selected computer…</p>}
           </div>
           {error && (
             <p role="alert" className="mt-2 text-destructive">

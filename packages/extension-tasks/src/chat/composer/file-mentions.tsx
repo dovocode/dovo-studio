@@ -2,6 +2,9 @@ import { useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { Schema } from 'effect'
 import { FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
+  modelMentionsSchema,
+  insertModelMention,
+  type ModelMention,
   commandSuggestions,
   composerMention,
   insertMention,
@@ -21,7 +24,7 @@ import type { RichComposerHandle } from './rich-composer-editor'
 
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model'
   /** Prompt suggestions: shown name, while `detail` previews the text. */
   name?: string
   value: string
@@ -29,7 +32,14 @@ type Suggestion = {
   muted?: boolean
 }
 export type ComposerCommandId = Exclude<ReturnType<typeof commandSuggestions>[number]['id'], 'goal'>
-const icons = { file: FileText, skill: Sparkles, mcp: Plug, command: SquareSlash, prompt: Hash }
+const icons = {
+  file: FileText,
+  skill: Sparkles,
+  mcp: Plug,
+  command: SquareSlash,
+  prompt: Hash,
+  model: Sparkles,
+}
 type MentionKey = {
   key: string
   keyCode: number
@@ -74,6 +84,14 @@ export function useFileMentions({
     selectConversationConnection,
     sameWorkspaceFields,
   )
+  const modelMentionsSupported = useWorkspaceSelector(
+    (state) => state.snapshot?.modelMentionsSupported === true,
+  )
+  const [modelLookup, setModelLookup] = useState<{
+    key: string
+    models: ModelMention[]
+    error: string
+  }>()
   const [caret, setCaret] = useState(0)
   const [richText, setRichText] = useState('')
   const source = rich ? richText : draft
@@ -142,8 +160,18 @@ export function useFileMentions({
   ])
   const files = lookup?.key === lookupKey ? lookup.files : []
   const lookupError = lookup?.key === lookupKey ? lookup.error : ''
+  const modelError =
+    modelMentionsSupported && modelLookup?.key === lookupKey ? modelLookup.error : ''
   const searching = trigger === '@' && connected && lookup?.key !== lookupKey
   const suggestions: Suggestion[] = [
+    ...(modelMentionsSupported && modelLookup?.key === lookupKey
+      ? modelLookup.models.map((model) => ({
+          kind: 'model' as const,
+          value: model.reference,
+          name: model.name,
+          detail: `${model.provider} · ${model.model}`,
+        }))
+      : []),
     ...promptItems,
     ...commandItems,
     ...resourceItems,
@@ -159,7 +187,11 @@ export function useFileMentions({
   const open =
     !!mention &&
     dismissed !== mention.start &&
-    (suggestions.length > 0 || searching || !!lookupError || (managing && !mention.query))
+    (suggestions.length > 0 ||
+      searching ||
+      !!lookupError ||
+      !!modelError ||
+      (managing && !mention.query))
   useEffect(() => {
     if (trigger !== '@' || query === undefined || !connected) {
       setLookup(undefined)
@@ -187,11 +219,37 @@ export function useFileMentions({
       clearTimeout(timer)
     }
   }, [trigger, query, taskId, connected, request, lookupKey])
+  useEffect(() => {
+    if (trigger !== '@' || !query || query.length < 2 || !connected || !modelMentionsSupported)
+      return
+    let stopped = false
+    const timer = setTimeout(() => {
+      void request('/api/agents/model-mentions', { taskId, query }, modelMentionsSchema).then(
+        (result) => {
+          if (!stopped)
+            setModelLookup({
+              key: lookupKey,
+              models: result.models,
+              error: result.unavailable.length
+                ? `Models unavailable: ${result.unavailable.join(', ')}`
+                : '',
+            })
+        },
+        (cause: unknown) => {
+          if (!stopped) setModelLookup({ key: lookupKey, models: [], error: String(cause) })
+        },
+      )
+    }, 180)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [trigger, query, connected, modelMentionsSupported, request, taskId, lookupKey])
   useEffect(() => setActiveKey(''), [trigger, query])
   useEffect(() => {
     if (open)
       list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
-  }, [open, activeKey, lookup, trigger, query])
+  }, [open, activeKey, lookup, modelLookup, trigger, query])
   const track = () => {
     if (rich) {
       const context = rich.current?.mentionContext()
@@ -221,6 +279,10 @@ export function useFileMentions({
   }
   const choose = (item: Suggestion | undefined) => {
     if (!mention || !item) return
+    if (item.kind === 'model') {
+      apply(insertModelMention(source, mention.start, caret, item.value), true)
+      return
+    }
     if (item.kind === 'prompt') {
       const prompt = prompts.find((entry) => entry.id === item.value)
       if (!prompt) return
@@ -270,7 +332,7 @@ export function useFileMentions({
       role="listbox"
       aria-label={
         trigger === '@'
-          ? 'Files and MCP servers'
+          ? 'Files, models and MCP servers'
           : trigger === '/'
             ? 'Commands and skills'
             : trigger === '#'
@@ -285,11 +347,13 @@ export function useFileMentions({
         const label =
           item.kind === 'file'
             ? item.value.slice(slash + 1)
-            : item.kind === 'command'
-              ? `/${item.value}`
-              : item.kind === 'prompt'
-                ? `#${item.name}`
-                : item.value
+            : item.kind === 'model'
+              ? item.name
+              : item.kind === 'command'
+                ? `/${item.value}`
+                : item.kind === 'prompt'
+                  ? `#${item.name}`
+                  : item.value
         const detail =
           item.kind === 'file' ? (slash > 0 ? item.value.slice(0, slash) : '') : item.detail
         return (
@@ -314,6 +378,11 @@ export function useFileMentions({
           </button>
         )
       })}
+      {modelError && (
+        <p role="status" className="px-2 py-1 text-xs text-muted-foreground">
+          {modelError}
+        </p>
+      )}
       {searching && (
         <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
           Searching files…

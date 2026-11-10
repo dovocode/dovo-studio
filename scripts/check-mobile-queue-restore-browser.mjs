@@ -88,7 +88,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../composer/attachment-picker',
       importer: actions,
-      contents: 'export const useAttachmentPicker=()=>({busy:false,pick(){},upload(){}});',
+      contents:
+        'export const useAttachmentPicker=()=>({submissionFiles:[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},busy:false,pick(){},upload(){}});',
     },
     {
       path: '../../composer/use-composer-dictation',

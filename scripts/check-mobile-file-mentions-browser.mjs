@@ -15,7 +15,7 @@ import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {FileMentions} from '${mobile}src/tasks/conversation/components/file-mentions.tsx';
 window.requests=[];
-const call=(path,input)=>new Promise((resolve,reject)=>window.requests.push({input,resolve,reject}));
+const call=(path,input)=>new Promise((resolve,reject)=>window.requests.push({path,input,resolve,reject}));
 function App(){
   const [state,setState]=useState({text:'@old',provider:'codex',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},call});
   window.update=changes=>setState(previous=>({...previous,...changes}));
@@ -140,6 +140,30 @@ try {
   }
   await update({ text: '/go', provider: 'acp' })
   assert.equal(await page.getByRole('button', { name: /^Command goal:/ }).count(), 0)
+  await update({ text: '@gpt', snapshot: { modelMentionsSupported: true } })
+  await page.waitForFunction(() =>
+    window.requests.some((request) => request.path === '/api/agents/model-mentions'),
+  )
+  await page.evaluate(() =>
+    window.requests
+      .findLast((request) => request.path === '/api/agents/model-mentions')
+      .resolve({
+        models: [
+          {
+            reference: 'model:harness%3Acodex/gpt-exact',
+            name: 'GPT Exact',
+            provider: 'Codex',
+            model: 'gpt-exact',
+          },
+        ],
+        unavailable: [],
+      }),
+  )
+  await page
+    .getByRole('button', { name: 'Mention model model:harness%3Acodex/gpt-exact', exact: true })
+    .click()
+  assert.equal(await page.evaluate(() => window.runtime.text), '`model:harness%3Acodex/gpt-exact` ')
+  assert.equal(await page.evaluate(() => window.runtime.provider), 'acp')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile file mention request races, resource details and native goal insertion passed',

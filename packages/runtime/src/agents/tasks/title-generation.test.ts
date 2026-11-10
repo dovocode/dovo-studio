@@ -1190,3 +1190,152 @@ it.each([false, true])(
     }
   },
 )
+
+it('uses a direct API target for utility text without launching a coding harness', async () => {
+  const s = setup()
+  const provider = vi.spyOn(s.registry, 'get')
+  const fetcher = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: 'Useful title' } }] })),
+    )
+  try {
+    s.titles.save({
+      generator: { kind: 'openai', model: 'small', baseUrl: 'http://127.0.0.1:1234/v1' },
+    })
+    expect(s.titles.read().generator?.model).toBe('small')
+    expect(await s.titles.generate({ text: 'Make this easier' })).toEqual({ title: 'Useful title' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(provider).not.toHaveBeenCalled()
+  } finally {
+    fetcher.mockRestore()
+    provider.mockRestore()
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+
+function suggestionTask() {
+  const at = new Date().toISOString()
+  return decode(taskSchema, {
+    id: 'suggestion',
+    archived: true,
+    title: 'Task',
+    repositoryId: 'repo',
+    agentId: 'harness',
+    status: 'review',
+    createdAt: at,
+    files: [],
+    draft: '',
+    example: false,
+    messages: [
+      { id: 'user', role: 'user', text: 'Build a useful app', createdAt: at },
+      { id: 'assistant', role: 'assistant', text: 'The app is ready.', createdAt: at },
+    ],
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'assistant',
+        agentId: 'harness',
+        provider: 'codex',
+        model: 'task-model',
+        startedAt: at,
+        status: 'completed',
+      },
+    ],
+  })
+}
+it('keeps suggestions off by default and coalesces each completed human turn', async () => {
+  const s = setup()
+  const task = suggestionTask()
+  s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    input.onText('Add a settings page')
+  })
+  const provider = vi
+    .spyOn(s.registry, 'get')
+    .mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    expect(() => s.titles.suggestNextPrompt(task.id, 'turn')).toThrow('Enable')
+    new RuntimePreferences(s.db).save({ suggestNextPrompt: true })
+    s.store.update((workspace) => ({
+      ...workspace,
+      agents: workspace.agents.map((agent) => ({ ...agent, model: 'later-model' })),
+    }))
+    expect(
+      await Promise.all([
+        s.titles.suggestNextPrompt(task.id, 'turn'),
+        s.titles.suggestNextPrompt(task.id, 'turn'),
+      ]),
+    ).toEqual([
+      { turnId: 'turn', text: 'Add a settings page' },
+      { turnId: 'turn', text: 'Add a settings page' },
+    ])
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run.mock.calls[0][0]).toMatchObject({
+      ephemeral: true,
+      tools: 'none',
+      agent: { model: 'task-model', permission: 'read-only' },
+    })
+    expect(s.store.task(task.id).messages).toEqual(task.messages)
+    expect(s.store.task(task.id).draft).toBe(task.draft)
+  } finally {
+    provider.mockRestore()
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+it('discards an outdated suggestion and ignores automation turns', async () => {
+  const s = setup()
+  const task = suggestionTask()
+  s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+  new RuntimePreferences(s.db).save({ suggestNextPrompt: true })
+  let release: () => void = () => {}
+  let readyResolve: () => void = () => {}
+  const ready = new Promise<void>((resolve) => {
+    readyResolve = resolve
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    readyResolve()
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+    input.onText('Stale suggestion')
+  })
+  const provider = vi
+    .spyOn(s.registry, 'get')
+    .mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    const result = s.titles.suggestNextPrompt(task.id, 'turn')
+    await ready
+    s.store.updateTask(task.id, (task) => ({ ...task, status: 'running' }))
+    release()
+    expect(await result).toEqual({ turnId: 'turn', text: '' })
+    s.store.update((workspace) => ({
+      ...workspace,
+      tasks: workspace.tasks.map((current) =>
+        current.id === task.id
+          ? {
+              ...task,
+              status: 'review',
+              messages: task.messages.map((message) =>
+                message.role === 'user'
+                  ? { ...message, source: { kind: 'system' as const, label: 'Automatic retry' } }
+                  : message,
+              ),
+            }
+          : current,
+      ),
+    }))
+    expect(await s.titles.suggestNextPrompt(task.id, 'turn')).toEqual({ turnId: 'turn', text: '' })
+    expect(run).toHaveBeenCalledTimes(1)
+  } finally {
+    release()
+    provider.mockRestore()
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})

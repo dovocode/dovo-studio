@@ -30,6 +30,12 @@
       "development": "./src/previews/browser-favicon.ts",
       "import": "./dist/previews/browser-favicon.js",
       "default": "./dist/previews/browser-favicon.js"
+    },
+    "./dictation-engine": {
+      "types": "./src/speech/dictation-engine.ts",
+      "development": "./src/speech/dictation-engine.ts",
+      "import": "./dist/speech/dictation-engine.js",
+      "default": "./dist/speech/dictation-engine.js"
     }
   },
   "scripts": {

@@ -1,3 +1,4 @@
+import { useNextPrompt } from '@dovo/studio-core/next-prompt'
 import {
   prepareSideThread,
   finishSideThread,
@@ -586,7 +587,7 @@ export function Composer({
   const pendingQuestion = !!snapshot?.questions.some(
     (question) => question.taskId === task.id && question.prompt.blocking !== false,
   )
-  const hasInput = composerDraft.hasText || attachments.files.length > 0
+  const hasInput = composerDraft.hasText || attachments.submissionFiles.length > 0
   const attempt = useRef<{
     id: string
     text: string
@@ -854,16 +855,17 @@ export function Composer({
       return
     }
     const text = composerDraft.controller.text.trim()
-    const attachmentIds = attachments.files.map((f) => f.id)
+    const attachmentIds = attachments.submissionFiles.map((f) => f.id)
     if (
       (!text && !attachmentIds.length) ||
       sending ||
       !!awaitingQueuedSubmission ||
       hasFailedSubmissionAttachments ||
+      attachments.failedUploads.length > 0 ||
       sendingRequest.current ||
       asideRequest.current === 'saving' ||
       stopping ||
-      attachments.busy ||
+      (attachments.busy && !attachments.canSubmitWhileUploading) ||
       task.archivedAt ||
       pendingQuestion
     )
@@ -919,7 +921,7 @@ export function Composer({
         role: 'user',
         text,
         createdAt: new Date().toISOString(),
-        attachments: attachments.files,
+        attachments: attachments.submissionFiles,
         turnSettings: attempt.current.turnSettings,
         ...(attempt.current.plan ? { plan: true } : {}),
       },
@@ -927,6 +929,7 @@ export function Composer({
     pendingSubmission.current = pending.message.id
     onPending(pending)
     try {
+      await attachments.waitForUploads()
       composerDraft.flush()
       await flush()
       if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
@@ -1223,16 +1226,32 @@ export function Composer({
       />
     </>
   )
+  const nextPrompt = useNextPrompt({
+    task,
+    enabled:
+      connected &&
+      snapshot?.promptSuggestionsEnabled === true &&
+      !composerDraft.hasText &&
+      !attachments.submissionFiles.length &&
+      !attachments.busy &&
+      !pendingQuestion &&
+      !editing &&
+      !sending,
+    scope: JSON.stringify([activeRuntimeId, connection?.address, connection?.token]),
+    request,
+  })
   const submitDisabled =
     (!!editing && !task.queue?.some((message) => message.id === editing.message.id)) ||
     !!policyIssue ||
     !!planIssue ||
-    (!composerDraft.hasText && !(editing ? editing.files.length : attachments.files.length)) ||
+    (!composerDraft.hasText &&
+      !(editing ? editing.files.length : attachments.submissionFiles.length)) ||
     sending ||
     !!awaitingQueuedSubmission ||
     hasFailedSubmissionAttachments ||
     stopping ||
-    attachments.busy ||
+    attachments.failedUploads.length > 0 ||
+    (attachments.busy && !attachments.canSubmitWhileUploading) ||
     !!task.archivedAt ||
     (!!connection && !connected) ||
     (firstMessage && (!connected || !task.repositoryId || !agent))
@@ -1423,6 +1442,7 @@ export function Composer({
             <ContextMeter task={task} />
             {!pendingQuestion && (
               <ComposerDictation
+                taskId={task.id}
                 controller={composerDraft.controller}
                 input={input}
                 disabled={submitBusy || machineMoving || asideCreating || !!task.archivedAt}
@@ -1718,6 +1738,25 @@ export function Composer({
             }
           />
         </div>
+        {attachments.failedUploads.map((file) => (
+          <div key={file.id} role="alert" className="flex items-center gap-2 px-3 py-1 text-xs">
+            <span>{file.name}: upload failed</span>
+            <button
+              type="button"
+              disabled={sending || attachments.busy}
+              onClick={() => attachments.retryUpload(file.id)}
+            >
+              Retry upload
+            </button>
+            <button
+              type="button"
+              disabled={sending || attachments.busy}
+              onClick={() => attachments.discardFailedUpload(file.id)}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
         {!!attachments.uploading.length && (
           <div
             className="flex flex-wrap gap-1.5 px-3 py-1"
@@ -1748,6 +1787,32 @@ export function Composer({
           <span role="status" className="px-3 text-xs text-muted-foreground">
             Waiting for the queued prompt to appear before sending the next draft.
           </span>
+        )}
+        {nextPrompt.text && (
+          <div
+            className="flex gap-2 px-3 py-2 text-xs text-muted-foreground"
+            aria-label="Suggested next prompt"
+          >
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left"
+              onClick={() => {
+                setDraft(nextPrompt.text)
+                nextPrompt.dismiss()
+                input.current?.focus()
+              }}
+            >
+              {nextPrompt.text} <kbd>Tab</kbd>
+            </button>
+            <button type="button" onClick={nextPrompt.dismiss}>
+              Dismiss
+            </button>
+          </div>
+        )}
+        {nextPrompt.error && (
+          <p role="status" className="px-3 text-xs text-muted-foreground">
+            Prompt suggestion unavailable. {nextPrompt.error}
+          </p>
         )}
         <ComposerEditor
           onAlternativeSubmit={
@@ -1792,6 +1857,8 @@ export function Composer({
           disabled={machineMoving || !!task.archivedAt || pendingQuestion}
           submitBusy={submitBusy && !composingDuringSend}
           submittedText={submittedText}
+          suggestion={nextPrompt.text}
+          onDismissSuggestion={nextPrompt.dismiss}
           placeholder={
             editing
               ? 'Edit queued message…'

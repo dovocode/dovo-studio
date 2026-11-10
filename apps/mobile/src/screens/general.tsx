@@ -1,3 +1,4 @@
+import { RuntimeSpeechSettings } from './runtime-speech'
 import { SnoozeSchedule } from './snooze-schedule'
 import { SettingsScrollView } from './settings-search'
 import { router } from 'expo-router'
@@ -486,6 +487,7 @@ export function SpeechSettingsScreen() {
   })
   return (
     <LocalSettingsPage title="Speech & driving">
+      <RuntimeSpeechSettings />
       <SettingsGroup
         title="Speech"
         footer="Saved on this phone. Siri voices appear when iOS makes them available to apps; additional voices can be downloaded in iPhone speech settings."

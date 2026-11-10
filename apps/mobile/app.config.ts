@@ -33,6 +33,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...(process.env.DOVO_APPLE_TEAM_ID ? { appleTeamId: process.env.DOVO_APPLE_TEAM_ID } : {}),
     },
     plugins: [
+      [
+        'expo-audio',
+        {
+          microphonePermission: 'Use the microphone for dictation on your chosen computer.',
+          enableBackgroundRecording: false,
+          enableBackgroundPlayback: false,
+        },
+      ],
       './plugins/with-cocoapods-uuids.ts',
       ...(process.env.DOVO_MOBILE_DISTRIBUTION === '1'
         ? ['./plugins/with-distribution-signing.ts']

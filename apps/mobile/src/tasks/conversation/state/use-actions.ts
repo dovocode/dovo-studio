@@ -208,6 +208,7 @@ export function useConversationActions(task: Task) {
     storedDraft.update(text, source)
   }
   const dictation = useComposerDictation({
+    taskId: task.id,
     draft: {
       ...storedDraft,
       text: editing?.text ?? composerHistory.text,
@@ -271,6 +272,14 @@ export function useConversationActions(task: Task) {
   )
   const [attachmentPreviewBusy, setAttaching] = useApplicationState(false)
   const attaching = attachmentPreviewBusy || attachmentPicker.busy
+  const submissionFiles = [
+    ...new Map(
+      [...(task.draftAttachments ?? []), ...attachmentPicker.submissionFiles].map((file) => [
+        file.id,
+        file,
+      ]),
+    ).values(),
+  ]
   useEffect(() => {
     if (!storedDraft.ready) return
     const scopeKey = JSON.stringify(scope)
@@ -378,7 +387,7 @@ export function useConversationActions(task: Task) {
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
   const checkoutEditable = canChangeTaskCheckout(task)
   const hasInput =
-    !!draft.text.trim() || !!(editing ? editing.files.length : task.draftAttachments?.length)
+    !!draft.text.trim() || !!(editing ? editing.files.length : submissionFiles.length)
   const canSend =
     !policyIssue &&
     !planIssue &&
@@ -391,7 +400,8 @@ export function useConversationActions(task: Task) {
     draft.ready &&
     hasInput &&
     (!editing || !!task.queue?.some((message) => message.id === editing.message.id)) &&
-    !attaching &&
+    (!attaching || (!attachmentPreviewBusy && attachmentPicker.canSubmitWhileUploading)) &&
+    !attachmentPicker.failedUploads.length &&
     !dictation.active &&
     !task.archivedAt &&
     !task.example &&
@@ -483,6 +493,10 @@ export function useConversationActions(task: Task) {
         return yield* Effect.fail(
           new Error('Resolve the pending queued-message restore before sending'),
         )
+      if (attaching && (!attachmentPicker.canSubmitWhileUploading || attachmentPreviewBusy))
+        return yield* Effect.fail(new Error('Finish preparing attachments before sending.'))
+      if (attachmentPicker.failedUploads.length)
+        return yield* Effect.fail(new Error('Retry or remove failed attachments before sending.'))
       if (policyIssue) return yield* Effect.fail(new Error(policyIssue))
       if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true)
         return yield* Effect.fail(
@@ -552,7 +566,7 @@ export function useConversationActions(task: Task) {
       setSubmitting(true)
       dictation.reset()
       const text = input.trim(),
-        attachmentIds = task.draftAttachments?.map((file) => file.id) ?? []
+        attachmentIds = submissionFiles.map((file) => file.id)
       const attempt = sendAttempts.begin(scope, {
         text,
         attachmentIds,
@@ -582,11 +596,12 @@ export function useConversationActions(task: Task) {
           role: 'user',
           text,
           createdAt: new Date().toISOString(),
-          attachments: task.draftAttachments,
+          attachments: submissionFiles,
           turnSettings: attempt.turnSettings,
           ...(attempt.plan ? { plan: true } : {}),
         },
       })
+      yield* nativeEffect(() => attachmentPicker.waitForUploads())
       yield* storedDraft.stageEffect(attempt)
       if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
         yield* callEffect(

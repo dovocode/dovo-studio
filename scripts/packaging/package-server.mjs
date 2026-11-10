@@ -1,3 +1,4 @@
+import { prepareDictationEngine } from './dictation-engine.mjs'
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
@@ -59,6 +60,9 @@ try {
     const pty = dirname(runtimeRequire.resolve('node-pty/package.json'))
     await chmod(join(pty, `prebuilds/darwin-${process.arch}/spawn-helper`), 0o755)
   }
+  await cp(await prepareDictationEngine(root), join(archive, 'libexec/dictation'), {
+    recursive: true,
+  })
   await mkdir(join(archive, 'bin'))
   if (windows)
     await writeFile(

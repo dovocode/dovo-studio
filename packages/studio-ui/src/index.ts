@@ -106,3 +106,5 @@ export { ImageViewer } from './image-viewer'
 export { Disclosure } from './disclosure'
 
 export { StudioConfirmationProvider } from './confirmation-provider'
+
+export * from './secret-reference-fields'

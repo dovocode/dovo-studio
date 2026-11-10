@@ -1,3 +1,4 @@
+import { agentSecretReferenceSchema } from '../../tasks/secret-references.js'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, refine } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
@@ -51,6 +52,7 @@ export const pendingQuestionSchema = mutableStruct({
   routing: Schema.optional(Schema.Literals(['parent', 'human'])),
   /** The runtime accepts per-question attachment references. Older runtimes omit this. */
   attachments: Schema.optional(Schema.Boolean),
+  secretReferences: Schema.optional(Schema.Boolean),
 })
 export const questionAttachmentIdsSchema = refine(
   Schema.Record(maxValue(minValue(Schema.String, 1), 200), Schema.mutableKey(attachmentIdsSchema)),
@@ -67,10 +69,37 @@ export const questionOutcomesSchema = Schema.Record(
   Schema.mutableKey(Schema.Literals(['skipped', 'replied_in_chat', 'dismissed'])),
 )
 export type QuestionOutcomes = typeof questionOutcomesSchema.Type
+export const questionSecretReferencesSchema = Schema.Record(
+  maxValue(minValue(Schema.String, 1), 200),
+  Schema.mutableKey(agentSecretReferenceSchema),
+)
+export type QuestionSecretReferences = typeof questionSecretReferencesSchema.Type
+export function questionReferenceAnswers(
+  answers: QuestionAnswers,
+  references: QuestionSecretReferences,
+): QuestionAnswers {
+  return {
+    ...answers,
+    ...Object.fromEntries(Object.keys(references).map((id) => [id, ['[secret reference]']])),
+  }
+}
+export function questionReferenceError(
+  questions: AgentQuestion[],
+  answers: QuestionAnswers,
+  references: QuestionSecretReferences,
+) {
+  for (const id of Object.keys(references)) {
+    const question = questions.find((q) => q.id === id)
+    if (!question?.secret || !question.custom)
+      return 'Secret references can only answer secret text fields'
+    if (answers[id]?.length) return 'Choose a typed answer or a secret reference'
+  }
+}
 export const questionReplySchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 200),
   answers: Schema.NullOr(questionAnswersSchema),
   attachmentIdsByQuestion: Schema.optional(questionAttachmentIdsSchema),
+  secretReferencesByQuestion: Schema.optional(questionSecretReferencesSchema),
   outcomes: Schema.optional(questionOutcomesSchema),
 })
 export type AgentQuestion = Schema.Schema.Type<typeof agentQuestionSchema>

@@ -4,6 +4,8 @@ import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { useCallback, useEffect, useRef } from 'react'
 import { Keyboard } from 'react-native'
+import { useRuntimeDictation } from './use-runtime-dictation'
+import type { DictationCallbacks } from './dictation'
 import { useDictation } from './use-dictation'
 import { DictationDraftEdit, type DraftSelection } from './dictation-draft'
 type Cleanup = {
@@ -14,10 +16,12 @@ type Cleanup = {
   error?: string
 }
 export function useComposerDictation({
+  taskId,
   draft,
   cleanup,
   connected,
 }: {
+  taskId: string
   draft: {
     text: string
     update: (text: string, source?: 'keyboard') => void
@@ -99,7 +103,7 @@ export function useComposerDictation({
       }),
     )
   }
-  const speech = useDictation({
+  const callbacks: DictationCallbacks = {
     onResult: (transcript) => {
       if (edit.current) write(edit.current.preview(transcript))
     },
@@ -110,7 +114,10 @@ export function useComposerDictation({
       write(raw)
       void clean(transaction, transcript, raw)
     },
-  })
+  }
+  const localSpeech = useDictation(callbacks)
+  const runtimeSpeech = useRuntimeDictation(taskId, callbacks)
+  const speech = runtimeSpeech.selected ? runtimeSpeech : localSpeech
   const speechRef = useRef(speech)
   speechRef.current = speech
   const update = useCallback(

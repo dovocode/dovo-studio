@@ -229,6 +229,21 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
       {value && (
         <>
           {show('tasks') && (
+            <Section title="Prompt suggestions" advanced searchLabels={['Suggest next prompt']}>
+              <SettingsSwitchRow
+                first
+                label="Suggest next prompt"
+                value={value.suggestNextPrompt}
+                disabled={disabled || snapshot?.promptSuggestionsEnabled === undefined}
+                onValueChange={(suggestNextPrompt) => save({ suggestNextPrompt })}
+              />
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Suggest an editable next message after Claude or Codex turns. Each suggestion makes
+                an extra model request and uses plan usage.
+              </Text>
+            </Section>
+          )}
+          {show('tasks') && (
             <Section title="Running tasks">
               <ChildAgentLimit
                 value={value?.maxActiveChildAgents}

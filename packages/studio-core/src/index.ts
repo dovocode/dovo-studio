@@ -269,3 +269,5 @@ export {
   type ConfirmationOptions,
   type RequestConfirmation,
 } from './confirmation'
+export * from './use-next-prompt'
+export * from './runtime-dictation'

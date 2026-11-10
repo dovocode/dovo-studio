@@ -374,6 +374,15 @@ const runtimeOptions = () =>
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         DOVO_RELEASE_DISTRIBUTION: 'desktop',
+        DOVO_DICTATION_BINARY:
+          process.env.DOVO_DICTATION_BINARY ??
+          (app.isPackaged
+            ? join(
+                process.resourcesPath,
+                'dictation',
+                process.platform === 'win32' ? 'dovo-dictation.exe' : 'dovo-dictation',
+              )
+            : undefined),
         DOVO_DESKTOP_DUAL_LISTENER: '1',
         ...(app.isPackaged ? { DOVO_RELEASE_VERSION: app.getVersion() } : {}),
         DOVO_OWNER_TOKEN: token,

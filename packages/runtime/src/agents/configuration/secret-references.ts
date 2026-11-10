@@ -45,6 +45,9 @@ export class SecretReferences {
     this.cache.clear()
     this.generation++
   }
+  invalidate(reference: AgentSecretReference) {
+    this.cache.delete(JSON.stringify(decode(agentSecretReferenceSchema, reference)))
+  }
   async close() {
     for (const entry of this.pending) entry.controller.abort()
     const results = await Promise.allSettled([...this.pending].map((entry) => entry.promise))

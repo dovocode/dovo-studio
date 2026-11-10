@@ -13,7 +13,7 @@ const mocks = {
   '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;export const updateAppPreferences=value=>Object.assign(preferences,value);export const useWorkspaceSelector=select=>select(useContext(Context));export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
-  './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
+  './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',...window.attachmentState,upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
 for (const [path, name] of [
@@ -101,6 +101,67 @@ try {
       (previous) => document.querySelector('textarea')?.dataset.editorMount !== previous,
       previous,
     )
+  }
+  // The real Composer creates a pending message before the upload boundary completes.
+  for (const failUpload of [true, false]) {
+    await page.evaluate(() => {
+      window.pending = null
+      window.requests = []
+      window.response = null
+      const wait = new Promise((resolve, reject) => {
+        window.finishUpload = resolve
+        window.failUpload = reject
+      })
+      window.attachmentState = {
+        busy: true,
+        canSubmitWhileUploading: true,
+        submissionFiles: [{ id: 'upload', name: 'note.txt', mime: 'text/plain', size: 5 }],
+        waitForUploads: () => wait,
+      }
+      window.setTask((task) => ({ ...task, status: 'draft', messages: [], queue: [], draft: '' }))
+    })
+    await input.fill('Send after this upload')
+    await page.locator('button[type=submit]').click()
+    await page.waitForFunction(() => window.pending?.message.text === 'Send after this upload')
+    assert.equal(
+      await page.evaluate(() =>
+        window.requests.some((request) => request.path === '/api/tasks/message'),
+      ),
+      false,
+    )
+    assert.equal(await page.evaluate(() => window.pending.message.attachments[0].id), 'upload')
+    if (failUpload) {
+      await page.evaluate(() => window.failUpload(new Error('Upload connection lost')))
+      await page.waitForFunction(() => window.pending?.state === 'failed')
+      assert.equal(await input.inputValue(), 'Send after this upload')
+      assert.equal(
+        await page.evaluate(() =>
+          window.requests.some((request) => request.path === '/api/tasks/message'),
+        ),
+        false,
+      )
+    } else {
+      await page.evaluate(() => window.finishUpload())
+      await page.waitForFunction(() => typeof window.response === 'function')
+      assert.deepEqual(
+        await page.evaluate(
+          () =>
+            window.requests.find((request) => request.path === '/api/tasks/message').input
+              .attachmentIds,
+        ),
+        ['upload'],
+      )
+      await page.evaluate(() => window.response())
+      await page.waitForFunction(() => document.querySelector('textarea').value === '')
+    }
+    await page.evaluate(() => {
+      window.attachmentState = undefined
+      window.pending = null
+      window.requests = []
+      window.response = null
+      window.setTask((task) => ({ ...task, draft: '' }))
+    })
+    await remount()
   }
   await page.evaluate(() => {
     window.setComposerPreferences({ confirmStop: true })

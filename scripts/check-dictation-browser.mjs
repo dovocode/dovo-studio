@@ -23,13 +23,29 @@ const built = await build({
         subscribe:(id,listener)=>{listeners.set(id,listener);return()=>listeners.delete(id)},
         cancel:async(id)=>{window.cancelled.push(id);if(window.downloading)window.rejectInstall(Error('Download cancelled'))}
       }};
-      function Editor(){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><ComposerDictation controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button></>}
+      function Editor(){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><ComposerDictation taskId="task" controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button></>}
       function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);return <TooltipProvider><SpeechSettings/><Editor key={key}/></TooltipProvider>};
       createRoot(document.getElementById('app')).render(<App/>);
     `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
   },
+  plugins: [
+    {
+      name: 'speech-workspace',
+      setup(builder) {
+        builder.onResolve({ filter: /^@dovo\/studio-core$/ }, () => ({
+          path: 'core',
+          namespace: 'speech-workspace',
+        }))
+        builder.onLoad({ filter: /.*/, namespace: 'speech-workspace' }, () => ({
+          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useWorkspace=()=>({snapshot:{},connection:{},request:async()=>{throw Error('Unexpected runtime request')}});`,
+          loader: 'tsx',
+          resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
+        }))
+      },
+    },
+  ],
   bundle: true,
   write: false,
   platform: 'browser',

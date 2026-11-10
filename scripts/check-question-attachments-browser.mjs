@@ -24,6 +24,7 @@ try {
       '../composer/image-editor': `export const useImageEditor=()=>({edit:async file=>file,editor:null});`,
       './image-editor': `export const useImageEditor=()=>({edit:async file=>file,editor:null});`,
       './optimize-attachment-image': `export const optimizeAttachmentImage=async asset=>asset;`,
+      '../../agents/secret-reference-fields': `export const SecretReferenceFields=()=>null;`,
       'react-native': native,
       '../../ui/content/text': native,
       '../../ui/controls/action': native,

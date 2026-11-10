@@ -3,7 +3,9 @@ import { attachmentSchema, MAX_ATTACHMENTS } from '../shared/attachments.js'
 import { maxValue, minValue } from '../shared/schema.js'
 import { Schema, Effect, Struct } from 'effect'
 import { agentSchema, defaultTaskHarness, type Agent, type TaskHarness } from '../workspace.js'
+import { textGeneratorSchema } from './text-generator.js'
 export const titleGenerationSettingsSchema = mutableStruct({
+  generator: Schema.optional(textGeneratorSchema),
   /** Only used by the Scope/Tune/Maestro selector settings. */
   inheritTitleModel: Schema.optional(Schema.Boolean),
   scopePrompt: Schema.optional(maxValue(Schema.String, 12000)),

@@ -1,3 +1,4 @@
+import { SecretReferenceFields } from '../../agents/secret-reference-fields'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -7,6 +8,9 @@ import { Keyboard, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
   questionAnswerError,
+  questionReferenceAnswers,
+  defaultSecretReference,
+  type QuestionSecretReferences,
   questionDraftAnswers,
   type QuestionAnswers,
   type QuestionOutcomes,
@@ -32,7 +36,11 @@ export function QuestionForm({
 }: {
   request: PendingQuestion
   connected: boolean
-  onAnswer: (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => Promise<void>
+  onAnswer: (
+    answers: QuestionAnswers | null,
+    outcomes?: QuestionOutcomes,
+    references?: QuestionSecretReferences,
+  ) => Promise<void>
   attachmentIdsByQuestion?: QuestionAttachmentIds
   renderAttachments?: (question: AgentQuestion, disabled: boolean) => ReactNode
   attachmentsBusy?: boolean
@@ -54,6 +62,7 @@ export function QuestionForm({
     ),
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
+  const [references, setReferences] = useApplicationState<QuestionSecretReferences>({})
   const submitting = useRef(false)
   const edited = useRef(false)
   useEffect(() => {
@@ -77,7 +86,12 @@ export function QuestionForm({
       mobileWorkflow(function* () {
         if (submitting.current || !connected || attachmentsBusy) return
         const invalid =
-          answers && questionAnswerError(request.prompt.questions, answers, attachmentIdsByQuestion)
+          answers &&
+          questionAnswerError(
+            request.prompt.questions,
+            questionReferenceAnswers(answers, outcomes ? {} : references),
+            attachmentIdsByQuestion,
+          )
         if (invalid) {
           setError(invalid)
           return
@@ -87,7 +101,9 @@ export function QuestionForm({
         setError('')
         setBusy(true)
         return yield* mobileWorkflow(function* () {
-          yield* nativeEffect(() => onAnswer(answers, outcomes))
+          yield* nativeEffect(() =>
+            onAnswer(answers, outcomes, answers && !outcomes ? references : {}),
+          )
           if (runtimeId)
             yield* nativeEffect(() =>
               clearNotificationAnswerDraft(runtimeId, request.id).catch(() => {
@@ -148,7 +164,7 @@ export function QuestionForm({
         {request.prompt.questions.map((q) => (
           <View key={q.id} style={{ gap: 8 }}>
             <QuestionField
-              question={q}
+              question={Object.hasOwn(references, q.id) ? { ...q, custom: false, options: [] } : q}
               draft={drafts[q.id]}
               disabled={busy || !connected || attachmentsBusy}
               onChange={(draft) => {
@@ -160,6 +176,44 @@ export function QuestionForm({
                 setError('')
               }}
             />
+            {request.secretReferences && q.secret && q.custom && (
+              <>
+                <Action
+                  secondary
+                  label={
+                    Object.hasOwn(references, q.id)
+                      ? 'Type secret instead'
+                      : 'Use a secret reference'
+                  }
+                  disabled={busy || !connected}
+                  onPress={() => {
+                    setReferences((current) => {
+                      const next = { ...current }
+                      if (Object.hasOwn(next, q.id)) delete next[q.id]
+                      else next[q.id] = defaultSecretReference('onepassword')
+                      return next
+                    })
+                    setDrafts((current) => ({ ...current, [q.id]: { selected: [], text: '' } }))
+                    setError('')
+                  }}
+                />
+                {Object.hasOwn(references, q.id) && (
+                  <>
+                    <Text style={styles.muted}>
+                      The computer reads this value and sends it to the agent’s secret response.
+                      Dovo hides it from the activity log.
+                    </Text>
+                    <SecretReferenceFields
+                      value={references[q.id]}
+                      disabled={busy || !connected}
+                      onChange={(value) =>
+                        setReferences((current) => ({ ...current, [q.id]: value }))
+                      }
+                    />
+                  </>
+                )}
+              </>
+            )}
             {renderAttachments?.(q, busy || !connected || attachmentsBusy)}
           </View>
         ))}

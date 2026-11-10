@@ -20,15 +20,18 @@ const resources = { skills: [], mcpServers: [] };
 const history = () => messages;
 const command = id => window.commands.push(id);
 const alternative = () => window.alternatives++;
+const dismissSuggestion = () => window.setSuggestion('');
 function Composer() {
+  const [suggestion,setSuggestion] = useState(''); window.setSuggestion = setSuggestion;
   const [provider,setProvider] = useState('codex'); window.setGoalProvider = setProvider;
   const [menu, setMenu] = useState(false); window.setMenuMode = setMenu;
   const [tick, setTick] = useState(0); window.runtimeTick = () => setTick(value => value + 1);
   const input = useRef(null);
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
-  return <form data-runtime-tick={tick} onSubmit={event => { event.preventDefault(); window.submits.push(controller.text) }}>
+  return <form data-suggestion={suggestion} data-has-text={hasText} data-runtime-tick={tick} onSubmit={event => { event.preventDefault(); window.submits.push(controller.text) }}>
     <ComposerModeToggle input={input} menu={menu} />
     <ComposerEditor provider={provider} controller={controller} taskId="task" input={input} resources={resources}
+      suggestion={suggestion} onDismissSuggestion={dismissSuggestion}
       messages={history} onCommand={command} onAlternativeSubmit={alternative}
       autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
     <button type="submit" disabled={!hasText}>Send</button>
@@ -61,7 +64,7 @@ const listeners = new Set(); let preferences = { sendWith: 'enter', richTextComp
 export const readAppPreferences = () => preferences;
 export const updateAppPreferences = changes => { preferences = { ...preferences, ...changes }; listeners.forEach(listener => listener()) };
 export const useAppPreferences = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener) }, () => preferences);
-const workspace = { connected: false, request: () => Promise.reject(new Error('Unexpected request')) };
+const workspace = { connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files')return {files:[]}; if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
 export const useWorkspace = () => workspace;
 export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
@@ -259,6 +262,55 @@ try {
   assert.equal(await source.count(), 1)
   await setDraft('')
   await editor.waitFor()
+  // Suggestions require an empty draft and support both editor modes.
+  for (const mode of ['rich', 'source']) {
+    if (mode === 'source') {
+      await editor.press('ControlOrMeta+Shift+m')
+      await source.waitFor()
+    }
+    const active = mode === 'rich' ? editor : source
+    await page.evaluate(() => window.setSuggestion('Add a settings page'))
+    await page.waitForFunction(
+      () =>
+        document.querySelector('form').dataset.suggestion === 'Add a settings page' &&
+        document.querySelector('form').dataset.hasText === 'false',
+    )
+    await active.press('Tab')
+    assert.equal(await text(), 'Add a settings page')
+    await setDraft('')
+    await page.evaluate(() => window.setSuggestion('Dismiss this suggestion'))
+    await page.waitForFunction(
+      () =>
+        document.querySelector('form').dataset.suggestion === 'Dismiss this suggestion' &&
+        document.querySelector('form').dataset.hasText === 'false',
+    )
+    await active.press('Escape')
+    await page.waitForFunction(() => document.querySelector('form').dataset.suggestion === '')
+    await active.press('Tab')
+    assert.equal(await text(), '', 'Dismissed suggestions must not fill the draft')
+    await setDraft('My own draft')
+    await page.evaluate(() => window.setSuggestion('Do not replace my draft'))
+    await active.press('Tab')
+    assert.equal(await text(), 'My own draft')
+    await setDraft('')
+    await page.evaluate(() => window.setSuggestion(''))
+  }
+  // Exact model references use the real desktop mention picker without changing the provider.
+  await page.evaluate(() => {
+    window.workspace.connected = true
+  })
+  await source.fill('@gpt')
+  await source.press('End')
+  const modelOption = page.getByRole('option').filter({ hasText: 'GPT Exact' })
+  await modelOption.click()
+  assert.equal(await text(), '`model:harness%3Acodex/gpt%2Fexact` ')
+  await page.evaluate(() => {
+    window.failCatalog = true
+  })
+  await source.fill('@other')
+  await source.press('End')
+  await page.getByRole('status').filter({ hasText: 'Catalog temporarily unavailable' }).waitFor()
+  assert.equal(await text(), '@other')
   assert.deepEqual(errors, [])
   console.log('Rich composer browser checks passed')
 } finally {

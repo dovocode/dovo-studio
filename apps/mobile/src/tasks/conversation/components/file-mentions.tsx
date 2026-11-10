@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { Pressable, ScrollView } from 'react-native'
 import { Schema } from 'effect'
 import {
+  modelMentionsSchema,
+  insertModelMention,
+  type ModelMention,
   commandSuggestions,
   composerMention,
   insertMention,
@@ -19,7 +22,7 @@ import { useTheme } from '../../../ui/theme'
 
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model'
   value: string
   name?: string
   detail: string
@@ -54,8 +57,13 @@ export function FileMentions({
 }) {
   const { colors } = useTheme()
 
-  const { call, connected, activeId, connection } = useRuntime()
+  const { call, connected, activeId, connection, snapshot } = useRuntime()
   const [lookup, setLookup] = useState<{ key: string; call: typeof call; files: string[] }>()
+  const [modelLookup, setModelLookup] = useState<{
+    key: string
+    models: ModelMention[]
+    error: string
+  }>()
   const mention = composerMention(text, caret)
   const trigger = mention?.trigger
   const query = mention?.query
@@ -91,8 +99,42 @@ export function FileMentions({
       clearTimeout(timer)
     }
   }, [trigger, query, taskId, connected, call, key])
+  const modelsSupported = snapshot?.modelMentionsSupported === true
+  useEffect(() => {
+    if (trigger !== '@' || !query || query.length < 2 || !connected || !modelsSupported) return
+    let stopped = false
+    const timer = setTimeout(() => {
+      void call('/api/agents/model-mentions', { taskId, query }, modelMentionsSchema).then(
+        (result) => {
+          if (!stopped)
+            setModelLookup({
+              key,
+              models: result.models,
+              error: result.unavailable.length
+                ? `Models unavailable: ${result.unavailable.join(', ')}`
+                : '',
+            })
+        },
+        (cause: unknown) => {
+          if (!stopped) setModelLookup({ key, models: [], error: String(cause) })
+        },
+      )
+    }, 180)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [trigger, query, connected, modelsSupported, call, taskId, key])
   if (!mention) return null
   const suggestions: Suggestion[] = [
+    ...(modelsSupported && modelLookup?.key === key
+      ? modelLookup.models.map((model) => ({
+          kind: 'model' as const,
+          value: model.reference,
+          name: model.name,
+          detail: `${model.provider} · ${model.model}`,
+        }))
+      : []),
     ...(mention.trigger === '#'
       ? promptSuggestions(prompts, mention.query).map((prompt) => ({
           kind: 'prompt' as const,
@@ -133,26 +175,38 @@ export function FileMentions({
         })
       : []),
   ]
-  if (!suggestions.length) return null
+  const modelError =
+    connected && modelsSupported && modelLookup?.key === key ? modelLookup.error : ''
+  if (!suggestions.length && !modelError) return null
   return (
     <ScrollView
       horizontal
       keyboardShouldPersistTaps="always"
       showsHorizontalScrollIndicator={false}
       accessibilityLabel={
-        mention.trigger === '@' ? 'File and MCP server suggestions' : 'Skill suggestions'
+        mention.trigger === '@' ? 'File, model and MCP server suggestions' : 'Skill suggestions'
       }
       contentContainerStyle={{ gap: 6, paddingHorizontal: 10, paddingVertical: 6 }}
     >
+      {!!modelError && (
+        <Text
+          accessibilityRole="alert"
+          style={{ color: colors.muted, fontSize: 12, maxWidth: 240 }}
+        >
+          {modelError}
+        </Text>
+      )}
       {suggestions.map((item) => {
         const label =
           item.kind === 'file'
             ? item.value.slice(item.value.lastIndexOf('/') + 1)
-            : item.kind === 'command'
-              ? `/${item.value}`
-              : item.kind === 'prompt'
-                ? `#${item.name}`
-                : item.value
+            : item.kind === 'model'
+              ? item.name
+              : item.kind === 'command'
+                ? `/${item.value}`
+                : item.kind === 'prompt'
+                  ? `#${item.name}`
+                  : item.value
         return (
           <Pressable
             key={`${item.kind}:${item.value}`}
@@ -162,10 +216,12 @@ export function FileMentions({
                 ? `Command ${item.value}: ${item.detail}`
                 : item.kind === 'prompt'
                   ? `Insert saved prompt ${item.name}`
-                  : `Mention ${item.kind === 'file' ? 'file' : item.kind === 'mcp' ? 'MCP server' : 'skill'} ${item.value}`
+                  : `Mention ${item.kind === 'file' ? 'file' : item.kind === 'mcp' ? 'MCP server' : item.kind === 'model' ? 'model' : 'skill'} ${item.value}`
             }
             onPress={() => {
-              if (item.kind === 'prompt') {
+              if (item.kind === 'model')
+                onChange(insertModelMention(text, mention.start, caret, item.value).text)
+              else if (item.kind === 'prompt') {
                 const prompt = prompts.find((entry) => entry.id === item.value)
                 if (prompt) onChange(insertPrompt(text, mention.start, caret, prompt.text).text)
               } else if (item.kind === 'command') {

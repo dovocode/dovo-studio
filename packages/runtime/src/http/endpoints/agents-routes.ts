@@ -42,6 +42,7 @@ import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { ModelCatalogCache, configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
 import { HarnessAvailabilityCache } from '../../agents/catalogs/harness-availability.js'
 import { harnessAvailabilityCandidates } from '@dovo/protocol'
+import { modelMentionReference, matchingModelMentions, type ModelMention } from '@dovo/protocol'
 import {
   searchSkills,
   installCatalogSkill,
@@ -77,6 +78,82 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       const publicDefaults = (value: unknown) =>
         decode(runtimeDefaultsSchema, s.store.publicValue(value))
       const method = request.method
+      if (method === 'POST' && path === '/api/agents/model-mentions') {
+        const { taskId, query } = decode(
+          mutableStruct({ taskId: idSchema, query: maxValue(Schema.String, 100) }),
+          yield* serviceResult(body(request)),
+        )
+        const task = s.store.taskSummary(taskId)
+        if (query.trim().length < 2) return { models: [], unavailable: [] }
+        let availability = availabilityCaches.get(s.db)
+        if (!availability) {
+          availability = new HarnessAvailabilityCache()
+          availabilityCaches.set(s.db, availability)
+        }
+        let catalogs = modelCaches.get(s.db)
+        if (!catalogs) {
+          catalogs = new ModelCatalogCache(s.db)
+          modelCaches.set(s.db, catalogs)
+        }
+        const checker = availability,
+          cache = catalogs
+        const installations = s.acpInstallations.list()
+        const candidates = harnessAvailabilityCandidates(
+          s.store.agentsFor(task.repositoryId),
+          installations,
+        )
+        const models: ModelMention[] = []
+        const unavailable: string[] = []
+        // Reuse readiness/catalog caches and bound discoveries across all configured harnesses.
+        let index = 0
+        yield* serviceResult(
+          Promise.all(
+            Array.from({ length: Math.min(4, candidates.length) }, async () => {
+              while (index < candidates.length) {
+                const { id, agent } = candidates[index++]!
+                if (!(await checker.check(agent, s.agents))) continue
+                try {
+                  const key = configuredModelCatalogKey(agent, s.agents, installations)
+                  const validate = () => {
+                    if (
+                      key !== configuredModelCatalogKey(agent, s.agents, s.acpInstallations.list())
+                    )
+                      throw new HttpError(409, 'Model configuration changed')
+                  }
+                  const adapter = await s.agents.get(agent.provider)
+                  const loadModels = adapter.models?.bind(adapter)
+                  if (!loadModels) continue
+                  const catalog = await cache.get(
+                    key,
+                    () => loadModels(s.agents.configure(agent)),
+                    false,
+                    validate,
+                  )
+                  for (const model of catalog.models) {
+                    if (!model.id || model.id === 'default' || model.hidden) continue
+                    models.push({
+                      reference: modelMentionReference(id, model.id),
+                      name: model.name,
+                      provider: agent.name,
+                      model: model.id,
+                    })
+                  }
+                } catch {
+                  unavailable.push(agent.name)
+                }
+              }
+            }),
+          ),
+        )
+        return { models: matchingModelMentions(models, query), unavailable }
+      }
+      if (method === 'POST' && path === '/api/tasks/prompt-suggestion') {
+        const { id, turnId } = decode(
+          mutableStruct({ id: idSchema, turnId: idSchema }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* serviceResult(s.titles.suggestNextPrompt(id, turnId))
+      }
       if (method === 'POST' && path === '/api/agents/secrets/refresh') {
         s.agents.secretReferences.refresh()
         return { ok: true }
@@ -563,6 +640,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.answers,
             input.attachmentIdsByQuestion,
             input.outcomes,
+            input.secretReferencesByQuestion,
           ),
         )
         return yield* serviceResult({

@@ -1,3 +1,4 @@
+import { RuntimeDictation } from './speech/runtime-dictation.js'
 import { ManagedPolicy } from './policy/managed-policy.js'
 import { taskInputOwner, taskRemoteHumanInputs } from '@dovo/protocol'
 import { indexTaskFamilyWorking, taskIsWorking } from '@dovo/protocol'
@@ -210,6 +211,7 @@ export function createServices(
   // workspace here would resurrect pruned rows and duplicate task events on every start.
   const attachments = new Attachments(db, store, activity)
   questions.setAttachments(attachments)
+  questions.setSecretReferences(agents.secretReferences)
   const reviewMarks = new ReviewMarks(db)
   const pullCache = new PullCache(
     db,
@@ -241,7 +243,7 @@ export function createServices(
   )
   const fileReviews = new FileReviews({ store, git, checkouts, pullCache, reviewMarks })
   const memory = new Memory(db, store, preferences, checkouts)
-  const titles = new TitleGeneration(db, store, agents, checkouts)
+  const titles = new TitleGeneration(db, store, agents, checkouts, policy)
   const modelSelection = new ModelSelection(db, store, agents, titles, () =>
     acpInstallations.list(),
   )
@@ -486,6 +488,7 @@ export function createServices(
     }
   })
   const services: Services = {
+    dictation: new RuntimeDictation(db.name === ':memory:' ? tmpdir() : dirname(resolve(db.name))),
     policy,
     projectTransfers: new ProjectTransfers(() => services, db),
     threadWatch,
@@ -584,6 +587,7 @@ export function createServices(
   return services
 }
 export interface Services {
+  dictation: RuntimeDictation
   stateReplication: SharedStateReplication
   threadReplication: ThreadReplication
   policy: ManagedPolicy

@@ -1686,3 +1686,9 @@ OpenCode use. Subsequent real-CLI probes used isolated directories and exact pro
 Browser-suite discovery also exposed three pre-existing unregistered checks. The mobile terminal
 visibility/close checks now run in the terminal layout suite, and sharing/waiting lifecycle checks
 have their own command. All three pass, and discovery includes the new PDF and composer suites.
+
+## Composer and utility additions (10 November 2026)
+
+Six further adaptations add model mentions, sends during uploads, opt-in paired-runtime dictation,
+direct utility text APIs, vault references for secret answers and optional next-prompt suggestions.
+See [setup, behavior and verification limits](t3-composer-features.md).

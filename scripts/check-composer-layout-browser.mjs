@@ -31,7 +31,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
-  './use-attachments': `export const useAttachments=()=>({files:[],previews:[],uploading:[],busy:false,error:'',upload:async()=>{},remove:()=>{}});`,
+  './use-attachments': `export const useAttachments=()=>({submissionFiles:[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:[],previews:[],uploading:[],busy:false,error:'',upload:async()=>{},remove:()=>{}});`,
   './task-activity': `import {useState} from 'react';const tools=[];export const useTaskActivity=()=>{const [error,setError]=useState('');window.setActivityError=setError;return {tools,error}};export {TaskActivity} from '../extension-tasks/src/chat/thread/task-activity';`,
 }
 // Keep the production conversation/composer shell; unrelated review surfaces are boundaries.

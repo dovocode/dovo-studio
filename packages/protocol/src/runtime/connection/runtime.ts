@@ -247,6 +247,10 @@ export const snapshotSchema = mutableStruct({
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
   fullTurnSettingsSupported: Schema.optional(Schema.Boolean),
+  promptSuggestionsEnabled: Schema.optional(Schema.Boolean),
+  runtimeDictationSupported: Schema.optional(Schema.Boolean),
+  textGeneratorsSupported: Schema.optional(Schema.Boolean),
+  modelMentionsSupported: Schema.optional(Schema.Boolean),
   /** Messages and queue edits accept `plan`, enforced as a read-only turn. */
   planModeSupported: Schema.optional(Schema.Literal(true)),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
@@ -601,6 +605,7 @@ export const runtimePreferencesSchema = mutableStruct({
   autoProjectModelSelection: taskModelSelectionSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => 'inherit' as const)),
   ),
+  suggestNextPrompt: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   enableSmartModelSelection: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),

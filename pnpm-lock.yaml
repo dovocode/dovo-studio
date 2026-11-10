@@ -610,6 +610,9 @@ importers:
       expo:
         specifier: ~58.0.23
         version: 58.0.23(e77258964a63ac7b8330053babd0984e)
+      expo-audio:
+        specifier: ~58.0.11
+        version: 58.0.11(expo-asset@58.0.20(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2))(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       expo-build-properties:
         specifier: ~58.0.12
         version: 58.0.12(expo@58.0.23)
@@ -6795,6 +6798,14 @@ packages:
     resolution: {integrity: sha512-atirOtDsH0l+4zxnByf4WKc7Iw2k5e2bSNAkuu79d4SLOAjAROoDizeP0qNQSMyZNoHPArw7EwTpoc8LuWvg4Q==}
     peerDependencies:
       expo: '*'
+      react: '*'
+      react-native: '*'
+
+  expo-audio@58.0.11:
+    resolution: {integrity: sha512-r/3QzCZ+rHUrjAFoZpczUaC1N3uuHhjKr9YfsOlT3tnXFF+AC6EVofOc8S4OYPdgveIljLpouFcNps6ynf0U2A==}
+    peerDependencies:
+      expo: '*'
+      expo-asset: '*'
       react: '*'
       react-native: '*'
 
@@ -15625,6 +15636,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
       - typescript
+
+  expo-audio@58.0.11(expo-asset@58.0.20(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2))(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
+    dependencies:
+      expo: 58.0.23(e77258964a63ac7b8330053babd0984e)
+      expo-asset: 58.0.20(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2)
+      react: 19.3.1
+      react-native: 0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
 
   expo-build-properties@58.0.12(expo@58.0.23):
     dependencies:

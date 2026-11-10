@@ -17,7 +17,9 @@
     "./browser-json": "./src/browser-json.ts",
     "./browser-json-format": "./src/browser-json-format.ts",
     "./repository-open": "./src/repository-open.ts",
-    "./side-thread-creation": "./src/side-thread-creation.ts"
+    "./side-thread-creation": "./src/side-thread-creation.ts",
+    "./next-prompt": "./src/use-next-prompt.ts",
+    "./runtime-dictation": "./src/runtime-dictation.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

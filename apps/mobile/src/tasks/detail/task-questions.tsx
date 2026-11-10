@@ -130,7 +130,7 @@ function QuestionCard({
           />
         ) : null
       }
-      onAnswer={(answers, outcomes) =>
+      onAnswer={(answers, outcomes, references) =>
         runClientEffect(
           mobileWorkflow(function* () {
             yield* callEffect(
@@ -139,9 +139,12 @@ function QuestionCard({
                 id: pending.id,
                 answers,
                 outcomes,
+                secretReferencesByQuestion: references,
                 ...(answers && !outcomes ? { attachmentIdsByQuestion: ids } : {}),
               },
               responses.ok,
+              undefined,
+              { defer: false },
             )
             if (answers && !outcomes && profile)
               for (const file of Object.values(files).flat()) {

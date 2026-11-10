@@ -1,8 +1,13 @@
+import type { SecretReferences } from '../configuration/secret-references.js'
 import { decode } from '@dovo/protocol'
 import { randomUUID, createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import {
   questionPromptSchema,
+  questionSecretReferencesSchema,
+  questionReferenceAnswers,
+  questionReferenceError,
+  type QuestionSecretReferences,
   questionAnswersSchema,
   questionOutcomesSchema,
   type QuestionOutcomes,
@@ -22,6 +27,7 @@ import type { Attachments } from '../../storage/attachments.js'
 import { HttpError } from '../../errors.js'
 type ResponseReceipt = { id: string; fingerprint: string; attachments?: Attachment[] }
 type Pending = {
+  signal: AbortSignal
   info: PendingQuestion
   finish: (
     answers: QuestionAnswers | null,
@@ -35,6 +41,7 @@ function answerFingerprint(
   answers: QuestionAnswers | null,
   attachments: QuestionAttachmentIds = {},
   outcomes?: QuestionOutcomes,
+  references: QuestionSecretReferences = {},
 ) {
   const files = Object.entries(attachments)
     .filter(([, ids]) => ids.length)
@@ -43,15 +50,22 @@ function answerFingerprint(
   return createHash('sha256')
     .update(
       JSON.stringify(
-        outcomes && Object.keys(outcomes).length
+        Object.keys(references).length
           ? {
               answers: sorted,
               attachments: files,
-              outcomes: Object.entries(outcomes).sort(([a], [b]) => a.localeCompare(b)),
+              outcomes: outcomes && Object.entries(outcomes).sort(([a], [b]) => a.localeCompare(b)),
+              references: Object.entries(references).sort(([a], [b]) => a.localeCompare(b)),
             }
-          : files.length
-            ? { answers: sorted, attachments: files }
-            : sorted,
+          : outcomes && Object.keys(outcomes).length
+            ? {
+                answers: sorted,
+                attachments: files,
+                outcomes: Object.entries(outcomes).sort(([a], [b]) => a.localeCompare(b)),
+              }
+            : files.length
+              ? { answers: sorted, attachments: files }
+              : sorted,
       ),
     )
     .digest('hex')
@@ -64,6 +78,10 @@ export class Questions {
     private activity: Pick<Activity, 'add'>,
     private receipts?: { questionResponse: (id: string) => string | undefined },
   ) {}
+  private secrets?: Pick<SecretReferences, 'value' | 'invalidate'>
+  setSecretReferences(secrets: Pick<SecretReferences, 'value' | 'invalidate'>) {
+    this.secrets = secrets
+  }
   private attachments?: Pick<Attachments, 'metadata' | 'materialize'>
   setAttachments(attachments: Pick<Attachments, 'metadata' | 'materialize'>) {
     this.attachments = attachments
@@ -142,6 +160,9 @@ export class Questions {
       taskId,
       prompt,
       createdAt: new Date().toISOString(),
+      ...(this.secrets && prompt.questions.some((q) => q.secret && q.custom)
+        ? { secretReferences: true }
+        : {}),
       ...(this.attachments && prompt.questions.some(questionAllowsAttachments)
         ? { attachments: true }
         : {}),
@@ -225,6 +246,7 @@ export class Questions {
         }
       }
       this.requests.set(id, {
+        signal,
         info,
         finish,
         validate,
@@ -272,21 +294,24 @@ export class Questions {
     value: QuestionAnswers | null,
     files: QuestionAttachmentIds = {},
     rawOutcomes?: QuestionOutcomes,
+    rawReferences: QuestionSecretReferences = {},
   ) {
     const outcomes = rawOutcomes && decode(questionOutcomesSchema, rawOutcomes)
+    const references = decode(questionSecretReferencesSchema, rawReferences)
     const ids = decode(questionAttachmentIdsSchema, files)
-    if (!Object.values(ids).some((values) => values.length))
+    if (!Object.values(ids).some((values) => values.length) && !Object.keys(references).length)
       return this.respond(id, value, outcomes)
-    if (value === null) throw new HttpError(400, 'Declined answers cannot contain files')
+    if (value === null)
+      throw new HttpError(400, 'Declined answers cannot contain files or secret references')
     const answers = decode(questionAnswersSchema, value)
-    const fingerprint = answerFingerprint(answers, ids, outcomes)
+    const fingerprint = answerFingerprint(answers, ids, outcomes, references)
     const previous = this.responding.get(id)
     if (previous) {
       if (previous.fingerprint !== fingerprint)
         throw new HttpError(409, 'This question is already being answered differently')
       return previous.promise
     }
-    const promise = this.respondFiles(id, answers, ids, fingerprint, outcomes)
+    const promise = this.respondFiles(id, answers, ids, fingerprint, outcomes, references)
     this.responding.set(id, { fingerprint, promise })
     try {
       await promise
@@ -300,6 +325,7 @@ export class Questions {
     ids: QuestionAttachmentIds,
     fingerprint: string,
     outcomes?: QuestionOutcomes,
+    references: QuestionSecretReferences = {},
   ) {
     const replay = () => {
       const previous = this.receipts?.questionResponse(id) ?? this.answered.get(id)
@@ -314,18 +340,33 @@ export class Questions {
       if (accepted) return
       throw new HttpError(409, 'This question was already answered or cancelled')
     }
-    this.validateOutcomes(request.info, answers, outcomes, ids)
-    const invalid = questionAnswerError(request.info.prompt.questions, answers, ids)
+    const refError = questionReferenceError(request.info.prompt.questions, answers, references)
+    if (refError) throw new HttpError(400, refError)
+    const validation = questionReferenceAnswers(answers, references)
+    this.validateOutcomes(request.info, validation, outcomes, ids)
+    const invalid = questionAnswerError(request.info.prompt.questions, validation, ids)
     if (invalid) throw new HttpError(400, invalid)
     const storage = this.attachments
-    if (!storage) throw new HttpError(409, 'Question attachments are not supported')
-    const attached = Object.entries(ids).map(([questionId, fileIds]) => ({
-      questionId,
-      files: storage.metadata(request.info.taskId, fileIds),
-    }))
+    if (!storage && Object.values(ids).some((files) => files.length))
+      throw new HttpError(409, 'Question attachments are not supported')
+    const attached = Object.entries(ids).flatMap(([questionId, fileIds]) => {
+      if (!fileIds.length) return []
+      if (!storage) throw new HttpError(409, 'Question attachments are not supported')
+      return [{ questionId, files: storage.metadata(request.info.taskId, fileIds) }]
+    })
     const result = new Map(Object.entries(answers))
+    for (const [questionId, reference] of Object.entries(references)) {
+      if (!this.secrets) throw new HttpError(409, 'Secret references are not supported')
+      // Retry only this reference after a login or vault change. Never expose the value to clients.
+      this.secrets.invalidate(reference)
+      const secret = await this.secrets.value(reference, request.signal)
+      if (!secret.trim() || secret.length > 10000)
+        throw new HttpError(400, 'The secret must contain 1 to 10000 characters')
+      result.set(questionId, [secret])
+    }
     // Resolve paths on the owning runtime; callers never supply filesystem paths.
     for (const group of attached) {
+      if (!storage) throw new HttpError(409, 'Question attachments are not supported')
       const references: string[] = []
       for (const file of group.files) {
         const materialized = await storage.materialize(request.info.taskId, file)

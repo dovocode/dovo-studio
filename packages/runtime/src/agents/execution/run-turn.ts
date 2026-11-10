@@ -50,6 +50,7 @@ import {
   planModeIssue,
   planModeRequested,
   mentionedResources,
+  modelMentionContext,
   nativeTodos,
   supportsAccess,
   permissionPolicyIssue,
@@ -984,6 +985,12 @@ export class TaskTurnRunner {
             this.sharedSkills.materialize(mentioned.skills),
           )
           const mentionContext = [
+            modelMentionContext(
+              messages
+                .filter((message) => message.role === 'user')
+                .map((message) => message.text)
+                .join('\n'),
+            ),
             mentioned.skills.length
               ? `The user referenced these skills; follow them for this request:\n\n${mentioned.skills
                   .map((skill) =>

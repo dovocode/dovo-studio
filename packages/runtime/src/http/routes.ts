@@ -1,3 +1,4 @@
+import { dictationRoute } from './endpoints/dictation-routes.js'
 import { searchRuntimeHistory } from './support/history-search.js'
 import { attachmentArchiveRequestSchema, attachmentArchiveReadRequestSchema } from '@dovo/protocol'
 import { listAttachmentArchive, readAttachmentArchive } from '../storage/attachment-archive.js'
@@ -1772,6 +1773,7 @@ export function route(
         return yield* agentsRoute(request, path)
       if (path === '/api/terminals' || path.startsWith('/api/terminals/'))
         return yield* terminalsRoute(request, path, token)
+      if (path.startsWith('/api/dictation/')) return yield* dictationRoute(request, path, token)
       if (path.startsWith('/api/jobs/')) return yield* jobsRoute(request, path, owner)
       if (path.startsWith('/api/review/')) return yield* reviewRoute(request, path)
       if (path.startsWith('/api/scm/project-transfer/'))

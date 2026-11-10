@@ -23,6 +23,7 @@ import {
   type AgentDiscovery,
 } from '@dovo/studio-core'
 import {
+  SecretReferenceFields,
   SettingsSaveBar,
   Button,
   ChoicePicker,
@@ -117,7 +118,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           {selection
             ? 'Choose the utility model that selects projects, harnesses and coding models. By default it inherits the explicit title model.'
-            : 'Choose an explicit harness and model for thread titles and dictation cleanup.'}
+            : 'Choose a coding harness or direct API model for titles, commit and PR text, and dictation cleanup.'}
         </p>
       </header>
       <div className="p-4">
@@ -165,6 +166,103 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
               this computer.
             </p>
             <fieldset disabled={busy || !connected} className="min-w-0 space-y-4">
+              {snapshot?.textGeneratorsSupported && !(selection && settings.inheritTitleModel) && (
+                <section
+                  aria-label="Utility text target"
+                  className="space-y-3 rounded-md border p-3"
+                >
+                  <FormField label="Generate text with">
+                    <ChoicePicker
+                      aria-label="Generate text with"
+                      value={settings.generator?.kind ?? 'harness'}
+                      onValueChange={(kind) => {
+                        if (kind === 'harness') edit({ ...settings, generator: undefined })
+                        else if (kind === 'openai' || kind === 'anthropic')
+                          edit({
+                            ...settings,
+                            generator: {
+                              kind,
+                              model: '',
+                              baseUrl:
+                                kind === 'openai'
+                                  ? 'https://api.openai.com/v1'
+                                  : 'https://api.anthropic.com/v1',
+                              apiKey: {
+                                provider: 'environment',
+                                reference:
+                                  kind === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY',
+                              },
+                            },
+                          })
+                      }}
+                    >
+                      <option value="harness">Coding harness</option>
+                      <option value="openai">OpenAI-compatible API</option>
+                      <option value="anthropic">Anthropic API</option>
+                    </ChoicePicker>
+                  </FormField>
+                  {settings.generator && (
+                    <>
+                      <FormField label="API base URL">
+                        <Input
+                          type="url"
+                          required
+                          value={settings.generator.baseUrl}
+                          onChange={(event) =>
+                            edit({
+                              ...settings,
+                              generator: { ...settings.generator!, baseUrl: event.target.value },
+                            })
+                          }
+                        />
+                      </FormField>
+                      <FormField label="API model ID">
+                        <Input
+                          required
+                          value={settings.generator.model}
+                          onChange={(event) =>
+                            edit({
+                              ...settings,
+                              generator: { ...settings.generator!, model: event.target.value },
+                            })
+                          }
+                        />
+                      </FormField>
+                      <label className="flex items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={!!settings.generator.apiKey}
+                          onChange={(event) =>
+                            edit({
+                              ...settings,
+                              generator: {
+                                ...settings.generator!,
+                                apiKey: event.target.checked
+                                  ? { provider: 'environment', reference: 'OPENAI_API_KEY' }
+                                  : undefined,
+                              },
+                            })
+                          }
+                        />
+                        API key required
+                      </label>
+                      {settings.generator.apiKey && (
+                        <SecretReferenceFields
+                          value={settings.generator.apiKey}
+                          onChange={(apiKey) =>
+                            edit({ ...settings, generator: { ...settings.generator!, apiKey } })
+                          }
+                        />
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Sends utility text to this API. No tools or checkout access. The harness
+                        below remains the fallback for work that needs files.
+                      </p>
+                    </>
+                  )}
+                </section>
+              )}
+
               <FormField layout="settings" label="Provider">
                 <ChoicePicker
                   aria-label={
@@ -352,7 +450,8 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 description="Changes apply to new threads."
                 disabled={
                   !connected ||
-                  (!(selection && settings.inheritTitleModel) &&
+                  (!settings.generator &&
+                    !(selection && settings.inheritTitleModel) &&
                     (!harness ||
                       !settings.model.trim() ||
                       (!settings.harness && !settings.agentId)))

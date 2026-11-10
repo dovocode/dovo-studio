@@ -5,10 +5,10 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const core = `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const useSettingsDraft=()=>{};export {titleGenerationSettingsSchema,modelCatalogSchema,providerSchema} from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const useWorkspace=()=>window.workspace;`
-const ui = `export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export {SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';`
+const ui = `export {SecretReferenceFields} from '${root}/packages/studio-ui/src/secret-reference-fields.tsx';export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export {SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';`
 const built = await build({
   stdin: {
-    contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import {TitleSettings} from '${root}/packages/extension-agents/src/title-settings.tsx';window.documentSettings={harness:{provider:'codex',endpoint:'initial'},agentId:'',model:'title-model',reasoning:''};window.reads=0;window.writes=[];window.workspace={connected:true,workspace:{agents:[]},snapshot:{defaults:{},smartModelSelectionEnabled:true},request:async(path,input)=>{if(path.endsWith('/read')){window.reads++;return structuredClone(window.documentSettings)}if(path.endsWith('/save')){if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Title settings changed on another device. Reload before saving.');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)}if(path==='/api/agents/models')return {models:[]};throw Error(path)}};const app=createRoot(document.getElementById('app'));window.showSelection=()=>app.render(<StudioConfirmationProvider><TitleSettings key='selection' selection/></StudioConfirmationProvider>);app.render(<StudioConfirmationProvider><TitleSettings/></StudioConfirmationProvider>);`,
+    contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import {TitleSettings} from '${root}/packages/extension-agents/src/title-settings.tsx';window.documentSettings={harness:{provider:'codex',endpoint:'initial'},agentId:'',model:'title-model',reasoning:''};window.reads=0;window.writes=[];window.workspace={connected:true,workspace:{agents:[]},snapshot:{defaults:{},smartModelSelectionEnabled:true,textGeneratorsSupported:true},request:async(path,input)=>{if(path.endsWith('/read')){window.reads++;return structuredClone(window.documentSettings)}if(path.endsWith('/save')){if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Title settings changed on another device. Reload before saving.');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)}if(path==='/api/agents/models')return {models:[]};throw Error(path)}};const app=createRoot(document.getElementById('app'));window.showApi=()=>{window.documentSettings={agentId:'',model:'',reasoning:''};app.render(<StudioConfirmationProvider><TitleSettings key='api'/></StudioConfirmationProvider>)};window.showSelection=()=>app.render(<StudioConfirmationProvider><TitleSettings key='selection' selection/></StudioConfirmationProvider>);app.render(<StudioConfirmationProvider><TitleSettings/></StudioConfirmationProvider>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -91,6 +91,18 @@ try {
   const write = await page.evaluate(() => window.writes.at(-1))
   assert.equal(write.before.harness.endpoint, 'remote edit')
   assert.equal(write.after.harness.endpoint, 'reconciled edit')
+  await page.evaluate(() => window.showApi())
+  await page.getByRole('button', { name: 'Generate text with', exact: true }).click()
+  await page.getByRole('option', { name: 'OpenAI-compatible API', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'API base URL', exact: true })
+    .fill('http://127.0.0.1:1234/v1')
+  await page.getByRole('textbox', { name: 'API model ID', exact: true }).fill('local-small')
+  await page.getByRole('checkbox', { name: 'API key required' }).uncheck()
+  await page.getByRole('button', { name: 'Save title settings', exact: true }).click()
+  await page.waitForFunction(() => window.documentSettings.generator?.model === 'local-small')
+  assert.equal(await page.evaluate(() => window.documentSettings.model), '')
+  assert.equal(await page.evaluate(() => window.documentSettings.generator.apiKey), undefined)
   await page.evaluate(() => {
     window.documentSettings = { inheritTitleModel: true, agentId: '', model: '', reasoning: '' }
     window.showSelection()
@@ -143,12 +155,12 @@ try {
     '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=effect=>Effect.runPromise(effect);`,
     './model-settings': `export const ModelSettings=()=>null;`,
     './acp-registry': `export const AcpRegistry=()=>null;`,
-    '../screens/settings-controls': `export const SettingsChoice=()=>null;export const SettingsField=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
+    '../screens/settings-controls': `export const SettingsChoice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;export const SettingsField=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
     './settings-controls': `export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   }
   const mobileBuild = await build({
     stdin: {
-      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {TitleSettings} from '${root}/apps/mobile/src/agents/title-settings.tsx';window.documentSettings={harness:{provider:'opencode',endpoint:'initial'},agentId:'',model:'model',reasoning:''};window.writes=[];const call=async(path,input)=>{if(path.endsWith('/read'))return structuredClone(window.documentSettings);if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Settings changed on another device');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)};window.runtime={connected:true,snapshot:{workspace:{agents:[]},defaults:{},smartModelSelectionEnabled:true},call,callEffect:(path,input)=>Effect.tryPromise({try:()=>call(path,input),catch:error=>error})};function App(){const [,render]=useState(0);window.setConnection=connected=>{window.runtime.connected=connected;render(value=>value+1)};return window.selectionMode?<TitleSettings key='selection' selection/>:<TitleSettings/>}const root=createRoot(document.getElementById('app'));window.showMobileSelection=()=>{window.selectionMode=true;root.render(<App/>)};root.render(<App/>);`,
+      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {TitleSettings} from '${root}/apps/mobile/src/agents/title-settings.tsx';window.documentSettings={harness:{provider:'opencode',endpoint:'initial'},agentId:'',model:'model',reasoning:''};window.writes=[];const call=async(path,input)=>{if(path.endsWith('/read'))return structuredClone(window.documentSettings);if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Settings changed on another device');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)};window.runtime={connected:true,snapshot:{workspace:{agents:[]},defaults:{},smartModelSelectionEnabled:true,textGeneratorsSupported:true},call,callEffect:(path,input)=>Effect.tryPromise({try:()=>call(path,input),catch:error=>error})};function App(){const [,render]=useState(0);window.setConnection=connected=>{window.runtime.connected=connected;render(value=>value+1)};return window.selectionMode?<TitleSettings key='selection' selection/>:<TitleSettings/>}const root=createRoot(document.getElementById('app'));window.showMobileApi=()=>{window.documentSettings={agentId:'',model:'',reasoning:''};root.render(<div data-api-settings><TitleSettings key='api'/></div>)};window.showMobileSelection=()=>{window.selectionMode=true;root.render(<App/>)};root.render(<App/>);`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -221,6 +233,20 @@ try {
     (await mobilePage.evaluate(() => window.writes[0])).before.harness.endpoint,
     'remote edit',
   )
+  await mobilePage.evaluate(() => window.showMobileApi())
+  await mobilePage
+    .locator('[data-api-settings]')
+    .getByRole('combobox', { name: 'Generate text with' })
+    .selectOption('anthropic')
+  await mobilePage
+    .getByRole('textbox', { name: 'API model ID', exact: true })
+    .fill('small-anthropic')
+  await mobilePage.getByRole('combobox', { name: 'API key', exact: true }).selectOption('none')
+  await mobilePage.getByRole('button', { name: 'Save title settings', exact: true }).click()
+  await mobilePage.waitForFunction(
+    () => window.documentSettings.generator?.model === 'small-anthropic',
+  )
+  assert.equal(await mobilePage.evaluate(() => window.documentSettings.model), '')
   await mobilePage.evaluate(() => {
     window.documentSettings = { inheritTitleModel: true, agentId: '', model: '', reasoning: '' }
     window.showMobileSelection()

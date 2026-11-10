@@ -233,7 +233,8 @@
     "test:terminal-engine:browser": "pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && node scripts/check-ghostty-terminal-browser.mjs && node scripts/check-terminal-renderers-browser.mjs && node scripts/check-terminal-interactions-browser.mjs && node scripts/check-canvas2d-retained-browser.mjs && node scripts/check-mobile-native-terminal-browser.mjs",
     "test:mobile-workspaces:browser": "node scripts/check-mobile-workspace-browser.mjs && node scripts/check-mobile-workspace-overview-browser.mjs",
     "prepare:workspace-router": "node scripts/packaging/workspace-router-model.mjs",
-    "test:workspace-router:model": "pnpm --filter @dovo/runtime... -r build && node scripts/check-workspace-router-model.mjs"
+    "test:workspace-router:model": "pnpm --filter @dovo/runtime... -r build && node scripts/check-workspace-router-model.mjs",
+    "test:t3-features:browser": "node scripts/check-t3-features-browser.mjs && node scripts/check-runtime-dictation-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",

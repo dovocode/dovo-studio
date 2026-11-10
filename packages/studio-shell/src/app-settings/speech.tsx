@@ -1,3 +1,4 @@
+import { RuntimeSpeechSettings } from './runtime-speech'
 import { useEffect, useState } from 'react'
 import {
   decode,
@@ -45,7 +46,7 @@ export function SpeechSettings() {
     }
   }, [bridge])
 
-  if (!bridge) return null
+  if (!bridge) return <RuntimeSpeechSettings />
   const downloading = installing || status?.downloading
   const install = async () => {
     setError('')
@@ -63,88 +64,91 @@ export function SpeechSettings() {
     }
   }
   return (
-    <SettingsGroup
-      title="Speech"
-      description="Dictate messages with live preview. Speech is processed on this computer, including when connected to a remote runtime."
-    >
-      <SettingRow
-        label="Enable dictation"
-        description="Show the microphone in the message composer."
+    <>
+      <RuntimeSpeechSettings />
+      <SettingsGroup
+        title="Speech"
+        description="Dictate messages with live preview. Speech is processed on this computer, including when connected to a remote runtime."
       >
-        <Toggle
+        <SettingRow
           label="Enable dictation"
-          checked={preferences.dictationEnabled}
-          disabled={!status?.model || !!downloading}
-          onChange={(dictationEnabled) => updateAppPreferences({ dictationEnabled })}
-        />
-      </SettingRow>
-      <SettingRow
-        label="Speech model"
-        description={`${dictationModel.name} · Q8 · 751 MB download. Works offline after downloading. No account or GPU required.`}
-      >
-        <div className="flex flex-col items-end gap-2">
-          {downloading ? (
-            <>
-              <span role="status" className="text-xs text-muted-foreground">
-                Downloading…{' '}
-                {Math.min(
-                  100,
-                  Math.floor(((status?.downloaded ?? 0) / dictationModel.bytes) * 100),
-                )}
-                %
-              </span>
-              {downloadInFlight && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    void bridge
-                      .cancel(downloadId)
-                      .catch((cause: unknown) => setError(String(cause)))
-                  }}
-                >
-                  Cancel download
-                </Button>
-              )}
-            </>
-          ) : (
-            <>
-              {status?.model && (
+          description="Show the microphone in the message composer."
+        >
+          <Toggle
+            label="Enable dictation"
+            checked={preferences.dictationEnabled}
+            disabled={!status?.model || !!downloading}
+            onChange={(dictationEnabled) => updateAppPreferences({ dictationEnabled })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Speech model"
+          description={`${dictationModel.name} · Q8 · 751 MB download. Works offline after downloading. No account or GPU required.`}
+        >
+          <div className="flex flex-col items-end gap-2">
+            {downloading ? (
+              <>
                 <span role="status" className="text-xs text-muted-foreground">
-                  Downloaded · ready for offline dictation
+                  Downloading…{' '}
+                  {Math.min(
+                    100,
+                    Math.floor(((status?.downloaded ?? 0) / dictationModel.bytes) * 100),
+                  )}
+                  %
                 </span>
-              )}
-              <Button variant="outline" disabled={!status?.engine} onClick={() => void install()}>
-                {status?.model ? 'Download model again' : 'Download & enable dictation'}
-              </Button>
-            </>
-          )}
-        </div>
-      </SettingRow>
-      <SettingRow
-        label="Dictation language"
-        description="Select a language to guide recognition, or detect it automatically."
-      >
-        <SettingsSelect
+                {downloadInFlight && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void bridge
+                        .cancel(downloadId)
+                        .catch((cause: unknown) => setError(String(cause)))
+                    }}
+                  >
+                    Cancel download
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                {status?.model && (
+                  <span role="status" className="text-xs text-muted-foreground">
+                    Downloaded · ready for offline dictation
+                  </span>
+                )}
+                <Button variant="outline" disabled={!status?.engine} onClick={() => void install()}>
+                  {status?.model ? 'Download model again' : 'Download & enable dictation'}
+                </Button>
+              </>
+            )}
+          </div>
+        </SettingRow>
+        <SettingRow
           label="Dictation language"
-          value={preferences.dictationLanguage}
-          options={dictationLanguages}
-          onChange={(value) =>
-            updateAppPreferences({ dictationLanguage: decode(dictationLanguageSchema, value) })
-          }
-        />
-      </SettingRow>
-      {status && !status.engine && (
-        <p role="alert" className="text-sm text-destructive">
-          The dictation engine is missing. Reinstall the desktop app, or run pnpm prepare:dictation
-          in a development checkout.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-    </SettingsGroup>
+          description="Select a language to guide recognition, or detect it automatically."
+        >
+          <SettingsSelect
+            label="Dictation language"
+            value={preferences.dictationLanguage}
+            options={dictationLanguages}
+            onChange={(value) =>
+              updateAppPreferences({ dictationLanguage: decode(dictationLanguageSchema, value) })
+            }
+          />
+        </SettingRow>
+        {status && !status.engine && (
+          <p role="alert" className="text-sm text-destructive">
+            The dictation engine is missing. Reinstall the desktop app, or run pnpm
+            prepare:dictation in a development checkout.
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </SettingsGroup>
+    </>
   )
 }

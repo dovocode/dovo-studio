@@ -369,3 +369,7 @@ export * from './runtime/connection/terminal-status.js'
 export * from './tasks/workspace-suggestions.js'
 
 export * from './runtime/connection/shared-state-values.js'
+export * from './conversation/presentation/model-mentions.js'
+export * from './tasks/text-generator.js'
+export * from './tasks/prompt-suggestion.js'
+export * from './runtime/dictation.js'

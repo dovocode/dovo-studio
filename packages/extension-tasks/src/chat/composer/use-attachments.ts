@@ -42,10 +42,23 @@ export function useAttachments(
   ])
   const currentScope = useRef(scope)
   currentScope.current = scope
+  const activeUploads = useRef<{
+    scope: string
+    pending: boolean
+    done: Promise<string | undefined>
+  } | null>(null)
+  const failedUploads = useRef(new Map<string, File>())
+  const [, setFailedVersion] = useState(0)
+  useEffect(() => {
+    failedUploads.current.clear()
+    setFailedVersion((value) => value + 1)
+  }, [scope])
   const imageEditor = useImageEditor()
   const lock = useRef(false)
   const urls = useRef(new Set<string>())
-  const [uploads, setUploads] = useState<(LocalAttachment & { scope?: string })[]>([])
+  const [uploads, setUploads] = useState<(LocalAttachment & { scope?: string; owner: string })[]>(
+    [],
+  )
   useEffect(
     () => () => {
       for (const url of urls.current) URL.revokeObjectURL(url)
@@ -77,13 +90,15 @@ export function useAttachments(
       ? editing.files
       : draftAttachments(
           savedFiles,
-          uploads.filter((item) => item.scope === undefined),
+          uploads.filter((item) => item.owner === scope && item.scope === undefined),
           snapshot?.revision,
         )
   const previews = new Map(
-    uploads.flatMap((item) => (item.url ? [[item.attachment.id, item.url] as const] : [])),
+    uploads
+      .filter((item) => item.owner === scope)
+      .flatMap((item) => (item.url ? [[item.attachment.id, item.url] as const] : [])),
   )
-  const uploading = uploads.filter((item) => item.revision === undefined)
+  const uploading = uploads.filter((item) => item.owner === scope && item.revision === undefined)
   useEffect(() => {
     if (!snapshot) return
     const removed = uploads.filter(
@@ -107,6 +122,7 @@ export function useAttachments(
     replaceId?: string,
     editChatImage = false,
     signal?: AbortSignal,
+    retryId?: string,
   ) => {
     if (lock.current) {
       setError('Wait for the current attachment operation to finish.')
@@ -116,6 +132,13 @@ export function useAttachments(
     lock.current = true
     setWorking(true)
     setError('')
+    const failures: string[] = []
+    let complete: (failure?: string) => void = () => {}
+    const done = new Promise<string | undefined>((resolve) => {
+      complete = resolve
+    })
+    const operation = { scope, pending: true, done }
+    activeUploads.current = operation
     try {
       // Capture the destination before image editing or file reads yield. Another window or
       // device can send this draft even while this composer's Send control is disabled.
@@ -159,7 +182,7 @@ export function useAttachments(
         }
         let file: File
         try {
-          const prepared = await optimizeAttachmentImage(original)
+          const prepared = retryId ? original : await optimizeAttachmentImage(original)
           const edited = await imageEditor.edit(prepared, editChatImage)
           if (!edited || (replaceId && edited === prepared)) continue
           file = edited === prepared ? prepared : await optimizeAttachmentImage(edited)
@@ -178,7 +201,7 @@ export function useAttachments(
       if (signal && rejected.length) throw new Error(rejected.join('\n'))
       const batch = accepted.map((file) => {
         const attachment = {
-          id: randomUUID(),
+          id: retryId ?? randomUUID(),
           name: file.name,
           mime: file.type,
           size: file.size,
@@ -191,6 +214,7 @@ export function useAttachments(
         ...current,
         ...batch.map(({ attachment, url }) => ({
           attachment,
+          owner: scope,
           url,
           replaces: replaceId,
           scope: detached?.key ?? editing?.messageId,
@@ -299,6 +323,11 @@ export function useAttachments(
               failure = cleanupFailure
               setError(cleanupFailure.message)
             }
+          failures.push(`${file.name}: ${String(failure)}`)
+          if (!editing && !detached && !signal?.aborted && currentScope.current === scope) {
+            failedUploads.current.set(attachment.id, file)
+            setFailedVersion((value) => value + 1)
+          }
           setUploads((current) => current.filter((item) => item.attachment.id !== attachment.id))
           if (url) {
             URL.revokeObjectURL(url)
@@ -325,9 +354,12 @@ export function useAttachments(
         }),
       )
     } catch (error) {
+      failures.push(String(error))
       if (!signal?.aborted) setError(String(error))
       if (signal) throw error
     } finally {
+      operation.pending = false
+      complete(failures.length ? failures.join('\n') : undefined)
       setWorking(false)
       lock.current = false
     }
@@ -375,6 +407,48 @@ export function useAttachments(
     }
   }
   return {
+    submissionFiles: [
+      ...new Map(
+        [
+          ...uploading
+            .filter((item) => !item.replaces && !item.scope)
+            .map((item) => item.attachment),
+          ...files,
+        ].map((file) => [file.id, file]),
+      ).values(),
+    ],
+    canSubmitWhileUploading:
+      !editing &&
+      !detached &&
+      uploading.length > 0 &&
+      uploading.every((item) => !item.replaces && !item.scope),
+    waitForUploads: async () => {
+      const operation = activeUploads.current
+      if (operation?.scope === scope && operation.pending) {
+        const failure = await operation.done
+        if (failure) throw new Error(failure)
+      }
+      if (currentScope.current !== scope)
+        throw new Error('The conversation changed before attachments finished.')
+      if (failedUploads.current.size)
+        throw new Error('Retry or remove failed attachments before sending.')
+    },
+    failedUploads: [...failedUploads.current.entries()].map(([id, file]) => ({
+      id,
+      name: file.name,
+    })),
+    retryUpload: (id: string) => {
+      const file = failedUploads.current.get(id)
+      if (!file || lock.current) return
+      failedUploads.current.delete(id)
+      setFailedVersion((value) => value + 1)
+      void upload([file], undefined, false, undefined, id)
+    },
+    discardFailedUpload: (id: string) => {
+      failedUploads.current.delete(id)
+      setFailedVersion((value) => value + 1)
+      setError('')
+    },
     edit: (id: string) => upload([], id),
     editor: imageEditor.editor,
     upload,

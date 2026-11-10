@@ -1,3 +1,4 @@
+import { useNextPrompt } from '@dovo/studio-core/next-prompt'
 import { useOperationGuard } from '../../runtime/state/use-operation-guard'
 import { prepareRuntimeSideThread, finishRuntimeSideThread } from '../draft/runtime-drafts'
 import { router } from 'expo-router'
@@ -271,6 +272,20 @@ export function Composer({
   const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
   const { call, callEffect: commandCall, activeId, legacyDraftRuntimeId } = useRuntime()
+  const nextPrompt = useNextPrompt({
+    task,
+    enabled:
+      connected &&
+      snapshot?.promptSuggestionsEnabled === true &&
+      !draft.text.trim() &&
+      !actions.draftAttachments?.length &&
+      !attaching &&
+      !dictation.active &&
+      !editing &&
+      !submitting,
+    scope: actions.threadScope,
+    request: call,
+  })
   const asideCurrent = useOperationGuard(JSON.stringify([activeId, task.id, draft.key]))
   const askAside = async (text: string) => {
     if (
@@ -1040,6 +1055,33 @@ export function Composer({
             }
             onBusy={setAttaching}
           />
+          {nextPrompt.text && (
+            <View style={{ flexDirection: 'row', gap: 8, padding: 10 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Use suggested next prompt"
+                style={{ flex: 1 }}
+                onPress={() => {
+                  draft.update(nextPrompt.text)
+                  nextPrompt.dismiss()
+                }}
+              >
+                <Text style={{ color: colors.muted, fontSize: 13 }}>{nextPrompt.text}</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss suggested next prompt"
+                onPress={nextPrompt.dismiss}
+              >
+                <Text style={{ color: colors.muted }}>Dismiss</Text>
+              </Pressable>
+            </View>
+          )}
+          {nextPrompt.error && (
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              Prompt suggestion unavailable. {nextPrompt.error}
+            </Text>
+          )}
           {focused && !composerHistory.active && (
             <FileMentions
               taskId={task.id}
@@ -1826,6 +1868,24 @@ export function Composer({
           </View>
         </View>
       )}
+      {attachmentPicker.failedUploads.map((file) => (
+        <View key={file.id} style={{ gap: 8 }}>
+          <Text accessibilityRole="alert">{file.name} did not upload.</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Action
+              label={`Retry ${file.name}`}
+              disabled={busy || attaching}
+              onPress={() => attachmentPicker.retryUpload(file.id)}
+            />
+            <Action
+              secondary
+              label={`Remove ${file.name}`}
+              disabled={busy || attaching}
+              onPress={() => attachmentPicker.discardFailedUpload(file.id)}
+            />
+          </View>
+        </View>
+      ))}
       {!!(error || fork.error || checkoutAction.error || draft.error || attachmentPicker.error) && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error || fork.error || checkoutAction.error || draft.error || attachmentPicker.error}

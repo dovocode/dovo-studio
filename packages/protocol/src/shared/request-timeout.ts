@@ -1,6 +1,11 @@
 export const REPOSITORY_CLONE_TIMEOUT_MS = 300_000
 
 export function runtimeRequestTimeout(path: string, input?: unknown) {
+  if (path === '/api/dictation/install') return 1000000
+  if (path === '/api/dictation/transcribe') return 300000
+  if (path === '/api/agents/model-mentions') return 120000
+  if (path === '/api/tasks/prompt-suggestion') return 60000
+
   if (path === '/api/remote-desktop') return 45000
   if (path === '/api/studio/session') return 30000
   if (path === '/api/studio/tools') {

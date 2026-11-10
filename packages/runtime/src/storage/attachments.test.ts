@@ -1266,3 +1266,32 @@ it.each(['draft', 'sent', 'queued'])(
     expect(store.task(task.id).draftAttachments).toEqual([saved.attachment, second.attachment])
   },
 )
+
+it('returns the current draft guard when retrying a successful upload with a lost response', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const { store, attachments, tasks } = runtime.services
+  store.update(() => f.workspace)
+  const task = tasks.create({
+    title: 'Upload retry',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const input = {
+    taskId: task.id,
+    id: randomUUID(),
+    name: 'image.png',
+    data: png,
+    draftGuard: attachments.draftUploadGuard(task.id),
+  }
+  const first = await attachments.upload(input)
+  const retry = await attachments.upload(input)
+  expect(retry.attachment).toEqual(first.attachment)
+  expect(retry.nextGuard).toBe(attachments.draftUploadGuard(task.id))
+  expect(store.task(task.id).draftAttachments).toHaveLength(1)
+  store.updateTask(task.id, (task) => ({ ...task, draftAttachments: [] }))
+  await expect(attachments.upload(input)).rejects.toThrow('left the draft')
+})

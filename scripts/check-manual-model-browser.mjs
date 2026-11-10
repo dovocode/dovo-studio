@@ -61,7 +61,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
     export * as Popover from '@radix-ui/react-popover';
   `,
-  './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
+  './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
   './task-row': `export const TaskRow=({task,selected,onSelect})=><button data-row-id={task.id} aria-current={selected?'true':undefined} onClick={onSelect}>{task.title} · {task.status}</button>;`,
   '../detail/task-context-menu':
     'export const TaskContextMenu=({children})=><div>{children}</div>;',

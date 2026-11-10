@@ -145,6 +145,19 @@ export function RunningTaskPreferences({
         showSaveInfo={showSaveInfo}
       />
       {children}
+      <SettingsGroup advanced title="Prompt suggestions">
+        <SettingRow
+          label="Suggest next prompt"
+          description="After a Claude or Codex turn, suggest an editable next message. Each suggestion makes an extra model request and uses plan usage."
+        >
+          <Toggle
+            label="Suggest next prompt"
+            checked={value?.suggestNextPrompt ?? false}
+            disabled={disabled || snapshot?.promptSuggestionsEnabled === undefined}
+            onChange={(suggestNextPrompt) => save({ suggestNextPrompt })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup advanced title="Model modes (experimental)">
         <SettingRow
           label="Tune & Maestro modes (experimental)"
