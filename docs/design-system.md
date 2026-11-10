@@ -42,6 +42,28 @@ height and spacing. Desktop and mobile thread rows show a status icon and time w
 status label. Keep the full status in the accessible name and desktop tooltip. Read review rows stay
 quiet.
 
+Desktop and web thread rows follow T3 Code's sidebar hierarchy. The first line has the project icon,
+project name and status. The title and branch use the full width below it. Branch text uses the UI
+font and smaller, muted text. Runtime and provider icons stay at the right. Settled rows keep their
+compact layout. Existing selection, hover controls and keyboard navigation remain available.
+
+Branch truncation adapts T3's `MiddleTruncate` at
+[`8ee7183e6c8a`](https://github.com/pingdotgg/t3code/blob/8ee7183e6c8a1c22a6698f4909ef7e2a423bec3a/apps/web/src/components/ui/middle-truncate.tsx).
+It keeps a short suffix at a word boundary, cuts the prefix at a whole character and places the
+ellipsis directly against the suffix. Resizing refits the text without changing the full name in the
+tooltip, accessible label or copy text. The MIT notice is included in **Settings → About → Open
+source notices**.
+
+Build and check the real sidebar with synthetic runtime data. Add the preview variable to save
+light, dark and narrow examples:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/desktop build
+DOVO_SIDEBAR_PREVIEWS=/tmp/dovo-sidebar-t3-previews node scripts/check-sidebar-rendering-browser.mjs
+node scripts/check-desktop-audit-layout-browser.mjs
+```
+
 Pinned browser tabs use 56px cards and a 24px favicon at the exact center. Status and activity stay
 in the corners. Computer and profile details stay in the tooltip and accessible name. Do not add an
 identity badge row to the cards.

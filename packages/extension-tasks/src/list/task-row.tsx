@@ -1,4 +1,5 @@
 import { ThreadWatchSummary } from './thread-watch-summary'
+import { MiddleTruncate } from './middle-truncate'
 import { NestedThreads } from './nested-threads'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import type { NestedThread } from './thread-tree'
@@ -167,15 +168,9 @@ function TaskRowView({
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
-      <MessageCircleDashed
-        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-5')}
-        aria-hidden="true"
-      />
+      <MessageCircleDashed className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
     ) : (
-      <ProjectIcon
-        repository={displayProject}
-        className={cn('shrink-0', compact ? 'size-4' : 'size-5 rounded-[5px] text-[10px]')}
-      />
+      <ProjectIcon repository={displayProject} className="size-4 shrink-0 rounded-sm text-[10px]" />
     )
   const latest = task.turns?.at(-1)
   const provider =
@@ -308,9 +303,9 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              <span className={cn('studio-thread-project-icon shrink-0', !compact && 'pt-0.5')}>
-                {projectIcon}
-              </span>
+              {compact && (
+                <span className="studio-thread-project-icon shrink-0">{projectIcon}</span>
+              )}
               <span
                 className={cn(
                   'studio-thread-card-body flex min-w-0 flex-1',
@@ -325,6 +320,9 @@ function TaskRowView({
                         'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                     )}
                   >
+                    <span className="studio-thread-project-icon inline-flex shrink-0 items-center justify-center">
+                      {projectIcon}
+                    </span>
                     <span
                       className="min-w-0 flex-1 truncate"
                       data-thread-copy=""
@@ -382,31 +380,15 @@ function TaskRowView({
                 {!compact && !general && (
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
-                    <span
-                      className={cn(
-                        'flex min-w-0 flex-1 whitespace-nowrap text-left',
-                        branch && 'font-mono',
-                      )}
-                      title={branch || 'Local checkout'}
+                    <MiddleTruncate
+                      value={branch || 'Local checkout'}
+                      className="flex-1 text-left"
                       aria-label={branch || 'Local checkout'}
                       data-thread-branch
                       data-thread-copy=""
-                    >
-                      {branch ? (
-                        <>
-                          <span className="min-w-0 truncate">
-                            {branch.slice(0, Math.ceil(branch.length / 2))}
-                          </span>
-                          <span className="max-w-[50%] shrink-0 overflow-hidden" dir="rtl">
-                            <bdi dir="ltr">{branch.slice(Math.ceil(branch.length / 2))}</bdi>
-                          </span>
-                        </>
-                      ) : (
-                        'Local checkout'
-                      )}
-                    </span>
+                    />
                     {pullIndicators}
-                    <span className="flex items-center gap-1">
+                    <span className="ml-auto inline-flex shrink-0 items-center gap-1">
                       {executionIcons}
                       {terminalIndicator}
                     </span>

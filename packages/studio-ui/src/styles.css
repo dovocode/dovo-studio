@@ -3864,11 +3864,11 @@ a.studio-project-row:hover {
 }
 .studio-thread-card:not([data-compact]) .studio-thread-project-icon {
   display: flex;
-  width: 1.5rem;
+  width: 1rem;
   justify-content: center;
 }
 .studio-thread-card:not([data-compact]) .studio-thread-card-body {
-  gap: 0;
+  gap: 0.125rem;
 }
 .studio-thread-card:not([data-compact]) .studio-thread-card-title {
   font-size: var(--dovo-type-row-size);
