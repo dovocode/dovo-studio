@@ -38,6 +38,7 @@ export function BrowserTabRow({
   onEditHome,
   onSettle,
   onSnooze,
+  onCustomSnooze,
   onClose,
   onMove,
   onMenuOpen,
@@ -58,6 +59,7 @@ export function BrowserTabRow({
   onEditHome?: () => void
   onSettle: () => void
   onSnooze: () => void
+  onCustomSnooze?: () => void
   onClose: () => void
   onMove?: (windowId?: number, pageOnly?: boolean) => void
   onMenuOpen: () => void
@@ -370,6 +372,16 @@ export function BrowserTabRow({
             <AlarmClock size={13} />
             Snooze until tomorrow
           </ContextMenu.Item>
+          {onCustomSnooze && (
+            <ContextMenu.Item
+              className={menuItem}
+              disabled={busy || tab.pinned}
+              onSelect={onCustomSnooze}
+            >
+              <AlarmClock size={13} />
+              Choose date and time…
+            </ContextMenu.Item>
+          )}
           {onMove && (
             <>
               <ContextMenu.Separator className="my-1 h-px bg-border" />

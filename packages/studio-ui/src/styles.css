@@ -1634,12 +1634,6 @@ textarea {
 [data-high-contrast='true'] .studio-browser-sidebar .studio-browser-tab[data-active] {
   border-color: var(--primary);
 }
-.studio-browser-sidebar .studio-browser-tab-group {
-  margin: 0 4px 4px;
-}
-.studio-browser-tab-group > div {
-  padding: 4px;
-}
 .studio-browser-tab-menu {
   padding: 5px;
   border-radius: var(--dovo-radius-card);

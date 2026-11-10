@@ -6,6 +6,16 @@ puts the most recently visited tab first. Add a tab on this computer or a paired
 address or search terms, and choose a browser profile in **Browser options** for a separate session.
 Tabs retain their computer and profile when you switch the active runtime.
 
+The **Snoozed** and **Settled** tab sections use the thread section headers, counts and disclosure
+controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On
+mobile, the tab category picker hides **Snoozed** when no tabs are snoozed.
+
+Choose **Browser options → Tab & page actions → Snooze tab → Choose date and time…** to set a custom
+wake time on desktop/web. The tab context menu and the unified sidebar's Snooze menu have the same
+option. On mobile, choose **Browser options → Choose date and time…**. The picker uses the device's
+local time zone. Past times are rejected. Cancel keeps the page and tab state. A snoozed tab returns
+to the active list when its wake time arrives.
+
 Pinned tabs show a compact profile badge. Choose its emoji in **Settings → Browser → Local browser
 profiles** or **Remote browser profiles**; profiles without an emoji show initials. Pinning saves
 the current URL as the tab's home. Use the address-bar home button to return there, or right-click
@@ -396,11 +406,16 @@ pnpm exec playwright install chromium
 pnpm --filter @dovo/runtime... -r build
 pnpm test:browser-favicons:browser
 pnpm test:browser-tabs:browser
+node scripts/check-unified-workspace-browser.mjs
+node scripts/check-mobile-shared-browser-browser.mjs
 ```
 
 The native icon check runs with `node apps/desktop/scripts/check-browser-extensions-native.mjs`. It
 needs Electron's Chromium sandbox and a display or Xvfb. The managed Chromium check verifies remote
-icon discovery. It does not verify Electron's preload or physical mobile devices.
+icon discovery. It does not verify Electron's preload or physical mobile devices. Mobile browser
+checks use adapters for the native date and time controls. Type checks validate the Expo UI
+contracts. Test the SwiftUI picker on iOS and the calendar and clock on Android before claiming
+physical-device verification.
 
 Detached Browser windows contain Browser controls only. Page and selection actions create or append
 an unsent draft, preserving existing draft text. In the main window, workspace synchronization does

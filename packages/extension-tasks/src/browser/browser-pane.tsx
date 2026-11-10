@@ -7,6 +7,7 @@ import { browserPageFavicon } from '@dovo/protocol'
 import { flushSync } from 'react-dom'
 import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
 import { BrowserTabRow } from './browser-tab-row'
+import { SnoozeDialog } from '../dialogs/snooze-dialog'
 import { BrowserSiteControls } from './browser-site-controls'
 import { BrowserExtensions } from './browser-extensions'
 import { BrowserLibrary } from './browser-library'
@@ -448,6 +449,11 @@ function BrowserContent({
   const activeTabRef = useRef(activeTab)
   activeTabRef.current = activeTab
   const [clock, setClock] = useApplicationState(() => Date.now())
+  const [openTabSections, setOpenTabSections] = useApplicationState({
+    snoozed: false,
+    settled: false,
+  })
+  const [snoozingTab, setSnoozingTab] = useState<BrowserTab | null>(null)
   const [bookmarks, setBookmarks] = useApplicationState<BrowserTab[]>(() => library.bookmarks)
   const [libraryView, setLibraryView] = useState<'bookmarks' | 'history' | null>(null)
   const [closed, setClosed] = useApplicationState<BrowserTab[]>(() => saved?.closed ?? [])
@@ -2095,6 +2101,17 @@ function BrowserContent({
   }
   const sidebarTabs = recentBrowserTabs(tabs, sortByActivity)
   const pinnedTabs = sidebarTabs.filter((tab) => tab.pinned)
+  const tabSections = (['active', 'snoozed', 'settled'] as const)
+    .map((category) => ({
+      category,
+      tabs: sidebarTabs.filter((tab) => !tab.pinned && browserTabCategory(tab, clock) === category),
+      open: category === 'active' || openTabSections[category],
+    }))
+    .filter((section) => section.category === 'active' || section.tabs.length)
+  let bottomTabSectionIndex = 0
+  tabSections.forEach((section, index) => {
+    if (section.open) bottomTabSectionIndex = index + 1
+  })
   const renderTab = (tab: BrowserTab) => (
     <BrowserTabRow
       key={tab.id}
@@ -2208,6 +2225,7 @@ function BrowserContent({
       onEditHome={tab.pinned ? () => editHome(tab) : undefined}
       onSettle={() => moveTab(tab)}
       onSnooze={() => moveTab(tab, tomorrowBrowserTabWake())}
+      onCustomSnooze={() => setSnoozingTab(tab)}
       onClose={() => closeTab(tab)}
       onMove={
         browser && shared
@@ -2807,6 +2825,18 @@ function BrowserContent({
                         {label}
                       </Button>
                     ))}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full justify-start text-xs"
+                      disabled={busy || selectedTab.pinned}
+                      onClick={() => {
+                        setOptionsOpen(false)
+                        setSnoozingTab(selectedTab)
+                      }}
+                    >
+                      Choose date and time…
+                    </Button>
                   </details>
                 </>
               )}
@@ -3414,13 +3444,23 @@ function BrowserContent({
                   {newTabMenu}
                 </div>
               </div>
-              <div className="flex min-h-0 flex-1 flex-col">
-                {(['active', 'snoozed', 'settled'] as const).map((category) => {
-                  const groupTabs = sidebarTabs.filter(
-                    (tab) => !tab.pinned && browserTabCategory(tab, clock) === category,
-                  )
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5">
+                {tabSections.map(({ category, tabs: groupTabs, open }, index) => {
                   return (
-                    <BrowserTabGroup key={category} category={category} count={groupTabs.length}>
+                    <BrowserTabGroup
+                      key={category}
+                      category={category}
+                      count={groupTabs.length}
+                      open={open}
+                      bottom={index === bottomTabSectionIndex}
+                      onToggle={() => {
+                        if (category === 'active') return
+                        setOpenTabSections((previous) => ({
+                          ...previous,
+                          [category]: !previous[category],
+                        }))
+                      }}
+                    >
                       {category === 'active' && (
                         <>
                           {!!pinnedTabs.length && (
@@ -3458,6 +3498,20 @@ function BrowserContent({
         ) : null
       }
     >
+      {snoozingTab && (
+        <SnoozeDialog
+          key={snoozingTab.id}
+          name={snoozingTab.title || 'tab'}
+          until={snoozingTab.snoozedUntil}
+          onClose={() => setSnoozingTab(null)}
+          onSnooze={(until) => {
+            const tab = currentTabs.current.find((item) => item.id === snoozingTab.id)
+            if (!tab) throw new Error('This tab is no longer open.')
+            if (tab.pinned) throw new Error('Unpin this tab before snoozing it.')
+            moveTab(tab, until)
+          }}
+        />
+      )}
       {shared && libraryView && (
         <BrowserLibrary
           view={libraryView}
@@ -3985,35 +4039,45 @@ function BrowserOwner({
 function BrowserTabGroup({
   category,
   count,
+  open,
+  bottom,
+  onToggle,
   children,
 }: {
   category: BrowserTabCategory
   count: number
+  open: boolean
+  bottom: boolean
+  onToggle: () => void
   children: ReactNode
 }) {
   if (category === 'active')
     return (
-      <div
-        aria-label="Active browser tabs"
-        className="studio-browser-active-tabs min-h-0 flex-1 overflow-y-auto p-2"
-      >
+      <div aria-label="Active browser tabs" className="studio-browser-active-tabs shrink-0 py-2">
         {children}
       </div>
     )
   return (
     <details
-      className="studio-browser-tab-group studio-list-section mb-1 shrink-0"
+      className={`group studio-browser-tab-group studio-list-section mb-1 shrink-0 ${bottom ? 'mt-auto' : ''}`}
       data-section={category}
+      open={open}
     >
-      <summary className="studio-list-section-header">
+      <summary
+        className="studio-list-section-header"
+        onClick={(event) => {
+          event.preventDefault()
+          onToggle()
+        }}
+      >
         <ChevronDown size={11} className="studio-list-section-chevron" aria-hidden="true" />
         <span className="studio-thread-section-dot" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">
-          {category === 'snoozed' ? 'Snoozed tabs' : 'Settled tabs'}
+          {category === 'snoozed' ? 'Snoozed' : 'Settled'}
         </span>
         <span>{count}</span>
       </summary>
-      <div className="max-h-[35vh] overflow-y-auto p-2">{children}</div>
+      {open && <div className="pt-1">{children}</div>}
     </details>
   )
 }

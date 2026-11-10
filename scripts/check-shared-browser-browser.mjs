@@ -243,8 +243,8 @@ async function captureBrowserSidebar(browser) {
   await sidebar.getByRole('button', { name: /^Mail Local/ }).click()
   await preview.mouse.move(1000, 700)
   await sidebar.screenshot({ path: root + 'work/browser-sidebar/pinned-selected.png' })
-  await sidebar.locator('summary').filter({ hasText: 'Snoozed tabs' }).click()
-  await sidebar.locator('summary').filter({ hasText: 'Settled tabs' }).click()
+  await sidebar.locator('[data-section="snoozed"] > summary').click()
+  await sidebar.locator('[data-section="settled"] > summary').click()
   await preview.mouse.move(1000, 700)
   await sidebar.screenshot({ path: root + 'work/browser-sidebar/groups.png' })
   assert.equal(await sidebar.getByRole('button', { name: 'History', exact: true }).count(), 0)
@@ -3318,7 +3318,10 @@ try {
   )
   assert.equal(extracted.passwordText, '', 'Password selection must be excluded')
   // Exercise manual categories and the real sweep with a controlled clock.
-  const lifecycle = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  const lifecycle = await browser.newPage({
+    viewport: { width: 1200, height: 800 },
+    timezoneId: 'Europe/Amsterdam',
+  })
   lifecycle.on('pageerror', (error) => errors.push(error.message))
   await lifecycle.route('http://localhost/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:800px"></div>' }),
@@ -3458,7 +3461,14 @@ try {
       content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
     })
   await lifecycle.emulateMedia({ reducedMotion: 'reduce' })
-  const settledSummary = lifecycle.locator('summary').filter({ hasText: 'Settled tabs' })
+  const settledSection = lifecycle.locator('[data-section="settled"]')
+  const settledSummary = settledSection.locator(':scope > summary')
+  assert.match(await settledSummary.innerText(), /^Settled\s+1$/)
+  assert.equal(
+    await lifecycle.locator('[data-section="snoozed"]').count(),
+    0,
+    'Empty Snoozed section is hidden',
+  )
   const tabChevron = async (open) => {
     await lifecycle.waitForFunction(
       ({ element, open }) => {
@@ -3489,6 +3499,7 @@ try {
     const s = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
     return s.active === 'current' && !s.tabs.find((t) => t.id === 'current').settledAt
   })
+  await settledSection.waitFor({ state: 'detached' })
   await lifecycleMenu().click()
   await lifecycle.getByText('Tab & page actions', { exact: true }).click()
   await lifecycle.locator('summary').filter({ hasText: 'Snooze tab' }).click()
@@ -3500,12 +3511,59 @@ try {
         (t) => t.id === 'current',
       )?.snoozedUntil,
   )
+  const snoozedSection = lifecycle.locator('[data-section="snoozed"]')
+  await snoozedSection.waitFor()
+  assert.match(await snoozedSection.locator(':scope > summary').innerText(), /^Snoozed\s+1$/)
   await lifecycle.clock.fastForward(3600000)
   await lifecycle.waitForFunction(
     () =>
       !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
         (t) => t.id === 'current',
       )?.snoozedUntil,
+  )
+  await snoozedSection.waitFor({ state: 'detached' })
+  const activeBeforePicker = (await lifecycleState()).active
+  const customWake = await lifecycle.evaluate(() => {
+    const date = new Date(Date.now() + 7200000)
+    date.setSeconds(0, 0)
+    return {
+      value: new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+      timestamp: date.getTime(),
+    }
+  })
+  const openSnoozePicker = async () => {
+    await lifecycle.locator('[data-browser-tab-id="current"]').click({ button: 'right' })
+    await lifecycle.getByRole('menuitem', { name: 'Choose date and time…', exact: true }).click()
+    await lifecycle.getByRole('dialog', { name: /^Snooze / }).waitFor()
+  }
+  await openSnoozePicker()
+  const picker = lifecycle.getByRole('dialog', { name: /^Snooze / })
+  await picker.getByLabel('Wake date and time').fill('2000-01-01T12:00')
+  await picker.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await picker.getByRole('alert').waitFor()
+  assert.equal(
+    (await lifecycleState()).tabs.find((tab) => tab.id === 'current').snoozedUntil,
+    undefined,
+  )
+  await picker.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(
+    (await lifecycleState()).active,
+    activeBeforePicker,
+    'Cancelling keeps the selected page',
+  )
+  await openSnoozePicker()
+  await picker.getByLabel('Wake date and time').fill(customWake.value)
+  await picker.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await picker.waitFor({ state: 'detached' })
+  assert.equal(
+    (await lifecycleState()).tabs.find((tab) => tab.id === 'current').snoozedUntil,
+    customWake.timestamp,
+    'Custom snooze uses the chosen local date and time for the menu target',
+  )
+  assert.equal(
+    (await lifecycleState()).active,
+    activeBeforePicker,
+    'Snoozing a background tab keeps the selected page',
   )
   await lifecycle.close()
   const custom = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -3995,6 +4053,7 @@ try {
     'Settle never selects another tab',
   )
   // Restore the selection used by the remaining page-permission checks.
+  await compactSidebar.locator('[data-section="settled"] > summary').click()
   await regularTab.locator('[data-browser-tab-select]').dispatchEvent('click')
   await pins.first().hover()
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-refined.png' })

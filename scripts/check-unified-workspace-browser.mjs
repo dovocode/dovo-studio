@@ -965,6 +965,14 @@ try {
     'Selecting a child highlights its owning root',
   )
   await page.getByLabel('Search workspace').fill('Grouping grandchild')
+  assert.equal(
+    await groupParent
+      .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
+      .count(),
+    0,
+    'Search starts with the parent result',
+  )
+  await page.keyboard.down('Alt')
   await groupParent
     .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
     .waitFor()
@@ -972,6 +980,10 @@ try {
     .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
     .click()
   await page.locator('[data-thread="group-grandchild"][data-owner="remote"]').waitFor()
+  await page.keyboard.up('Alt')
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
+    .waitFor({ state: 'detached' })
   await page.getByLabel('Search workspace').fill('')
   await groupParent
     .getByRole('button', { name: 'Subthreads for Grouping parent', exact: true })
@@ -1708,6 +1720,19 @@ try {
   await rowAction('LAN browser', 'Settle')
   await expandSection('Settled')
   await rowAction('LAN browser', 'Reopen')
+  await snoozeRow('LAN browser', 'Choose date and time…')
+  const customSnooze = page.getByRole('dialog', { name: 'Snooze LAN browser', exact: true })
+  await customSnooze.getByLabel('Wake date and time').fill('2099-11-10T09:30')
+  await customSnooze.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await expandSection('Snoozed')
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs[0].snoozedUntil,
+    ),
+    await page.evaluate(() => new Date('2099-11-10T09:30').getTime()),
+    'The unified tab menu preserves the chosen wake time',
+  )
+  await snoozeRow('LAN browser', 'Unsnooze')
   await snoozeRow('LAN browser')
   await expandSection('Snoozed')
   assert.ok(
