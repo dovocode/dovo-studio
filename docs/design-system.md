@@ -10,6 +10,9 @@ pnpm design:dev
 pnpm design:build
 ```
 
+The catalog prepares the generated mobile Terminal, Remote Desktop and Mermaid assets before
+building. It does not depend on a mobile build running first.
+
 The public catalog is hosted separately at `https://ui.dovo.studio`. Its deployment uses
 `apps/design-system/compose.dokploy.yaml` with the repository root as Docker build context. Only
 synthetic examples belong in the public catalog; never include account data or credentials. The
