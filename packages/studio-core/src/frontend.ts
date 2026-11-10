@@ -96,6 +96,7 @@ export interface StudioHostApi {
   threadWindow?: boolean
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
   browserWindowId?: string
+  browserPageOnly?: boolean
   openBrowserWindow?: () => Promise<void>
   /** Wake tab adoption immediately after a native browser-window handoff. */
   onBrowserWorkspaceFocus?: (listener: () => void) => () => void

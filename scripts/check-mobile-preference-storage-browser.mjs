@@ -9,12 +9,14 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';
 import {PreferenceStorageNotice} from './apps/mobile/src/runtime/preferences/storage-notice.tsx';
-import {preferencesReady,updateMobilePreferences,readMobilePreferenceStorage} from './apps/mobile/src/runtime/preferences/app-preferences.ts';
+import {preferencesReady,updateMobilePreferences,readMobilePreferenceStorage,readMobilePreferences} from './apps/mobile/src/runtime/preferences/app-preferences.ts';
 window.savedPreferences=[];
 window.failSave=true;
 window.ready=preferencesReady;
 window.editPreference=()=>updateMobilePreferences({keepScreenOn:true});
 window.storageStatus=readMobilePreferenceStorage;
+window.readPrefs=readMobilePreferences;
+window.setProjectVisibility=()=>updateMobilePreferences({pullProjectVisibility:{'github.com/team/one':'mine','github.com/team/two':'hidden'}});
 createRoot(document.getElementById('app')).render(<PreferenceStorageNotice/>);`,
       loader: 'tsx',
       resolveDir: root,
@@ -85,6 +87,15 @@ try {
       window.savedPreferences.map(({ taskSort, keepScreenOn }) => ({ taskSort, keepScreenOn })),
     ),
     [{ taskSort: 'title', keepScreenOn: true }],
+  )
+  assert.deepEqual(await page.evaluate(() => window.readPrefs().pullProjectVisibility), {})
+  await page.evaluate(() => window.setProjectVisibility())
+  await page.waitForFunction(
+    () => window.savedPreferences.at(-1)?.pullProjectVisibility?.['github.com/team/one'] === 'mine',
+  )
+  assert.deepEqual(
+    await page.evaluate(() => window.savedPreferences.at(-1).pullProjectVisibility),
+    { 'github.com/team/one': 'mine', 'github.com/team/two': 'hidden' },
   )
   assert.deepEqual(errors, [])
   console.log(

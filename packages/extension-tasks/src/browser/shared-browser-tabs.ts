@@ -21,6 +21,8 @@ export type BrowserTab = BrowserTabLifecycle & {
   detached?: string
   /** A moved page retains its native identity when this renderer reloads. */
   nativeKey?: string
+  /** New-page request waiting for a window destination. */
+  pendingWindow?: boolean
   homeUrl?: string
   /** Temporary page opened by a link; promotion keeps this exact page identity. */
   previewOf?: string
@@ -39,6 +41,7 @@ const tabSchema = Schema.Struct({
   pinned: Schema.optional(Schema.Boolean),
   detached: Schema.optional(Schema.String),
   nativeKey: Schema.optional(Schema.String),
+  pendingWindow: Schema.optional(Schema.Boolean),
   homeUrl: Schema.optional(Schema.String),
   thread: Schema.optional(
     Schema.Struct({ id: Schema.String, runtimeId: Schema.NullOr(Schema.String) }),

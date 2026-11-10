@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema, Semaphore } from 'effect'
 import {
   pullRepositoryKey,
+  type PullProjectVisibility,
   pullListCacheKey,
   retainNewerPullSnapshot,
   type PullPage,
@@ -51,12 +52,18 @@ const readPage = (source: PullSource, input: { state: string; page: number; refr
       pulls: response.pulls.map((pull) => ({ ...pull, destination: source.destination })),
     }
   })
-export function usePulls(state: string, repositoryId = '') {
+const defaultVisibility: PullProjectVisibility = {}
+export function usePulls(state: string, repositoryId = '', visibility = defaultVisibility) {
   const allSources = useRepositorySources()
   const origin = allSources.find((source) => source.key === repositoryId)
   const eligible = useMemo(
-    () => allSources.filter((source) => !repositoryId || source.key === repositoryId),
-    [allSources, repositoryId],
+    () =>
+      allSources.filter((source) =>
+        repositoryId
+          ? source.key === repositoryId
+          : visibility[pullRepositoryKey(source.repository, source.key)] !== 'hidden',
+      ),
+    [allSources, repositoryId, visibility],
   )
   const {
     sources: readers,
@@ -370,7 +377,23 @@ export function usePulls(state: string, repositoryId = '') {
   }
   return {
     sources: allSources,
-    pages,
+    pages: pages
+      .filter(
+        (page) =>
+          repositoryId ||
+          visibility[pullRepositoryKey(page.source.repository, page.source.key)] !== 'hidden',
+      )
+      .map((page) =>
+        visibility[pullRepositoryKey(page.source.repository, page.source.key)] === 'mine'
+          ? {
+              ...page,
+              pulls: page.pulls.filter((pull) => pull.viewerIsAuthor === true),
+              paginationNotice: page.pulls.some((pull) => pull.viewerIsAuthor === undefined)
+                ? 'Some PRs have no author relationship. Verify the project account to show your PRs.'
+                : page.paginationNotice,
+            }
+          : page,
+      ),
     busy,
     connected: sources.some((source) => source.reader.connected),
     chooseReader: async (key: string) => {

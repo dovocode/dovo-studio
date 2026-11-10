@@ -11,7 +11,7 @@ try {
     const mocks = {
       '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const encodeWorkTarget=JSON.stringify;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>{window.threadDestination=target},navigate:target=>{window.opened=JSON.parse(target.entityId).url;window.internal=true},openPullLink:url=>{if(url.includes('/pull/')){window.opened=url;window.internal=true;return true}return false},openExternalLink:url=>{window.opened=url;window.internal=false}});`,
       '@dovo/studio-ui':
-        'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;',
+        'export const Card=({children,...props})=><section {...props}>{children}</section>;export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;',
       '../../ui/layout/sheet': 'export const useSheetNavigation=()=>action=>action();',
       'expo-router': 'export const router={push:href=>{window.opened=href}};',
       '../../runtime/connection/provider':
@@ -21,7 +21,7 @@ try {
       '../../ui/controls/icon': 'export const Icon=()=> <span>×</span>;',
       '../../shell/navigation': 'export const useNavigation=()=>({focused:true});',
       'react-native':
-        'export const AppState={currentState:"active",addEventListener:()=>({remove(){}})};export const Keyboard={dismiss:()=>{}};export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title)) buttons.find(b=>b.style==="destructive").onPress()}};export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,disabled})=><button role={accessibilityRole} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;',
+        'export const ActivityIndicator=()=>null;export const ScrollView=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;export const AppState={currentState:"active",addEventListener:()=>({remove(){}})};export const Keyboard={dismiss:()=>{}};export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title)) buttons.find(b=>b.style==="destructive").onPress()}};export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,disabled})=><button role={accessibilityRole} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const View=({children,style,accessibilityLabel,accessibilityRole,accessibilityValue})=><div role={accessibilityRole} aria-label={accessibilityLabel} aria-valuemax={accessibilityValue?.max} aria-valuenow={accessibilityValue?.now}>{children}</div>;',
       '../../ui/content/text':
         'export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;',
       '../../ui/controls/action':
@@ -31,7 +31,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {StrictMode} from 'react';import {createRoot} from 'react-dom/client';import {TaskWaitingPanel} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-waiting-panel.tsx';const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<StrictMode><TaskWaitingPanel key={window.target} taskId={window.target} panel={window.panel}/></StrictMode>);window.render();`,
+        contents: `import {StrictMode} from 'react';import {createRoot} from 'react-dom/client';import {TaskPipelineProgress} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-pipeline-progress.tsx';import {TaskWaitingPanel} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-waiting-panel.tsx';const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<StrictMode>{window.showProgress?<TaskPipelineProgress key={window.target} taskId={window.target} active={true}/>:<TaskWaitingPanel key={window.target} taskId={window.target} panel={window.panel}/>}</StrictMode>);window.render();`,
         loader: 'tsx',
         resolveDir: root + 'packages/extension-tasks/',
       },
@@ -307,6 +307,44 @@ try {
       repositoryId: 'repo',
       target: 'child',
     })
+    await page.evaluate(() => {
+      window.showProgress = true
+      window.target = 'progress'
+      window.items = [
+        {
+          kind: 'pipeline',
+          repositoryId: 'repo',
+          target: '9',
+          label: 'Release',
+          project: 'Project',
+          url: 'https://github.com/team/project/actions/runs/9',
+          status: 'in_progress',
+          progress: { completed: 2, total: 4, partial: false },
+        },
+      ]
+      window.render()
+    })
+    const progress = page.getByRole('progressbar', { name: 'Release jobs' })
+    await progress.waitFor({ state: 'attached' })
+    assert.equal(await progress.getAttribute(mobile ? 'aria-valuenow' : 'value'), '2')
+    assert.match(await page.locator('#app').innerText(), /2\/4 jobs/)
+    await page.evaluate(() => {
+      window.items[0].progress.partial = true
+    })
+    await page.clock.fastForward(15001)
+    await page.waitForFunction(() => !document.body.textContent.includes('2/4 jobs'))
+    assert.equal(await progress.getAttribute(mobile ? 'aria-valuenow' : 'value'), null)
+    await page.evaluate(() => {
+      window.store.connected = false
+      window.render()
+    })
+    await page.getByText('Offline · Last known progress', { exact: true }).waitFor()
+    await page.evaluate(() => {
+      window.items = []
+      window.store.connected = true
+      window.render()
+    })
+    await page.getByLabel('Pipeline progress', { exact: true }).waitFor({ state: 'detached' })
     assert.deepEqual(errors, [])
     await page.close()
     console.log(

@@ -184,6 +184,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   )
   const historySearch = useTaskSearch(entries, query, focused)
   const searchKeys = JSON.stringify([...historySearch.keys].sort())
+  const searchFilter = useMemo(
+    () => (query ? { query, keys: historySearch.keys } : undefined),
+    [query, searchKeys],
+  )
   const projectGroups = useMemo(
     () =>
       projectMachineGroups(
@@ -964,6 +968,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 needsInput={item.entry.needsInput}
                 thread={tree.nodes.get(item.entry.key)}
                 searching={!!query}
+                search={searchFilter}
                 owner={rowData.get(item.entry.key)!.owner}
                 commands={rowCommands}
                 now={now}

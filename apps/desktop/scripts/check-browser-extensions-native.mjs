@@ -148,7 +148,7 @@ const browserModule = join(desktop, 'electron', 'browser.ts')
 write(
   join(work, 'harness', 'main.ts'),
   `import assert from 'node:assert/strict'
-import { app, BrowserWindow, dialog, session, webContents } from 'electron'
+import { app, BrowserWindow, dialog, nativeImage, session, webContents } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -287,6 +287,24 @@ app.whenReady().then(async () => {
         if(dynamicIcon===workIcon)await wait(50)
       }
       assert.notEqual(dynamicIcon,workIcon,'Dynamic inline favicons must replace the previous icon.')
+      stage('high resolution Apple icons')
+      await main.executeJavaScript(\`const apple=document.createElement('link');apple.rel='apple-touch-icon-precomposed';apple.sizes='180x180';apple.href='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><rect width="180" height="180" fill="purple"/></svg>');document.head.append(apple)\`)
+      let appleIcon=dynamicIcon
+      for(let attempt=0;attempt<60&&appleIcon===dynamicIcon;attempt++) {
+        appleIcon=await readFavicon(tab)
+        if(appleIcon===dynamicIcon)await wait(50)
+      }
+      assert.notEqual(appleIcon,dynamicIcon,'The larger Apple icon must replace the regular icon.')
+      const decodedApple=nativeImage.createFromDataURL(appleIcon)
+      assert.deepEqual(decodedApple.getSize(),{width:128,height:128})
+      assert.ok(appleIcon.length<100_000,'High resolution icons must fit the transport limit.')
+      await main.executeJavaScript(\`document.querySelector('link[rel="icon"]').remove();document.querySelector('link[rel="apple-touch-icon-precomposed"]').href='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><rect width="180" height="180" fill="orange"/></svg>')\`)
+      let changedApple=appleIcon
+      for(let attempt=0;attempt<60&&changedApple===appleIcon;attempt++) {
+        changedApple=await readFavicon(tab)
+        if(changedApple===appleIcon)await wait(50)
+      }
+      assert.notEqual(changedApple,appleIcon,'Apple-only pages must publish dynamic icon updates.')
       report.favicons=true
       stage('language')
       assert.deepEqual(await main.executeJavaScript('({language:navigator.language,languages:navigator.languages})'), {language:'nl-NL',languages:['nl-NL','nl']})

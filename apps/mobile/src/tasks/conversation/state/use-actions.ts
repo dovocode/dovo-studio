@@ -234,7 +234,8 @@ export function useConversationActions(task: Task) {
       editing?.revision,
       storedDraft.revision,
       composerHistory.index,
-      pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'
+      pendingMessage?.taskId === task.id &&
+      (pendingMessage.state === 'sending' || (pendingMessage.state === 'saved' && submitting))
         ? pendingMessage.message.id
         : null,
     ]),
@@ -243,6 +244,7 @@ export function useConversationActions(task: Task) {
       : sendingDraft(
           composerHistory.text,
           pendingMessage?.taskId === task.id ? pendingMessage : null,
+          submitting,
         ),
     update: dictation.update,
   }
@@ -580,6 +582,16 @@ export function useConversationActions(task: Task) {
           !task.queuePaused &&
           snapshot?.queuePausePreservationSupported === true,
       })
+      if (firstMessage) {
+        const summary =
+          text ||
+          `Work with attached files: ${task.draftAttachments?.map((file) => file.name).join(', ')}`
+        sendAttempts.setTitle(
+          scope,
+          attempt.id,
+          attempt.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task'),
+        )
+      }
       submittedId = attempt.id
       // Start suppression only after admission and validation, using the stable retry identity.
       if (startInBackground) {
@@ -611,18 +623,12 @@ export function useConversationActions(task: Task) {
         )
       }
       if (firstMessage) {
-        const summary =
-          text ||
-          `Work with attached files: ${task.draftAttachments?.map((file) => file.name).join(', ')}`
-        const title = attempt.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
-        sendAttempts.setTitle(scope, attempt.id, title)
-        yield* storedDraft.stageEffect(attempt)
         if (!snapshot?.messageSetupSupported)
           yield* patchEffect(
             {
               title: {
                 before: task.title,
-                after: title,
+                after: attempt.title,
               },
             },
             false,

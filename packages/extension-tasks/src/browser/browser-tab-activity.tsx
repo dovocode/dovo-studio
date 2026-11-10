@@ -2,7 +2,7 @@ import { Bot, Camera, Mic, ScreenShare, Volume2, VolumeX } from 'lucide-react'
 import { cn, IconButton } from '@dovo/studio-ui'
 import type { BrowserTabState } from '@dovo/protocol'
 
-/** Shared media signals and fixed pinned slots in both browser and unified sidebars. */
+/** Show only current media signals in browser and unified sidebars. */
 export function BrowserTabActivity({
   state,
   title,
@@ -36,7 +36,7 @@ export function BrowserTabActivity({
   return (
     <>
       {' '}
-      {(pinned || activityShown) && (
+      {activityShown && (
         <div
           aria-label={activityShown ? 'Tab activity' : undefined}
           aria-hidden={!activityShown || undefined}

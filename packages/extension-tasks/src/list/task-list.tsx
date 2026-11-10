@@ -9,6 +9,7 @@ import {
 } from '@dovo/protocol'
 import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
+import { useSearchSubthreads } from './use-search-subthreads'
 import { useTaskSearch } from './use-task-search'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import { flushSync } from 'react-dom'
@@ -329,6 +330,11 @@ export function TaskList({
   const deferredQuery = useDeferredValue(query)
   const search = useTaskSearch(allEntries, deferredQuery)
   const searchIdentity = JSON.stringify([...search.keys].sort())
+  const revealSearch = useSearchSubthreads(!!deferredQuery.trim())
+  const searchFilter = useMemo(
+    () => (deferredQuery.trim() ? { query: deferredQuery.trim(), keys: search.keys } : undefined),
+    [deferredQuery, searchIdentity],
+  )
   const tasks = useMemo(() => {
     const needle = deferredQuery.toLowerCase()
     return (
@@ -1021,6 +1027,8 @@ export function TaskList({
                     thread={threadTree.nodes.get(entry.key)}
                     selectedThreadKey={entry.key === selectedMainKey ? selectedId : undefined}
                     searching={!!deferredQuery.trim()}
+                    search={searchFilter}
+                    revealSearch={revealSearch}
                   />
                 )
               })

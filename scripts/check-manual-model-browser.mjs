@@ -35,6 +35,7 @@ const mocks = {
   `,
   '../../dialogs/harness-dialog': 'export const HarnessDialog=()=>null;',
   '@dovo/studio-ui': `
+export {Card} from '@dovo/web-ui/card';
 export {ConversationHistory,useConversationHistory,Conversation,ConversationContent,ConversationScrollButton} from '../studio-ui/src/components/ai-elements/conversation';
 export {permissionPolicyUIIssue} from './src/permission-policy-fields';
 export const SidebarHeader=()=>null;

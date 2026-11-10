@@ -25,6 +25,7 @@ const runtimeSyncError = (id: string, error: unknown) =>
   })
 contextBridge.exposeInMainWorld('dovo', {
   terminalPorts: true,
+  browserPageOnly: process.argv.includes('--dovo-browser-page'),
   defaultBrowser: {
     status: (): ReturnType<import('@dovo/protocol').DefaultBrowserBridge['status']> =>
       ipcRenderer.invoke('browser:default-status'),

@@ -64,7 +64,7 @@ const actionStubs = [
   {
     path: '../../draft/use-draft',
     importer: actions,
-    contents: `import {useState,useRef} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[text,setText]=useState(window.draftText??'');const[pendingRestore,setPendingRestore]=useState();const restore=useRef();return {key:'computer:settled',text,ready:true,pendingRestore,stageRestoreEffect:value=>Effect.sync(()=>{restore.current=value;setPendingRestore(value)}),confirmRestoreEffect:()=>Effect.sync(()=>{setText(text=>[text,restore.current?.text].filter(Boolean).join('\\n\\n'));setPendingRestore(undefined)}),discardRestoreEffect:()=>Effect.void,revision:text,update:value=>{window.draftText=value;setText(value)},appendEffect:value=>Effect.sync(()=>setText(text=>[text,value].filter(Boolean).join('\\n\\n'))),stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.sync(()=>{if(clear)setText(current=>current.trim()===_attempt.text?'':current)})}};`,
+    contents: `import {useState,useRef} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[text,setText]=useState(window.draftText??'');const[pendingRestore,setPendingRestore]=useState();const restore=useRef();return {key:'computer:settled',text,ready:true,pendingRestore,stageRestoreEffect:value=>Effect.sync(()=>{restore.current=value;setPendingRestore(value)}),confirmRestoreEffect:()=>Effect.sync(()=>{setText(text=>[text,restore.current?.text].filter(Boolean).join('\\n\\n'));setPendingRestore(undefined)}),discardRestoreEffect:()=>Effect.void,revision:text,update:value=>{window.draftText=value;setText(value)},appendEffect:value=>Effect.sync(()=>setText(text=>[text,value].filter(Boolean).join('\\n\\n'))),stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.tryPromise({try:async()=>{if(window.holdConfirm)await new Promise(resolve=>window.releaseConfirm=resolve);if(clear)setText(current=>current.trim()===_attempt.text?'':current)},catch:error=>error})}};`,
   },
   {
     path: '../../composer/attachment-picker',
@@ -228,6 +228,24 @@ async function backgroundSend(page) {
   })
 }
 try {
+  const delayed = await fixture(built)
+  await delayed.evaluate(() => {
+    window.localSend = true
+    window.holdConfirm = true
+  })
+  const delayedEditor = delayed.getByRole('textbox', { name: 'Message' })
+  await delayedEditor.fill('Keep submitted text hidden while saving')
+  await delayed.getByRole('button', { name: 'Send', exact: true }).click()
+  await delayed.waitForFunction(
+    () => !!window.releaseConfirm && window.actions.pendingMessage.state === 'saved',
+  )
+  assert.equal(await delayedEditor.inputValue(), '')
+  await delayedEditor.fill('New draft while delivery is pending')
+  await delayed.evaluate(() => window.releaseConfirm())
+  await delayed.waitForFunction(() => !window.actions.busy)
+  assert.equal(await delayedEditor.inputValue(), 'New draft while delivery is pending')
+  assert.equal(await delayed.evaluate(() => window.journal.length), 1)
+  await delayed.close()
   for (const mode of ['fast', 'stalled', 'offline']) {
     const local = await fixture(built)
     await local.evaluate((mode) => {

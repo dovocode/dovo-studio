@@ -720,7 +720,7 @@ export class TitleGeneration {
   }
   suggestNextPrompt(id: string, turnId: string) {
     if (!new RuntimePreferences(this.db, undefined, this.policy).get().suggestNextPrompt)
-      throw new HttpError(403, 'Enable Suggest next prompt in this computer’s settings first.')
+      throw new HttpError(403, 'Enable Tab completion in this computer’s settings first.')
     const task = this.store.task(id)
     const turn = task.turns?.at(-1)
     const harness = resolveTaskAgent(task, this.store.get().agents)

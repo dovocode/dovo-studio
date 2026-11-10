@@ -6,7 +6,6 @@ import {
   buildThreadTree,
   type NestedThread,
   indexTaskSubagents,
-  sideThreadAttention,
   projectSubagentList,
   type RuntimeOverview,
   type RuntimeProfile,
@@ -75,20 +74,6 @@ export function taskListProjection(
   for (const next of aggregateRuntimeTasks(overviews, now, true)) {
     const source = sources.get(next.runtimeId)
     if (!source) throw new Error('Task owner is missing from the list projection')
-    // Unsent side chats are managed from their parent, rather than bloating the main list.
-    // An orphan or a chat with input stays reachable here.
-    if (
-      next.task.sideThread &&
-      next.task.status === 'draft' &&
-      !next.task.turns?.length &&
-      !next.task.activeRunId &&
-      !next.task.queue?.length &&
-      !sideThreadAttention(source.snapshot, next.task.id) &&
-      source.snapshot?.workspace.tasks.some(
-        (task) => task.id === next.task.sideThread?.parentTaskId,
-      )
-    )
-      continue
     const repository = source.snapshot?.workspace.repositories.find(
       (repository) => repository.id === next.task.repositoryId,
     )

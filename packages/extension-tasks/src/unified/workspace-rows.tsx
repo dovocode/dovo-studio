@@ -19,6 +19,7 @@ import {
   browserTabKeepsAwake,
   type BrowserTabState,
   type RuntimeSnapshot,
+  type ThreadSearchFilter,
 } from '@dovo/protocol'
 import { BrowserTabActivity } from '../browser/browser-tab-activity'
 import { TaskRow } from '../list/task-row'
@@ -127,6 +128,8 @@ export function WorkspaceThreadRow({
   thread,
   selectedThreadKey,
   searching,
+  search,
+  revealSearch,
 }: RowShell & {
   task: Task
   owner: TaskOwner
@@ -135,6 +138,8 @@ export function WorkspaceThreadRow({
   thread?: NestedThread
   selectedThreadKey?: string
   searching: boolean
+  search?: ThreadSearchFilter
+  revealSearch?: boolean
 }) {
   const compact = task.archived || !!task.archivedAt
   return (
@@ -149,6 +154,8 @@ export function WorkspaceThreadRow({
         thread={thread}
         selectedThreadKey={selectedThreadKey}
         searching={searching}
+        search={search}
+        revealSearch={revealSearch}
         editable={false}
         disabled={disabled}
       />

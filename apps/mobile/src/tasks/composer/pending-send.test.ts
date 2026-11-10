@@ -43,9 +43,14 @@ it('keeps ordinary sends and steering in the thread, and accounts for an existin
 })
 it('clears the visible submitted text immediately while retaining it for failure recovery', () => {
   expect(sendingDraft(task.draft, pending)).toBe('')
+  expect(sendingDraft(task.draft, { ...pending, state: 'saved' }, true)).toBe('')
+  expect(sendingDraft(task.draft, { ...pending, state: 'saved' }, false)).toBe('Next message')
   expect(task.draft).toBe('Next message')
   expect(sendingDraft(task.draft, { ...pending, state: 'failed' })).toBe('Next message')
   expect(sendingDraft('Another follow-up', pending)).toBe('Another follow-up')
+  expect(sendingDraft('Another follow-up', { ...pending, state: 'saved' }, true)).toBe(
+    'Another follow-up',
+  )
   expect(visibleMobileSend({ ...task, id: 'another-thread' }, pending)).toBeNull()
 })
 

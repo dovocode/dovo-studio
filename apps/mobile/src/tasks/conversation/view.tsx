@@ -484,7 +484,7 @@ function Message() {
           {pendingMessage.state === 'failed'
             ? 'Not confirmed · retry from the composer'
             : pendingMessage.state === 'saved'
-              ? 'Saved · waiting for connection'
+              ? 'Saved · pending delivery'
               : 'Sending…'}
         </Text>
       )}

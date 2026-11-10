@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 import { chromium } from './browser/harness.mjs'
 
 // Real sidebar, rows, context menus, studio-ui and workspace value provider. Only the host,
@@ -14,8 +14,7 @@ const mocks = {
     'export const ProjectsMenu=()=>null;export const ProjectSettings=()=>null;',
   './section-order-dialog':
     'export const SectionOrderDialog=()=>{window.counts.list++;return null};',
-  '@dovo/studio-ui/runtime-icon':
-    'export const RuntimeIcon=()=>{window.counts.rows++;return <i data-row-icon=""/>};',
+  '@dovo/studio-ui/runtime-icon': `import {RuntimeIcon as ActualRuntimeIcon} from '${root}packages/studio-ui/src/runtime-icon.tsx';export const RuntimeIcon=props=>{window.counts.rows++;return window.previewIcons?<ActualRuntimeIcon {...props} data-row-icon=""/>:<i data-row-icon=""/>};`,
 }
 const built = await build({
   stdin: {
@@ -187,6 +186,26 @@ try {
     `${streaming.rows} row renders for 30 frames of one thread (${initial} rows mounted)`,
   )
 
+  const threadSearch = page.getByRole('textbox', { name: 'Search threads', exact: true })
+  await threadSearch.fill('Child thread')
+  await page.getByText('Parent thread', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).count(),
+    0,
+  )
+  await page.keyboard.down('Alt')
+  await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Native child', exact: true }).count(),
+    0,
+  )
+  await page.keyboard.up('Alt')
+  await page
+    .getByRole('button', { name: 'Open child thread Child thread', exact: true })
+    .waitFor({ state: 'detached' })
+  await threadSearch.fill('')
+  // Wait for the deferred filter to restore the full list before testing its controls.
+  await page.getByText('Running thread', { exact: true }).waitFor()
   const childToggle = page.getByRole('button', {
     name: 'Subthreads for Parent thread',
     exact: true,
@@ -197,6 +216,7 @@ try {
     0,
   )
   await childToggle.press('Enter')
+  assert.equal(await childToggle.getAttribute('aria-expanded'), 'true')
   assert.equal(await page.evaluate(() => window.selected), undefined)
   await page.evaluate(() => window.setMounted(false))
   await page.evaluate(() => window.setMounted(true))
@@ -1002,7 +1022,7 @@ try {
         .locator('[data-thread-branch]')
         .getAttribute('class')
         .then((value) => value.includes('font-mono')),
-      true,
+      false,
     )
     assert.equal(await indicator.locator('.studio-thread-status-icon').count(), 1)
     await assertStatusColors(indicator, tone)
@@ -1013,6 +1033,79 @@ try {
       )
     }
   }
+  const longBranch = 'dovo/look-further-into-opportunities-to-make-studio-more-like-t3-ece7c019'
+  await page.evaluate(
+    (branch) =>
+      window.publish(
+        window.tasks.map((task) =>
+          task.id === 'state-running' ? { ...task, checkoutBranch: branch } : task,
+        ),
+      ),
+    longBranch,
+  )
+  const branch = page
+    .locator('.studio-thread-card')
+    .filter({ has: page.getByText('State running', { exact: true }) })
+    .locator('[data-thread-branch]')
+  await branch.getByText(longBranch.slice(0, -8), { exact: true }).waitFor()
+  assert.equal(await branch.textContent(), longBranch)
+  assert.equal(await branch.getAttribute('title'), longBranch)
+  assert.equal(await branch.getAttribute('aria-label'), longBranch)
+  assert.equal(await branch.locator(':scope > span').last().textContent(), 'ece7c019')
+  const rowHierarchy = await branch.evaluate((node) => {
+    const card = node.closest('.studio-thread-card')
+    const icon = card.querySelector('.studio-thread-project-icon')
+    const title = card.querySelector('[data-thread-title]')
+    const top = card.querySelector('.studio-thread-card-context')
+    return {
+      iconInTopLine: top.contains(icon),
+      iconY: icon.getBoundingClientRect().y,
+      titleY: title.getBoundingClientRect().y,
+      branchY: node.getBoundingClientRect().y,
+      titleLeft: title.getBoundingClientRect().left,
+      metadataLeft: node.parentElement.getBoundingClientRect().left,
+      font: getComputedStyle(node).fontFamily,
+      titleFont: getComputedStyle(title).fontFamily,
+      size: Number.parseFloat(getComputedStyle(node).fontSize),
+      titleSize: Number.parseFloat(getComputedStyle(title).fontSize),
+    }
+  })
+  assert.equal(rowHierarchy.iconInTopLine, true)
+  assert.ok(rowHierarchy.iconY < rowHierarchy.titleY && rowHierarchy.titleY < rowHierarchy.branchY)
+  assert.ok(Math.abs(rowHierarchy.titleLeft - rowHierarchy.metadataLeft) < 1)
+  assert.equal(rowHierarchy.font, rowHierarchy.titleFont)
+  assert.ok(rowHierarchy.size < rowHierarchy.titleSize)
+  for (const width of [420, 300, 220]) {
+    await page.setViewportSize({ width, height: 700 })
+    await branch.locator(':scope > span[data-overflow]').waitFor()
+    const layout = await branch.evaluate((node) => ({
+      height: node.getBoundingClientRect().height,
+      lineHeight: Number.parseFloat(getComputedStyle(node).lineHeight),
+      ellipsis: getComputedStyle(node.lastElementChild, '::before').content,
+      prefixClip: getComputedStyle(node.firstElementChild).clipPath,
+      tailShift: getComputedStyle(node.lastElementChild).translate,
+    }))
+    assert.ok(
+      layout.height <= layout.lineHeight + 1,
+      `Branch must stay on one line at ${width}px: ${JSON.stringify(layout)}`,
+    )
+    assert.equal(layout.ellipsis, '"…"', 'The suffix owns the ellipsis, as in T3')
+    assert.notEqual(layout.prefixClip, 'none', 'Cut the prefix at a whole character')
+    assert.notEqual(layout.tailShift, 'none', 'Remove the gap before the suffix')
+  }
+  await page.setViewportSize({ width: 1280, height: 700 })
+  await page.waitForFunction(
+    () => !document.querySelector('[data-thread-branch] > [data-overflow]'),
+  )
+  assert.equal(
+    await branch
+      .locator(':scope > span')
+      .last()
+      .evaluate((node) => getComputedStyle(node, '::before').content),
+    'none',
+    'Remove the ellipsis when the full branch fits',
+  )
+  await page.setViewportSize({ width: 420, height: 700 })
   const draftStateRow = page
     .locator('.studio-thread-card')
     .filter({ has: page.getByText('State draft', { exact: true }) })
@@ -1025,6 +1118,63 @@ try {
   await page.keyboard.press('Enter')
   assert.equal(await reviewStateRow.getAttribute('aria-current'), 'true')
   assert.equal(await page.evaluate(() => window.selected.task.id), 'state-review')
+
+  if (process.env.DOVO_SIDEBAR_PREVIEWS) {
+    const directory = process.env.DOVO_SIDEBAR_PREVIEWS
+    mkdirSync(directory, { recursive: true })
+    await page.evaluate((longBranch) => {
+      window.previewIcons = true
+      window.setListPreferences({ taskGrouping: 'none', workingSection: false })
+      const base = window.tasks.find((task) => task.id === 'state-running')
+      window.publish([
+        {
+          ...base,
+          id: 'preview-running',
+          title: 'Deep dive into T3 opportunities',
+          checkoutBranch: longBranch,
+        },
+        {
+          ...base,
+          id: 'preview-restart',
+          title: 'Fix MacBook restart',
+          checkoutBranch: 'fix/macbook-restart',
+          status: 'review',
+          turns: [{ ...base.turns[0], status: 'completed', finishedAt: new Date().toISOString() }],
+        },
+        {
+          ...base,
+          id: 'preview-prs',
+          title: 'Show only my pull requests',
+          checkoutBranch: 'feature/my-pull-requests',
+          status: 'draft',
+          turns: [],
+        },
+        {
+          ...base,
+          id: 'preview-branch',
+          title: 'Keep branch names on one line',
+          checkoutBranch: 'main',
+          status: 'done',
+          turns: [{ ...base.turns[0], status: 'completed', finishedAt: new Date().toISOString() }],
+        },
+      ])
+    }, longBranch)
+    for (const [theme, width] of [
+      ['dark', 360],
+      ['dark', 240],
+      ['light', 360],
+    ]) {
+      await page.setViewportSize({ width, height: 520 })
+      await page.evaluate((theme) => {
+        document.documentElement.className = theme
+        document.documentElement.dataset.theme = theme
+        document.body.style.background = 'var(--sidebar)'
+      }, theme)
+      await page.getByText('Deep dive into T3 opportunities', { exact: true }).waitFor()
+      await page.mouse.move(width - 1, 519)
+      await page.screenshot({ path: `${directory}/sidebar-${theme}-${width}.png` })
+    }
+  }
 
   if (process.env.DOVO_UI_SCREENSHOT) {
     await page.evaluate(() => {

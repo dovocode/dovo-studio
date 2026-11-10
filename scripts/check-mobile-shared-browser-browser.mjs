@@ -20,6 +20,7 @@ export const Pressable=({children,onPress,accessibilityLabel,accessibilityRole,a
 export const Text=({children,style,accessibilityRole})=><div role={accessibilityRole} style={css(style)}>{children}</div>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id} disabled={i.disabled}>{i.name}</option>)}</select></label>;
+export const DateTimePicker=({value,onChange})=><input aria-label="Wake date and time" type="datetime-local" value={new Date(value.getTime()-value.getTimezoneOffset()*60000).toISOString().slice(0,16)} onChange={event=>onChange(new Date(event.target.value))}/>;
 export const Field=({label,value,onChangeText,onSubmitEditing,onFocus,onBlur})=><label>{label}<input aria-label={label} value={value} onFocus={onFocus} onBlur={onBlur} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}}/></label>;export const SearchField=Field;
 export const Sheet=forwardRef(({title,children,onClose},ref)=>{useImperativeHandle(ref,()=>({dismiss:cb=>{onClose();cb?.()}}));return <section role="dialog" aria-label={title}><h2>{title}</h2><button aria-label="Dismiss sheet" onClick={onClose}>Done</button>{children}</section>});
 export const ScreenHeader=({title,onBack})=><header><h1>{title}</h1>{onBack&&<button onClick={onBack}>Back</button>}</header>;
@@ -686,6 +687,11 @@ try {
   await nativeButton('Settle tab').click()
   await nativeButton('Tabs (2)').click()
   await nativePage.getByLabel('Tab category').selectOption('settled')
+  assert.equal(
+    await nativePage.getByLabel('Tab category').locator('option[value="snoozed"]').count(),
+    0,
+    'No empty Snoozed category',
+  )
   const settledId = await nativePage.evaluate(
     () =>
       JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.find((t) => t.settledAt).id,
@@ -700,6 +706,38 @@ try {
   await nativeButton('Snooze for 1 hour').click()
   await nativeButton('Tabs (2)').click()
   await nativePage.getByLabel('Tab category').selectOption('snoozed')
+  await nativePage
+    .getByRole('button', { name: /^Open / })
+    .first()
+    .click()
+  await nativePage.locator('[data-native-tab="' + originalTab + '"]').waitFor()
+  await nativeButton('Browser options').click()
+  await nativeButton('Choose date and time…').click()
+  const customSnoozeSheet = nativePage.getByRole('dialog', { name: /^Snooze / })
+  await customSnoozeSheet.getByLabel('Wake date and time').fill('2000-01-01T10:00')
+  await customSnoozeSheet.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await customSnoozeSheet.getByRole('alert').waitFor()
+  await customSnoozeSheet.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(
+    await nativePage.locator('[data-native-tab]').getAttribute('data-native-tab'),
+    originalTab,
+    'Cancel keeps the native page',
+  )
+  await nativeButton('Browser options').click()
+  await nativeButton('Choose date and time…').click()
+  await customSnoozeSheet.getByLabel('Wake date and time').fill('2099-11-10T09:30')
+  await customSnoozeSheet.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await nativeButton('Tabs (2)').click()
+  await nativePage.getByLabel('Tab category').selectOption('snoozed')
+  assert.equal(
+    await nativePage.evaluate(
+      (id) =>
+        JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.find((tab) => tab.id === id)
+          .snoozedUntil,
+      originalTab,
+    ),
+    await nativePage.evaluate(() => new Date('2099-11-10T09:30').getTime()),
+  )
   await nativePage
     .getByRole('button', { name: /^Open / })
     .first()

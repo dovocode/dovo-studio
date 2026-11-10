@@ -8,7 +8,7 @@ import {
   type RuntimeTask,
   type Subagent,
 } from '@dovo/protocol'
-import { taskListProjection } from './task-list-projection'
+import { taskListProjection, mobileThreadTree } from './task-list-projection'
 
 it('retains mobile pill data across native agent payload updates but refreshes visible activity', () => {
   const source = overview()
@@ -412,7 +412,7 @@ it('projects active terminals without retaining terminal payloads or changing un
   ).toBe(1)
 })
 
-it('keeps unused side drafts in their parent while surfacing input, started and orphaned chats', () => {
+it('keeps side chats searchable under their parent while surfacing input and orphaned chats', () => {
   const source = overview()
   const snapshot = source.snapshot!
   const parent = task('parent')
@@ -436,7 +436,12 @@ it('keeps unused side drafts in their parent while surfacing input, started and 
     },
   ]
   const key = JSON.stringify([source.profile.id, child.id])
-  expect(taskListProjection(publish([parent, child]), now).has(key)).toBe(false)
+  const sources = publish([parent, child])
+  const rows = taskListProjection(sources, now)
+  expect(rows.has(key)).toBe(true)
+  const tree = mobileThreadTree(rows, sources)
+  expect(tree.roots.map((entry) => entry.task.id)).toEqual([parent.id])
+  expect(tree.rootKeys.get(key)).toBe(JSON.stringify([source.profile.id, parent.id]))
   const waiting = taskListProjection(
     publish(
       [parent, child],

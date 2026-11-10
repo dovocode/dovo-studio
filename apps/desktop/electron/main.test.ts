@@ -25,6 +25,7 @@ const fixture = vi.hoisted(() => {
     }),
     quit: vi.fn<() => void>(),
     returnBrowserTabs: vi.fn<() => Promise<void>>(async () => {}),
+    launcherQuitting: vi.fn<(ready: boolean) => void>(),
     browserQuitting: vi.fn<(ready: boolean) => void>(),
     stop: vi.fn<() => Promise<void>>(async () => {}),
     error: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
@@ -112,7 +113,9 @@ vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undef
 vi.mock('./linux-desktop.js', () => ({
   registerLinuxDesktop: vi.fn<typeof import('./linux-desktop.js').registerLinuxDesktop>(),
 }))
-vi.mock('./task-launcher.js', () => ({ registerTaskLauncher: () => ({ dispose: () => {} }) }))
+vi.mock('./task-launcher.js', () => ({
+  registerTaskLauncher: () => ({ setQuitting: fixture.launcherQuitting, dispose: () => {} }),
+}))
 vi.mock('./terminal-ports.js', () => ({ registerTerminalPorts: () => ({ dispose: () => {} }) }))
 vi.mock('./updates.js', () => ({ registerUpdates: fixture.updates }))
 vi.mock('./browser.js', () => ({
@@ -454,6 +457,19 @@ it('keeps the runtime alive when update closing is cancelled and reopens after p
   expect(fixture.quit).toHaveBeenCalledTimes(quits)
   expect(fixture.windows).toBe(windows + 1)
   fixture.closeWindows.mockClear()
+})
+
+it('arms auxiliary panels before updater window closes and restores them on recovery', async () => {
+  const { prepareLocalRuntimeUpdate } = await import('./local-runtime')
+  const restore = vi.fn<() => Promise<void>>(async () => {})
+  vi.mocked(prepareLocalRuntimeUpdate).mockResolvedValueOnce(restore)
+  const prepare = fixture.prepareUpdate
+  if (!prepare) throw Error('Missing update preparation')
+  const recover = await prepare(async () => {})
+  expect(fixture.launcherQuitting).toHaveBeenLastCalledWith(true)
+  await recover()
+  expect(fixture.launcherQuitting).toHaveBeenLastCalledWith(false)
+  expect(restore).toHaveBeenCalledOnce()
 })
 
 it('keeps repeated quit requests blocked until detached tabs are saved, and permits retry on failure', async () => {

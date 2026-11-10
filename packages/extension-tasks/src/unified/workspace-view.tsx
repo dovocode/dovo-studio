@@ -8,6 +8,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
+import { useSearchSubthreads } from '../list/use-search-subthreads'
 import {
   ChevronDown,
   Globe2,
@@ -686,6 +687,11 @@ function WorkspaceContent() {
     }),
   ]
   const searching = !!search.trim()
+  const revealSearch = useSearchSubthreads(searching)
+  const threadSearch = useMemo(
+    () => (searching ? { query: search.trim(), keys: new Set<string>() } : undefined),
+    [search, searching],
+  )
   const threadKey = (resource: WorkspaceResource) =>
     taskCollectionKey(resource.tab.runtimeId, resource.tab.id)
   const listResources = resources.flatMap((resource): WorkspaceResource[] => {
@@ -764,6 +770,8 @@ function WorkspaceContent() {
         thread={threadTree.nodes.get(threadKey(resource))}
         selectedThreadKey={selectedThreadKey}
         searching={searching}
+        search={threadSearch}
+        revealSearch={revealSearch}
       />
     ) : row.kind === 'browser' ? (
       <WorkspacePageRow

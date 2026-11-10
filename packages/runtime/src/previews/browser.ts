@@ -1,4 +1,3 @@
-import { Schema } from 'effect'
 import {
   restoreBrowserSessionCookies,
   clearBrowserSessionCookies,
@@ -15,6 +14,7 @@ import {
   inspectBrowserElement,
   browserElementSnapshotSchema,
   browserElementSchema,
+  browserFaviconUpdateSchema,
   type BrowserElementPoint,
   STUDIO_BROWSER_SCOPE,
   isPrivateBrowserProfile,
@@ -745,16 +745,9 @@ export class RemoteBrowsers {
         faviconDocument = ''
         session.favicon = undefined
       })
-      const faviconUpdateSchema = Schema.Struct({
-        documentId: Schema.String.pipe(Schema.check(Schema.isMaxLength(100))),
-        url: Schema.String.pipe(Schema.check(Schema.isMaxLength(8192))),
-        icons: Schema.Array(Schema.String.pipe(Schema.check(Schema.isMaxLength(1500000)))).pipe(
-          Schema.check(Schema.isMaxLength(8)),
-        ),
-      })
       await page.exposeBinding('__dovoBrowserFavicon', (source, value: unknown) => {
         if (source.frame !== page.mainFrame()) return
-        const parsed = decodeResult(faviconUpdateSchema, value)
+        const parsed = decodeResult(browserFaviconUpdateSchema, value)
         if (!parsed.success || parsed.data.url !== page.url()) return
         if (faviconDocument !== parsed.data.documentId) {
           faviconDocument = parsed.data.documentId

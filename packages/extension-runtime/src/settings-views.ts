@@ -198,6 +198,7 @@ export const runtimeSettings: readonly StudioView[] = [
   {
     id: 'running-tasks',
     settingsFields: [
+      'Tab completion',
       'Tune & Maestro modes (experimental)',
       'Scope mode (experimental)',
       'Scope model mode',
@@ -215,7 +216,7 @@ export const runtimeSettings: readonly StudioView[] = [
     order: 3.1,
     settingsSection: 'coding',
     keywords:
-      'resume continue interrupted restart startup general scope tune maestro auto project selection model experimental archive inactive keep awake sleep caffeinate child agents subagent concurrent parallel limit',
+      'tab completion autocomplete suggest next prompt suggestions resume continue interrupted restart startup general scope tune maestro auto project selection model experimental archive inactive keep awake sleep caffeinate child agents subagent concurrent parallel limit',
     load: () => import('./running-tasks-view'),
   },
   {

@@ -1,7 +1,12 @@
-import { BrowserWindow, dialog } from 'electron'
+import { dialog, type BrowserWindow } from 'electron'
+
+const studioWindows = new Set<BrowserWindow>()
 
 /** Electron cancels beforeunload without a browser prompt. Ask explicitly for Studio windows. */
 export function registerWindowUnload(window: BrowserWindow) {
+  if (studioWindows.has(window)) return
+  studioWindows.add(window)
+  window.once('closed', () => studioWindows.delete(window))
   window.webContents.on('will-prevent-unload', (event) => {
     const response = dialog.showMessageBoxSync(window, {
       type: 'warning',
@@ -18,9 +23,10 @@ export function registerWindowUnload(window: BrowserWindow) {
   })
 }
 
-/** Close renderers before stopping the runtime. A cancelled close must leave saves usable. */
+/** Close document windows before stopping the runtime. Auxiliary panels hide on close and
+ * cannot finish this phase; Electron closes them when the installer actually quits the app. */
 export async function closeStudioWindows() {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of [...studioWindows]) {
     if (window.isDestroyed()) continue
     const contents = window.webContents
     const closed = await new Promise<boolean>((resolve) => {

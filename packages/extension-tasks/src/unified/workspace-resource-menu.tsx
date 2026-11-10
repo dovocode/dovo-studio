@@ -2,6 +2,8 @@ import { taskSnoozeMenuChoices } from '@dovo/protocol'
 import { useAppPreferences } from '@dovo/studio-core'
 import { Button, DropdownMenu, IconButton } from '@dovo/studio-ui'
 import { AlarmClock, Check, Pin, PinOff, Undo2 } from 'lucide-react'
+import { useState } from 'react'
+import { SnoozeDialog } from '../dialogs/snooze-dialog'
 
 export interface WorkspaceResourceMenuProps {
   title: string
@@ -31,12 +33,24 @@ export function WorkspaceResourceMenu({
   onSnooze,
 }: WorkspaceResourceMenuProps) {
   const { taskSnoozeMinutes, taskSnoozeSchedule } = useAppPreferences()
+  const [choosingSnooze, setChoosingSnooze] = useState(false)
   return (
     <div
       role="group"
       aria-label={`Actions for ${title}`}
       className="studio-thread-actions flex h-6 items-center gap-1"
     >
+      {choosingSnooze && (
+        <SnoozeDialog
+          name={title}
+          until={snoozedUntil ? Date.parse(snoozedUntil) : undefined}
+          onClose={() => setChoosingSnooze(false)}
+          onSnooze={(until) => {
+            if (disabled) throw new Error('This item cannot be snoozed now.')
+            onSnooze(new Date(until).toISOString())
+          }}
+        />
+      )}
       <IconButton
         type="button"
         label={`${pinned ? 'Unpin' : 'Pin'} ${title}`}
@@ -82,6 +96,9 @@ export function WorkspaceResourceMenu({
                   Unsnooze
                 </DropdownMenu.Item>
               )}
+              <DropdownMenu.Item className={itemClass} onSelect={() => setChoosingSnooze(true)}>
+                Choose date and time…
+              </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>

@@ -200,6 +200,7 @@ const browserBridge = registerBrowser(
   join(__dirname, 'preload.mjs'),
   {
     ...browserWindows,
+    isMain: (window) => window === mainWindow,
     main: async () => {
       if (!mainWindow || mainWindow.isDestroyed()) createWindow()
       const window = mainWindow
@@ -604,9 +605,14 @@ const startup = Effect.gen(function* () {
         const restore = await prepareLocalRuntimeUpdate(__dirname)
         quitting = true
         browserWindows.setQuitting(true)
+        // macOS quitAndInstall closes panels before app.before-quit is emitted.
+        taskLauncher.setQuitting(true)
+        inputPreview.setQuitting(true)
         return async () => {
           quitting = false
           browserWindows.setQuitting(false)
+          taskLauncher.setQuitting(false)
+          inputPreview.setQuitting(false)
           try {
             await restore()
           } finally {

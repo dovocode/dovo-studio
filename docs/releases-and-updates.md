@@ -39,6 +39,17 @@ version's local runtime at a time; opening the other version connects to the exi
 runtime without restarting it. Incompatible runtime protocol versions require a runtime update
 before the other app can connect.
 
+Update preparation closes Studio document windows with their draft guards. Auxiliary windows such as
+Quick task and Needs your input close during the final app quit. A hidden panel cannot block the
+restart by turning its close request into a hide action. Update preparation also sets each panel's
+quit flag before installation. macOS can close windows before it emits `before-quit`. Recovery
+restores the normal hide behavior if installation fails.
+
+Run `xvfb-run -a node scripts/check-file-drafts-native.mjs` on Linux to check draft cancellation,
+document shutdown and the actual Quick task panel's quit behavior in an isolated Electron profile.
+This check does not verify installation or restart on macOS. Test the signed update on a Mac to
+verify that boundary.
+
 After an external macOS app replacement, Studio can refresh an older background runtime from the
 same app path and release channel. It checks the authenticated runtime, the launchd PID, the exact
 entrypoint and the release version. It acquires a restart lease first. Running work defers this

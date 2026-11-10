@@ -1,4 +1,5 @@
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
+import { TaskPipelineProgress } from './task-pipeline-progress'
 import { ThreadSharing, InlineThreadSuggestions } from './thread-sharing'
 import { useTaskPanes } from '../../shell/task-panes'
 import { contentColumn } from '../../ui/layout/content-column'
@@ -1058,6 +1059,15 @@ function TaskDetailContent({
               onStartInBackground={startup?.onStartInBackground}
               renderAbove={(setup, startModes) => (
                 <Conversation setup={setup} startModes={startModes}>
+                  {!!task.watchCounts?.pipelines && (
+                    <View style={{ paddingHorizontal: 20 }}>
+                      <TaskPipelineProgress
+                        key={task.id}
+                        taskId={task.id}
+                        active={pane === 'chat' && focused}
+                      />
+                    </View>
+                  )}
                   {preparation ? (
                     <PreparationProgress
                       preparation={preparation}

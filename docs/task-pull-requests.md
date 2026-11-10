@@ -195,3 +195,26 @@ calls from older sessions; re-enabling resumes monitoring. Changing the thread�
 stops its watches. Removing a linked project or changing its access to read-only stops only that
 project’s watches; deleting the thread removes its watch records. Provider content is external data
 and does not override thread instructions.
+
+## Project visibility in the PR overview
+
+Open **PRs → Filters → Projects in overview**. Set each project to **All PRs**, **My PRs**, or
+**Hidden**. My PRs shows PRs authored by the account used to read that project. It filters loaded
+pages; use Load more for older PRs. If the runtime has no author relationship, Studio omits those
+PRs and shows a notice. It does not guess from an author's display name.
+
+Hidden projects do not make PR overview requests. They remain registered. Select one directly in the
+repository picker to browse it. Direct PR links still work. **Show all projects** resets the project
+choices. These choices save on this device. Copies of the same known repository on other computers
+use the same choice. Global PR filters still apply.
+
+Verify with:
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-pull-list-layout-browser.mjs
+node scripts/check-pr-read-continuity-browser.mjs
+node scripts/check-mobile-integration-continuity-browser.mjs
+node scripts/check-preference-storage-browser.mjs
+node scripts/check-mobile-preference-storage-browser.mjs
+```

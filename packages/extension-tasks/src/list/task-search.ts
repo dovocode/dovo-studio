@@ -1,5 +1,5 @@
 import type { TaskEntry } from './task-collection'
-import { taskSearchHit, taskSearchNeedle } from '@dovo/protocol'
+import { buildThreadTree, taskSearchHit, taskSearchNeedle } from '@dovo/protocol'
 
 /** Letters of the query in order, like "fxlg" for "Fix login"; undefined when they do not all
  * appear. Lower is better: earlier and tighter matches win. */
@@ -35,6 +35,25 @@ export function switcherResults(entries: readonly TaskEntry[], query: string, li
     .sort((a, b) => a.score - b.score || activity(b.entry).localeCompare(activity(a.entry)))
     .slice(0, limit)
     .map((item) => item.entry)
+}
+
+/** Rank parent groups before applying the cap, so children cannot crowd out parents. */
+export function switcherThreadGroups(entries: readonly TaskEntry[], query: string, limit = 30) {
+  const tree = buildThreadTree(entries)
+  const byKey = new Map(entries.map((entry) => [entry.key, entry]))
+  const groups = new Map<string, { entry: TaskEntry; matches: TaskEntry[] }>()
+  for (const match of switcherResults(entries, query, entries.length)) {
+    const rootKey = tree.rootKeys.get(match.key) ?? match.key
+    const parent = byKey.get(rootKey)
+    if (!parent) continue
+    let group = groups.get(rootKey)
+    if (!group) {
+      group = { entry: parent, matches: [] }
+      groups.set(rootKey, group)
+    }
+    if (query.trim() && match.key !== rootKey) group.matches.push(match)
+  }
+  return [...groups.values()].slice(0, limit)
 }
 
 export type MessageHit = { entry: TaskEntry; messageId: string; snippet: string; role: string }

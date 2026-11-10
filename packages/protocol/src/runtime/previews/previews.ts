@@ -267,6 +267,8 @@ export const browserCommandSchema = Schema.Union([
   mutableStruct({
     action: Schema.Literal('move-tab'),
     key: maxValue(minValue(Schema.String, 1), 500),
+    pageOnly: Schema.optional(Schema.Boolean),
+    targetMain: Schema.optional(Schema.Boolean),
     targetWindowId: Schema.optional(
       Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
     ),
@@ -594,7 +596,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       documentRevision?: number
       sitePermissions?: BrowserSitePermissions
       focusedWindowId?: number
-      windows?: { id: number; title: string }[]
+      windows?: { id: number; title: string; main?: boolean }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]
       /** Pinned shortcuts in this window whose page lives in a detached window. */
       detachedTabs?: string[]

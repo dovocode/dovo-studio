@@ -20,6 +20,10 @@ export function pendingQueue(
   const starting = startingConversationMessage(task)
   return pendingMessageQueue(task, pending).filter((message) => message.id !== starting?.id)
 }
-export function sendingDraft(text: string, pending: MobilePendingSend | null) {
-  return pending?.state === 'sending' && text.trim() === pending.message.text.trim() ? '' : text
+export function sendingDraft(text: string, pending: MobilePendingSend | null, submitting = false) {
+  return pending &&
+    (pending.state === 'sending' || (pending.state === 'saved' && submitting)) &&
+    text.trim() === pending.message.text.trim()
+    ? ''
+    : text
 }

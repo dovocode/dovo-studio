@@ -48,6 +48,14 @@ const stateSchema = z.object({
   sha: z.string(),
   status: z.enum(['watching', 'completed', 'stopped']),
   runStatus: z.string(),
+  title: z.string().optional(),
+  progress: z
+    .object({
+      completed: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+      partial: z.boolean(),
+    })
+    .optional(),
   failed: z.boolean().optional(),
   attempt: z.number().int().positive().optional(),
   notifiedStatus: z.string().optional(),
@@ -452,6 +460,13 @@ export class PipelineWatch {
               ? 'completed'
               : 'watching',
           runStatus: detail.run.status,
+          title: detail.run.title.slice(0, 300),
+          progress: {
+            completed: detail.jobs.filter((job) => pipelineSignal(job.status).phase === 'finished')
+              .length,
+            total: detail.jobs.length,
+            partial: !!detail.next,
+          },
           failed: hasFailedPart(detail) || pipelineSignal(detail.run.status).tone === 'danger',
           attempt: detail.run.attempt,
           // Registration returns the current result directly to the agent.
@@ -558,6 +573,14 @@ export class PipelineWatch {
           const next: State = {
             ...state,
             runStatus: detail.run.status,
+            title: detail.run.title.slice(0, 300),
+            progress: {
+              completed: detail.jobs.filter(
+                (job) => pipelineSignal(job.status).phase === 'finished',
+              ).length,
+              total: detail.jobs.length,
+              partial: !!detail.next,
+            },
             failed: failedPart || signal.tone === 'danger',
             attempt: detail.run.attempt,
             notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,

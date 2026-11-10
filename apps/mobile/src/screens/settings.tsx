@@ -190,7 +190,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           path: '/settings/task-behavior',
           group: 'Task workflow',
           keywords:
-            'restart resume interrupted sleep awake auto archive inactive maximum concurrent child agents limit experimental models tune maestro scope project supervised allow web requests approvals code reviews verification',
+            'tab completion autocomplete suggest next prompt suggestions restart resume interrupted sleep awake auto archive inactive maximum concurrent child agents limit experimental models tune maestro scope project supervised allow web requests approvals code reviews verification',
         },
         {
           title: 'Pull requests & pipelines',

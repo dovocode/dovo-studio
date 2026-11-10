@@ -31,6 +31,7 @@ const mocks = {
     export const formatDateTime=value=>value;
   `,
   '@dovo/studio-ui': `
+export {Card} from '@dovo/web-ui/card';
 export {ConversationHistory,useConversationHistory} from '../studio-ui/src/components/ai-elements/conversation';
 export {SearchField} from './src/search-field';
 export {permissionPolicyUIIssue} from './src/permission-policy-fields';

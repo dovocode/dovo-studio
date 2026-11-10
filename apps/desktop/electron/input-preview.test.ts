@@ -120,11 +120,12 @@ function event(index: number) {
 }
 async function fixture() {
   new BrowserWindow()
-  registerInputPreview('/app/index.html', '/app/preload.mjs')
+  const bridge = registerInputPreview('/app/index.html', '/app/preload.mjs')
   await f.handlers.get('input-preview:sync')?.(event(0), { enabled: true, items: [item] })
   const invoke = (name: string, value?: unknown) =>
     f.handlers.get(`input-preview:${name}`)?.(event(1), value)
   return {
+    bridge,
     invoke,
     sync: (items: unknown[], enabled = true) =>
       f.handlers.get('input-preview:sync')?.(event(0), { enabled, items }),
@@ -284,4 +285,16 @@ it('sends approvals directly and preserves server-side expiry and policy checks'
     'http://remote.local/api/approvals',
   )
   expect(f.windows[1].visible).toBe(false)
+})
+
+it('closes input panels during updater shutdown before app.before-quit', async () => {
+  const { bridge } = await fixture()
+  const close = f.windows[1].callbacks.get('close')!
+  const preventDefault = vi.fn<() => void>()
+  bridge.setQuitting(true)
+  Reflect.apply(close, undefined, [{ preventDefault, defaultPrevented: false }])
+  expect(preventDefault).not.toHaveBeenCalled()
+  bridge.setQuitting(false)
+  Reflect.apply(close, undefined, [{ preventDefault, defaultPrevented: false }])
+  expect(preventDefault).toHaveBeenCalledOnce()
 })

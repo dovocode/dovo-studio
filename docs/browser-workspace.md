@@ -6,6 +6,16 @@ puts the most recently visited tab first. Add a tab on this computer or a paired
 address or search terms, and choose a browser profile in **Browser options** for a separate session.
 Tabs retain their computer and profile when you switch the active runtime.
 
+The **Snoozed** and **Settled** tab sections use the thread section headers, counts and disclosure
+controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On
+mobile, the tab category picker hides **Snoozed** when no tabs are snoozed.
+
+Choose **Browser options → Tab & page actions → Snooze tab → Choose date and time…** to set a custom
+wake time on desktop/web. The tab context menu and the unified sidebar's Snooze menu have the same
+option. On mobile, choose **Browser options → Choose date and time…**. The picker uses the device's
+local time zone. Past times are rejected. Cancel keeps the page and tab state. A snoozed tab returns
+to the active list when its wake time arrives.
+
 Pinned tabs show a compact profile badge. Choose its emoji in **Settings → Browser → Local browser
 profiles** or **Remote browser profiles**; profiles without an emoji show initials. Pinning saves
 the current URL as the tab's home. Use the address-bar home button to return there, or right-click
@@ -157,7 +167,11 @@ tabs are throttled but retain their in-memory page and sign-in data until explic
 Links opened as temporary previews retain the original opener beneath them. **Expand preview** and
 **Contract preview** change the same live preview's size. Clicking the visible opener dismisses the
 preview chain and returns to that retained page; **Close preview** returns to the immediate opener.
-**Keep as tab** retains the preview as a normal tab without creating another session.
+**Keep as tab** retains the preview as a normal tab without creating another session. On desktop and
+web, the normal address bar keeps the opener's address while a preview is open. The floating preview
+has its own address bar. Select the normal toolbar to return to the opener before using its
+controls. Each toolbar controls its own page. Closing a preview also restores the opener's address
+draft.
 
 ## Link routing
 
@@ -388,6 +402,33 @@ Selecting a tab preserves its position; navigating moves it to the top of the re
 tabs, bookmarks and history show favicons when available, with a globe fallback. Remote localhost
 icons are never fetched from the local computer.
 
+Desktop and paired-runtime pages use declared regular icons, Apple touch icons and precomposed Apple
+touch icons. Larger declared sizes take priority; SVG and `sizes="any"` icons take first priority.
+Apple touch icons without a declared size take priority over ordinary icons with no size. The loader
+checks actual decoded sizes and upgrades a small icon when another candidate has more detail. It
+keeps a usable icon if later candidates fail. The owner decodes the image to PNG at up to 128 × 128
+pixels. Smaller raster images keep their size. ICO files use their largest image. Icon requests use
+the page's browser profile. The 1 MiB download limit and the 100,000-character viewer limit still
+apply.
+
+To check icon loading and the desktop preview layout, run:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/runtime... -r build
+pnpm test:browser-favicons:browser
+pnpm test:browser-tabs:browser
+node scripts/check-unified-workspace-browser.mjs
+node scripts/check-mobile-shared-browser-browser.mjs
+```
+
+The native icon check runs with `node apps/desktop/scripts/check-browser-extensions-native.mjs`. It
+needs Electron's Chromium sandbox and a display or Xvfb. The managed Chromium check verifies remote
+icon discovery. It does not verify Electron's preload or physical mobile devices. Mobile browser
+checks use adapters for the native date and time controls. Type checks validate the Expo UI
+contracts. Test the SwiftUI picker on iOS and the calendar and clock on Android before claiming
+physical-device verification.
+
 Detached Browser windows contain Browser controls only. Page and selection actions create or append
 an unsent draft, preserving existing draft text. In the main window, workspace synchronization does
 not block opening the draft; detached windows synchronize before opening a separate thread window.
@@ -406,3 +447,27 @@ VSCodium, Cursor, Windsurf, Antigravity, or Devin Desktop. The chosen editor mus
 support installed and the client must have SSH access. Missing SSH settings, unsupported remote
 targets and missing client applications produce explicit errors. Browser-only clients explain that
 the desktop app is required; they never silently launch an application on the server.
+
+### Pinned windows without sidebars
+
+Right-click a pinned tab and choose **Detach without sidebars**. The window shows the address bar,
+page controls and page. The existing **Detach to new window** option keeps the tab sidebar. Both
+options keep the same page and browser profile. Closing a detached pinned window returns its page to
+the source window.
+
+In a window without sidebars, new-page links (`target="_blank"` and `window.open`) open another
+window. Studio asks for **Main window**, **New window**, or another open browser window. A new
+window has no sidebars. The opener and any current preview stay open. Studio shows a notice in the
+source window. A failed move keeps the picker open for retry. Cancel closes only the child page.
+Local pages retain their native page and opener session; paired-runtime pages retain their runtime
+and profile. The normal browser workspace keeps its floating link previews.
+
+Verify with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/protocol build
+pnpm --filter @dovo/desktop build
+node scripts/check-shared-browser-browser.mjs
+pnpm exec vp test apps/desktop/electron/browser-window.test.ts apps/desktop/electron/browser.test.ts
+```

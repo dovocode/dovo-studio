@@ -16,6 +16,7 @@ import { WebView } from 'react-native-webview'
 import { BrowserSearchSettings } from './browser-search-settings'
 import { WebsiteCustomizationEditor } from './website-customization-editor'
 import { BrowserThreadPanel } from './browser-thread-panel'
+import { BrowserSnoozeSheet } from './browser-snooze-sheet'
 import {
   browserProfilesResultSchema,
   browserSelectionSchema,
@@ -115,6 +116,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const [source, setSource] = useState('device')
   const [clock, setClock] = useState(() => Date.now())
   const [tabCategory, setTabCategory] = useState<BrowserTabCategory>('active')
+  const [snoozingTab, setSnoozingTab] = useState<BrowserTab | null>(null)
   const [profiles, setProfiles] = useState<BrowserProfile[]>([{ id: 'default', name: 'Default' }])
   const [profilesOwner, setProfilesOwner] = useState<string | null>(null)
   const [profileApply, setProfileApply] = useState<{ scope: string; error: string }>()
@@ -143,6 +145,8 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     timer: ReturnType<typeof setTimeout>
   } | null>(null)
   const active = state.tabs.find((tab) => tab.id === state.active) ?? state.tabs[0]
+  const hasSnoozedTabs = state.tabs.some((tab) => browserTabCategory(tab, clock) === 'snoozed')
+  const visibleTabCategory = tabCategory === 'snoozed' && !hasSnoozedTabs ? 'active' : tabCategory
   const nativeOpening =
     nativeAvailable && active.kind === 'local' && nativeReady !== `${active.id}:${active.profileId}`
   const owner =
@@ -1416,6 +1420,15 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
           <Action
             secondary
+            label="Choose date and time…"
+            disabled={busy || active.pinned}
+            onPress={() => {
+              const tab = active
+              optionsSheet.current?.dismiss(() => setSnoozingTab(tab))
+            }}
+          />
+          <Action
+            secondary
             label={active.pinned ? 'Unpin tab' : 'Pin tab'}
             onPress={() => change((state) => togglePinnedTab(state, active.id))}
           />
@@ -1591,11 +1604,13 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             <>
               <Choice
                 label="Tab category"
-                value={tabCategory}
-                items={(['active', 'snoozed', 'settled'] as const).map((id) => ({
-                  id,
-                  name: `${id === 'active' ? 'Active' : id === 'snoozed' ? 'Snoozed' : 'Settled'} (${recentTabs(state.tabs).filter((tab) => browserTabCategory(tab, clock) === id).length})`,
-                }))}
+                value={visibleTabCategory}
+                items={(['active', 'snoozed', 'settled'] as const)
+                  .filter((id) => id !== 'snoozed' || hasSnoozedTabs)
+                  .map((id) => ({
+                    id,
+                    name: `${id === 'active' ? 'Active' : id === 'snoozed' ? 'Snoozed' : 'Settled'} (${recentTabs(state.tabs).filter((tab) => browserTabCategory(tab, clock) === id).length})`,
+                  }))}
                 onChange={(value) => {
                   if (value === 'active' || value === 'snoozed' || value === 'settled')
                     setTabCategory(value)
@@ -1603,7 +1618,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                 {recentTabs(state.tabs)
-                  .filter((tab) => browserTabCategory(tab, clock) === tabCategory)
+                  .filter((tab) => browserTabCategory(tab, clock) === visibleTabCategory)
                   .filter(matches)
                   .map((tab) => (
                     <View
@@ -1696,6 +1711,20 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             </>
           )}
         </Sheet>
+      )}
+      {snoozingTab && (
+        <BrowserSnoozeSheet
+          key={snoozingTab.id}
+          title={snoozingTab.title || 'tab'}
+          until={snoozingTab.snoozedUntil}
+          onClose={() => setSnoozingTab(null)}
+          onSnooze={(until) => {
+            const tab = current.current.tabs.find((item) => item.id === snoozingTab.id)
+            if (!tab) throw new Error('This tab is no longer open.')
+            if (tab.pinned) throw new Error('Unpin this tab before snoozing it.')
+            change((state) => moveBrowserTab(state, tab.id, randomUUID(), until))
+          }}
+        />
       )}
       {selection && (
         <Sheet

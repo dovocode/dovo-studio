@@ -200,6 +200,7 @@ describe('persistent draft ordering', () => {
       },
     })
     const partial = drafts.write('runtime-a.task', 'partial')
+    await vi.waitFor(() => expect(writes).toEqual(['partial']))
     const final = drafts.write('runtime-a.task', 'final transcript')
     const reopened = drafts.read('runtime-a.task')
     await vi.waitFor(() => expect(writes).toEqual(['partial']))
@@ -238,10 +239,8 @@ describe('persistent draft ordering', () => {
         await storage.setItem(key, value)
       },
     })
-    const failed = drafts.write('runtime.task', 'failed')
-    const succeeded = drafts.write('runtime.task', 'Recovered text')
-    await expect(failed).rejects.toThrow('Disk unavailable')
-    await succeeded
+    await expect(drafts.write('runtime.task', 'failed')).rejects.toThrow('Disk unavailable')
+    await drafts.write('runtime.task', 'Recovered text')
     expect(await drafts.read('runtime.task')).toBe('Recovered text')
   })
 
@@ -267,6 +266,125 @@ describe('persistent draft ordering', () => {
     await expect(drafts.read('runtime.task', 'legacy.task')).rejects.toThrow('Disk full')
     expect(values.get('legacy.task')).toBe('Legacy text')
   })
+})
+
+it('combines queued keystrokes but keeps a send record between earlier and later typing', async () => {
+  const storage = memoryStorage()
+  const blocked = gate()
+  const writes: string[] = []
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      writes.push(value)
+      if (value === 'first') await blocked.promise
+      await storage.setItem(key, value)
+    },
+  })
+  const first = drafts.write('task', 'first')
+  await vi.waitFor(() => expect(writes).toEqual(['first']))
+  const typing = Array.from({ length: 75 }, (_, index) => drafts.write('task', `typed ${index}`))
+  const attempt = { id: 'send', text: 'typed 74', attachmentIds: [], mode: 'queue' as const }
+  const staging = runClientEffect(drafts.stageEffect('task', attempt, attempt.text))
+  const later = drafts.write('task', 'Next message')
+  blocked.resolve()
+  await Promise.all([first, ...typing, staging, later])
+  expect(writes).toHaveLength(4)
+  expect(writes.slice(0, 2)).toEqual(['first', 'typed 74'])
+  const staged = JSON.parse(writes[2]!.slice('dovo-draft-record-v1:'.length))
+  expect(staged.text).toBe(attempt.text)
+  expect(staged.submission.attempt.id).toBe(attempt.id)
+  const reopened = await runClientEffect(createDraftStorage(storage).readRecordEffect('task'))
+  expect(reopened?.text).toBe('Next message')
+  expect(reopened?.submission?.attempt.id).toBe(attempt.id)
+})
+
+it('reports a failed combined write to all its callers and permits a later retry', async () => {
+  const storage = memoryStorage()
+  const blocked = gate()
+  const writes: string[] = []
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      writes.push(value)
+      if (value === 'first') await blocked.promise
+      if (value === 'latest') throw new Error('Disk unavailable')
+      await storage.setItem(key, value)
+    },
+  })
+  const first = drafts.write('task', 'first')
+  await vi.waitFor(() => expect(writes).toEqual(['first']))
+  const outcomes = Promise.allSettled([
+    drafts.write('task', 'earlier'),
+    drafts.write('task', 'latest'),
+  ])
+  blocked.resolve()
+  await first
+  expect((await outcomes).map((outcome) => outcome.status)).toEqual(['rejected', 'rejected'])
+  expect(writes).toEqual(['first', 'latest'])
+  await drafts.write('task', 'Recovered')
+  expect(await createDraftStorage(storage).read('task')).toBe('Recovered')
+})
+
+it('retries after the initial combined draft load fails', async () => {
+  const storage = memoryStorage()
+  const blocked = gate()
+  let fail = true
+  const drafts = createDraftStorage({
+    ...storage,
+    getItem: async (key) => {
+      await blocked.promise
+      if (fail) throw new Error('Storage unavailable')
+      return storage.getItem(key)
+    },
+  })
+  const outcomes = Promise.allSettled([
+    drafts.write('task', 'First'),
+    drafts.write('task', 'Latest'),
+  ])
+  blocked.resolve()
+  expect((await outcomes).map((outcome) => outcome.status)).toEqual(['rejected', 'rejected'])
+  fail = false
+  await drafts.write('task', 'Retry')
+  expect(await createDraftStorage(storage).read('task')).toBe('Retry')
+})
+
+it('retries accepted-send persistence after a failed confirmation without clearing new input', async () => {
+  const storage = memoryStorage()
+  let fail = false
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      if (fail) throw new Error('Disk full')
+      await storage.setItem(key, value)
+    },
+  })
+  const attempt = { id: 'send', text: 'Hello', attachmentIds: [], mode: 'queue' as const }
+  await runClientEffect(drafts.stageEffect('task', attempt, attempt.text))
+  fail = true
+  await expect(runClientEffect(drafts.confirmEffect('task', attempt, true))).rejects.toThrow(
+    'Disk full',
+  )
+  fail = false
+  await runClientEffect(drafts.confirmEffect('task', attempt, true))
+  const reopened = await runClientEffect(createDraftStorage(storage).readRecordEffect('task'))
+  expect(reopened?.text).toBe('')
+  expect(reopened?.submission?.accepted).toBe(true)
+  await drafts.write('task', 'Next message')
+  await runClientEffect(drafts.confirmEffect('task', attempt, true))
+  expect(await createDraftStorage(storage).read('task')).toBe('Next message')
+})
+
+it('does not rewrite an already durable accepted send when its snapshot confirms it again', async () => {
+  const storage = memoryStorage()
+  const save = vi.spyOn(storage, 'setItem')
+  const drafts = createDraftStorage(storage)
+  const attempt = { id: 'send', text: 'Hello', attachmentIds: [], mode: 'queue' as const }
+  await runClientEffect(drafts.stageEffect('task', attempt, attempt.text))
+  await runClientEffect(drafts.confirmEffect('task', attempt, true))
+  save.mockClear()
+  await runClientEffect(drafts.confirmEffect('task', attempt, true))
+  expect(save).not.toHaveBeenCalled()
+  expect(await createDraftStorage(storage).read('task')).toBe('')
 })
 
 it('keeps a native write serialized after its owning fiber is interrupted', async () => {

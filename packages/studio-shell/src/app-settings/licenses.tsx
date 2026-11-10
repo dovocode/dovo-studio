@@ -6,10 +6,12 @@ import shadcn from '../../../studio-ui/licenses/shadcn-ui.txt?raw'
 import simulatorProtocols from '../../../../docs/licenses/simulator-protocols.md?raw'
 import idb from '../../../../docs/licenses/idb-MIT.txt?raw'
 import apache from '../../../../docs/licenses/Apache-2.0.txt?raw'
+import t3MiddleTruncate from '../../../../docs/licenses/t3-code-MIT.txt?raw'
 import { SettingRow } from './layout'
 const notices = [
   ['AI Elements', aiElements],
   ['shadcn/ui', shadcn],
+  ['T3 Code middle truncation', t3MiddleTruncate],
   ['Simulator protocols', simulatorProtocols],
   ['idb companion', idb],
   ['Apache License 2.0', apache],

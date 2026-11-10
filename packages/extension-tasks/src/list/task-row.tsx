@@ -1,9 +1,12 @@
 import { ThreadWatchSummary } from './thread-watch-summary'
+import { MiddleTruncate } from './middle-truncate'
 import { NestedThreads } from './nested-threads'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import type { NestedThread } from './thread-tree'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
+  matchingThreadChildren,
+  type ThreadSearchFilter,
   threadChildRows,
   threadNativeAgents,
   pullStackLabel,
@@ -79,6 +82,8 @@ function TaskRowView({
   thread,
   selectedThreadKey,
   searching,
+  search,
+  revealSearch,
 }: {
   task: Task
   selected: boolean
@@ -95,6 +100,8 @@ function TaskRowView({
   thread?: NestedThread
   selectedThreadKey?: string
   searching?: boolean
+  search?: ThreadSearchFilter
+  revealSearch?: boolean
 }) {
   const activeTerminals = terminals + taskBackgroundTerminalCount(task)
   const terminalIndicator = activeTerminals > 0 && (
@@ -110,7 +117,10 @@ function TaskRowView({
     () => readTaskListViewState(studioHost).threadExpansion?.[parentKey] ?? false,
   )
   const [hovered, setHovered] = useState(false)
-  const open = !!searching || expanded || hovered
+  const [expandedSearch, setExpandedSearch] = useState<string>()
+  const open = searching
+    ? !!revealSearch || (expandedSearch !== undefined && expandedSearch === search?.query)
+    : expanded || hovered
   const repository = owner.repositories.find((r) => r.id === task.repositoryId)
   const displayProject = taskDisplayProject(task, owner.repositories)
   const general = repository?.kind === 'scratch'
@@ -140,7 +150,13 @@ function TaskRowView({
       thread,
     ],
   )
-  const childRows = useMemo(() => threadChildRows(rootThread), [rootThread])
+  const childRows = useMemo(
+    () =>
+      search
+        ? matchingThreadChildren(threadChildRows(rootThread), search)
+        : threadChildRows(rootThread),
+    [rootThread, search],
+  )
   const summary = useMemo(
     () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
     [childRows, task.acknowledgedSubagentFailures],
@@ -167,15 +183,9 @@ function TaskRowView({
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
-      <MessageCircleDashed
-        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-5')}
-        aria-hidden="true"
-      />
+      <MessageCircleDashed className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
     ) : (
-      <ProjectIcon
-        repository={displayProject}
-        className={cn('shrink-0', compact ? 'size-4' : 'size-5 rounded-[5px] text-[10px]')}
-      />
+      <ProjectIcon repository={displayProject} className="size-4 shrink-0 rounded-sm text-[10px]" />
     )
   const latest = task.turns?.at(-1)
   const provider =
@@ -308,9 +318,9 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              <span className={cn('studio-thread-project-icon shrink-0', !compact && 'pt-0.5')}>
-                {projectIcon}
-              </span>
+              {compact && (
+                <span className="studio-thread-project-icon shrink-0">{projectIcon}</span>
+              )}
               <span
                 className={cn(
                   'studio-thread-card-body flex min-w-0 flex-1',
@@ -325,6 +335,9 @@ function TaskRowView({
                         'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                     )}
                   >
+                    <span className="studio-thread-project-icon inline-flex shrink-0 items-center justify-center">
+                      {projectIcon}
+                    </span>
                     <span
                       className="min-w-0 flex-1 truncate"
                       data-thread-copy=""
@@ -382,17 +395,15 @@ function TaskRowView({
                 {!compact && !general && (
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
-                    <span
-                      className={cn('min-w-0 flex-1 truncate text-left', branch && 'font-mono')}
-                      dir={branch ? 'rtl' : undefined}
+                    <MiddleTruncate
+                      value={branch || 'Local checkout'}
+                      className="flex-1 text-left"
+                      aria-label={branch || 'Local checkout'}
                       data-thread-branch
                       data-thread-copy=""
-                    >
-                      {/* Keep the branch tail visible without reversing its text or metadata. */}
-                      <bdi dir="ltr">{branch || 'Local checkout'}</bdi>
-                    </span>
+                    />
                     {pullIndicators}
-                    <span className="flex items-center gap-1">
+                    <span className="ml-auto inline-flex shrink-0 items-center gap-1">
                       {executionIcons}
                       {terminalIndicator}
                     </span>
@@ -483,10 +494,15 @@ function TaskRowView({
             aria-expanded={open}
             aria-controls={open ? childrenId : undefined}
             title={childrenDetail}
-            disabled={searching}
-            onMouseEnter={() => setHovered(true)}
+            onMouseEnter={() => {
+              if (!searching) setHovered(true)
+            }}
             onClick={(event) => {
               event.stopPropagation()
+              if (searching) {
+                setExpandedSearch(open ? undefined : search?.query)
+                return
+              }
               // A hover preview becomes pinned on click; clicking again closes it.
               const next = !expanded
               setHovered(false)

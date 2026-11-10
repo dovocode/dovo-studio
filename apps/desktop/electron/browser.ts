@@ -18,6 +18,7 @@ import {
   dismissDocumentPipWindow,
 } from './browser-document-pip.js'
 import { loadBrowserFaviconModule } from './browser-favicon.js'
+import { createNativeFaviconObserver } from './browser-favicon-observer.js'
 import {
   selectedBrowserText,
   readBrowserElementSnapshot,
@@ -60,7 +61,7 @@ import {
 import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
-const { createBrowserFaviconLoader } = loadBrowserFaviconModule(
+const { createBrowserFaviconLoader, observeBrowserFavicons } = loadBrowserFaviconModule(
   app.isPackaged ? process.resourcesPath : undefined,
 )
 
@@ -233,7 +234,9 @@ export function registerBrowser(
   directory?: string,
   preload?: string,
   browserWindows?: {
-    create: () => Promise<BrowserWindow>
+    create: (pageOnly?: boolean) => Promise<BrowserWindow>
+    pageOnly?: (window: BrowserWindow) => boolean
+    isMain?: (window: BrowserWindow) => boolean
     list: () => BrowserWindow[]
     main?: () => Promise<BrowserWindow>
   },
@@ -293,6 +296,7 @@ export function registerBrowser(
       })
     })
   const sessionCookies = createBrowserSessionCookies()
+  const faviconObserver = createNativeFaviconObserver(observeBrowserFavicons)
   const routingSessions = new Set<Electron.Session>()
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
@@ -964,6 +968,7 @@ export function registerBrowser(
         .catch((error: unknown) => console.error('Could not apply website customization', error))
     })
     let faviconCandidates: string[] = []
+    let declaredFavicons: readonly string[] | undefined
     let navigationRevision = 0
     const faviconLoader = createBrowserFaviconLoader(
       (url, signal) => view.webContents.session.fetch(url, { signal, credentials: 'include' }),
@@ -982,14 +987,19 @@ export function registerBrowser(
       navigationRevision++
       faviconLoader.reset()
       faviconCandidates = []
+      declaredFavicons = undefined
       created.favicon = undefined
     })
     view.webContents.on('page-favicon-updated', (_event, icons) => {
       faviconCandidates = icons
-      void faviconLoader.load(view.webContents.getURL(), icons)
+      void faviconLoader.load(view.webContents.getURL(), declaredFavicons ?? icons)
+    })
+    faviconObserver.attach(view.webContents, (url, icons) => {
+      declaredFavicons = icons
+      void faviconLoader.load(url, icons)
     })
     view.webContents.on('did-finish-load', () => {
-      void faviconLoader.load(view.webContents.getURL(), faviconCandidates)
+      void faviconLoader.load(view.webContents.getURL(), declaredFavicons ?? faviconCandidates)
       void renderBrowserJson(view.webContents)
         .catch((error: unknown) => {
           if (!view.webContents.isDestroyed()) console.error('Could not format browser JSON', error)
@@ -1332,7 +1342,8 @@ export function registerBrowser(
         }
       }
       if (details.frameName?.startsWith(DOCUMENT_PIP_NAME)) return { action: 'deny' }
-      if (details.postBody) {
+      const pageOnly = browserWindows?.pageOnly?.(created.window) ?? false
+      if (details.postBody && !pageOnly) {
         // Never replay a form POST as a GET tab; load it here, or refuse it visibly.
         const url = openableUrl(details.url)
         const options = url && postNavigation(details)
@@ -1347,9 +1358,9 @@ export function registerBrowser(
         return { action: 'deny' }
       }
       // Explicit link-domain preferences also apply to window.open popup requests.
-      if (openableUrl(details.url) && routeProfileLink(created, details.url))
+      if (!details.postBody && openableUrl(details.url) && routeProfileLink(created, details.url))
         return { action: 'deny' }
-      if (popupRequest(details) && openableUrl(details.url)) {
+      if (!pageOnly && popupRequest(details) && openableUrl(details.url)) {
         if (created.popups.size >= MAX_POPUPS) return { action: 'deny' }
         // The popup keeps the opener's session (profile) and sandbox; it never gets Node.
         return {
@@ -1935,11 +1946,20 @@ export function registerBrowser(
         .map((other) => {
           const page = views.get(activeViews.get(other.id)?.key ?? '')
           const title = page?.view.webContents.getTitle() || other.getTitle() || 'Dovo Browser'
-          return { id: other.id, title: `${title} · Window ${other.id}` }
+          return {
+            id: other.id,
+            title: `${title} · Window ${other.id}`,
+            ...(browserWindows?.isMain?.(other) ? { main: true } : {}),
+          }
         })
       return { url: '', back: false, forward: false, windows }
     }
     if (command.action === 'move-tab') {
+      if (
+        (command.pageOnly && (command.targetWindowId !== undefined || command.targetMain)) ||
+        (command.targetMain && command.targetWindowId !== undefined)
+      )
+        throw new Error('Choose one destination for this browser tab.')
       const validateSource = () => {
         if (
           window.isDestroyed() ||
@@ -1956,9 +1976,10 @@ export function registerBrowser(
       }
       // Reject a stale or fullscreen source before creating an otherwise empty destination.
       validateSource()
-      const target =
-        command.targetWindowId === undefined
-          ? await browserWindows?.create()
+      const target = command.targetMain
+        ? await browserWindows?.main?.()
+        : command.targetWindowId === undefined
+          ? await browserWindows?.create(command.pageOnly)
           : [...workspaces, ...(browserWindows?.list() ?? [])].find(
               (other) => other.id === command.targetWindowId,
             )
@@ -2594,6 +2615,7 @@ export function registerBrowser(
     dispose: async () => {
       disposed = true
       visibility.dispose()
+      faviconObserver.dispose()
       for (const browserSession of routingSessions) browserSession.webRequest.onBeforeRequest(null)
       routingSessions.clear()
       awakeRequests.clear()

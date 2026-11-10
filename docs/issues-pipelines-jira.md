@@ -314,3 +314,28 @@ On macOS, ACLI's default configuration root is `~/.config`, so Dovo reads
 `token` field in YAML: Dovo isolates the selected account metadata and ACLI uses its credential
 store. Inline encrypted-token profiles retain their existing private renewal cache. Account/site
 checks and the isolated-configuration capability probe apply to both.
+
+## Pipeline progress in chat
+
+Threads with active pipeline watches show an Opaline card inside the chat on desktop/web and mobile.
+The card follows the latest messages and scrolls with the conversation. Each run shows its name,
+status, link and completed-job count. This count measures jobs, not elapsed time. A queued run,
+empty job list or partial job list has no percentage. The runtime uses its existing watcher
+requests. The chat reads saved progress every 15 seconds while visible. It stops reading when no
+pipeline watch remains.
+
+Completed or stopped watches leave the chat card. A read error retains the last confirmed counts and
+shows the error. Offline watches show their last known state. Older runtimes can show run status
+without job counts. Pipeline links open through the normal browser link flow.
+
+Verify with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm exec vp test packages/runtime/src/scm/tasks/pipeline-watch.test.ts packages/runtime/src/http/endpoints/task-waiting.test.ts
+node scripts/check-task-waiting-browser.mjs
+node scripts/check-thread-scroll-browser.mjs
+node scripts/check-mobile-draft-transition-browser.mjs
+```
+
+The browser checks mock native phone controls. They do not verify a physical phone or a live forge.

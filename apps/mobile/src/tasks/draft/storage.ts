@@ -83,11 +83,15 @@ export function createDraftStorage(storage: Storage) {
   const records = new Map<string, DraftRecord | null>()
   // Text already published to the composer may be ahead of serialized disk writes.
   const publishedText = new Map<string, string>()
+  const pendingWrites = new Map<string, { text: string; revision: number; done?: Promise<void> }>()
   let revision = 0
   const appendedAt = new Map<string, number>()
   const dirty = new Set<string>()
-  const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>) =>
+  const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>, coalescing = false) =>
     Effect.suspend(() => {
+      // Reads, appends and delivery records separate text batches. Later typing must
+      // never move across one of these operations when old keystrokes are combined.
+      if (!coalescing) pendingWrites.delete(key)
       const lock = locks.get(key) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
       locks.set(key, lock)
       lock.users++
@@ -166,19 +170,42 @@ export function createDraftStorage(storage: Storage) {
       listeners.get(key)?.forEach((listener) => {
         if (listener !== origin) listener(value)
       })
-      return serialize(
-        key,
-        Effect.gen(function* () {
-          // An append includes all text published before it, including queued keystrokes.
-          if (writing < (appendedAt.get(key) ?? 0)) return
-          const previous = yield* load(key)
-          yield* save(key, {
-            ...previous,
-            text: value,
-            submission: previous?.submission?.accepted ? undefined : previous?.submission,
-          })
-        }),
+      const pending = pendingWrites.get(key)
+      const pendingDone = pending?.done
+      if (pending && pendingDone) {
+        pending.text = value
+        pending.revision = writing
+        return nativeEffect(() => pendingDone)
+      }
+      const batch: { text: string; revision: number; done?: Promise<void> } = {
+        text: value,
+        revision: writing,
+      }
+      pendingWrites.set(key, batch)
+      const done = Effect.runPromise(
+        serialize(
+          key,
+          Effect.gen(function* () {
+            const previous = yield* load(key)
+            if (pendingWrites.get(key) === batch) pendingWrites.delete(key)
+            if (batch.revision < (appendedAt.get(key) ?? 0)) return
+            yield* save(key, {
+              ...previous,
+              text: batch.text,
+              submission: previous?.submission?.accepted ? undefined : previous?.submission,
+            })
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (pendingWrites.get(key) === batch) pendingWrites.delete(key)
+              }),
+            ),
+          ),
+          true,
+        ),
       )
+      batch.done = done
+      return nativeEffect(() => done)
     })
   const appendEffect = (
     key: string,
@@ -355,6 +382,7 @@ export function createDraftStorage(storage: Storage) {
         if (!previous || previous.submission?.attempt.id !== attempt.id) return
         const current = publishedText.get(key) ?? previous.text
         const text = clear && current.trim() === attempt.text ? '' : current
+        if (previous.submission.accepted && previous.text === text && !dirty.has(key)) return
         const next = { ...previous, text, submission: { ...previous.submission, accepted: true } }
         // Publish before awaiting storage, retaining the accepted record in memory if saving fails.
         if (text !== current) {

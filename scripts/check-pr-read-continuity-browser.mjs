@@ -29,7 +29,7 @@ const readRuntimeEffect=(_profile,path,input,schema)=>Effect.tryPromise({try:asy
   window.reads.push({path,input});
   if(path==='/api/scm/pulls/overview'){
     if(input.page===2)await new Promise(resolve=>window.releaseReads.push(resolve));
-    return decode(schema,{pulls:[{number:input.page,title:'PR '+input.page,url:'https://github.com/team/project/pull/'+input.page,state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-27',head:'feature',base:'main',labels:[]}],page:input.page,hasMore:input.page===1});
+    return decode(schema,{pulls:[{number:input.page,title:'PR '+input.page,url:'https://github.com/team/project/pull/'+input.page,state:'open',draft:false,author:'Dominic',viewerIsAuthor:input.page===1,updatedAt:'2026-10-27',head:'feature',base:'main',labels:[]}],page:input.page,hasMore:input.page===1});
   }
   if(input.section==='overview')await new Promise(resolve=>window.releaseReads.push(resolve));
   return decode(schema,{destination:'destination',pull:{number:7,title:'Loaded PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-27',head:'feature',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:1,deletions:0,changedFiles:1,mergeable:true,reviewers:[],assignees:[]},files:[],comments:[],checks:[],warnings:[]});
@@ -37,7 +37,7 @@ const readRuntimeEffect=(_profile,path,input,schema)=>Effect.tryPromise({try:asy
 const readRuntime=(...args)=>Effect.runPromise(readRuntimeEffect(...args));
 const requestEffect=(...args)=>readRuntimeEffect(profile,...args);
 function View(){const result=usePullDetail('repo',7);window.detail=result;window.rendered++;return <p>{result.detail?.pull.title??'Loading PR'}</p>}
-function List(){const result=usePulls('open');window.list=result;window.rendered++;return <div>{result.pages.flatMap(page=>page.pulls.map(pull=><p key={page.source.key+pull.number}>{pull.title}</p>))}</div>}
+function List(){const result=usePulls('open',window.selectedRepository??'',window.visibility??{});window.list=result;window.rendered++;return <div>{result.pages.flatMap(page=>page.pulls.map(pull=><p key={page.source.key+pull.number}>{pull.title}</p>))}</div>}
 function App(){const[revision,setRevision]=useState(0);window.changeUnrelatedProject=()=>setRevision(value=>value+1);
  const workspace={version:1,runtimeAddress:'',repositories:[{id:'repo',name:'Project',path:'/project',branch:'main',gitIdentity:'github.com/team/project'}, {id:'other',name:'Other project',path:'/other',branch:'feature-'+revision}],tasks:[],agents:[],automations:[]};
  const snapshot={revision,workspace};
@@ -138,6 +138,46 @@ try {
     for (const release of window.releaseReads) release()
   })
   await listPage.getByText('PR 2', { exact: true }).first().waitFor()
+  await listPage.evaluate(() => {
+    window.visibility = { 'github.com/team/project': 'mine' }
+    window.changeUnrelatedProject()
+  })
+  await listPage.getByText('PR 2', { exact: true }).waitFor({ state: 'detached' })
+  await listPage.getByText('PR 1', { exact: true }).first().waitFor()
+  await listPage.evaluate(() => {
+    window.visibility = { 'github.com/team/project': 'hidden' }
+    window.changeUnrelatedProject()
+  })
+  await listPage.waitForFunction(
+    () =>
+      !window.list.pages.some(
+        (page) => page.source.repository.gitIdentity === 'github.com/team/project',
+      ),
+  )
+  const readsHidden = await listPage.evaluate(
+    () => window.reads.filter((read) => read.input.repositoryId === 'repo').length,
+  )
+  await listPage.clock.fastForward(60001)
+  assert.equal(
+    await listPage.evaluate(
+      () => window.reads.filter((read) => read.input.repositoryId === 'repo').length,
+    ),
+    readsHidden,
+    'Hidden projects do not poll',
+  )
+  await listPage.evaluate(() => {
+    window.selectedRepository = window.list.sources.find(
+      (source) => source.repository.id === 'repo',
+    ).key
+    window.changeUnrelatedProject()
+  })
+  await listPage.getByText('PR 1', { exact: true }).first().waitFor()
+  await listPage.evaluate(() => {
+    window.selectedRepository = ''
+    window.visibility = {}
+    window.changeUnrelatedProject()
+  })
+  await listPage.getByText('PR 1', { exact: true }).first().waitFor()
   await listPage.close()
   assert.deepEqual(errors, [])
   console.log(
