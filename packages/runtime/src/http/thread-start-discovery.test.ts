@@ -8,7 +8,7 @@ import { fixture } from '../testing/fixture.js'
 
 vi.setConfig(runtimeIntegration)
 
-it.each(['complete', 'fail', 'cancel'] as const)(
+it.each(['complete', 'fail', 'cancel', 'pause-queue', 'pause-head'] as const)(
   'acknowledges and owns a held model selection through %s',
   async (outcome) => {
     const token = 'model-selection-owner-token-at-least-32-characters'
@@ -100,17 +100,27 @@ it.each(['complete', 'fail', 'cancel'] as const)(
           draft: 'My next prompt',
         }))
       }
+      if (outcome === 'pause-queue') s.tasks.queue.change(task.id, 'pause')
+      if (outcome === 'pause-head') s.tasks.queue.setPaused(task.id, 'first', true)
       release()
       expect(cancellationStatus).toBe(outcome === 'cancel' ? 200 : undefined)
       expect(utilitySignal?.aborted).toBe(outcome === 'cancel')
-      await waitForRuntime(() => expect(s.tasks.hasWorkingFamily(task.id)).toBe(false))
+      await waitForRuntime(() => expect(s.store.taskSummary(task.id).activeRunId).toBeUndefined())
       const settled = s.store.taskSummary(task.id)
-      expect(settled.status).toBe(
-        outcome === 'complete' ? 'review' : outcome === 'fail' ? 'failed' : 'cancelled',
-      )
+      const statuses = {
+        complete: 'review',
+        fail: 'failed',
+        cancel: 'cancelled',
+        'pause-queue': 'draft',
+        'pause-head': 'draft',
+      }
+      expect(settled.status).toBe(statuses[outcome])
       expect(run).toHaveBeenCalledTimes(outcome === 'complete' ? 2 : 1)
       expect(settled.queue?.[0]?.id).toBe(outcome === 'complete' ? undefined : 'first')
-      expect(settled.modelSelection).toBe(outcome === 'complete' ? undefined : 'auto')
+      expect(settled.modelSelection).toBe(
+        outcome === 'fail' || outcome === 'cancel' ? 'auto' : undefined,
+      )
+      expect(settled.queue?.[0]?.paused).toBe(outcome === 'pause-head' ? true : undefined)
       expect(settled.title).toBe(outcome === 'cancel' ? 'Work' : 'Keep my title')
       expect(settled.draft).toBe(outcome === 'cancel' ? '' : 'My next prompt')
     } finally {

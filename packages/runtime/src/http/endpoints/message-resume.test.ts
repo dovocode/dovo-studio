@@ -455,9 +455,14 @@ it('automatic additions respect a paused head without pausing the whole queue', 
   ])
 })
 
-it.each(['queue', 'head'] as const)(
-  'rechecks a %s pause made while automatic startup awaits model resolution',
-  async (pause) => {
+it.each([
+  { pause: 'queue', held: 'model' },
+  { pause: 'head', held: 'model' },
+  { pause: 'queue', held: 'checkout' },
+  { pause: 'head', held: 'checkout' },
+] as const)(
+  'honors a $pause pause after acknowledging Send while $held preparation is held',
+  async ({ pause, held }) => {
     const s = await setup()
     const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
     vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
@@ -466,14 +471,24 @@ it.each(['queue', 'head'] as const)(
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    vi.spyOn(ModelSelection.prototype, 'resolveEffect').mockImplementation((_id, text) =>
-      text !== undefined
-        ? Effect.void
-        : Effect.promise(async () => {
-            entered = true
-            await gate
-          }),
-    )
+    const prepare = s.checkouts.directory.bind(s.checkouts)
+    const directory = vi.spyOn(s.checkouts, 'directory')
+    if (held === 'model')
+      vi.spyOn(ModelSelection.prototype, 'resolveEffect').mockImplementation((_id, text) =>
+        text !== undefined
+          ? Effect.void
+          : Effect.promise(async () => {
+              entered = true
+              await gate
+            }),
+      )
+    else {
+      directory.mockImplementation(async (...args) => {
+        entered = true
+        await gate
+        return prepare(...args)
+      })
+    }
     const sending = s.post('message', {
       id: s.task.id,
       messageId: 'automatic',
@@ -482,13 +497,18 @@ it.each(['queue', 'head'] as const)(
     })
     try {
       await waitForRuntime(() => expect(entered).toBe(true))
+      expect((await sending).status).toBe(200)
+      expect(s.store.task(s.task.id).activeRunId).toBeDefined()
       if (pause === 'queue') s.tasks.queue.change(s.task.id, 'pause')
       else s.tasks.queue.setPaused(s.task.id, 'automatic', true)
       release()
-      expect((await sending).status).toBe(200)
+      await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
       expect(run).not.toHaveBeenCalled()
       const task = s.store.task(s.task.id)
       expect(task.activeRunId).toBeUndefined()
+      expect(task.status).toBe('draft')
+      expect(task.error).toBeUndefined()
+      expect(directory).toHaveBeenCalledTimes(held === 'model' ? 0 : 1)
       expect(task.queue?.map((message) => message.id)).toEqual(['automatic'])
       expect(pause === 'queue' ? task.queuePaused : task.queue?.[0]?.paused).toBe(true)
     } finally {

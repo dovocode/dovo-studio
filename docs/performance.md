@@ -14,6 +14,11 @@ Failures keep the accepted message in the queue for recovery. Progress and error
 thread. Preparation no longer holds the HTTP response or the client's sender for other threads.
 Internal callers that need a prepared checkout still wait for it.
 
+Pausing the queue or its first message during model selection leaves the message queued and stops
+checkout preparation. A pause during checkout also prevents the provider turn. Pausing does not
+invalidate the model choice. Stop still cancels selection, while Send now and steering retain their
+explicit delivery behavior.
+
 Scope project selection still finishes before admission. Queue-only staging also resolves its model
 before returning. The selected model, reasoning level and project policy stay the same. A local
 trace before the change showed about 4.9 seconds in automatic model selection before queue
@@ -29,7 +34,7 @@ return at once. Transport failures still wait briefly for the process exit reaso
 Run these checks:
 
 ```sh
-pnpm exec vp test packages/runtime/src/http/thread-start-discovery.test.ts packages/runtime/src/agents/tasks/model-selection.test.ts packages/runtime/src/agents/tasks/tasks.test.ts
+pnpm exec vp test packages/runtime/src/http/thread-start-discovery.test.ts packages/runtime/src/http/endpoints/message-resume.test.ts packages/runtime/src/http/endpoints/setup-routes.test.ts packages/runtime/src/http/endpoints/queue-routes.test.ts packages/runtime/src/agents/tasks/model-selection.test.ts packages/runtime/src/agents/tasks/tasks.test.ts
 ```
 
 The HTTP tests hold checkout preparation until after Send returns. They check completion, failure

@@ -44,28 +44,28 @@ type Candidate = {
 
 // Once Send saves a prompt, draft edits and title/view updates are independent of
 // that selection. Compare its input and execution choices, rather than all UI state.
-const selectionState = (task: Task, text?: string) => ({
-  repositoryId: task.repositoryId,
-  autoProject: task.autoProject,
-  linkedCheckouts: task.linkedCheckouts,
-  pendingLinkedCheckouts: task.pendingLinkedCheckouts,
-  execution: task.execution,
-  existingWorktreePath: task.existingWorktreePath,
-  agentId: task.agentId,
-  harness: task.harness,
-  agentOverrides: task.agentOverrides,
-  modelSelection: task.modelSelection,
-  modelSelectionDifficulty: task.modelSelectionDifficulty,
-  sessionId: task.sessionId,
-  delegation: task.delegation,
-  turns: task.turns?.length,
-  message: nextQueuedMessage(task) ?? task.messages.find((message) => message.role === 'user'),
-  draft:
-    text ??
-    (nextQueuedMessage(task) || task.messages.some((message) => message.role === 'user')
-      ? undefined
-      : task.draft),
-})
+const selectionState = (task: Task, text?: string) => {
+  // Pausing changes delivery, not the prompt used for this model choice.
+  const message = task.queue?.[0] ?? task.messages.find((message) => message.role === 'user')
+  return {
+    repositoryId: task.repositoryId,
+    autoProject: task.autoProject,
+    linkedCheckouts: task.linkedCheckouts,
+    pendingLinkedCheckouts: task.pendingLinkedCheckouts,
+    execution: task.execution,
+    existingWorktreePath: task.existingWorktreePath,
+    agentId: task.agentId,
+    harness: task.harness,
+    agentOverrides: task.agentOverrides,
+    modelSelection: task.modelSelection,
+    modelSelectionDifficulty: task.modelSelectionDifficulty,
+    sessionId: task.sessionId,
+    delegation: task.delegation,
+    turns: task.turns?.length,
+    message: message && { ...message, paused: undefined },
+    draft: text ?? (message ? undefined : task.draft),
+  }
+}
 
 /** Resolves only pending first-turn modes. The durable concrete harness owns later turns. */
 export class ModelSelection {

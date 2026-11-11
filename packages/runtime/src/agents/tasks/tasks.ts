@@ -2054,6 +2054,27 @@ export class Tasks {
             // cancel its utility model before checkout or coding work starts.
             if (preparation === 'accepted') yield* selectModel(run.controller.signal)
             yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
+            // Send already returned. A pause made during model selection must stop
+            // preparation without consuming the saved message or creating a checkout.
+            const selected = this.store.taskSummary(id)
+            if (
+              !retryFailed &&
+              !pauseQueue &&
+              !directMessageId &&
+              !resumeInterruptedTurn &&
+              task.runPhase !== 'finalizing' &&
+              (selected.queuePaused || selected.queue?.[0]?.paused)
+            ) {
+              this.store.updateTask(id, (current) => ({
+                ...current,
+                status: task.status,
+                runPhase: undefined,
+                preparation: undefined,
+                activity: undefined,
+              }))
+              yield* Deferred.succeed(ready, undefined)
+              return
+            }
             const cwd = yield* runtimeOperation(() =>
               this.checkouts.directory(id, run.controller.signal),
             )
@@ -2153,10 +2174,11 @@ export class Tasks {
               yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
               if (
                 (recoveringQueue && !hasAgentInput(this.store.taskSummary(id))) ||
-                (!(firstAttempt && (retryFailed || directMessageId)) &&
+                (!(firstAttempt && (retryFailed || directMessageId || pauseQueue)) &&
                   !resumeInterruptedTurn &&
                   this.store.taskSummary(id).queue?.length &&
-                  !hasAgentInput(this.store.taskSummary(id)))
+                  (this.store.taskSummary(id).queuePaused ||
+                    !hasAgentInput(this.store.taskSummary(id))))
               ) {
                 this.store.updateTask(id, (current) => ({
                   ...current,

@@ -12,6 +12,7 @@ import {
 import { startRuntime } from '../../index'
 import { RuntimeDefaults } from '../../storage/runtime-defaults'
 import type { AgentAdapter } from '../../agents/execution/types'
+import { waitForRuntime } from '../../testing/integration'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -412,7 +413,7 @@ it.each(['plain', 'progress', 'fenced'] as const)(
   },
 )
 
-it('resolves a Maestro default before accepting the first message and keeps the concrete choice', async () => {
+it('resolves a Maestro default after accepting the first message and keeps the concrete choice', async () => {
   const { runtime, options } = await setup()
   const s = runtime.services
   s.preferences.save({ ...s.preferences.get(), enableSmartModelSelection: true })
@@ -462,6 +463,7 @@ it('resolves a Maestro default before accepting the first message and keeps the 
       body: JSON.stringify({ id: task.id, messageId, text: 'Explain this project' }),
     })
   expect((await send('first')).status).toBe(200)
+  await waitForRuntime(() => expect(s.tasks.hasWorkingFamily(task.id)).toBe(false))
   expect(s.store.task(task.id)).toMatchObject({ harness: { provider: 'codex', model: 'small' } })
   expect(s.store.task(task.id).modelSelection).toBeUndefined()
   expect((await send('first')).status).toBe(200)
