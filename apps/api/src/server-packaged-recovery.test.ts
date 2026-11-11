@@ -418,7 +418,11 @@ database.close()
   }
 }
 
-const runLauncher = promisify(execFile)
+const executeLauncher = promisify(execFile)
+// A rollback boot loads both the candidate and retained CLI in separate processes.
+// Leave time for both cold module graphs on a busy macOS runner.
+const runLauncher = (launcher: string, directory: string) =>
+  executeLauncher(launcher, ['service', 'run', '--data-dir', directory], { timeout: 30_000 })
 
 it('commits a healthy candidate through the packaged service launcher', async () => {
   const f = await fixture({ sameRecord: true })
@@ -439,7 +443,7 @@ setInterval(() => { if (!existsSync(${JSON.stringify(f.record)})) process.exit(0
 `,
   )
   await crash(f, 'verify', '2.0.0')
-  await runLauncher(f.candidate, ['service', 'run', '--data-dir', f.directory], { timeout: 15_000 })
+  await runLauncher(f.candidate, f.directory)
   expect(existsSync(f.record)).toBe(false)
   expect(readlinkSync(f.link)).toBe(f.publicLauncher)
   expect(realpathSync(f.link)).toBe(f.candidate)
@@ -459,13 +463,15 @@ process.exit(1)
 `,
   )
   await crash(f, 'verify')
-  await expect(
-    runLauncher(f.candidate, ['service', 'run', '--data-dir', f.directory], { timeout: 15_000 }),
-  ).rejects.toThrow(/Command failed/)
+  // Require the candidate's exit status; a killed/timed-out launcher is not a failed migration.
+  await expect(runLauncher(f.candidate, f.directory)).rejects.toMatchObject({
+    code: 1,
+    killed: false,
+  })
   expect(JSON.parse(readFileSync(f.record, 'utf8')).phase).toBe('rolling-back')
   expect(value(f.databasePath)).toBe('failed boot migration')
-  await runLauncher(f.candidate, ['service', 'run', '--data-dir', f.directory], { timeout: 15_000 })
+  await runLauncher(f.candidate, f.directory)
   expect(readFileSync(join(f.directory, 'old-started'), 'utf8')).toBe('before update')
   expect(readlinkSync(f.link)).toBe(f.previous)
   expect(existsSync(f.record)).toBe(false)
-})
+}, 90_000)

@@ -71,6 +71,8 @@ async function fixture(databasePath = ':memory:') {
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>
 
+// Includes three peer exchanges and repeated SQLite shutdown, restore and startup.
+// The outer deadline must cover both six-second recovery waits and cleanup.
 it('recovers through a retained runtime pairing and persists peer sources in SQLite', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-runtime-restore-'))
   const path = join(directory, 'runtime.sqlite'),
@@ -148,7 +150,7 @@ it('recovers through a retained runtime pairing and persists peer sources in SQL
     await b.close()
     await rm(directory, { recursive: true, force: true })
   }
-})
+}, 20_000)
 
 it('resumes after backup rollback, keeps device access and recovers newer peer history without running it', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-replication-restore-'))
