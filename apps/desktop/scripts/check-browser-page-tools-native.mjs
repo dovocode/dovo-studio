@@ -29,6 +29,7 @@ import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(join(desktop, 'electron/browser.ts'))}
 import { registerBrowserWindows } from ${JSON.stringify(join(desktop, 'electron/browser-window.ts'))}
+import { studioContents } from ${JSON.stringify(join(desktop, 'electron/studio-window.ts'))}
 void (async () => {
 const work = process.env.SMOKE_DIR!
 app.setPath('userData', join(work, 'user-data'))
@@ -72,7 +73,7 @@ const bridge = registerBrowser(index,undefined,undefined,{
   main:async()=>studio,
   create:async()=>{
     const target=await windows.create()
-    await target.webContents.executeJavaScript('window.bridge.browser('+JSON.stringify(placeholder)+')')
+    await studioContents(target).executeJavaScript('window.bridge.browser('+JSON.stringify(placeholder)+')')
     return target
   },
 })
@@ -298,12 +299,12 @@ try {
   assert.ok(detached.contentView.children.includes(live),'Detaching reparents the existing native view')
   assert.equal(live.webContents.id,liveId)
   assert.equal(await live.webContents.executeJavaScript('window.unsentDraft'),'keep this exact document')
-  const moved = await detached.webContents.executeJavaScript('window.bridge.browser('+JSON.stringify({action:'status',key:'workspace-live',tabCount:1})+')')
+  const moved = await studioContents(detached).executeJavaScript('window.bridge.browser('+JSON.stringify({action:'status',key:'workspace-live',tabCount:1})+')')
   assert.deepEqual(moved.movedTabs.map(item=>item.tab.id),['live','sleeping','remote'])
   assert.equal(moved.movedTabs[0].tab.pinned,true)
   assert.equal(moved.focusedTabKey,'workspace-live')
   await call(placeholder)
-  await detached.webContents.executeJavaScript('window.bridge.browser('+JSON.stringify({action:'sync-tabs',key:'workspace',tabs:moved.movedTabs,activeId:'live'})+')')
+  await studioContents(detached).executeJavaScript('window.bridge.browser('+JSON.stringify({action:'sync-tabs',key:'workspace',tabs:moved.movedTabs,activeId:'live'})+')')
   const closed = new Promise<void>(resolve=>detached.once('closed',()=>resolve()))
   detached.close()
   for(let i=0;i<100 && !studio.contentView.children.includes(live);i++) await wait(20)
