@@ -124,7 +124,7 @@ it.skipIf(process.env.DOVO_TEST_REAL_SSH !== '1')(
         return fetch(url, init)
       })
       const id = randomUUID()
-      source.services.projectTransfers.start(
+      await source.services.projectTransfers.start(
         {
           id,
           repositoryId: repo.id,
@@ -181,7 +181,7 @@ it.skipIf(process.env.DOVO_TEST_REAL_SSH !== '1')(
       )
       expect(plan.repositories).toEqual([])
       const worktreeId = randomUUID()
-      source.services.projectTransfers.start(
+      await source.services.projectTransfers.start(
         {
           id: worktreeId,
           repositoryId: gitRepo.id,
@@ -213,7 +213,7 @@ it.skipIf(process.env.DOVO_TEST_REAL_SSH !== '1')(
       await stopSsh(daemon)
       origins.length = 0
       const failedId = randomUUID()
-      source.services.projectTransfers.start(
+      await source.services.projectTransfers.start(
         {
           id: failedId,
           repositoryId: repo.id,

@@ -72,7 +72,7 @@ import {ProjectTransferSettings,ProjectTransferDialog} from './${path}';
 const profile={id:'destination',name:'Desktop',connection:{address:'http://desktop:5235',runtimeId:'machine-b',token:'paired-device-token-with-32-characters'}};
 const repo={id:'project',name:'My project',path:'/project',branch:'main'};
 window.calls=[];window.refreshes=0;let current=null;
-function App(){const [source,setSource]=useState(null);window.setSource=setSource;const [preview,setPreview]=useState(false);window.previewTransfer=()=>{setSource(null);setJob(null);setPreview(true)};const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
+function App(){const [continuation,setContinuation]=useState(false);window.beginHandoff=source=>{setContinuation(true);setJob(null);setSource(source)};const [source,setSource]=useState(null);window.setSource=setSource;const [preview,setPreview]=useState(false);window.previewTransfer=()=>{setSource(null);setJob(null);setPreview(true)};const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
 window.setJob=changes=>setJob(old=>{current={...old,...changes,updatedAt:(old?.updatedAt??0)+100};return current});
 const request=async(path,input)=>{window.calls.push({path,input});
 if(path==='/api/scm/worktrees/read')return {root:'/worktrees',worktrees:window.missingWorktree?[]:[{path:'/worktrees/feature',repositoryId:'project',branch:'feature',taskId:'owner',threadIds:['owner','reused'],prunable:false}]};
@@ -80,12 +80,12 @@ if(path.endsWith('/choices'))return {worktrees:[{path:'/worktrees/feature',branc
 if(path.endsWith('/plan')){if(window.planError)throw new Error('Update the destination computer to copy linked worktrees');return {repositories:window.noDestinationProject?[]:[{id:'destination-project',name:'Existing project',path:'/projects/main'}],worktreesRoot:'/custom/worktrees'};}
 if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop',directSupported:!window.internetOnly}];
 if(path.endsWith('/inspect')){if(window.failInspect)throw new Error('Inspection failed');return {files:3,bytes:1500,skippedLinks:1,ignoredFilesTruncated:window.truncated,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};}
-if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offline');current={...input,targetName:'Desktop',state:'copying',transport:input.ssh?'ssh':'p2p',bytes:100,totalBytes:1000,updatedAt:Date.now()};setJob(current);return current}
+if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offline');current={...input,sourceTaskId:input.handoff?.taskId,targetName:'Desktop',state:'copying',transport:input.ssh?'ssh':'p2p',bytes:100,totalBytes:1000,updatedAt:Date.now()};setJob(current);return current}
 if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});return {...current,state:'preparing'}}
 if(path.endsWith('/cancel')){window.setJob({state:'cancelled'});return {ok:true}}
 return {ok:true};};
-window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectWorktreeTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b',sshAddress:window.savedSsh??''}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],switchRuntime:async id=>{window.switched=id},refreshRuntime:async()=>{window.refreshes++}};
-return source||preview ? <ProjectTransferDialog key={source?.id??'preview'} repository={repo} sourceTask={source??undefined} onClose={()=>{setSource(null);setPreview(false)}}/> : <ProjectTransferSettings repository={repo}/>;}
+window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectWorktreeTransfersSupported:supported,threadHandoffsSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b',sshAddress:window.savedSsh??''}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],switchRuntime:async id=>{window.switched=id},refreshRuntime:async()=>{window.refreshes++}};
+return source||preview ? <ProjectTransferDialog key={source?.id??'preview'} repository={repo} sourceTask={source??undefined} continuation={continuation} onClose={()=>{setSource(null);setPreview(false)}}/> : <ProjectTransferSettings repository={repo}/>;}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
         bundle: true,
@@ -469,6 +469,53 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       await page.keyboard.press('Escape')
       await page.getByRole('dialog').waitFor({ state: 'hidden' })
     }
+    // A continuation carries the existing thread. It never creates an empty replacement chat.
+    await page.evaluate(() => {
+      window.calls = []
+      window.savedSsh = ''
+      window.beginHandoff({
+        id: 'handoff-thread',
+        title: 'Keep all history',
+        repositoryId: 'project',
+        execution: 'main',
+        status: 'running',
+      })
+    })
+    await page.getByRole('dialog', { name: 'Continue on another computer' }).waitFor()
+    const move = page.getByRole('button', { name: 'Move thread', exact: true })
+    await page.getByLabel('Destination computer').waitFor()
+    assert.equal(await move.isDisabled(), true)
+    assert.equal(
+      await page
+        .getByRole('checkbox', { name: 'Create a thread on destination', exact: true })
+        .count(),
+      0,
+    )
+    await page.getByRole('checkbox', { name: 'Stop the current turn first', exact: true }).check()
+    await move.click()
+    await page.getByText('Copying to Desktop · 10%', { exact: true }).waitFor()
+    const handoff = await page.evaluate(
+      () => window.calls.find((call) => call.path.endsWith('/start')).input,
+    )
+    assert.deepEqual(handoff.handoff, { taskId: 'handoff-thread', stop: true })
+    assert.equal(handoff.thread, undefined)
+    assert.deepEqual(handoff.ignoredFiles, [])
+    await page.evaluate(() => window.setJob({ state: 'failed', error: 'Activation pending' }))
+    await page.getByRole('button', { name: 'Retry move', exact: true }).click()
+    assert.deepEqual(
+      await page.evaluate(() => window.calls.find((call) => call.path.endsWith('/retry')).input),
+      { id: handoff.id },
+    )
+    await page.evaluate(() =>
+      window.setJob({ state: 'completed', targetTaskId: 'continued-thread' }),
+    )
+    await page.getByRole('button', { name: 'Open thread on Desktop', exact: true }).click()
+    assert.deepEqual(
+      await page.evaluate(() => window.opened),
+      mobile
+        ? ['tasks', 'continued-thread', 'destination']
+        : { viewId: 'tasks', entityId: 'continued-thread' },
+    )
     assert.deepEqual(errors, [])
     await page.close()
     console.log(

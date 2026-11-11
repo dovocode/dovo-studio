@@ -347,6 +347,7 @@ export function runtimeSnapshot(
       projectTransfersSupported: true,
       projectOrganizationSupported: true,
       projectWorktreeTransfersSupported: true,
+      threadHandoffsSupported: true,
       projectTransfers: s.projectTransfers.list(),
       worktreeDeletionOverrideSupported: true,
       studioTools: enabledStudioTools(preferences),

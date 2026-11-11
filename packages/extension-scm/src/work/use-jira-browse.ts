@@ -1,3 +1,4 @@
+import { jiraReader } from '@dovo/studio-core/jira-reads'
 import { useEffect, useRef, useState } from 'react'
 import { Effect, type Schema } from 'effect'
 import { clientTaskScope } from '@dovo/studio-core'
@@ -34,14 +35,25 @@ function useBrowseResource<T extends { stale?: boolean; refreshError?: string },
     setState({ key, busy: connected, error: '' })
     void tasks.run(
       Effect.gen(function* () {
-        const saved = yield* cache?.readEffect(key, schema) ?? Effect.succeed(undefined)
+        const saved = yield* (
+          cache
+            ?.readEffect(key, schema)
+            .pipe(
+              Effect.catch(() =>
+                Effect.logWarning('Could not read saved Jira browse data').pipe(
+                  Effect.as(undefined),
+                ),
+              ),
+            ) ?? Effect.succeed(undefined)
+        )
         if (!stopped && saved)
           setState({ key, value: { ...saved.value, stale: true }, busy: connected, error: '' })
         if (!connected) return
         const value = yield* load(refresh)
         if (stopped) return
-        yield* cache?.writeEffect(key, value) ?? Effect.void
-        if (!stopped) setState({ key, value, busy: false, error: value.refreshError ?? '' })
+        setState({ key, value, busy: false, error: value.refreshError ?? '' })
+        if (JSON.stringify(saved?.value) !== JSON.stringify(value))
+          yield* cache?.writeEffect(key, value) ?? Effect.void
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
@@ -84,7 +96,7 @@ export function useJiraBrowse(
     Effect.gen(function* () {
       if (!source?.jira) return yield* Effect.fail(new Error('Choose a Jira source.'))
       const guard = yield* verifySourceReader(source)
-      return yield* source.requestEffect(
+      return yield* jiraReader(source.readCache, source.scope, source.requestEffect)(
         `/api/scm/work/jira/${operation}`,
         { ...source.input, ...guard, id: board, state: closed ? 'closed' : 'open', refresh },
         schema,

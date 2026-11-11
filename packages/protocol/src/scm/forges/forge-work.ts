@@ -1,3 +1,4 @@
+import { conditionalReadFields } from '../../shared/conditional-read.js'
 import {
   forgeReadGuardFields,
   forgeDestinationGuardFields,
@@ -35,6 +36,7 @@ export type ForgeIssueSection = typeof forgeIssueSectionSchema.Type
 export const forgePipelineSectionSchema = Schema.Literals(['overview', 'jobs', 'graph'])
 export type ForgePipelineSection = typeof forgePipelineSectionSchema.Type
 export const forgeWorkQuerySchema = mutableStruct({
+  ...conditionalReadFields,
   ...forgeReadGuardFields,
   ...forgeDestinationGuardFields,
   jiraFilters: Schema.optional(jiraIssueFiltersSchema),

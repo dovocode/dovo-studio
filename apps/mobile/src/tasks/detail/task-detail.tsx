@@ -51,6 +51,7 @@ import { Conversation } from '../conversation/view'
 import { ConversationProvider } from '../conversation/state/provider'
 import { useNavigation } from '../../shell/navigation'
 import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
+import { ContinueElsewhere } from './continue-elsewhere'
 import { TaskQuestions } from './task-questions'
 import { LinkedProjects } from './linked-projects'
 import { RenameThread } from './rename-thread'
@@ -228,6 +229,7 @@ function TaskDetailContent({
   const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
   const worktreeThread = useAction()
   const [transferring, setTransferring] = useState(false)
+  const [continuing, setContinuing] = useState<'choose' | 'machine' | null>(null)
   const account = useOptionalMobileAccount()
   const canShare = !!account?.directory && !account.deletionPending
   const [sharingTaskId, setSharingTaskId] = useState<string>()
@@ -461,6 +463,22 @@ function TaskDetailContent({
                   },
                 ],
               ),
+          },
+        ]
+      : []
+  const continueActions: HeaderAction[] =
+    snapshot?.threadHandoffsSupported && task.status !== 'draft'
+      ? [
+          {
+            label: 'Continue elsewhere',
+            group: 'Thread',
+            icon: 'laptop',
+            overflow: true,
+            disabled: !connected || !!task.archivedAt || !!task.machineHandoff,
+            onPress: () => {
+              Keyboard.dismiss()
+              setContinuing('choose')
+            },
           },
         ]
       : []
@@ -927,6 +945,7 @@ function TaskDetailContent({
                   worktreeActions,
                   moveActions,
                   transferActions,
+                  continueActions,
                 )
                 .sort((a, b) => {
                   const order = ['Tools', 'Navigate', 'Thread', 'Project', 'Advanced', 'Delete']
@@ -1024,6 +1043,7 @@ function TaskDetailContent({
             !renaming &&
             !asking &&
             !transferring &&
+            !continuing &&
             !sharingTaskId &&
             !artifactsOpen &&
             !linkedPulls &&
@@ -1292,6 +1312,7 @@ function TaskDetailContent({
                 !renaming &&
                 !asking &&
                 !transferring &&
+                !continuing &&
                 !sharingTaskId &&
                 !artifactsOpen &&
                 !linkedPulls &&
@@ -1308,6 +1329,24 @@ function TaskDetailContent({
           repository={repository}
           sourceTask={task}
           onClose={() => setTransferring(false)}
+        />
+      )}
+      {continuing === 'choose' && (
+        <ContinueElsewhere
+          key={`${activeId}:${task.id}`}
+          task={task}
+          repository={repository}
+          onMachine={() => setContinuing('machine')}
+          onClose={() => setContinuing(null)}
+        />
+      )}
+      {continuing === 'machine' && repository && (
+        <ProjectTransferDialog
+          key={`${activeId}:${task.id}`}
+          repository={repository}
+          sourceTask={task}
+          continuation
+          onClose={() => setContinuing(null)}
         />
       )}
       {artifactsOpen && snapshot?.artifactsEnabled && (

@@ -1,3 +1,4 @@
+import { jiraPromiseReader } from '@dovo/studio-core/jira-reads'
 import { useIssueDiscussion } from './use-issue-discussion'
 import { usePipelineSections } from './use-pipeline-sections'
 import { PipelineSectionStatus } from './pipeline-section-status'
@@ -92,10 +93,12 @@ export function WorkContent({
   const [cursor, setCursor] = useApplicationState<string | undefined>(undefined)
   const [state, setState] = useApplicationState('all')
   const [selected, setSelected] = useApplicationState(initialSelected ?? '')
-  const [issueOverview, setIssue] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
+  const [issueOverview, setIssue, issueRef] = useApplicationState<ForgeIssueDetail | undefined>(
+    undefined,
+  )
   const [pipelineOverview, setPipeline] = useApplicationState<PipelineDetail | undefined>(undefined)
   const [revision, reload] = useApplicationState(0)
-  const [error, setError] = useApplicationState('')
+  const [error, setError, errorRef] = useApplicationState('')
   const [message, setMessage] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [stale, setStale] = useApplicationState(false)
@@ -209,7 +212,11 @@ export function WorkContent({
       revision: string,
     ) => {
       const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
-      const value = await (reader?.request ?? request)(
+      const value = await jiraPromiseReader(
+        reader?.readCache ?? readCache ?? request,
+        reader?.scope ?? detailKey,
+        reader?.request ?? request,
+      )(
         '/api/scm/work/issues/detail',
         {
           ...(reader ? sourceIdentityInput(reader) : target),
@@ -230,6 +237,8 @@ export function WorkContent({
     },
     [
       reader,
+      readCache,
+      detailKey,
       request,
       target,
       selected,
@@ -249,8 +258,9 @@ export function WorkContent({
     refreshOverview: () => reload((value) => value + 1),
   })
   const issue = jiraSourceId ? discussion.issue : issueOverview
-  const [workOptionsError, setWorkOptionsError] = useApplicationState('')
+  const [workOptionsError, setWorkOptionsError, optionsErrorRef] = useApplicationState('')
   const [optionsRevision, reloadOptions] = useApplicationState(0)
+  const consumedOptions = useRef({ revision: 0, optionsRevision: 0 })
   useEffect(() => {
     if (
       (!jiraSourceId && mode !== 'pipelines') ||
@@ -260,26 +270,43 @@ export function WorkContent({
     )
       return
     let stopped = false
+    let force =
+      consumedOptions.current.revision !== revision ||
+      consumedOptions.current.optionsRevision !== optionsRevision
+    let lastOptions: ForgeWorkOptions | undefined
     const polling = startPolling(
       Effect.tryPromise({
         try: async () => {
           if (document.visibilityState !== 'visible') return
           const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
-          const value = await (reader?.request ?? request)(
+          const value = await jiraPromiseReader(
+            reader?.readCache ?? readCache ?? request,
+            reader?.scope ?? detailKey,
+            reader?.request ?? request,
+          )(
             '/api/scm/work/options',
-            { ...(reader ? sourceIdentityInput(reader) : target), ...guard, area: mode },
+            {
+              ...(reader ? sourceIdentityInput(reader) : target),
+              ...guard,
+              area: mode,
+              ...(jiraSourceId ? { refresh: force } : {}),
+            },
             forgeWorkOptionsSchema,
           )
           if (stopped) return
+          force = false
+          consumedOptions.current = { revision, optionsRevision }
           const options = reader && reader.key !== origin?.key ? { ...value, destination } : value
-          setOptions(options)
+          const unchanged = value === lastOptions
+          if (!unchanged) setOptions(options)
           setWorkOptionsError('')
-          await readCache?.write(optionsKey, options)
+          if (!unchanged) await readCache?.write(optionsKey, options)
+          lastOptions = value
         },
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       }),
       {
-        interval: 30000,
+        interval: () => (jiraSourceId ? (optionsErrorRef.current ? 60_000 : 300_000) : 30_000),
         onError: (error) => {
           if (!stopped) setWorkOptionsError(error.message)
         },
@@ -307,12 +334,13 @@ export function WorkContent({
     jiraSourceId,
     !!issueOverview,
   ])
+  const consumedRevision = useRef(0)
   const cacheScope = useRef({ detailKey, readCache })
   const base = '/api/scm/work/'
   useEffect(() => {
     let stopped = false
     let hydrated = false
-    let force = revision > 0
+    let force = revision > consumedRevision.current
     pending.current = false
     setStale(true)
     setBusy(true)
@@ -327,16 +355,20 @@ export function WorkContent({
       setWorkOptionsError('')
       loadedDetailPages.current = 1
     }
+    let lastIssue: ForgeIssueDetail | undefined
+    let savedIssue: ForgeIssueDetail | undefined
     const load = async () => {
       if (stopped || pending.current) return
       const valid = requests.current.begin()
       const current = () => !stopped && valid()
       const save = async (key: string, value: unknown) => {
-        if (!readCache || !current()) return
+        if (!readCache || !current()) return false
         try {
           await readCache.write(key, value)
+          return true
         } catch {
           if (current()) setError('Details loaded, but could not be saved for offline use.')
+          return false
         }
       }
       try {
@@ -362,13 +394,18 @@ export function WorkContent({
         if (!current() || !readConnected || document.visibilityState !== 'visible') return
         const readGuard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
         if (!current()) return
-        const readRequest = reader?.request ?? request
+        const readRequest = jiraPromiseReader(
+          readCache ?? request,
+          reader?.scope ?? detailKey,
+          reader?.request ?? request,
+        )
         const readTarget = {
           ...(reader ? sourceIdentityInput(reader) : target),
           ...readGuard,
         }
         const refresh = force
         force = false
+        consumedRevision.current = revision
         if (mode === 'pipelines' && selected) {
           let data = await readRequest(
             base + 'pipelines/detail',
@@ -407,12 +444,16 @@ export function WorkContent({
             setIssue(undefined)
             throw new Error('This issue source changed. Open the original source below.')
           }
+          const unchanged = data === lastIssue || data === issueRef.current
+          const raw = data
           if (reader && reader.key !== origin?.key)
             data = { ...data, destination, issue: { ...data.issue, destination } }
-          setIssue(data)
+          if (!unchanged) setIssue(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
-          await save(detailKey, { ...data, overviewOnly: true })
+          if (raw !== savedIssue && (await save(detailKey, { ...data, overviewOnly: true })))
+            savedIssue = raw
+          lastIssue = raw
           return
         }
         const loadedOptions = await readRequest(
@@ -528,7 +569,14 @@ export function WorkContent({
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       }),
       {
-        interval: 30000,
+        interval: () =>
+          jiraSourceId
+            ? errorRef.current || issueRef.current?.refreshError
+              ? 60_000
+              : issueRef.current?.stale
+                ? 2_000
+                : 30_000
+            : 30_000,
         onError: (error) => {
           if (!stopped) setError(error.message)
         },
@@ -591,7 +639,11 @@ export function WorkContent({
     try {
       const readGuard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
       if (!current()) return
-      const readRequest = reader?.request ?? request
+      const readRequest = jiraPromiseReader(
+        reader?.readCache ?? readCache ?? request,
+        reader?.scope ?? detailKey,
+        reader?.request ?? request,
+      )
       const readTarget = {
         ...(reader ? sourceIdentityInput(reader) : target),
         ...readGuard,

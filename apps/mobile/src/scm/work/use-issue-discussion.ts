@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema } from 'effect'
 import {
   combineIssueSections,
@@ -48,7 +48,7 @@ function useSection(input: Input, section: Section) {
     overview?.destination,
     overview?.issue.url,
   ])
-  const [state, setState] = useApplicationState<{
+  const [state, setState, stateRef] = useApplicationState<{
     scope: string
     value?: ForgeIssueDetail
     error: string
@@ -61,6 +61,11 @@ function useSection(input: Input, section: Section) {
     busy: false,
     tick: 0,
   })
+  const live = useRef<{ key: string; first?: ForgeIssueDetail; sweptAt: number }>({
+    key,
+    sweptAt: 0,
+  })
+  if (live.current.key !== key) live.current = { key, sweptAt: 0 }
   const forceNext = useRef(false)
   const moreNext = useRef<string | undefined>(undefined)
   const depth = useRef(1)
@@ -99,10 +104,13 @@ function useSection(input: Input, section: Section) {
     const loadSection = async () => {
       const publish = async (value: ForgeIssueDetail, pages: number) => {
         if (stopped) return
-        setState((current) => ({ ...current, value, error: value.refreshError ?? '' }))
+        const unchanged = stateRef.current.scope === key && stateRef.current.value === value
+        if (!unchanged)
+          setState((current) => ({ ...current, value, error: value.refreshError ?? '' }))
+        else setState((current) => ({ ...current, error: value.refreshError ?? '' }))
         if (matchingIssueSection(overview, value)) {
           depth.current = pages
-          await readCache?.write(key, { ...value, loadedPages: pages })
+          if (!unchanged) await readCache?.write(key, { ...value, loadedPages: pages })
         }
       }
       try {
@@ -145,7 +153,20 @@ function useSection(input: Input, section: Section) {
         } else {
           const wanted = depth.current
           let pages = 1
-          await publish(value, pages)
+          const first = value
+          const retained = stateRef.current.scope === key ? stateRef.current.value : undefined
+          if (
+            !refresh &&
+            first === live.current.first &&
+            retained &&
+            !retained.stale &&
+            !retained.refreshError &&
+            !stateRef.current.error &&
+            Date.now() - live.current.sweptAt < 120_000
+          ) {
+            await publish(retained, wanted)
+            return
+          }
           while (
             !stopped &&
             value.next &&
@@ -166,8 +187,12 @@ function useSection(input: Input, section: Section) {
               stale: value.stale || next.stale,
               refreshError: value.refreshError ?? next.refreshError,
             }
-            await publish(value, ++pages)
+            pages++
           }
+          // Publish only a complete prefix. A failed later page keeps the previous comments.
+          live.current = { key, first, sweptAt: Date.now() }
+          const same = retained && JSON.stringify(retained) === JSON.stringify(value)
+          await publish(same ? retained : value, pages)
         }
       } catch (error) {
         if (!stopped)
@@ -186,7 +211,12 @@ function useSection(input: Input, section: Section) {
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       }),
       {
-        interval: 30000,
+        interval: () =>
+          stateRef.current.error || stateRef.current.value?.refreshError
+            ? 60_000
+            : stateRef.current.value?.stale
+              ? 2_000
+              : 30_000,
         onError: (error) => {
           if (!stopped) setState((current) => ({ ...current, error: error.message }))
         },
@@ -246,5 +276,9 @@ export function useIssueDiscussion(input: Input) {
       refresh.current()
     }
   }, [discoveredKey])
-  return { ...discussion, issue: combineIssueSections(input.overview, discussion.detail) }
+  const issue = useMemo(
+    () => combineIssueSections(input.overview, discussion.detail),
+    [input.overview, discussion.detail],
+  )
+  return { ...discussion, issue }
 }

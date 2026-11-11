@@ -40,9 +40,11 @@ export function projectTransferRoute(
           return yield* serviceResult(transfers.inspect(source.repositoryId, source.worktreePath))
         }
         case 'start':
-          return transfers.start(decode(projectTransferStartSchema, input), device, () => {
-            s.devices.authenticate(token)
-          })
+          return yield* serviceResult(
+            transfers.start(decode(projectTransferStartSchema, input), device, () => {
+              s.devices.authenticate(token)
+            }),
+          )
         case 'plan':
           return yield* serviceResult(
             transfers.plan(
@@ -58,11 +60,20 @@ export function projectTransferRoute(
             transfers.destination(decode(projectTransferProjectSchema, input)),
           )
         case 'cancel':
-          return yield* serviceResult(transfers.cancel(decode(idSchema, input).id))
+          return yield* serviceResult(
+            transfers.cancel(decode(idSchema, input).id, () => {
+              s.devices.authenticate(token)
+            }),
+          )
         case 'retry':
-          return transfers.retry(decode(idSchema, input).id, () => {
-            s.devices.authenticate(token)
-          })
+          return yield* serviceResult(
+            transfers.retry(decode(idSchema, input).id, () => {
+              s.devices.authenticate(token)
+            }),
+          )
+        case 'activate':
+          s.devices.authenticate(token)
+          return transfers.activate(decode(idSchema, input).id, device)
         case 'begin':
           return yield* serviceResult(
             transfers.begin(decode(projectTransferManifestSchema, input), device),

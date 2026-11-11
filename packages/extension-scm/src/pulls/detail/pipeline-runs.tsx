@@ -1,16 +1,17 @@
 import { useVerifiedRead } from '../../connections/verified-read'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useRef } from 'react'
-import { Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 import { ChevronRight, ExternalLink, RefreshCw } from 'lucide-react'
 import {
   forgePipelinePageSchema,
+  startPolling,
   forgeWorkOptionsSchema,
   useWorkspace,
   type ForgePipeline,
   formatDateTime,
 } from '@dovo/studio-core'
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, pipelineSignal } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 import { PipelineState } from '../../work/pipeline-state'
 import { WorkContent } from '../../work/content'
@@ -56,6 +57,11 @@ export function usePullPipelineRuns({
   const pending = useRef(false)
   const stored = useRef<ForgePipeline[]>([])
   const depth = useRef(1)
+  const hydrated = useRef<Promise<void>>(Promise.resolve())
+  const optionsKey = JSON.stringify([ownerKey, repositoryId, repository?.path, repository?.forge])
+  const capabilities = useRef<{ key: string; value: typeof forgeWorkOptionsSchema.Type } | null>(
+    null,
+  )
   const load = useCallback(
     async (cursor?: string, refresh = false) => {
       if (
@@ -71,15 +77,16 @@ export function usePullPipelineRuns({
       setBusy(true)
       setError('')
       try {
-        const options = await readRequest(
-          '/api/scm/work/options',
-          {
-            repositoryId,
-            area: 'pipelines',
-          },
-          forgeWorkOptionsSchema,
-        )
+        const options =
+          !refresh && capabilities.current?.key === optionsKey
+            ? capabilities.current.value
+            : await readRequest(
+                '/api/scm/work/options',
+                { repositoryId, area: 'pipelines' },
+                forgeWorkOptionsSchema,
+              )
         if (current !== generation.current) return
+        capabilities.current = { key: optionsKey, value: options }
         setNotice(options.pipelineNotice ?? '')
         if (!options.pipelines) {
           stored.current = []
@@ -154,7 +161,7 @@ export function usePullPipelineRuns({
         }
       }
     },
-    [active, connected, readRequest, repositoryId, sha, readCache, cacheKey],
+    [active, connected, readRequest, repositoryId, sha, readCache, cacheKey, optionsKey],
   )
   const loadRef = useRef(load)
   loadRef.current = load
@@ -168,7 +175,7 @@ export function usePullPipelineRuns({
     setNext(undefined)
     setError('')
     setNotice('')
-    void (async () => {
+    hydrated.current = (async () => {
       try {
         const cached = await readCache?.read(cacheKey, savedRunsSchema)
         if (current !== generation.current) return
@@ -181,7 +188,6 @@ export function usePullPipelineRuns({
       } catch {
         if (current === generation.current) setError('Saved pipeline runs could not be read.')
       }
-      if (current === generation.current) await loadRef.current()
     })()
     return () => {
       generation.current++
@@ -189,15 +195,25 @@ export function usePullPipelineRuns({
   }, [cacheKey, readCache])
   useEffect(() => {
     if (!active || !connected) return
-    const refresh = () => void loadRef.current()
-    refresh()
-    const timer = setInterval(refresh, 10000)
-    document.addEventListener('visibilitychange', refresh)
+    const polling = startPolling(
+      Effect.promise(() => hydrated.current).pipe(
+        Effect.andThen(Effect.promise(() => loadRef.current())),
+      ),
+      {
+        interval: () =>
+          stored.current.some((run) => pipelineSignal(run.status).phase === 'active')
+            ? 10_000
+            : 30_000,
+        enabled: () => document.visibilityState === 'visible',
+        onError: () => {},
+      },
+    )
+    document.addEventListener('visibilitychange', polling.refresh)
     return () => {
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', refresh)
+      void polling.stop()
+      document.removeEventListener('visibilitychange', polling.refresh)
     }
-  }, [active, connected, cacheKey])
+  }, [active, connected, cacheKey, readCache])
   return {
     selected,
     setSelected,

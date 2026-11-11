@@ -51,6 +51,7 @@ async function applyStash(s: HandoffServices, cwd: string, ref: string) {
 /** Moves a started task between the project folder and its own worktree, carrying its
  * uncommitted changes. The agent continues in a new session with the conversation replayed. */
 export async function handoffTask(s: HandoffServices, id: string, target: 'worktree' | 'main') {
+  s.tasks.requireExecutionOwner(id)
   const task = s.store.taskSummary(id)
   if (task.sideThread) throw new HttpError(409, 'Side threads keep their isolated worktree.')
   if (task.importedCodexSession || task.importedPiSession)

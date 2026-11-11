@@ -186,7 +186,7 @@ try {
   const overviewReads = await page.evaluate(
     () => window.sectionReads.filter((x) => x === 'overview').length,
   )
-  await page.clock.fastForward(31000)
+  await page.clock.fastForward(61000)
   await page.waitForFunction(
     (count) => window.sectionReads.filter((x) => x === 'overview').length > count,
     overviewReads,
@@ -297,7 +297,7 @@ try {
   await page.evaluate(() => {
     window.detail.pull.headSha = 'f'.repeat(40)
   })
-  await page.clock.fastForward(6000)
+  await page.clock.fastForward(31000)
   await merge.getByText(/Status for reviewed commit aaaaaaaa is not loaded/).waitFor()
   await merge.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
   await merge.getByRole('button', { name: 'Merge pull request', exact: true }).click()

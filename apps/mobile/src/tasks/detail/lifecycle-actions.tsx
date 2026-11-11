@@ -81,13 +81,24 @@ export function LifecycleActions({
         <Action
           secondary
           label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
-          disabled={!enabled || busy || task.status === 'running'}
+          disabled={
+            !enabled ||
+            busy ||
+            task.status === 'running' ||
+            // A moved thread is kept for recovery; the destination owns it now.
+            (!!task.archivedAt && task.machineHandoff?.state === 'moved')
+          }
           onPress={toggleArchived}
         />
         <Action
           secondary
           label="Delete thread…"
-          disabled={!enabled || busy || task.status === 'running'}
+          disabled={
+            !enabled ||
+            busy ||
+            task.status === 'running' ||
+            task.machineHandoff?.state === 'preparing'
+          }
           onPress={deleteThread}
         />
       </View>

@@ -1,3 +1,5 @@
+import { readPullPage } from '@dovo/studio-core/pull-reads'
+import { pullPageReadSchema } from '@dovo/protocol'
 import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import { Effect, Schema, Semaphore } from 'effect'
@@ -121,28 +123,40 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
         return Effect.fail(
           new Error('The original account is unavailable. Connect its runtime to continue.'),
         )
-      return verifiedSourceRead(
-        (path, body, schema, method) => rawRead(reader.profile, path, body, schema, method),
-        projectContentIdentity(reader),
-        { repositoryId: reader.repository.id },
-        source.key !== reader.key ? originIdentity?.readerIdentity : undefined,
-      )(
-        '/api/scm/pulls/overview',
-        { ...input, repositoryId: reader.repository.id },
-        pullPageSchema,
-      ).pipe(
-        Effect.map((page) => {
-          if (source.key === reader.key) return page
-          const destination = originIdentity?.destination
-          return {
-            ...page,
-            destination,
-            pulls: page.pulls.map((pull) => ({ ...pull, destination })),
-          }
-        }),
+      return readPullPage(
+        cacheForRuntime(reader.profile),
+        JSON.stringify([
+          projectContentIdentity(reader),
+          reader.readerIdentity,
+          originIdentity?.destination,
+          input.state,
+          input.page,
+        ]),
+        (knownVersion) =>
+          verifiedSourceRead(
+            (path, body, schema, method) => rawRead(reader.profile, path, body, schema, method),
+            projectContentIdentity(reader),
+            { repositoryId: reader.repository.id },
+            source.key !== reader.key ? originIdentity?.readerIdentity : undefined,
+          )(
+            '/api/scm/pulls/overview',
+            { ...input, repositoryId: reader.repository.id, conditional: true, knownVersion },
+            pullPageReadSchema,
+          ).pipe(
+            Effect.map((page) => {
+              if ('unchanged' in page || source.key === reader.key) return page
+              const destination = originIdentity?.destination
+              return {
+                ...page,
+                destination,
+                pulls: page.pulls.map((pull) => ({ ...pull, destination })),
+              }
+            }),
+          ),
+        input.refresh,
       )
     },
-    [rawRead],
+    [rawRead, cacheForRuntime],
   )
   const sources: PullSource[] = assigned.selected.flatMap((reader) => {
     const origin = allSources.find(
@@ -174,7 +188,8 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
     const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
     const update = (id: string, page: Page) => {
-      if (current === generation.current) setPages((previous) => ({ ...previous, [id]: page }))
+      if (current === generation.current)
+        setPages((previous) => (previous[id] === page ? previous : { ...previous, [id]: page }))
     }
     const metadata = (entry: (typeof repositories)[number]) => ({
       sourceKey: entry.key,
@@ -285,6 +300,9 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
       ),
     )
     setBusy(connected && enabled)
+    const firstPages = new Map<string, PullPage>()
+    const prefixChecked = new Map<string, number>()
+    const savedPages = new Map<string, Page>()
     const load = Effect.gen(function* () {
       yield* hydrated
       if (!connected || !enabled || AppState.currentState !== 'active') return
@@ -308,7 +326,15 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
             const changed = JSON.stringify(previous?.firstPageIds) !== JSON.stringify(firstPageIds)
             // Publish only after the entire opened prefix has been revalidated.
             let combined = response
-            if (retained === response)
+            const unchanged =
+              !refresh &&
+              previous &&
+              !previous.stale &&
+              !previous.refreshError &&
+              !previous.error &&
+              firstPages.get(entry.key) === response &&
+              Date.now() - (prefixChecked.get(entry.key) ?? 0) < 120_000
+            if (!unchanged && retained === response)
               for (let number = 2; combined.hasMore && number <= (previous?.page ?? 1); number++) {
                 const next = yield* request(entry, {
                   repositoryId: entry.repository.id,
@@ -335,8 +361,9 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
                   ],
                 }
               }
-            const page: Page =
-              retained !== response && previous
+            const page: Page = unchanged
+              ? previous
+              : retained !== response && previous
                 ? {
                     ...previous,
                     ...metadata(entry),
@@ -351,12 +378,18 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
                     stale: !!combined.stale || !!combined.refreshError,
                     firstPageIds,
                   }
+            firstPages.set(entry.key, response)
+            if (!unchanged && !page.stale && !page.refreshError && !page.error)
+              prefixChecked.set(entry.key, Date.now())
             update(entry.key, page)
             if (!page.stale && !page.error && current === generation.current) {
               forcedRemotes.current.delete(remote)
               acknowledgePullList(cache, entry.repository.id, invalidated)
             }
-            yield* save(entry, page)
+            if (!unchanged && savedPages.get(entry.key) !== page) {
+              yield* save(entry, page)
+              savedPages.set(entry.key, page)
+            }
           }).pipe(
             Effect.catch((error) =>
               Effect.sync(() =>

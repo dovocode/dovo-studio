@@ -19,6 +19,8 @@ export function runtimeRequestTimeout(path: string, input?: unknown) {
   if (path === '/api/scm/push')
     return input && typeof input === 'object' && 'taskId' in input && input.taskId ? 900000 : 300000
   if (path === '/api/tasks/handoff') return 900000
+  if (path === '/api/tasks/continue-harness' || path === '/api/scm/project-transfer/start')
+    return 120000
   if (path === '/api/mcp-apps/rpc') {
     if (input && typeof input === 'object' && 'method' in input) {
       // Approval can wait ten minutes before the upstream tool's sixty-second deadline.

@@ -1,3 +1,4 @@
+import { jiraReader } from '@dovo/studio-core/jira-reads'
 import type { JiraIssueFilters } from '@dovo/protocol'
 import { Effect, Semaphore } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -173,15 +174,26 @@ export function useWorkSources(
             )
             update(source, page)
             yield* Effect.gen(function* () {
-              if (page.options)
+              if (
+                page.options &&
+                (!source.jira ||
+                  JSON.stringify(page.options) !== JSON.stringify(previous?.options) ||
+                  previous?.error)
+              )
                 yield* source.readCache.writeEffect(
                   workSourceCacheKey(source, mode, 'options'),
                   page.options,
                 )
-              yield* source.readCache.writeEffect(
-                workSourceCacheKey(source, mode, 'list', search, state, jiraFilters),
-                workPageCacheValue(page),
+              if (
+                !source.jira ||
+                previous?.error ||
+                JSON.stringify(workPageCacheValue(page)) !==
+                  JSON.stringify(previous && workPageCacheValue(previous))
               )
+                yield* source.readCache.writeEffect(
+                  workSourceCacheKey(source, mode, 'list', search, state, jiraFilters),
+                  workPageCacheValue(page),
+                )
             }).pipe(
               Effect.catch(() =>
                 Effect.sync(() =>
@@ -214,7 +226,14 @@ export function useWorkSources(
       ),
     )
     const polling = startPolling(semaphore.withPermits(1)(load), {
-      interval: 30000,
+      interval: () =>
+        sourceKind !== 'jira'
+          ? 30_000
+          : Object.values(pagesRef.current).some((page) => page.error || page.optionsError)
+            ? 60_000
+            : Object.values(pagesRef.current).some((page) => page.stale)
+              ? 2_000
+              : 30_000,
       onError: () => {},
     })
     const more = (key: string) =>
@@ -228,7 +247,7 @@ export function useWorkSources(
           const readGuard = yield* verifySourceReader(reader)
           const response =
             mode === 'issues'
-              ? yield* reader.requestEffect(
+              ? yield* jiraReader(reader.readCache, reader.scope, reader.requestEffect)(
                   '/api/scm/work/issues/list',
                   {
                     ...reader.input,
@@ -240,7 +259,7 @@ export function useWorkSources(
                   },
                   forgeIssuePageSchema,
                 )
-              : yield* reader.requestEffect(
+              : yield* jiraReader(reader.readCache, reader.scope, reader.requestEffect)(
                   '/api/scm/work/pipelines/list',
                   {
                     ...reader.input,

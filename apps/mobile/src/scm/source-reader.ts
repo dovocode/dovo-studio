@@ -1,3 +1,4 @@
+import { jiraReader } from '@dovo/studio-core/jira-reads'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Effect } from 'effect'
 import { runClientEffect, startPolling } from '@dovo/client-runtime'
@@ -34,6 +35,7 @@ export function verifiedSourceRead(
   key: string,
   input: SourceInput,
   expectedReaderIdentity?: string,
+  cacheOwner?: object,
 ): Runtime['readEffect'] {
   return (path, body, schema, method) =>
     Effect.gen(function* () {
@@ -42,7 +44,9 @@ export function verifiedSourceRead(
         return yield* Effect.fail(
           new Error('The original account is unavailable. Connect its runtime to continue.'),
         )
-      return yield* read(
+      return yield* jiraReader(cacheOwner ?? read, key, (path, body, schema) =>
+        read(path, body, schema, method),
+      )(
         path,
         {
           ...(typeof body === 'object' && body !== null ? body : {}),
@@ -54,7 +58,6 @@ export function verifiedSourceRead(
             : {}),
         },
         schema,
-        method,
       )
     })
 }
@@ -65,7 +68,7 @@ export function useSourceReader(
   jiraSourceId?: string,
   connectionId?: string,
 ) {
-  const { readEffect: read, connection, snapshot } = useRuntime()
+  const { readEffect: read, connection, snapshot, readCache } = useRuntime()
   const key = integrationDraftKey(connection, snapshot, repositoryId, jiraSourceId, connectionId)
   const [state, setState] = useState(() => ({
     key,
@@ -74,19 +77,21 @@ export function useSourceReader(
   }))
   const readEffect = useCallback<Runtime['readEffect']>(
     (path, body, schema, method) =>
-      verifiedSourceRead(read, key, { repositoryId, jiraSourceId, connectionId })(
-        path,
-        body,
-        schema,
-        method,
-      ).pipe(
+      verifiedSourceRead(
+        read,
+        key,
+        { repositoryId, jiraSourceId, connectionId },
+        undefined,
+        readCache ?? read,
+      )(path, body, schema, method).pipe(
         Effect.tap(() =>
           Effect.sync(() => setState({ key, identity: mobileReaders.identity(key), ready: true })),
         ),
       ),
-    [read, key, repositoryId, jiraSourceId, connectionId],
+    [read, key, repositoryId, jiraSourceId, connectionId, readCache],
   )
   return {
+    scope: key,
     readEffect,
     acceptCurrentAccount: () => {
       mobileReaders.acceptAccount(key)

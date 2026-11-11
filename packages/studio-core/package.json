@@ -19,7 +19,9 @@
     "./repository-open": "./src/repository-open.ts",
     "./side-thread-creation": "./src/side-thread-creation.ts",
     "./next-prompt": "./src/use-next-prompt.ts",
-    "./runtime-dictation": "./src/runtime-dictation.ts"
+    "./runtime-dictation": "./src/runtime-dictation.ts",
+    "./pull-reads": "./src/scm/pull-reads.ts",
+    "./jira-reads": "./src/scm/jira-reads.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

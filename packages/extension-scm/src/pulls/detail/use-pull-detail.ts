@@ -1,10 +1,12 @@
+import { readPullDetail } from '@dovo/studio-core/pull-reads'
+import { pullDetailReadSchema, pullSectionInterval } from '@dovo/protocol'
 import {
   combinePullSections,
   matchingPullSection,
   pullRevision,
   retainNewerPullSnapshot,
 } from '@dovo/protocol'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { Effect } from 'effect'
 import {
   startPolling,
@@ -75,6 +77,8 @@ function usePullSection(
   })
   const urlIdentity = useRef<string | undefined>(undefined)
   const requestedRefresh = useRef(false)
+  const savedDetail = useRef<{ key: string; value: Detail } | null>(null)
+  const wasConnected = useRef(readConnected)
   const setError = (error: string) => setState((current) => ({ ...current, error }))
   useEffect(() => {
     urlIdentity.current = undefined
@@ -83,6 +87,8 @@ function usePullSection(
   useEffect(() => {
     let stopped = false
     setState((current) => ({ ...current, busy: false, refreshing: false }))
+    const reconnected = readConnected && !wasConnected.current
+    wasConnected.current = readConnected
     // Keep loaded sections available, but defer disk reads and owned polling workers
     // until their tab needs them. Enabling the section performs the initial read.
     if (!enabled) return
@@ -112,22 +118,26 @@ function usePullSection(
       ),
     )
     let changesLoaded = false
-    let force = true
+    let force = reconnected
+    let cacheLoaded = false
     const load = Effect.gen(function* () {
       yield* hydrated
+      cacheLoaded = true
       if (!enabled || !readConnected || document.visibilityState !== 'visible') return
-      const refresh = force
-      force = false
       const showRefresh = requestedRefresh.current
+      const refresh = force || showRefresh
+      force = false
       requestedRefresh.current = false
       // A successful diff pinned to both commit hashes cannot change. Overview polling
       // discovers pushes; explicit refresh, reconnection and scope changes still revalidate.
       if (section === 'changes' && changesLoaded && !refresh) return
-      setState((current) => ({
-        ...current,
-        busy: !current.detail || showRefresh,
-        refreshing: refresh && showRefresh,
-      }))
+      setState((current) => {
+        const busy = !current.detail || showRefresh
+        const refreshing = refresh && showRefresh
+        return current.busy === busy && current.refreshing === refreshing
+          ? current
+          : { ...current, busy, refreshing }
+      })
       const identity =
         !origin && repositoryId.startsWith('http')
           ? yield* request(
@@ -157,24 +167,33 @@ function usePullSection(
             expectedReaderIdentity: identity?.readerIdentity,
             expectedDestination: identity?.destination,
           }
-      yield* (reader?.requestEffect ?? request)(
-        '/api/scm/pulls/detail',
-        {
-          repositoryId: reader?.repository.id ?? repositoryId,
-          number,
-          connectionId,
-          refresh,
-          section,
-          revision,
-          ...readGuard,
-        },
-        pullDetailSchema,
+      yield* readPullDetail(
+        reader?.readCache ?? readCache ?? request,
+        JSON.stringify([cacheKey, reader?.scope, reader?.readerIdentity, destination, readGuard]),
+        (knownVersion) =>
+          (reader?.requestEffect ?? request)(
+            '/api/scm/pulls/detail',
+            {
+              repositoryId: reader?.repository.id ?? repositoryId,
+              number,
+              connectionId,
+              refresh,
+              section,
+              revision,
+              ...readGuard,
+              conditional: true,
+              knownVersion,
+            },
+            pullDetailReadSchema,
+          ).pipe(
+            Effect.map((value) =>
+              !('unchanged' in value) && reader && reader.key !== origin?.key
+                ? { ...value, destination, pull: { ...value.pull, destination } }
+                : value,
+            ),
+          ),
+        refresh,
       ).pipe(
-        Effect.map((value) =>
-          reader && reader.key !== origin?.key
-            ? { ...value, destination, pull: { ...value.pull, destination } }
-            : value,
-        ),
         Effect.map((value) =>
           retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value, refresh),
         ),
@@ -191,16 +210,26 @@ function usePullSection(
                 !value.refreshError &&
                 !value.warnings.length
               )
-              setState((current) => ({
-                ...current,
-                detail: value,
-                error: value.refreshError ?? '',
-              }))
+              setState((current) =>
+                current.detail === value && current.error === (value.refreshError ?? '')
+                  ? current
+                  : { ...current, detail: value, error: value.refreshError ?? '' },
+              )
             }
           }),
         ),
         Effect.flatMap((value) =>
-          (readCache ? readCache.writeEffect(cacheKey, value) : Effect.void).pipe(
+          (readCache &&
+          (savedDetail.current?.key !== cacheKey || savedDetail.current.value !== value)
+            ? readCache.writeEffect(cacheKey, value).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    savedDetail.current = { key: cacheKey, value }
+                  }),
+                ),
+              )
+            : Effect.void
+          ).pipe(
             Effect.catch(() =>
               Effect.sync(() => {
                 if (!stopped) setError('Details loaded, but could not be saved for offline use.')
@@ -212,12 +241,20 @@ function usePullSection(
     }).pipe(
       Effect.ensuring(
         Effect.sync(() => {
-          if (!stopped) setState((current) => ({ ...current, busy: false, refreshing: false }))
+          if (!stopped)
+            setState((current) =>
+              current.busy || current.refreshing
+                ? { ...current, busy: false, refreshing: false }
+                : current,
+            )
         }),
       ),
     )
     const polling = startPolling(load, {
-      interval: section === 'status' || section === 'checks' ? 5000 : 10000,
+      interval: () =>
+        stateRef.current.error ? 60_000 : pullSectionInterval(section, stateRef.current.detail),
+      backoff: 120_000,
+      enabled: () => !cacheLoaded || (readConnected && document.visibilityState === 'visible'),
       onError: (error) => {
         if (!stopped)
           setState((current) => ({
@@ -379,13 +416,25 @@ export function usePullDetail(
     checks: current(checks),
     stack: current(stack),
   }
-  const detail = combinePullSections(overview.detail, {
-    status: status.detail,
-    discussion: discussion.detail,
-    changes: changes.detail,
-    checks: checks.detail,
-    stack: stack.enabled ? stack.detail : null,
-  })
+  const detail = useMemo(
+    () =>
+      combinePullSections(overview.detail, {
+        status: status.detail,
+        discussion: discussion.detail,
+        changes: changes.detail,
+        checks: checks.detail,
+        stack: stack.enabled ? stack.detail : null,
+      }),
+    [
+      overview.detail,
+      status.detail,
+      discussion.detail,
+      changes.detail,
+      checks.detail,
+      stack.enabled,
+      stack.detail,
+    ],
+  )
   // A section can discover a push before the overview's cache expires. Refresh the overview once
   // for that discovered revision; never attach the mismatched comments or diff in the meantime.
   const discovered = [status, discussion, changes, checks, stack]

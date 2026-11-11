@@ -289,6 +289,38 @@ export class Tasks {
     if (task.subagents?.some(nativeAgentWorking) || this.nativeStopping.has(id))
       throw new HttpError(409, 'Stop active agents before archiving or deleting this thread.')
   }
+  /** Wait for actual worker retirement. A cancellation request alone is not a checkpoint. */
+  async stopForHandoff(id: string, stop: boolean, reservation: symbol) {
+    if (stop) {
+      const family = taskFamilyIds(this.store.get().tasks, id)
+      const runs = [...this.running].filter(([taskId]) => family.has(taskId))
+      if (this.running.has(id)) this.cancel(id)
+      const children = this.stopChildren(id)
+      await this.stopNativeFamily(id)
+      await this.executor.runPromise(
+        Effect.forEach(
+          [...children, ...runs.flatMap(([, run]) => (run.fiber ? [run.fiber] : []))],
+          (fiber) => Fiber.await(fiber),
+          { discard: true },
+        ),
+      )
+    }
+    this.requireIdle(id, reservation)
+    if (this.hasWorkingFamily(id))
+      throw new HttpError(409, 'Stop all child agents before continuing elsewhere.')
+  }
+  requireExecutionOwner(id: string) {
+    if (this.store.taskSummary(id).machineHandoff)
+      throw new HttpError(
+        409,
+        'This thread is continuing on another computer. Open its destination or finish the transfer first.',
+      )
+  }
+  async releaseProviderForHandoff(id: string) {
+    await this.registry.releaseTask(id)
+    this.nativeSessions.delete(id)
+    this.nativeDirectories.delete(id)
+  }
   schedulerStatus = {
     lastSuccess: null as string | null,
     error: null as string | null,
@@ -331,7 +363,14 @@ export class Tasks {
       this.deliverCompletions()
       const now = Date.now()
       for (const task of this.store.get().tasks) {
-        if (this.stopping || task.archived || task.archivedAt || task.example) continue
+        if (
+          this.stopping ||
+          task.archived ||
+          task.archivedAt ||
+          task.example ||
+          task.machineHandoff
+        )
+          continue
         const continuation = task.quotaContinuation
         if (continuation && Date.parse(continuation.at) <= now) {
           const policy = this.store.projectSettings(task.repositoryId).taskBehavior
@@ -424,6 +463,7 @@ export class Tasks {
   }
   feedback(value: unknown) {
     const input = decode(taskFeedbackSchema, value)
+    this.requireExecutionOwner(input.id)
     const task = this.store.taskSummary(input.id)
     const file = task.files.find((f) => f.path === input.path)
     const lines = (input.side === 'additions' ? file?.after : file?.before)?.split('\n')
@@ -454,6 +494,7 @@ export class Tasks {
   /** Undoes a turn's file changes (back to its before snapshot) or redoes them. The current
    * files are saved first, and a note tells the agent, so nothing is lost and it stays in sync. */
   async restoreTurn(id: string, turnId: string, direction: 'undo' | 'redo', note = true) {
+    this.requireExecutionOwner(id)
     const task = this.store.task(id)
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the agent before undoing or redoing a turn.')
@@ -501,6 +542,7 @@ export class Tasks {
         )
     }
     return lockAll([...new Set(entries.map((entry) => entry.directory))].sort(), async () => {
+      this.requireExecutionOwner(id)
       validateCheckpoint(this.store.task(id))
       const at = new Date().toISOString()
       const restoreId = randomUUID()
@@ -660,6 +702,7 @@ export class Tasks {
   /** Reverts one file: to how it was before a turn, or (without a turn) to the last commit.
    * The current files are saved to a ref first, and the agent gets a note. */
   async restoreFile(id: string, path: string, turnId?: string, checkoutId?: string) {
+    this.requireExecutionOwner(id)
     const task = this.store.task(id)
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the agent before reverting a file.')
@@ -683,6 +726,7 @@ export class Tasks {
     await safeFile(cwd, path)
     return this.withCheckoutMutation(cwd, async () => {
       const tree = before ?? (await this.git.headTree(cwd))
+      this.requireExecutionOwner(id)
       await this.git.restoreSnapshot(cwd, tree, `refs/dovo/file-restore/${randomUUID()}`, [path])
       const files = await this.git.changes(cwd).catch(() => undefined)
       const note = turnId
@@ -751,6 +795,7 @@ export class Tasks {
    * provider. That turn's file changes are undone first (saved to a ref, never lost). */
   retryTurnEffect(id: string, turnId: string, model?: string) {
     return runtimeOperation(async () => {
+      this.requireExecutionOwner(id)
       const task = this.store.task(id)
       if (task.status === 'running' || this.running.has(id))
         throw new HttpError(409, 'Stop the agent before trying again.')
@@ -1396,6 +1441,7 @@ export class Tasks {
   }
   /** Removes a review comment the agent has not received yet. Sent comments are history. */
   removeFeedback(id: string, messageId: string) {
+    this.requireExecutionOwner(id)
     const task = this.store.task(id)
     const message = task.messages.find((item) => item.id === messageId)
     if (!message) return { ok: true }
@@ -1424,6 +1470,7 @@ export class Tasks {
     initialTitle?: { before: string; after: string },
   ) {
     return runtimeOperation(() => {
+      this.requireExecutionOwner(id)
       if (this.deletionReservations.has(id))
         throw new HttpError(409, 'This thread is being deleted.')
       return this.attachments.metadata(id, attachmentIds)
@@ -1431,6 +1478,7 @@ export class Tasks {
       Effect.tap(() => (turnSettings ? Effect.void : this.resolveModel(id, text))),
       Effect.flatMap((attachments) =>
         runtimeOperation(() => {
+          this.requireExecutionOwner(id)
           if (this.deletionReservations.has(id))
             throw new HttpError(409, 'This thread is being deleted.')
           if (sendNow) {
@@ -1742,6 +1790,13 @@ export class Tasks {
     directMessageId?: string,
   ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
     return Effect.suspend(() => {
+      if (this.store.taskSummary(id).machineHandoff)
+        return Effect.fail(
+          new HttpError(
+            409,
+            'This thread is continuing on another computer. Finish its transfer first.',
+          ),
+        )
       if (this.deletionReservations.has(id))
         return Effect.fail(new HttpError(409, 'This thread is being deleted.'))
       if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
@@ -1808,6 +1863,13 @@ export class Tasks {
             return Effect.fail(new HttpError(409, 'The failed task changed before retrying.'))
           // The native boundary above yields. Admission must be rechecked in the
           // same synchronous turn that registers the worker with its executor.
+          if (this.store.taskSummary(id).machineHandoff)
+            return Effect.fail(
+              new HttpError(
+                409,
+                'This thread is continuing on another computer. Finish its transfer first.',
+              ),
+            )
           if (this.deletionReservations.has(id))
             return Effect.fail(new HttpError(409, 'This thread is being deleted.'))
           if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))

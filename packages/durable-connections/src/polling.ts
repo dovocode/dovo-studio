@@ -1,7 +1,7 @@
 import { Cause, Effect, Result, Fiber, Queue } from 'effect'
 
 type PollingOptions<E> = {
-  interval: number
+  interval: number | (() => number)
   onError: (error: E) => void
   immediate?: boolean
   /** Park without a timer while false; call refresh when availability changes. */
@@ -19,10 +19,12 @@ export function startPolling<E>(work: Effect.Effect<void, E>, options: PollingOp
     if (!stopped) Effect.runSync(Queue.offer(wakeups, undefined))
   }
   // The interval runs from completion, so a slow read is never followed by an immediate one.
+  const interval = () =>
+    typeof options.interval === 'function' ? options.interval() : options.interval
   const delay = () => {
-    if (!failures || !options.backoff || options.backoff <= options.interval)
-      return options.interval
-    const grown = Math.min(options.interval * 2 ** Math.min(failures, 16), options.backoff)
+    const wait = interval()
+    if (!failures || !options.backoff || options.backoff <= wait) return wait
+    const grown = Math.min(wait * 2 ** Math.min(failures, 16), options.backoff)
     // Jitter keeps several clients of one recovering host from retrying in lockstep.
     return Math.round(grown * (0.8 + Math.random() * 0.2))
   }
@@ -64,7 +66,7 @@ export function startPolling<E>(work: Effect.Effect<void, E>, options: PollingOp
     Effect.gen(function* () {
       if (options.immediate === false)
         yield* enabled()
-          ? Effect.raceFirst(Queue.take(wakeups), Effect.sleep(options.interval))
+          ? Effect.raceFirst(Queue.take(wakeups), Effect.sleep(interval()))
           : Queue.take(wakeups)
       yield* Effect.forever(cycle)
     }).pipe(

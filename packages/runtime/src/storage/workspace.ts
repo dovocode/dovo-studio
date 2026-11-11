@@ -951,7 +951,12 @@ export class WorkspaceStore {
                 'Child permissions cannot exceed their parent or checkout access',
               )
           }
-          const locked = previous ? lockedTaskProvider(previous, this.workspace.agents) : undefined
+          const segmentChanged = previous?.harnessHandoff?.id !== task.harnessHandoff?.id
+          const locked = segmentChanged
+            ? lockedTaskProvider(task, parsed.agents)
+            : previous
+              ? lockedTaskProvider(previous, this.workspace.agents)
+              : undefined
           const provider = resolveTaskAgent(task, parsed.agents)?.provider
           const previousInstallation = previous
             ? (resolveTaskAgent(previous, this.workspace.agents)?.acpInstallationId ?? '')
@@ -967,7 +972,7 @@ export class WorkspaceStore {
               409,
               `This task uses ${locked}. After the first message, choose models and settings within the same provider. Create a new task to use another provider.`,
             )
-          if (locked === 'acp' && previousInstallation !== nextInstallation)
+          if (!segmentChanged && locked === 'acp' && previousInstallation !== nextInstallation)
             throw new HttpError(
               409,
               'This thread uses a different ACP installation. Start a new task to use another agent.',
@@ -1455,6 +1460,8 @@ export class WorkspaceStore {
           record.importedPiSession !== undefined ||
           record.checkoutLocked !== undefined ||
           record.providerLock !== undefined ||
+          record.harnessHandoff !== undefined ||
+          record.machineHandoff !== undefined ||
           record.worktreeSetupComplete !== undefined ||
           record.worktreeInitialSnapshot !== undefined ||
           record.worktreeBase !== undefined ||
@@ -1556,6 +1563,14 @@ export class WorkspaceStore {
     const summary =
       patch.collection === 'tasks' ? this.workspace.tasks.find((t) => t.id === patch.id) : undefined
     const complete = summary && patch.changes.messages ? this.task(patch.id) : undefined
+    if (
+      summary?.machineHandoff &&
+      Object.keys(patch.changes).some((key) => !['title', 'pinned'].includes(key))
+    )
+      throw new HttpError(
+        409,
+        'This thread is continuing on another computer. Finish or cancel the transfer before editing its source.',
+      )
     const current = decode(
       Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
       complete ?? entity,

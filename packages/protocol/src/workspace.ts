@@ -884,6 +884,26 @@ export const taskSchema = mutableStruct({
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),
+  /** Runtime-owned fresh provider segment. Historical turns retain their original provider. */
+  harnessHandoff: Schema.optional(
+    mutableStruct({
+      id: Schema.String,
+      provider: providerSchema,
+      createdAt: Schema.String,
+      checkpoint: Schema.optional(Schema.String),
+    }),
+  ),
+  /** Durable execution fence. A moved source remains available for recovery. */
+  machineHandoff: Schema.optional(
+    mutableStruct({
+      id: Schema.String,
+      targetRuntimeId: Schema.String,
+      state: Schema.Literals(['preparing', 'moved', 'staged']),
+      sourceArchived: Schema.optional(Schema.Boolean),
+      targetTaskId: Schema.optional(Schema.String),
+      checkpoint: Schema.optional(Schema.String),
+    }),
+  ),
   threadWatches: Schema.optional(mutableArray(threadWatchSummarySchema)),
   /** Navigation provenance, never an authorization or permission grant. */
   spawnParent: Schema.optional(threadParentSchema),
@@ -1235,6 +1255,7 @@ export function lockedTaskProvider(
   agents: readonly Agent[],
 ): Agent['provider'] | undefined {
   return (
+    task.harnessHandoff?.provider ??
     firstTaskTurnProvider(task) ??
     task.providerLock ??
     (canChangeTaskProvider(task) ? undefined : resolveTaskAgent(task, agents)?.provider)

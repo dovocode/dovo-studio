@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { Effect, Schema } from 'effect'
 import { guardSource } from '../../../runtime/src/scm/forges/integration/source-context'
 import {
@@ -139,6 +139,8 @@ it('keeps loaded depth, filters and server order during a forced refresh and rep
       path: '/api/scm/work/issues/list',
       input: {
         jiraSourceId: 'tracker',
+        conditional: true,
+        knownVersion: undefined,
         expectedReaderIdentity: 'jira-account',
         expectedDestination: 'jira-destination',
         state: 'open',
@@ -151,6 +153,8 @@ it('keeps loaded depth, filters and server order during a forced refresh and rep
       path: '/api/scm/work/issues/list',
       input: {
         jiraSourceId: 'tracker',
+        conditional: true,
+        knownVersion: undefined,
         expectedReaderIdentity: 'jira-account',
         expectedDestination: 'jira-destination',
         state: 'open',
@@ -163,7 +167,10 @@ it('keeps loaded depth, filters and server order during a forced refresh and rep
       path: '/api/scm/work/options',
       input: {
         jiraSourceId: 'tracker',
+        conditional: true,
+        knownVersion: undefined,
         area: 'issues',
+        refresh: true,
         expectedReaderIdentity: 'jira-account',
         expectedDestination: 'jira-destination',
       },
@@ -388,4 +395,89 @@ it('publishes Jira content while options are still pending and retains it on an 
     items: [issue(1)],
     optionsError: 'Jira options unavailable',
   })
+})
+
+it('rechecks older Jira list pages after the bounded interval and keeps the prefix on failure', async () => {
+  const { source, calls } = fixture(() => ({ items: [] }))
+  const raw = source.reader.requestEffect
+  let now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+  let older = 'Original older issue'
+  let fail = false
+  source.reader.requestEffect = (path, input, schema) => {
+    if (!path.endsWith('/issues/list')) return raw(path, input, schema)
+    return Effect.try({
+      try: () => {
+        calls.push({ path, input })
+        const query = decode(
+          Schema.Struct({
+            cursor: Schema.optional(Schema.String),
+            knownVersion: Schema.optional(Schema.String),
+          }),
+          input,
+        )
+        if (query.cursor && fail) throw new Error('Older page unavailable')
+        const readVersion = (query.cursor && older !== 'Original older issue' ? 'b' : 'a').repeat(
+          64,
+        )
+        return decode(
+          schema,
+          query.knownVersion === readVersion
+            ? { unchanged: true, readVersion }
+            : {
+                value: {
+                  items: [
+                    { ...issue(query.cursor ? 2 : 1), title: query.cursor ? older : 'First issue' },
+                  ],
+                  next: query.cursor ? undefined : '30',
+                },
+                readVersion,
+              },
+        )
+      },
+      catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+    })
+  }
+  try {
+    const first = await Effect.runPromise(
+      loadWorkSourcePage(source, 'issues', '', 'all', false, {
+        source,
+        reader: source.reader,
+        items: [],
+        loadedPages: 2,
+      }),
+    )
+    const previous = { ...first, source, reader: source.reader }
+    now += 30_000
+    const unchanged = await Effect.runPromise(
+      loadWorkSourcePage(source, 'issues', '', 'all', false, previous),
+    )
+    expect(unchanged.items).toBe(first.items)
+    expect(calls.filter((call) => call.path.endsWith('/list'))).toHaveLength(3)
+    older = 'Edited older issue'
+    now += 120_000
+    const swept = await Effect.runPromise(
+      loadWorkSourcePage(source, 'issues', '', 'all', false, {
+        ...unchanged,
+        source,
+        reader: source.reader,
+      }),
+    )
+    expect(swept.items[1]?.title).toBe(older)
+    now += 120_000
+    fail = true
+    await expect(
+      Effect.runPromise(
+        loadWorkSourcePage(source, 'issues', '', 'all', false, {
+          ...swept,
+          source,
+          reader: source.reader,
+        }),
+      ),
+    ).rejects.toThrow('Older page unavailable')
+    expect(swept.items).toHaveLength(2)
+    expect(workPageCacheValue(swept)).not.toHaveProperty('liveFirstPage')
+  } finally {
+    clock.mockRestore()
+  }
 })

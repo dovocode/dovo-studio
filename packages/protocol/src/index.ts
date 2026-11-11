@@ -34,6 +34,7 @@ export * from './tasks/harness-availability.js'
 export * from './shared/commands.js'
 
 export * from './scm/pulls/pulls.js'
+export * from './scm/pulls/pull-reads.js'
 export * from './scm/pulls/review-handoff.js'
 export * from './scm/pulls/pull-stack.js'
 
@@ -123,6 +124,7 @@ export * from './runtime/connection/project-machines.js'
 export * from './runtime/connection/runtime-target.js'
 
 export * from './tasks/task-machine-draft.js'
+export * from './tasks/thread-handoff.js'
 
 export {
   retainRuntimeSnapshot,
@@ -373,3 +375,5 @@ export * from './conversation/presentation/model-mentions.js'
 export * from './tasks/text-generator.js'
 export * from './tasks/prompt-suggestion.js'
 export * from './runtime/dictation.js'
+
+export * from './shared/conditional-read.js'

@@ -40,3 +40,8 @@ export {
 } from './images/image-editor.js'
 
 export { imageEditorFont as offlineEditorFont } from './images/image-editor-script.js'
+
+export {
+  ConditionalReadCache,
+  type ConditionalReadReply,
+} from './effects/conditional-read-cache.js'

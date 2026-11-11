@@ -1,5 +1,12 @@
+import { conditionalRead } from '../support/conditional-read.js'
+import { conditionalPullRead } from '../../scm/pulls/conditional-read.js'
 import {
   forgeSourceIdentityQuerySchema,
+  forgeIssueDetailSchema,
+  forgeIssuePageSchema,
+  forgeWorkOptionsSchema,
+  jiraBoardsSchema,
+  jiraSprintsSchema,
   pullDetailSectionSchema,
   pullSummarySchema,
   forgeSourceIdentitySchema,
@@ -308,11 +315,20 @@ export function scmRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const operation = path.slice('/api/scm/work/'.length)
-        return yield* serviceResult(
+        const result = yield* serviceResult(
           input.jiraSourceId
             ? s.forgeWork.requestJira(input.jiraSourceId, operation, input)
             : s.forgeWork.request(input.repositoryId!, operation, input),
         )
+        const readSchemas = new Map<string, Schema.Codec<unknown, unknown>>([
+          ['issues/list', forgeIssuePageSchema],
+          ['issues/detail', forgeIssueDetailSchema],
+          ['options', forgeWorkOptionsSchema],
+          ['jira/boards', jiraBoardsSchema],
+          ['jira/sprints', jiraSprintsSchema],
+        ])
+        const readSchema = input.jiraSourceId ? readSchemas.get(operation) : undefined
+        return readSchema ? conditionalRead(input, result, readSchema) : result
       }
       if (method === 'POST' && path === '/api/scm/cli-profiles/read') {
         const input = decode(forgeCliProfileQuerySchema, yield* serviceResult(body(request)))
@@ -495,28 +511,30 @@ export function scmRoute(request: IncomingMessage, path: string) {
           if (section === 'stack')
             throw new HttpError(400, 'Connect this project to discover stacks.')
           if (path === '/api/scm/pulls/detail' && section)
-            return yield* s.pullCache.sectionEffect(
-              target.url,
-              target.number,
-              section,
-              decode(
-                withDefault(Schema.Boolean, () => false),
-                input.refresh,
-              ),
-              urlScope?.destination,
-              decode(Schema.UndefinedOr(maxValue(Schema.String, 200)), input.revision),
-              {
-                identity: () => pulls.identity(false),
-                reader: {
-                  list: async () => {
-                    throw new HttpError(400, 'Connect this project to discover stacks.')
+            return yield* s.pullCache
+              .sectionEffect(
+                target.url,
+                target.number,
+                section,
+                decode(
+                  withDefault(Schema.Boolean, () => false),
+                  input.refresh,
+                ),
+                urlScope?.destination,
+                decode(Schema.UndefinedOr(maxValue(Schema.String, 200)), input.revision),
+                {
+                  identity: () => pulls.identity(false),
+                  reader: {
+                    list: async () => {
+                      throw new HttpError(400, 'Connect this project to discover stacks.')
+                    },
+                    detail: (_cwd, number) => pulls.detail(number, urlScope?.destination),
+                    section: (_cwd, number, resource) =>
+                      pulls.section(number, resource, urlScope?.destination),
                   },
-                  detail: (_cwd, number) => pulls.detail(number, urlScope?.destination),
-                  section: (_cwd, number, resource) =>
-                    pulls.section(number, resource, urlScope?.destination),
                 },
-              },
-            )
+              )
+              .pipe(Effect.map((value) => conditionalPullRead(input, value)))
           if (path === '/api/scm/pulls/detail' && input.connectionId)
             return yield* serviceResult(pulls.detail(target.number, urlScope?.destination))
           if (path === '/api/scm/pulls/detail')
@@ -692,75 +710,79 @@ export function scmRoute(request: IncomingMessage, path: string) {
         if (path === '/api/scm/pulls/overview') {
           const scope =
             readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd, input.refresh === true)))
-          return yield* s.pullCache.overviewEffect(
-            cwd,
-            decode(
-              withDefault(Schema.Literals(['open', 'closed', 'all']), () => 'open' as const),
-              input.state,
-            ),
-            decode(
-              withDefault(
-                maxValue(
-                  minValue(
-                    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-                      Schema.check(Schema.isInt()),
-                      Schema.check(
-                        Schema.isBetween({
-                          minimum: Number.MIN_SAFE_INTEGER,
-                          maximum: Number.MAX_SAFE_INTEGER,
-                        }),
-                      ),
-                    ),
-                    1,
-                  ),
-                  10000,
-                ),
-                () => 1,
+          return yield* s.pullCache
+            .overviewEffect(
+              cwd,
+              decode(
+                withDefault(Schema.Literals(['open', 'closed', 'all']), () => 'open' as const),
+                input.state,
               ),
-              input.page,
-            ),
-            decode(
-              withDefault(Schema.Boolean, () => false),
-              input.refresh,
-            ),
-            scope.destination,
-            {
-              identity: async () => {
-                scope.validate()
-                return scope.destination
+              decode(
+                withDefault(
+                  maxValue(
+                    minValue(
+                      Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+                        Schema.check(Schema.isInt()),
+                        Schema.check(
+                          Schema.isBetween({
+                            minimum: Number.MIN_SAFE_INTEGER,
+                            maximum: Number.MAX_SAFE_INTEGER,
+                          }),
+                        ),
+                      ),
+                      1,
+                    ),
+                    10000,
+                  ),
+                  () => 1,
+                ),
+                input.page,
+              ),
+              decode(
+                withDefault(Schema.Boolean, () => false),
+                input.refresh,
+              ),
+              scope.destination,
+              {
+                identity: async () => {
+                  scope.validate()
+                  return scope.destination
+                },
+                reader: {
+                  ...s.pulls.forDestination(scope.destination),
+                  list: (_cwd, state, page, background = false) =>
+                    s.pulls.listInContext(cwd, state, page, background, scope),
+                },
               },
-              reader: {
-                ...s.pulls.forDestination(scope.destination),
-                list: (_cwd, state, page, background = false) =>
-                  s.pulls.listInContext(cwd, state, page, background, scope),
-              },
-            },
-          )
+            )
+            .pipe(Effect.map((value) => conditionalPullRead(input, value)))
         }
         if (path === '/api/scm/pulls/detail' && input.section !== undefined) {
           const scope = readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd)))
-          return yield* s.pullCache.sectionEffect(
-            cwd,
-            decode(pullSummarySchema.fields.number, input.number),
-            decode(pullDetailSectionSchema, input.section),
-            decode(
-              withDefault(Schema.Boolean, () => false),
-              input.refresh,
-            ),
-            scope.destination,
-            decode(Schema.UndefinedOr(maxValue(Schema.String, 200)), input.revision),
-            {
-              identity: async () => {
-                scope.validate()
-                return scope.destination
+          return yield* s.pullCache
+            .sectionEffect(
+              cwd,
+              decode(pullSummarySchema.fields.number, input.number),
+              decode(pullDetailSectionSchema, input.section),
+              decode(
+                withDefault(Schema.Boolean, () => false),
+                input.refresh,
+              ),
+              scope.destination,
+              decode(Schema.UndefinedOr(maxValue(Schema.String, 200)), input.revision),
+              {
+                identity: async () => {
+                  scope.validate()
+                  return scope.destination
+                },
+                reader: {
+                  ...s.pulls.forDestination(scope.destination),
+                  section: (_cwd, number, section) =>
+                    s.pulls.sectionInContext(cwd, number, section, scope),
+                },
               },
-              reader: {
-                ...s.pulls.forDestination(scope.destination),
-                section: (_cwd, number, section) =>
-                  s.pulls.sectionInContext(cwd, number, section, scope),
-              },
-            },
-          )
+            )
+            .pipe(Effect.map((value) => conditionalPullRead(input, value)))
         }
         if (path === '/api/scm/pulls/detail')
           return yield* s.pullCache.detailWithStackEffect(

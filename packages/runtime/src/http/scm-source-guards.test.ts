@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { decode, forgeSourceIdentitySchema, pullDetailSchema } from '@dovo/protocol'
+import {
+  decode,
+  forgeSourceIdentitySchema,
+  pullDetailSchema,
+  pullDetailReadSchema,
+  pullPageReadSchema,
+} from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { GithubTransport } from '../scm/git/github-transport'
@@ -38,6 +44,7 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
   f.workspace.repositories[0]!.path = f.directory
   s.store.update(() => f.workspace)
   const clientFetch = fetch
+  let body = 'Private body'
   let account = 17
   let credential = 'secret-one'
   let repository = 'old/project'
@@ -64,7 +71,7 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
     head: { label: 'author:fix', ref: 'fix', sha, repo: repo() },
     base: { label: 'main', ref: 'main', sha: 'b'.repeat(40), repo: repo() },
     labels: [],
-    body: 'Private body',
+    body,
     additions: 0,
     deletions: 0,
     changed_files: 0,
@@ -176,6 +183,9 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
     connection,
     f,
     bind,
+    setBody: (value: string) => {
+      body = value
+    },
     setRepository: (value: string) => {
       repository = value
       bind()
@@ -566,4 +576,96 @@ it('reuses one verified context per list request and one account check across ca
   expect(context).toHaveBeenCalledTimes(3)
   expect(f.githubReads.filter((path) => path === 'user')).toHaveLength(2)
   expect(f.githubReads.filter((path) => path.includes('/pulls?'))).toHaveLength(2)
+})
+
+it('returns compact unchanged PR sections only after account and destination validation', async () => {
+  const f = await setup()
+  const identity = await f.identity()
+  const input = {
+    repositoryId: 'repo',
+    number: 7,
+    section: 'overview',
+    conditional: true,
+    expectedReaderIdentity: identity.readerIdentity,
+    expectedDestination: identity.destination,
+  }
+  const first = await f.call('pulls/detail', input)
+  expect(first.status).toBe(200)
+  const loaded = decode(pullDetailReadSchema, first.data)
+  if ('unchanged' in loaded) throw new Error('Initial PR read requires a value')
+  expect(loaded.readVersion).toMatch(/^[a-f0-9]{64}$/)
+  expect(loaded.pull.body).toBe('Private body')
+  const repeated = await f.call('pulls/detail', { ...input, knownVersion: loaded.readVersion })
+  expect(repeated.status).toBe(200)
+  expect(repeated.data).toEqual({ unchanged: true, readVersion: loaded.readVersion })
+  expect(JSON.stringify(repeated.data).length).toBeLessThan(110)
+  // A new client can still read an older server; legacy clients receive the same full shape.
+  const legacy = await f.call('pulls/detail', {
+    repositoryId: 'repo',
+    number: 7,
+    section: 'overview',
+  })
+  expect(decode(pullDetailSchema, legacy.data).pull.body).toBe('Private body')
+  expect(legacy.data).not.toHaveProperty('readVersion')
+  f.setAccount(18)
+  const wrongAccount = await f.call('pulls/detail', { ...input, knownVersion: loaded.readVersion })
+  expect(wrongAccount.status).toBe(409)
+  expect(wrongAccount.data).not.toHaveProperty('unchanged')
+  expect(JSON.stringify(wrongAccount.data)).not.toContain('Private body')
+})
+it('versions PR overview pages independently and preserves authenticated explicit refresh', async () => {
+  const f = await setup()
+  const first = await f.call('pulls/overview', { repositoryId: 'repo', page: 1, conditional: true })
+  expect(first.status).toBe(200)
+  const loaded = decode(pullPageReadSchema, first.data)
+  if ('unchanged' in loaded) throw new Error('Initial PR list requires a value')
+  const repeat = await f.call('pulls/overview', {
+    repositoryId: 'repo',
+    page: 1,
+    conditional: true,
+    knownVersion: loaded.readVersion,
+  })
+  expect(repeat.data).toEqual({ unchanged: true, readVersion: loaded.readVersion })
+  const pageTwo = await f.call('pulls/overview', {
+    repositoryId: 'repo',
+    page: 2,
+    conditional: true,
+    knownVersion: loaded.readVersion,
+  })
+  expect(pageTwo.data).not.toHaveProperty('unchanged')
+  f.rejectUser()
+  const rejected = await f.call('pulls/overview', {
+    repositoryId: 'repo',
+    conditional: true,
+    knownVersion: loaded.readVersion,
+    refresh: true,
+  })
+  expect(rejected.status).toBe(401)
+  expect(rejected.data).not.toHaveProperty('unchanged')
+})
+
+it('sends a compact unchanged HTTP response for a large description and returns changed content on refresh', async () => {
+  const f = await setup()
+  const body = 'Description ' + 'x'.repeat(64_000)
+  f.setBody(body)
+  const input = { repositoryId: 'repo', number: 7, section: 'overview', conditional: true }
+  const first = await f.call('pulls/detail', input)
+  const loaded = decode(pullDetailReadSchema, first.data)
+  if ('unchanged' in loaded) throw new Error('Initial read must contain the description')
+  expect(loaded.pull.body).toBe(body)
+  expect(JSON.stringify(first.data).length).toBeGreaterThan(64_000)
+  const repeated = await f.call('pulls/detail', { ...input, knownVersion: loaded.readVersion })
+  expect(repeated.status).toBe(200)
+  expect(repeated.data).toEqual({ unchanged: true, readVersion: loaded.readVersion })
+  expect(JSON.stringify(repeated.data).length).toBeLessThan(110)
+  f.setBody('Edited description')
+  const changed = await f.call('pulls/detail', {
+    ...input,
+    knownVersion: loaded.readVersion,
+    refresh: true,
+  })
+  const fresh = decode(pullDetailReadSchema, changed.data)
+  if ('unchanged' in fresh) throw new Error('A changed description needs a full response')
+  expect(fresh.pull.body).toBe('Edited description')
+  expect(fresh.readVersion).not.toBe(loaded.readVersion)
 })

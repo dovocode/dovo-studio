@@ -201,7 +201,8 @@ try {
           (call) => call.path.endsWith('/detail') && call.input.section === 'overview',
         ).input.refresh,
     ),
-    true,
+    false,
+    'Opening a PR uses the runtime cache; explicit refresh and resume force revalidation',
   )
   assert.doesNotMatch(await page.locator('body').innerText(), /showing cached|Last fetched/i)
   const beforeResume = await page.evaluate(
@@ -329,7 +330,7 @@ try {
   const overviewReads = await sectionsPage.evaluate(
     () => window.calls.filter((x) => x.input.section === 'overview').length,
   )
-  await sectionsPage.clock.fastForward(31000)
+  await sectionsPage.clock.fastForward(61000)
   await sectionsPage.waitForFunction(
     (count) => window.calls.filter((x) => x.input.section === 'overview').length > count,
     overviewReads,
@@ -354,7 +355,7 @@ try {
   await sectionsPage.evaluate(() => {
     window.changesWarning = false
   })
-  await sectionsPage.clock.fastForward(11000)
+  await sectionsPage.clock.fastForward(61000)
   await sectionsPage.waitForFunction(
     (count) =>
       window.calls.filter((x) => x.input.section === 'changes').length > count &&

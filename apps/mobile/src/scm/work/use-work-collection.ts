@@ -38,6 +38,8 @@ export type WorkPage = {
   firstPageIds?: string[]
   paginated?: boolean
   loadedPages?: number
+  optionsFetchedAt?: number
+  liveFirstPage?: typeof forgeIssuePageSchema.Type | typeof forgePipelinePageSchema.Type
 }
 export function useWorkCollection(
   mode: 'issues' | 'pipelines',
@@ -89,6 +91,8 @@ export function useWorkCollection(
           (path, input, schema, method) => readRuntime(profile, path, input, schema, method),
           workSourceContentIdentity(source),
           workSourceInput(source),
+          undefined,
+          cacheForRuntime(source.profile),
         )(path, input, schema, method)
       const cache = cacheForRuntime(source.profile)
       const optionsKey = workCacheKey(
@@ -178,10 +182,19 @@ export function useWorkCollection(
         const readOptions = read(
           source.profile,
           '/api/scm/work/options',
-          { ...workSourceInput(source), area: mode },
+          { ...workSourceInput(source), area: mode, ...(jira ? { refresh: force } : {}) },
           forgeWorkOptionsSchema,
         )
-        let options = knownOptions ?? (jira ? undefined : yield* readOptions)
+        const reuseOptions =
+          jira &&
+          !force &&
+          !page.optionsError &&
+          Date.now() - (page.optionsFetchedAt ?? 0) < 300_000
+            ? page.options
+            : undefined
+        let options = knownOptions ?? reuseOptions ?? (jira ? undefined : yield* readOptions)
+        let optionsFetchedAt =
+          knownOptions || reuseOptions ? page.optionsFetchedAt : options ? Date.now() : undefined
         if (generation.current !== current) return
         if (!jira && !(mode === 'issues' ? options?.issues : options?.pipelines)) {
           const empty: WorkPage = {
@@ -241,15 +254,25 @@ export function useWorkCollection(
                 forgePipelinePageSchema,
               )
         if (generation.current !== current) return
+        const unchanged = jira && !cursor && !force && page.liveFirstPage === data && !page.error
         const retaining = !cursor && !force && page.paginated && page.firstPageIds && data.next
         const next: WorkPage = {
           source,
           options,
-          items: cursor
-            ? [...new Map([...page.items, ...data.items].map((item) => [item.id, item])).values()]
-            : retaining
-              ? refreshFirstPage(page.items, page.firstPageIds ?? [], data.items, (item) => item.id)
-              : data.items,
+          optionsFetchedAt,
+          liveFirstPage: cursor ? page.liveFirstPage : data,
+          items: unchanged
+            ? page.items
+            : cursor
+              ? [...new Map([...page.items, ...data.items].map((item) => [item.id, item])).values()]
+              : retaining
+                ? refreshFirstPage(
+                    page.items,
+                    page.firstPageIds ?? [],
+                    data.items,
+                    (item) => item.id,
+                  )
+                : data.items,
           searched: mode === 'issues' && !!query && !!(jira || options?.issueSearch),
           firstPageIds: cursor ? page.firstPageIds : data.items.map((item) => item.id),
           paginated: !!cursor || !!retaining,
@@ -259,15 +282,21 @@ export function useWorkCollection(
               ? (page.loadedPages ?? 2)
               : 1,
           next: retaining ? page.next : data.next,
-          stale: !!data.stale || !!data.refreshError || !!retaining || (!!cursor && page.stale),
+          stale:
+            !!data.stale ||
+            !!data.refreshError ||
+            (!!retaining && !unchanged) ||
+            (!!cursor && page.stale),
           error: data.refreshError || (cursor ? page.error : undefined),
         }
         if (publish) update(source.key, next)
         let cacheError = false
         yield* Effect.all(
           [
-            ...(options ? [cache.writeEffect(optionsKey, options)] : []),
-            cache.writeEffect(pageKey, data),
+            ...(options && (!jira || options !== page.options || page.error)
+              ? [cache.writeEffect(optionsKey, options)]
+              : []),
+            ...(!unchanged ? [cache.writeEffect(pageKey, data)] : []),
           ],
           { concurrency: 2 },
         ).pipe(
@@ -287,9 +316,14 @@ export function useWorkCollection(
             Effect.tap((value) =>
               Effect.sync(() => {
                 options = value
+                optionsFetchedAt = Date.now()
               }),
             ),
-            Effect.flatMap((value) => cache.writeEffect(optionsKey, value)),
+            Effect.flatMap((value) =>
+              value !== page.options || page.error
+                ? cache.writeEffect(optionsKey, value)
+                : Effect.void,
+            ),
             Effect.catch((error) =>
               Effect.sync(() => {
                 next.optionsError = error.message
@@ -298,6 +332,7 @@ export function useWorkCollection(
           )
           if (generation.current !== current) return
           next.options = next.optionsError ? undefined : options
+          next.optionsFetchedAt = optionsFetchedAt
           if (publish)
             update(source.key, {
               ...next,
@@ -375,6 +410,71 @@ export function useWorkCollection(
             if (!fullSweepAt.current.has(sweepKey)) fullSweepAt.current.set(sweepKey, lastSweep)
             const previous = pageRef.current[source.key]
             if (
+              source.kind === 'jira' &&
+              mode === 'issues' &&
+              (previous?.loadedPages ?? 1) > 1 &&
+              source.connected &&
+              focused &&
+              AppState.currentState === 'active'
+            ) {
+              const sweep =
+                refresh || shouldSweepWorkPages(previous?.loadedPages, lastSweep, Date.now())
+              const initial = yield* loadRef.current(
+                source,
+                current,
+                undefined,
+                refresh,
+                shouldHydrate,
+                undefined,
+                false,
+              )
+              if (!initial || generation.current !== current) return
+              let staged: WorkPage = initial
+              const first = staged.liveFirstPage
+              if (
+                !staged.error &&
+                first &&
+                (sweep || first !== previous?.liveFirstPage || previous?.error)
+              ) {
+                // Rebuild from page one before publishing a changed boundary.
+                staged = {
+                  ...staged,
+                  items: first.items,
+                  next: first.next,
+                  loadedPages: 1,
+                  paginated: false,
+                  stale: !!first.stale || !!first.refreshError,
+                }
+                for (
+                  let number = 1;
+                  staged.next && !staged.error && number < (previous?.loadedPages ?? 1);
+                  number++
+                ) {
+                  const next: WorkPage | undefined = yield* loadRef.current(
+                    source,
+                    current,
+                    staged.next,
+                    refresh,
+                    false,
+                    staged,
+                    false,
+                    staged.options,
+                  )
+                  if (!next) return
+                  staged = next
+                }
+                if (!staged.error && !staged.stale) fullSweepAt.current.set(sweepKey, Date.now())
+              }
+              if (generation.current !== current) return
+              update(
+                source.key,
+                staged.error && previous
+                  ? { ...previous, stale: true, error: staged.error }
+                  : staged,
+              )
+              return
+            }
+            if (
               refresh ||
               !source.connected ||
               !focused ||
@@ -420,7 +520,16 @@ export function useWorkCollection(
       )
     }).pipe(Effect.ensuring(done))
     const polling = startPolling(semaphore.withPermits(1)(poll), {
-      interval: 30000,
+      interval: () =>
+        Object.values(pageRef.current).some(
+          (page) => page.source.kind === 'jira' && (page.error || page.optionsError),
+        )
+          ? 60_000
+          : Object.values(pageRef.current).some(
+                (page) => page.source.kind === 'jira' && page.liveFirstPage?.stale,
+              )
+            ? 2_000
+            : 30_000,
       onError: () => {},
     })
     moreRef.current = (key) =>

@@ -47,6 +47,7 @@ export const projectTransferStartSchema = mutableStruct({
   id: text(80),
   ...projectTransferSourceSchema.fields,
   thread: Schema.optional(transferThreadSchema),
+  handoff: Schema.optional(mutableStruct({ taskId: text(), stop: Schema.Boolean })),
   targetId: text(),
   ignoredFiles: maxValue(mutableArray(text(4096)), 10000),
   ssh: Schema.optional(projectTransferSshSchema),
@@ -63,6 +64,7 @@ export const projectTransferInspectionSchema = mutableStruct({
 export const projectTransferSchema = mutableStruct({
   id: Schema.String,
   repositoryId: Schema.String,
+  sourceTaskId: Schema.optional(Schema.String),
   targetId: Schema.String,
   targetName: Schema.String,
   transport: Schema.Literals(['p2p', 'ssh']),
@@ -91,7 +93,7 @@ export const projectTransferTargetsSchema = mutableArray(
 )
 export const projectTransferEntrySchema = mutableStruct({
   path: text(4096),
-  kind: Schema.Literals(['file', 'bundle', 'index']),
+  kind: Schema.Literals(['file', 'bundle', 'index', 'thread', 'attachment']),
   bytes: integer,
   sha256: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
   mode: maxValue(integer, 0o777),
@@ -102,6 +104,7 @@ export const projectTransferManifestSchema = mutableStruct({
   name: text(),
   entries: maxValue(mutableArray(projectTransferEntrySchema), PROJECT_TRANSFER_MAX_FILES + 10002),
   thread: Schema.optional(transferThreadSchema),
+  handoff: Schema.optional(mutableStruct({ sourceRuntimeId: text(), sourceTaskId: text() })),
   worktree: Schema.optional(
     mutableStruct({
       ...projectTransferProjectSchema.fields,

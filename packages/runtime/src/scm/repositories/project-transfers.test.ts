@@ -17,6 +17,7 @@ import { startRuntime } from '../../index.js'
 import { exec } from '../../process.js'
 import {
   decode,
+  defaultTaskHarness,
   peerAddress,
   projectTransferInspectionSchema,
   projectTransferSchema,
@@ -54,11 +55,11 @@ async function host(databasePath = ':memory:') {
     })
   return { ...runtime, post }
 }
-async function setup(git = false, persistentTarget = false) {
+async function setup(git = false, persistentTarget = false, persistentSource = false) {
   const root = await mkdtemp(join(tmpdir(), 'dovo-copy-test-'))
   cleanup.push(() => rm(root, { recursive: true, force: true }))
   vi.stubEnv('DOVO_DATA_ROOT', join(root, 'dovo'))
-  const source = await host(),
+  const source = await host(persistentSource ? join(root, 'source.sqlite') : ':memory:'),
     target = await host(persistentTarget ? join(root, 'target.sqlite') : ':memory:')
   const path = join(root, 'source')
   await mkdir(path)
@@ -998,4 +999,490 @@ it('never replays an uncertain commit when cleanup and status are unavailable', 
   await result()
   expect(commits).toBe(1)
   expect(target.services.store.get().repositories).toHaveLength(1)
+})
+
+async function handoffFixture(persistentTarget = false, persistentSource = false) {
+  const f = await setup(true, persistentTarget, persistentSource)
+  const s = f.source.services
+  const task = s.tasks.create({
+    title: 'Portable thread',
+    repositoryId: f.repository.id,
+    agentId: '',
+    execution: 'main',
+    objective: 'Keep the original request',
+  })
+  const attachment = await s.attachments.upload({
+    id: randomUUID(),
+    taskId: task.id,
+    name: 'notes.txt',
+    data: Buffer.from('Attachment bytes').toString('base64'),
+  })
+  s.store.updateTaskHistory(task.id, (task) => ({
+    ...task,
+    status: 'review',
+    sessionId: 'never-copy-native-session',
+    draft: 'Unsent follow-up',
+    draftPlan: true,
+    nativeTodos: [{ id: 'todo', text: 'Do the remaining work', status: 'pending' }],
+    messages: [
+      ...task.messages,
+      {
+        id: 'answer',
+        role: 'assistant',
+        text: 'The first part is complete',
+        attachments: [attachment.attachment],
+      },
+    ],
+  }))
+  await writeFile(join(f.path, 'readme.txt'), 'staged changes')
+  await exec('git', ['add', 'readme.txt'], { cwd: f.path })
+  await writeFile(join(f.path, 'readme.txt'), 'unstaged changes')
+  await writeFile(join(f.path, 'untracked.txt'), 'untracked changes')
+  f.input.handoff = { taskId: task.id, stop: false }
+  return { ...f, task, attachment: attachment.attachment }
+}
+it('continues a full thread only after durable ownership release, carrying files and remapped attachments', async () => {
+  const { source, target, task, attachment, input, path, result } = await handoffFixture()
+  const sourceTask = source.services.store.task(task.id)
+  const targetStart = vi.spyOn(target.services.tasks, 'start')
+  const activate = target.services.projectTransfers.activate.bind(target.services.projectTransfers)
+  let activationChecked = false
+  vi.spyOn(target.services.projectTransfers, 'activate').mockImplementation((id, device) => {
+    const staged = target.services.store.get().tasks[0]!
+    expect(staged.machineHandoff?.state).toBe('staged')
+    expect(staged.archivedAt).toBeTruthy()
+    expect(source.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+    expect(() =>
+      target.services.tasks.queue.add(staged.id, 'forbidden', 'Never run before activation'),
+    ).toThrow(/another computer/)
+    activationChecked = true
+    return activate(id, device)
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  const job = source.services.projectTransfers.list()[0]!
+  const received = target.services.store.task(job.targetTaskId!)
+  expect(activationChecked).toBe(true)
+  expect(targetStart).not.toHaveBeenCalled()
+  expect(received.messages.map((message) => message.text)).toEqual(
+    sourceTask.messages.map((message) => message.text),
+  )
+  expect(received.nativeTodos).toEqual(sourceTask.nativeTodos)
+  expect(received.draft).toBe('Unsent follow-up')
+  expect(received.draftPlan).toBe(true)
+  expect(received.sessionId).toBeUndefined()
+  expect(received.machineHandoff).toBeUndefined()
+  expect(received.archivedAt).toBeUndefined()
+  const movedAttachment = received.messages.at(-1)!.attachments![0]!
+  expect(movedAttachment.id).not.toBe(attachment.id)
+  expect(target.services.attachments.read(received.id, movedAttachment.id).data).toBe(
+    Buffer.from('Attachment bytes').toString('base64'),
+  )
+  expect(received.draftAttachments?.[0]?.id).toBe(movedAttachment.id)
+  expect(await readdir(copied.path)).not.toContain('thread.json')
+  expect(await readdir(copied.path)).not.toContain(attachment.id)
+  expect(await readFile(join(copied.path, 'readme.txt'), 'utf8')).toBe('unstaged changes')
+  expect(
+    await exec('git', ['show', ':readme.txt'], { cwd: copied.path }).then(
+      (result) => result.stdout,
+    ),
+  ).toBe('staged changes')
+  expect(await readFile(join(copied.path, 'untracked.txt'), 'utf8')).toBe('untracked changes')
+  expect(await readFile(join(path, 'readme.txt'), 'utf8')).toBe('unstaged changes')
+  await expect(
+    source.services.tasks.send(task.id, 'after-move', 'Do not execute twice'),
+  ).rejects.toThrow(/another computer/)
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  expect(target.services.store.get().tasks).toHaveLength(1)
+})
+it('recovers a staged destination across restart and retries activation without creating another thread', async () => {
+  const { root, source, target, task, input } = await handoffFixture(true)
+  const activate = vi.spyOn(target.services.projectTransfers, 'activate').mockImplementation(() => {
+    throw new Error('Activation unavailable')
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect(source.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+  const staged = target.services.store.get().tasks[0]!
+  expect(staged.machineHandoff?.state).toBe('staged')
+  await expect(target.services.tasks.start(staged.id)).rejects.toThrow(/another computer/)
+  activate.mockRestore()
+  await target.close()
+  const restarted = await host(join(root, 'target.sqlite'))
+  expect(restarted.services.store.task(staged.id).machineHandoff?.state).toBe('staged')
+  source.services.retrievalPeers.register('owner', {
+    sessionId: 'copy',
+    peers: [
+      {
+        id: restarted.services.runtimeId,
+        name: 'Destination',
+        connection: {
+          address: `http://127.0.0.1:${restarted.port}`,
+          token: owner,
+          runtimeId: restarted.services.runtimeId,
+        },
+      },
+    ],
+  })
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  // The fixture's target object is closed; validate the source receipt and restarted store directly.
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('completed'),
+  )
+  expect(restarted.services.store.get().tasks).toHaveLength(1)
+  expect(restarted.services.store.task(staged.id).machineHandoff).toBeUndefined()
+  expect(restarted.services.projectTransfers.activate(input.id, 'owner').taskId).toBe(staged.id)
+  expect(source.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+})
+it('keeps uncertain sources blocked and reconciles a lost commit before any new snapshot', async () => {
+  const { source, target, task, input, result } = await handoffFixture()
+  const original = globalThis.fetch
+  let committed = false
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    if (address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/commit`) {
+      await original(url, init)
+      committed = true
+      throw new Error('Commit reply lost')
+    }
+    if (committed && address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/status`)
+      throw new Error('Destination offline')
+    return original(url, init)
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect(source.services.store.task(task.id).machineHandoff?.state).toBe('preparing')
+  expect(target.services.store.get().tasks[0]?.machineHandoff?.state).toBe('staged')
+  expect(() =>
+    source.services.store.patch({
+      collection: 'tasks',
+      id: task.id,
+      changes: { draft: { before: 'Unsent follow-up', after: 'Race' } },
+    }),
+  ).toThrow(/another computer/)
+  fetch.mockRestore()
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  await result()
+  expect(target.services.store.get().tasks).toHaveLength(1)
+  expect(target.services.store.get().tasks[0]?.machineHandoff).toBeUndefined()
+})
+it('refuses old destinations without losing the saved thread and releases only a confirmed empty destination', async () => {
+  const { source, target, task, input } = await handoffFixture()
+  const status = target.services.projectTransfers.status.bind(target.services.projectTransfers)
+  vi.spyOn(target.services.projectTransfers, 'status').mockImplementation((...args) => ({
+    ...status(...args),
+    threadHandoffsSupported: false,
+  }))
+  const begin = vi.spyOn(target.services.projectTransfers, 'begin')
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect(begin).not.toHaveBeenCalled()
+  expect(source.services.store.task(task.id).machineHandoff).toBeUndefined()
+  expect(source.services.store.task(task.id).messages).toHaveLength(2)
+  expect(target.services.store.get().tasks).toHaveLength(0)
+})
+it('retains source ownership fences and the exact transfer request across a source restart', async () => {
+  const { root, source, target, task, input } = await handoffFixture(false, true)
+  const activate = vi.spyOn(target.services.projectTransfers, 'activate').mockImplementation(() => {
+    throw new Error('Lost activation')
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  const targetId = target.services.store.get().tasks[0]!.id
+  await source.close()
+  activate.mockRestore()
+  const restarted = await host(join(root, 'source.sqlite'))
+  expect(restarted.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+  await expect(restarted.services.tasks.start(task.id)).rejects.toThrow(/another computer/)
+  restarted.services.retrievalPeers.register('owner', {
+    sessionId: 'copy',
+    peers: [
+      {
+        id: target.services.runtimeId,
+        name: 'Destination',
+        connection: {
+          address: `http://127.0.0.1:${target.port}`,
+          token: owner,
+          runtimeId: target.services.runtimeId,
+        },
+      },
+    ],
+  })
+  expect((await restarted.post('retry', { id: input.id })).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(restarted.services.projectTransfers.list()[0]?.state).toBe('completed'),
+  )
+  expect(target.services.store.get().tasks).toHaveLength(1)
+  expect(target.services.store.task(targetId).machineHandoff).toBeUndefined()
+})
+it('confirms an empty destination before cancel releases a source after an uncertain failed begin', async () => {
+  const { source, target, task, input } = await handoffFixture()
+  const begin = vi
+    .spyOn(target.services.projectTransfers, 'begin')
+    .mockRejectedValue(new Error('Not enough disk space'))
+  const original = globalThis.fetch
+  let checks = 0
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    if (
+      address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/status` &&
+      ++checks > 1
+    )
+      throw new Error('Destination offline')
+    return original(url, init)
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect(source.services.store.task(task.id).machineHandoff?.state).toBe('preparing')
+  fetch.mockRestore()
+  begin.mockRestore()
+  expect((await source.post('cancel', { id: input.id })).status).toBe(200)
+  expect(source.services.store.task(task.id).machineHandoff).toBeUndefined()
+  expect(source.services.projectTransfers.list()[0]?.state).toBe('cancelled')
+  expect(target.services.store.get().tasks).toHaveLength(0)
+  expect(target.services.store.get().repositories).toHaveLength(0)
+})
+it('reports an uncertain active cancellation as blocked until destination cleanup can be checked', async () => {
+  const { source, target, task, input } = await handoffFixture()
+  const originalBegin = target.services.projectTransfers.begin.bind(
+    target.services.projectTransfers,
+  )
+  let reached!: () => void
+  let release!: () => void
+  const receiving = new Promise<void>((resolve) => {
+    reached = resolve
+  })
+  const hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(target.services.projectTransfers, 'begin').mockImplementation(async (...args) => {
+    reached()
+    await hold
+    return originalBegin(...args)
+  })
+  const original = globalThis.fetch
+  let checks = 0
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((url, init) => {
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    if (
+      address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/status` &&
+      ++checks > 1
+    )
+      return Promise.reject(new Error('Cleanup unavailable'))
+    return original(url, init)
+  })
+  try {
+    expect((await source.post('start', input)).status).toBe(200)
+    await receiving
+    expect((await source.post('cancel', { id: input.id })).status).toBe(409)
+    expect(source.services.store.task(task.id).machineHandoff?.state).toBe('preparing')
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed')
+  } finally {
+    release()
+    fetch.mockRestore()
+  }
+})
+it('uses the destination harness and local configuration without copying source session or login settings', async () => {
+  const { source, target, task, input, result } = await handoffFixture()
+  source.services.store.updateTask(task.id, (task) => ({
+    ...task,
+    harness: {
+      ...defaultTaskHarness('codex'),
+      configDirectory: '/source-login',
+      executablePath: '/source-agent',
+      model: 'source-model',
+    },
+  }))
+  target.services.defaults.save({
+    ...target.services.defaults.get(),
+    harness: {
+      ...defaultTaskHarness('claude'),
+      configDirectory: '/destination-login',
+      executablePath: '/destination-agent',
+      model: 'destination-model',
+    },
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await result()
+  const received = target.services.store.task(
+    source.services.projectTransfers.list()[0]!.targetTaskId!,
+  )
+  expect(received.harness).toMatchObject({
+    provider: 'claude',
+    model: 'destination-model',
+    configDirectory: '/destination-login',
+    executablePath: '/destination-agent',
+  })
+  expect(received.providerLock).toBe('claude')
+  expect(received.sessionId).toBeUndefined()
+  expect(received.messages[0]?.text).toBe('Keep the original request')
+  expect(JSON.stringify(received)).not.toContain('/source-login')
+  expect(JSON.stringify(received)).not.toContain('/source-agent')
+  expect(JSON.stringify(received)).not.toContain('never-copy-native-session')
+})
+
+it.each([
+  ['preparing', 'retry'],
+  ['preparing', 'cancel'],
+  ['moved', 'retry'],
+  ['moved', 'cancel'],
+] as const)(
+  'recovers a %s source on %s after deleting its staged destination',
+  async (state, action) => {
+    const { root, source, target, task, input, path } = await handoffFixture(true)
+    const wasSettled = action === 'cancel'
+    source.services.store.updateTask(task.id, (task) => ({ ...task, archived: wasSettled }))
+    const original = globalThis.fetch
+    let committed = false
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+      if (
+        state === 'preparing' &&
+        address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/commit`
+      ) {
+        await original(url, init)
+        committed = true
+        throw new Error('Commit reply lost')
+      }
+      if (
+        state === 'preparing' &&
+        committed &&
+        address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/status`
+      )
+        throw new Error('Destination offline')
+      return original(url, init)
+    })
+    const activate = vi
+      .spyOn(target.services.projectTransfers, 'activate')
+      .mockImplementation(() => {
+        throw new Error('Activation unavailable')
+      })
+    expect((await source.post('start', input)).status).toBe(200)
+    await waitForRuntime(() =>
+      expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+    )
+    expect(source.services.store.task(task.id).machineHandoff?.state).toBe(state)
+    const staged = target.services.store.get().tasks[0]!
+    expect(staged.machineHandoff?.state).toBe('staged')
+    fetch.mockRestore()
+    activate.mockRestore()
+    // A failed enclosing transaction must roll back both the task and its discard proof.
+    expect(() =>
+      target.services.store.transaction(() => {
+        target.services.projectTransfers.discardStagedThread(staged.id)
+        throw new Error('Rollback deletion')
+      }),
+    ).toThrow('Rollback deletion')
+    expect(target.services.projectTransfers.status(input.id, 'owner').result?.taskId).toBe(
+      staged.id,
+    )
+    expect(target.services.projectTransfers.status(input.id, 'owner').discarded).toBeUndefined()
+    const deletion = await original(`http://127.0.0.1:${target.port}/api/tasks/lifecycle`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: staged.id, action: 'delete', removeWorktrees: false }),
+    })
+    expect(deletion.status).toBe(200)
+    expect(target.services.store.get().tasks).toHaveLength(0)
+    expect(target.services.projectTransfers.status(input.id, 'owner')).toMatchObject({
+      discarded: true,
+      result: undefined,
+    })
+    expect(await target.services.projectTransfers.discard(input.id, 'owner')).toEqual({
+      ok: true,
+      discarded: true,
+      result: undefined,
+    })
+    expect(() => target.services.projectTransfers.activate(input.id, 'owner')).toThrow(/deleted/)
+    await expect(
+      target.services.projectTransfers.commit(input.id, 'owner', () => {}),
+    ).rejects.toThrow(/discarded/)
+    let destination = target
+    if (state === 'moved' && action === 'retry') {
+      await target.close()
+      destination = await host(join(root, 'target.sqlite'))
+      source.services.retrievalPeers.register('owner', {
+        sessionId: 'copy',
+        peers: [
+          {
+            id: destination.services.runtimeId,
+            name: 'Destination',
+            connection: {
+              address: `http://127.0.0.1:${destination.port}`,
+              token: owner,
+              runtimeId: destination.services.runtimeId,
+            },
+          },
+        ],
+      })
+    }
+    expect(destination.services.projectTransfers.status(input.id, 'owner').discarded).toBe(true)
+    expect((await source.post(action, { id: input.id })).status).toBe(200)
+    await waitForRuntime(() =>
+      expect(source.services.store.task(task.id).machineHandoff).toBeUndefined(),
+    )
+    const restored = source.services.store.task(task.id)
+    expect(restored.archived).toBe(wasSettled)
+    expect(restored.messages.map((message) => message.text)).toEqual([
+      'Keep the original request',
+      'The first part is complete',
+    ])
+    expect(restored.draft).toBe('Unsent follow-up')
+    expect(restored.nativeTodos).toHaveLength(1)
+    expect(await readFile(join(path, 'readme.txt'), 'utf8')).toBe('unstaged changes')
+    expect(source.services.projectTransfers.list()[0]?.error).toMatch(/source is available again/)
+    expect(destination.services.store.get().tasks).toHaveLength(0)
+  },
+)
+
+it('finishes a lost activation reply after the active destination was deleted, keeping the source read-only', async () => {
+  const { source, target, task, input } = await handoffFixture()
+  const original = globalThis.fetch
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    const response = await original(url, init)
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    if (address === `http://127.0.0.1:${target.port}/api/scm/project-transfer/activate`)
+      throw new Error('Activation reply lost')
+    return response
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  fetchSpy.mockRestore()
+  const received = target.services.store.get().tasks[0]!
+  const deletion = await fetch(`http://127.0.0.1:${target.port}/api/tasks/lifecycle`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: received.id, action: 'delete', removeWorktrees: false }),
+  })
+  expect(deletion.status).toBe(200)
+  expect(target.services.projectTransfers.status(input.id, 'owner').discarded).toBeUndefined()
+  expect(target.services.projectTransfers.status(input.id, 'owner').result?.taskId).toBe(
+    received.id,
+  )
+  expect(source.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('completed'),
+  )
+  expect(source.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+  expect(target.services.store.get().tasks).toHaveLength(0)
+  const sourceDeletion = await original(`http://127.0.0.1:${source.port}/api/tasks/lifecycle`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: task.id, action: 'delete', removeWorktrees: false }),
+  })
+  expect(sourceDeletion.status).toBe(200)
+  expect(source.services.store.get().tasks).toHaveLength(0)
 })

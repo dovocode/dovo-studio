@@ -137,6 +137,11 @@ export class TaskQueue {
       this.validatePlan(id, options.turnSettings, review)
     }
     const task = this.store.taskSummary(id)
+    if (task.machineHandoff)
+      throw new HttpError(
+        409,
+        'This thread is continuing on another computer. Its source cannot accept new input.',
+      )
     if (task.archivedAt || (task.archived && !task.autoSettled && !options.reopenSettled))
       throw new HttpError(409, 'Restore this task before sending a message')
     if ((task.queue?.length ?? 0) >= 50)

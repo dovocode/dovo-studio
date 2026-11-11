@@ -23,13 +23,19 @@ try {
     projectRoot: mobile,
     serverRoot: root,
   })
-  // Exercise the real production resolver/transformer without starting React Native.
+  // Exercise the production Hermes resolver/transformer without starting React Native.
   config.serializer.getModulesRunBeforeMainModule = () => []
   config.reporter = { update() {} }
   await writeFile(
     fixture,
     `
     import {parse} from 'jsonc-parser';
+    import {Effect} from 'effect';
+    import {jiraReader} from '@dovo/studio-core/jira-reads';
+    import {Schema} from 'effect';
+    globalThis.metroJiraRead = Effect.runPromise(jiraReader({}, 'paired/account/jira', () => Effect.succeed({value:{ok:true},readVersion:'b'.repeat(64)}))('/api/scm/work/options', {jiraSourceId:'jira'}, Schema.Struct({ok:Schema.Boolean})));
+    import {readPullPage} from '@dovo/studio-core/pull-reads';
+    globalThis.metroPullRead = Effect.runPromise(readPullPage({}, 'paired/account/repository', () => Effect.succeed({pulls:[],page:1,hasMore:false,readVersion:'a'.repeat(64)})));
     import {imageEditorDocument,parseImageEditorResult} from '../client-runtime/dist/images/image-editor.js';
     globalThis.metroEditorDocument = imageEditorDocument('data:image/png;base64,AA==');
     globalThis.metroEditorCancel = parseImageEditorResult({channel:'dovo-image-editor',type:'cancel'});
@@ -41,6 +47,8 @@ try {
     entry: fixture,
     out: output,
     platform: 'ios',
+    customTransformOptions: { engine: 'hermes' },
+    unstable_transformProfile: 'hermes-stable',
     dev: false,
     minify: true,
     maxWorkers: 2,
@@ -52,14 +60,18 @@ try {
     setInterval,
     clearInterval,
     performance,
+    TextEncoder,
+    TextDecoder,
     process,
   }
   runInNewContext(await readFile(output, 'utf8'), context, { timeout: 10000 })
+  assert.equal((await context.metroPullRead).page, 1)
+  assert.equal((await context.metroJiraRead).ok, true)
   assert.equal(context.metroThemeResult.name, 'Native theme')
   assert.ok(context.metroEditorDocument.includes('Edit image'))
   assert.equal(context.metroEditorCancel.type, 'cancel')
   console.log(
-    'Compiled model catalog, production iOS theme parser and image editor exports load successfully.',
+    'Compiled model catalog, production iOS PR and Jira readers, theme parser and image editor exports load successfully.',
   )
 } finally {
   process.chdir(previousDirectory)

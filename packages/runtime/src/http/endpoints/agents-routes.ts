@@ -25,6 +25,8 @@ import { isDeepStrictEqual } from 'node:util'
 import { runtimeDefaultsSchema } from '@dovo/protocol'
 import { acpRoute } from './acp-routes.js'
 import { handoffTask } from '../../scm/tasks/task-handoff.js'
+import { continueHarnessSchema } from '@dovo/protocol'
+import { continueHarness } from '../../agents/tasks/thread-handoff.js'
 import { uncommittedChanges } from '../../scm/work/change-summary.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { runtimeSetupSchema, titleGenerationSettingsSchema } from '@dovo/protocol'
@@ -1226,6 +1228,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         return yield* serviceResult(handoffTask(s, input.id, input.target))
       }
+      if (method === 'POST' && path === '/api/tasks/continue-harness') {
+        return yield* serviceResult(
+          continueHarness(s, decode(continueHarnessSchema, yield* serviceResult(body(request)))),
+        )
+      }
       if (method === 'POST' && path === '/api/tasks/checkouts/save') {
         const input = decode(
           mutableStruct({
@@ -1611,6 +1618,18 @@ export function taskLifecycle(
       const ids = taskFamilyIds(s.store.get().tasks, id)
       const requireIdle = () => {
         for (const taskId of ids) {
+          const handoff = s.store.taskSummary(taskId).machineHandoff
+          if (
+            handoff &&
+            !(handoff.state === 'staged' && action === 'delete') &&
+            (handoff.state !== 'moved' ||
+              action === 'restore' ||
+              s.projectTransfers.list().find((job) => job.id === handoff.id)?.state !== 'completed')
+          )
+            throw new HttpError(
+              409,
+              'Finish this thread’s computer transfer first. Its source stays available for recovery.',
+            )
           s.tasks.requireIdle(taskId, deletionReservation)
           s.jobs.requireTaskIdle(taskId)
         }
@@ -1659,6 +1678,7 @@ export function taskLifecycle(
         beforeDelete?.()
         s.store.transaction(() => {
           for (const taskId of ids) {
+            s.projectTransfers.discardStagedThread(taskId)
             s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)
           }
           s.store.update((workspace) => ({

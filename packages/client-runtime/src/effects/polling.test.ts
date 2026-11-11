@@ -175,3 +175,31 @@ it('owns no recurring timer while disabled and resumes promptly when refreshed',
     await polling.stop()
   }
 })
+
+it('uses the current interval after each response and keeps foreground refresh immediate', async () => {
+  vi.useFakeTimers()
+  let calls = 0
+  let interval = 10
+  const poller = startPolling(
+    Effect.sync(() => {
+      calls++
+      if (calls > 1) interval = 100
+    }),
+    {
+      interval: () => interval,
+      onError: () => {},
+    },
+  )
+  try {
+    await vi.advanceTimersByTimeAsync(11)
+    expect(calls).toBe(2)
+    await vi.advanceTimersByTimeAsync(90)
+    expect(calls).toBe(2)
+    poller.refresh()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toBe(3)
+  } finally {
+    await poller.stop()
+  }
+})

@@ -339,3 +339,20 @@ node scripts/check-mobile-draft-transition-browser.mjs
 ```
 
 The browser checks mock native phone controls. They do not verify a physical phone or a live forge.
+
+## Jira reads and refresh
+
+Desktop and mobile share concurrent Jira reads for the same verified account and source. A matching
+live version returns a compact reply and keeps the current data. Old runtimes can still send full
+responses. Saved offline data remains separate from the live version cache.
+
+Issue overviews, lists and discussion refresh every 30 seconds while active. Stale runtime results
+get a two-second follow-up; errors wait 60 seconds. Issue action metadata refreshes every five
+minutes. **Refresh**, **Retry actions** and successful issue actions recheck it at once. Board and
+sprint data loads when you open the view or retry it. Explicit refresh adds no delay.
+
+Loaded list and comment pages stay visible during refresh. Dovo checks older pages on the first
+available poll after two minutes, or when page one changes or you refresh. A failed later page keeps
+the previous list or discussion. Filters, pagination depth, drafts and account/destination guards
+remain in effect. See [performance verification](performance.md#jira-reads) for commands, measured
+fixture results and device-test limits.

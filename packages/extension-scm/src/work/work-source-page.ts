@@ -1,3 +1,4 @@
+import { jiraReader } from '@dovo/studio-core/jira-reads'
 import { Effect, Schema } from 'effect'
 import {
   forgeIssuePageSchema,
@@ -14,6 +15,8 @@ import {
 import { verifySourceReader } from '../connections/source-readers'
 import type { WorkSource } from './work-sources'
 
+type ForgeIssuePage = typeof forgeIssuePageSchema.Type
+
 export type WorkItemsPage = {
   items: Array<ForgeIssue | ForgePipeline>
   next?: string
@@ -25,6 +28,8 @@ export type WorkSourcePage = WorkItemsPage & {
   source: WorkSource
   reader: WorkSource
   loadedPages?: number
+  liveFirstPage?: ForgeIssuePage
+  prefixCheckedAt?: number
   optionsMode?: 'issues' | 'pipelines'
   optionsFetchedAt?: number
   query?: string
@@ -110,6 +115,7 @@ export function reusableOptions<T>(
   mode: string,
   refresh: boolean,
   now = Date.now(),
+  maxAge = 60_000,
 ): T | undefined {
   return !refresh &&
     page &&
@@ -117,7 +123,7 @@ export function reusableOptions<T>(
     page.optionsMode === mode &&
     page.optionsFetchedAt !== undefined &&
     now - page.optionsFetchedAt >= 0 &&
-    now - page.optionsFetchedAt < 60_000
+    now - page.optionsFetchedAt < maxAge
     ? page.options
     : undefined
 }
@@ -153,14 +159,23 @@ export function loadWorkSourcePage(
 ) {
   return Effect.gen(function* () {
     const reader = source.reader
+    const request = jiraReader(reader.readCache, reader.scope, reader.requestEffect)
     const readGuard = yield* verifySourceReader(reader)
     const jira = mode === 'issues' && !!source.jira
-    const readOptions = reader.requestEffect(
+    const readOptions = request(
       '/api/scm/work/options',
-      { ...reader.input, ...readGuard, area: mode },
+      { ...reader.input, ...readGuard, area: mode, ...(jira ? { refresh } : {}) },
       forgeWorkOptionsSchema,
     )
-    let options = reusableOptions(previous, reader, mode, refresh)
+    let options = reusableOptions(
+      previous,
+      reader,
+      mode,
+      refresh,
+      Date.now(),
+      jira ? 300_000 : 60_000,
+    )
+    const reusedOptions = options
     if (!jira && !options) options = yield* readOptions
     const query =
       mode === 'issues' &&
@@ -173,11 +188,13 @@ export function loadWorkSourcePage(
     const count = Math.max(1, previous?.loadedPages ?? 1)
     let response: WorkItemsPage = { items: [] }
     let loadedPages = 0
+    let liveFirstPage: ForgeIssuePage | undefined
+    let retained = false
     if (supported)
       for (let number = 0; number < count; number++) {
         const next =
           mode === 'issues'
-            ? yield* reader.requestEffect(
+            ? yield* request(
                 '/api/scm/work/issues/list',
                 {
                   ...reader.input,
@@ -190,17 +207,38 @@ export function loadWorkSourcePage(
                 },
                 forgeIssuePageSchema,
               )
-            : yield* reader.requestEffect(
+            : yield* request(
                 '/api/scm/work/pipelines/list',
                 { ...reader.input, ...readGuard, cursor: response.next, refresh },
                 forgePipelinePageSchema,
               )
+        if (jira && number === 0 && Schema.is(forgeIssuePageSchema)(next)) {
+          liveFirstPage = next
+          if (
+            !refresh &&
+            !next.stale &&
+            !next.refreshError &&
+            previous?.liveFirstPage === next &&
+            previous.reader.scope === reader.scope &&
+            !previous.stale &&
+            !previous.error &&
+            Date.now() - (previous.prefixCheckedAt ?? 0) < 120_000
+          ) {
+            response = previous
+            loadedPages = previous.loadedPages ?? 1
+            retained = true
+            break
+          }
+        }
         response = appendWorkPage(response, workPageForOrigin(next, source))
         loadedPages++
         if (!response.next) break
       }
     const content = {
       ...response,
+      ...(jira
+        ? { liveFirstPage, prefixCheckedAt: retained ? previous?.prefixCheckedAt : Date.now() }
+        : {}),
       loadedPages: Math.max(1, loadedPages),
       query,
       error: response.refreshError,
@@ -228,7 +266,7 @@ export function loadWorkSourcePage(
         (reader.key === source.key ? options : { ...options, destination: source.destination }),
       optionsMode: mode,
       optionsFetchedAt: options
-        ? options === previous?.options
+        ? reusedOptions
           ? previous?.optionsFetchedAt
           : Date.now()
         : undefined,

@@ -27,6 +27,7 @@ import {
 } from '@dovo/studio-core'
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
+import { MachineHandoffNotice } from './machine-handoff-notice'
 import type { SelectRemoteProject } from '../chat/composer/composer-project'
 import { TaskEmptyState } from '../task-creation/task-empty-state'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
@@ -368,27 +369,31 @@ export function TaskConversation({
             className={welcome ? 'mb-auto w-full shrink-0 pb-8' : undefined}
             onFocusCapture={() => setComposerCollapsed(false)}
           >
-            <Composer
-              startup={welcome}
-              onStartBackground={welcome ? onStartBackground : undefined}
-              collapsed={minimalComposer && collapseComposerOnScroll && composerCollapsed}
-              key={task.id}
-              task={task}
-              temporary={temporary}
-              workspaceControls={workspaceControls}
-              workspaceMoving={projectMoving}
-              onWorkspaceMoving={setProjectMoving}
-              onSelectRemote={onSelectRemote}
-              queuedMessages={
-                <ComposerActivity key={task.id} task={queueTask} pending={visiblePending} />
-              }
-              onPending={onPending}
-              onAside={onAside}
-              composerInsert={pendingTemplate ?? composerInsert}
-              onComposerInsertApplied={
-                pendingTemplate ? () => setTemplateInsert(null) : onComposerInsertApplied
-              }
-            />
+            {task.machineHandoff ? (
+              <MachineHandoffNotice handoff={task.machineHandoff} taskId={task.id} />
+            ) : (
+              <Composer
+                startup={welcome}
+                onStartBackground={welcome ? onStartBackground : undefined}
+                collapsed={minimalComposer && collapseComposerOnScroll && composerCollapsed}
+                key={task.id}
+                task={task}
+                temporary={temporary}
+                workspaceControls={workspaceControls}
+                workspaceMoving={projectMoving}
+                onWorkspaceMoving={setProjectMoving}
+                onSelectRemote={onSelectRemote}
+                queuedMessages={
+                  <ComposerActivity key={task.id} task={queueTask} pending={visiblePending} />
+                }
+                onPending={onPending}
+                onAside={onAside}
+                composerInsert={pendingTemplate ?? composerInsert}
+                onComposerInsertApplied={
+                  pendingTemplate ? () => setTemplateInsert(null) : onComposerInsertApplied
+                }
+              />
+            )}
           </div>
           {managePullTask === task.id && (
             <TaskPullLinkDialog key={task.id} task={task} onClose={() => setManagePullTask(null)} />

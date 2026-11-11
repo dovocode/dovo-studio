@@ -2,6 +2,7 @@ import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { studioReference, taskSnoozeMenuChoices } from '@dovo/protocol'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
+import { ContinueElsewhereDialog } from '../dialogs/continue-elsewhere-dialog'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -45,6 +46,7 @@ import {
   Archive,
   Trash2,
   ArrowUpRight,
+  ArrowRightLeft,
   Check,
   ChevronRight,
   AlarmClock,
@@ -146,7 +148,15 @@ export function TaskContextMenu({
   const pendingRef = useRef(false)
   const [error, setError] = useApplicationState('')
   const [dialog, setDialog] = useApplicationState<
-    'rename' | 'delete' | 'template' | 'project' | 'transfer' | 'archive-period' | null
+    | 'rename'
+    | 'delete'
+    | 'template'
+    | 'project'
+    | 'transfer'
+    | 'continue'
+    | 'continue-machine'
+    | 'archive-period'
+    | null
   >(null)
   const supportsWorktreeOverride = source.worktreeDeletionOverrideSupported
   const [removeWorktrees, setRemoveWorktrees] = useApplicationState(false)
@@ -203,6 +213,13 @@ export function TaskContextMenu({
     )
   }
   const patch = (updates: TaskRowChanges) => client.patch(task, updates)
+  /** Dialogs that read runtime state must use the computer that owns this thread. */
+  const inOwnerScope = (node: ReactNode) =>
+    local ? (
+      node
+    ) : client.profile ? (
+      <WorkspaceScope profile={client.profile}>{node}</WorkspaceScope>
+    ) : null
 
   const trigger = dropdown ? (
     <Menu.Trigger asChild>{children}</Menu.Trigger>
@@ -434,6 +451,18 @@ export function TaskContextMenu({
               >
                 <Copy /> {task.execution === 'worktree' ? 'Copy worktree' : 'Copy project checkout'}{' '}
                 to another computer…
+              </Menu.Item>
+            )}
+            {source.threadHandoffsSupported && task.status !== 'draft' && (
+              <Menu.Item
+                className={itemClass}
+                disabled={!canEdit || !!task.archivedAt || !!task.machineHandoff}
+                onSelect={() => {
+                  setError('')
+                  setDialog('continue')
+                }}
+              >
+                <ArrowRightLeft /> Continue elsewhere…
               </Menu.Item>
             )}
             <Menu.Sub>
@@ -736,7 +765,12 @@ export function TaskContextMenu({
             <Menu.Separator className={separatorClass} />
             <Menu.Item
               className={itemClass}
-              disabled={!canEdit || task.status === 'running'}
+              disabled={
+                !canEdit ||
+                task.status === 'running' ||
+                // A moved thread is kept for recovery; the destination owns it now.
+                (!!task.archivedAt && task.machineHandoff?.state === 'moved')
+              }
               onSelect={() => {
                 void run(async () => {
                   if (
@@ -769,7 +803,9 @@ export function TaskContextMenu({
             </Menu.Item>
             <Menu.Item
               className={`${itemClass} text-destructive`}
-              disabled={!canEdit || task.status === 'running'}
+              disabled={
+                !canEdit || task.status === 'running' || task.machineHandoff?.state === 'preparing'
+              }
               onSelect={() => {
                 setError('')
                 if (readAppPreferences().confirmDelete)
@@ -845,24 +881,26 @@ export function TaskContextMenu({
           </form>
         </DialogContent>
       </Dialog>
-      {dialog === 'transfer' &&
+      {(dialog === 'transfer' || dialog === 'continue-machine') &&
         repository &&
-        (local || client.profile) &&
-        (local ? (
+        inOwnerScope(
           <ProjectTransferDialog
             repository={repository}
             sourceTask={task}
+            continuation={dialog === 'continue-machine'}
             onClose={() => setDialog(null)}
-          />
-        ) : client.profile ? (
-          <WorkspaceScope profile={client.profile}>
-            <ProjectTransferDialog
-              repository={repository}
-              sourceTask={task}
-              onClose={() => setDialog(null)}
-            />
-          </WorkspaceScope>
-        ) : null)}
+          />,
+        )}
+      {dialog === 'continue' &&
+        inOwnerScope(
+          <ContinueElsewhereDialog
+            task={task}
+            repository={repository}
+            onMachine={() => setDialog('continue-machine')}
+            onDone={() => void client.refresh()}
+            onClose={() => setDialog(null)}
+          />,
+        )}
       <Dialog open={dialog === 'project'} onOpenChange={(open) => !open && setDialog(null)}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogTitle>{repository?.name} settings</DialogTitle>

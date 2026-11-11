@@ -194,8 +194,9 @@ function WorkItemContent({
     refreshOverview: () => reload((value) => value + 1),
   })
   const issue = jiraSourceId ? discussion.issue : issueOverview
-  const [workOptionsError, setWorkOptionsError] = useApplicationState('')
+  const [workOptionsError, setWorkOptionsError, optionsErrorRef] = useApplicationState('')
   const [optionsRevision, reloadOptions] = useApplicationState(0)
+  const consumedOptions = useRef({ revision: 0, optionsRevision: 0 })
   useEffect(() => {
     if (
       (!jiraSourceId && mode !== 'pipelines') ||
@@ -205,30 +206,49 @@ function WorkItemContent({
     )
       return
     let stopped = false
+    let force =
+      consumedOptions.current.revision !== revision ||
+      consumedOptions.current.optionsRevision !== optionsRevision
+    let savedOptions: ForgeWorkOptions | undefined
     const polling = startPolling(
       Effect.suspend(() =>
         AppState.currentState === 'active'
           ? readEffect(
               '/api/scm/work/options',
-              { repositoryId, jiraSourceId, area: mode },
+              {
+                repositoryId,
+                jiraSourceId,
+                area: mode,
+                ...(jiraSourceId ? { refresh: force } : {}),
+              },
               forgeWorkOptionsSchema,
             ).pipe(
               Effect.tap((value) =>
                 nativeEffect(() => {
                   if (!stopped) {
+                    force = false
+                    consumedOptions.current = { revision, optionsRevision }
                     setOptions(value)
                     setWorkOptionsError('')
                   }
                 }),
               ),
               Effect.flatMap((value) =>
-                !stopped && readCache ? readCache.writeEffect(optionsKey, value) : Effect.void,
+                !stopped && value !== savedOptions
+                  ? (readCache?.writeEffect(optionsKey, value) ?? Effect.void).pipe(
+                      Effect.tap(() =>
+                        Effect.sync(() => {
+                          savedOptions = value
+                        }),
+                      ),
+                    )
+                  : Effect.void,
               ),
             )
           : Effect.void,
       ),
       {
-        interval: 30000,
+        interval: () => (jiraSourceId ? (optionsErrorRef.current ? 60_000 : 300_000) : 30_000),
         onError: (error) => {
           if (!stopped) setWorkOptionsError(error.message)
         },
@@ -257,7 +277,7 @@ function WorkItemContent({
   ])
   const [busy, setBusy] = useApplicationState(false)
   const [refreshing, setRefreshing] = useApplicationState(false)
-  const [error, setError] = useApplicationState('')
+  const [error, setError, errorRef] = useApplicationState('')
   const [stale, setStale] = useApplicationState(false)
   const [message, setMessage] = useApplicationState('')
   const [form, setForm] = useApplicationState<'edit' | 'comment' | 'run' | 'transition' | null>(
@@ -288,6 +308,7 @@ function WorkItemContent({
     if (!focused) return
     let stopped = false
     let force = revision > consumedRevision.current
+    let savedIssue: ForgeIssueDetail | undefined
     const load = Effect.suspend(() => {
       if (
         pending.current ||
@@ -378,18 +399,25 @@ function WorkItemContent({
           )
           if (!valid()) return
           assertWorkSource(mode, data.issue.url, expectedURL)
-          setIssue(data)
+          const unchanged = issueRef.current === data
+          if (!unchanged) setIssue(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
-          yield* (
-            readCache?.writeEffect(detailKey, { ...data, overviewOnly: true }) ?? Effect.void
-          ).pipe(
-            Effect.catch(() =>
-              nativeEffect(() => {
-                if (valid()) setError('Details loaded, but could not be saved for offline use.')
-              }),
-            ),
-          )
+          if (data !== savedIssue)
+            yield* (
+              readCache?.writeEffect(detailKey, { ...data, overviewOnly: true }) ?? Effect.void
+            ).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  savedIssue = data
+                }),
+              ),
+              Effect.catch(() =>
+                nativeEffect(() => {
+                  if (valid()) setError('Details loaded, but could not be saved for offline use.')
+                }),
+              ),
+            )
           return
         }
         const opts = yield* readEffect(
@@ -468,7 +496,14 @@ function WorkItemContent({
       )
     })
     const polling = startPolling(semaphore.withPermits(1)(load), {
-      interval: 30000,
+      interval: () =>
+        jiraSourceId
+          ? errorRef.current || issueRef.current?.refreshError
+            ? 60_000
+            : issueRef.current?.stale
+              ? 2_000
+              : 30_000
+          : 30_000,
       onError: () => {},
     })
     const subscription = AppState.addEventListener('change', (state) => {

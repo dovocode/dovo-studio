@@ -203,7 +203,7 @@ try {
   const listReads = await page.evaluate(
     () => window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length,
   )
-  await page.clock.runFor(10010)
+  await page.clock.runFor(31010)
   await page.waitForFunction(
     (before) =>
       window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length > before,
@@ -388,10 +388,14 @@ try {
   await paged.addScriptTag({ content: built.outputFiles[0].text })
   await paged.getByRole('button', { name: 'Check older runs', exact: true }).click()
   await paged.getByText('Older PR build', { exact: true }).waitFor()
+  const optionsBefore = await paged.evaluate(
+    () => window.reads.filter((read) => read.path.endsWith('/options')).length,
+  )
+  assert.equal(optionsBefore, 1, 'Pipeline capabilities load once for the project')
   const pagesBefore = await paged.evaluate(
     () => window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length,
   )
-  await paged.clock.runFor(10010)
+  await paged.clock.runFor(31010)
   await paged.waitForFunction(
     (before) =>
       window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length > before,
@@ -407,9 +411,40 @@ try {
     await paged.getByRole('button', { name: 'Check older runs', exact: true }).count(),
     0,
   )
+  assert.equal(
+    await paged.evaluate(
+      () => window.reads.filter((read) => read.path.endsWith('/options')).length,
+    ),
+    optionsBefore,
+    'Summary polling and pagination reuse pipeline capabilities',
+  )
   await paged.getByRole('button', { name: 'Refresh runs', exact: true }).click()
   await paged.waitForFunction(refreshFinished)
   await paged.getByText('Older PR build', { exact: true }).waitFor()
+  assert.equal(
+    await paged.evaluate(
+      () => window.reads.filter((read) => read.path.endsWith('/options')).length,
+    ),
+    optionsBefore + 1,
+    'Explicit refresh revalidates pipeline capabilities',
+  )
+  await paged.evaluate(() => (window.run.status = 'in_progress'))
+  await paged.getByRole('button', { name: 'Refresh runs', exact: true }).click()
+  await paged.waitForFunction(refreshFinished)
+  // The next completed polling cycle selects the running interval.
+  await paged.clock.runFor(31010)
+  const runningReads = await paged.evaluate(
+    () => window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length,
+  )
+  await paged.clock.runFor(10010)
+  assert.ok(
+    await paged.evaluate(
+      (before) =>
+        window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length > before,
+      runningReads,
+    ),
+    'Running pipelines keep the fast cadence',
+  )
   await paged.evaluate(() => {
     window.empty = true
     window.mount()

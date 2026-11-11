@@ -43,15 +43,24 @@ import {
   validateWorktreeDestination,
   type TransferOwnership,
 } from './project-transfer-worktrees.js'
+import { withThreadCheckpoint, requireHandoffInputIdle } from '../../agents/tasks/thread-handoff.js'
+import {
+  prepareThreadTransfer,
+  readThreadTransfer,
+  receiveThreadTransfer,
+} from './project-transfer-thread.js'
 
 const okSchema = mutableStruct({ ok: Schema.Literal(true) })
 const statusSchema = mutableStruct({
+  discarded: Schema.optional(Schema.Literal(true)),
   result: Schema.optional(projectTransferResultSchema),
   worktreesSupported: Schema.optional(Schema.Boolean),
   batchesSupported: Schema.optional(Schema.Boolean),
   linkedWorktreesSupported: Schema.optional(Schema.Boolean),
+  threadHandoffsSupported: Schema.optional(Schema.Boolean),
 })
 const discardSchema = mutableStruct({
+  discarded: Schema.optional(Schema.Literal(true)),
   ok: Schema.Literal(true),
   result: Schema.optional(projectTransferResultSchema),
 })
@@ -75,6 +84,8 @@ const savedSchema = mutableStruct({
   device: Schema.String,
 })
 const savedIncomingSchema = mutableStruct({
+  activated: Schema.optional(Schema.Literal(true)),
+  discarded: Schema.optional(Schema.Literal(true)),
   id: Schema.String,
   device: Schema.String,
   stagingPath: Schema.optional(Schema.String),
@@ -99,6 +110,7 @@ export class ProjectTransfers {
   private ready: Promise<void>
   private timer: ReturnType<typeof setInterval>
   private closed = false
+  private starting = false
   private root: string
   private projectsRoot = join(process.env.DOVO_DATA_ROOT ?? join(homedir(), '.dovo'), 'projects')
   constructor(
@@ -289,7 +301,17 @@ export class ProjectTransfers {
     const saved = this.jobs.get(id)
     if (saved) this.save({ ...saved.job, ...changes })
   }
-  start(input: ProjectTransferStart, device: string, authorize: () => void) {
+  async start(input: ProjectTransferStart, device: string, authorize: () => void) {
+    if (this.starting)
+      throw new HttpError(409, 'Wait for the current project copy to finish preparing')
+    this.starting = true
+    try {
+      return await this.startCopy(input, device, authorize)
+    } finally {
+      this.starting = false
+    }
+  }
+  private async startCopy(input: ProjectTransferStart, device: string, authorize: () => void) {
     if (this.closed) throw new HttpError(503, 'This computer is shutting down')
     if (!/^[a-f0-9-]{36}$/.test(input.id)) throw new HttpError(400, 'Invalid copy ID')
     const s = this.services()
@@ -316,9 +338,64 @@ export class ProjectTransfers {
         .repositories.some((repo) => repo.id === input.repositoryId && repo.kind !== 'scratch')
     )
       throw new HttpError(404, 'Project not found')
+    if (input.handoff) {
+      if (input.thread)
+        throw new HttpError(400, 'Choose a thread handoff or a new thread, not both')
+      const task = s.store.taskSummary(input.handoff.taskId)
+      if (task.repositoryId !== input.repositoryId)
+        throw new HttpError(409, 'This thread belongs to another project')
+      if (
+        task.pullRequest ||
+        task.workItem ||
+        task.linkedCheckouts?.length ||
+        task.pendingLinkedCheckouts?.length
+      )
+        throw new HttpError(
+          409,
+          'Threads with linked checkouts, pull requests or work items must keep their computer. Unlink them before moving.',
+        )
+      if (!task.machineHandoff || task.machineHandoff.state === 'preparing') {
+        await withThreadCheckpoint(
+          s,
+          task.id,
+          input.id,
+          input.handoff.stop,
+          async (checkpoint, cwd) => {
+            const source = s.store.taskSummary(task.id)
+            const expected =
+              source.existingWorktreePath ?? (source.execution === 'worktree' ? cwd : undefined)
+            if (input.worktreePath !== expected)
+              throw new HttpError(
+                409,
+                'The chosen checkout does not match this thread. Refresh the transfer options.',
+              )
+            authorize()
+            await s.tasks.releaseProviderForHandoff(task.id)
+            requireHandoffInputIdle(s, task.id)
+            s.store.updateTask(task.id, (current) => ({
+              ...current,
+              machineHandoff: {
+                id: input.id,
+                targetRuntimeId: input.targetId,
+                state: 'preparing',
+                sourceArchived: current.archived,
+                checkpoint,
+              },
+              quotaContinuation: undefined,
+              restartRecovery: undefined,
+            }))
+          },
+        )
+      } else if (
+        task.machineHandoff.id !== input.id ||
+        task.machineHandoff.targetRuntimeId !== input.targetId
+      )
+        throw new HttpError(409, 'Finish this thread’s existing transfer first')
+    }
     const job: ProjectTransfer = {
       id: input.id,
       repositoryId: input.repositoryId,
+      sourceTaskId: input.handoff?.taskId,
       worktreePath: input.worktreePath,
       targetId: input.targetId,
       targetName: peer.name,
@@ -330,9 +407,14 @@ export class ProjectTransfers {
     }
     this.jobs.set(job.id, { job, input, fingerprint, device })
     this.save(job)
-    // Bound terminal history. Receipts on the destination retain idempotent completed results.
+    // Bound copy history. A fenced source keeps its recovery job, including activation retries.
     for (const [id, saved] of this.jobs)
-      if (this.jobs.size > 50 && !projectTransferActive(saved.job) && id !== job.id) {
+      if (
+        this.jobs.size > 50 &&
+        !projectTransferActive(saved.job) &&
+        id !== job.id &&
+        !s.store.get().tasks.some((task) => task.machineHandoff?.id === id)
+      ) {
         this.jobs.delete(id)
         s.db.prepare('DELETE FROM project_transfers WHERE id=?').run(id)
       }
@@ -351,11 +433,41 @@ export class ProjectTransfers {
     this.outgoing.set(job.id, { controller, pending })
     return this.jobs.get(job.id)!.job
   }
-  async cancel(id: string) {
+  async cancel(id: string, authorize: () => void = () => {}) {
     const saved = this.jobs.get(id)
     if (!saved) throw new HttpError(404, 'Project copy not found')
-    this.outgoing.get(id)?.controller.abort()
-    await this.outgoing.get(id)?.pending
+    const active = this.outgoing.get(id)
+    active?.controller.abort()
+    if (active) await active.pending
+    else if (saved.input.handoff && saved.job.state !== 'completed') {
+      const peer = this.services()
+        .retrievalPeers.list(false, saved.device)
+        .find((peer) => peer.connection.runtimeId === saved.input.targetId)
+      if (!peer)
+        throw new HttpError(
+          409,
+          'Reconnect the destination to confirm cancellation. The source remains saved and blocked.',
+        )
+      const controller = new AbortController()
+      const terminal = await this.send(
+        saved.input,
+        peer.connection,
+        controller.signal,
+        true,
+        authorize,
+        true,
+      )
+      this.update(id, terminal)
+    }
+    if (
+      saved.input.handoff &&
+      this.services().store.taskSummary(saved.input.handoff.taskId).machineHandoff?.id === id &&
+      this.jobs.get(id)?.job.state !== 'completed'
+    )
+      throw new HttpError(
+        409,
+        'Destination cleanup could not be confirmed. Retry when it is online; the source remains saved and blocked.',
+      )
     return { ok: true as const }
   }
   retry(id: string, authorize: () => void) {
@@ -369,6 +481,7 @@ export class ProjectTransfers {
     signal: AbortSignal,
     retrying: boolean,
     authorize: () => void,
+    cancelOnly = false,
   ) {
     let tunnel: Awaited<ReturnType<typeof openTunnel>> | undefined
     // The runtime cannot initiate native WebRTC; keep this copy on its chosen HTTP route.
@@ -394,15 +507,60 @@ export class ProjectTransfers {
         },
       )
     }
-    const complete = (result: Result): Partial<ProjectTransfer> => ({
-      state: 'completed',
-      error: undefined,
-      path: result.path,
-      targetRepositoryId: result.repositoryId,
-      targetTaskId: result.taskId,
-      threadStartError: result.threadStartError,
-      bytes: this.jobs.get(input.id)?.job.totalBytes ?? 0,
-    })
+    const recoverDiscarded = (): Partial<ProjectTransfer> => {
+      if (input.handoff)
+        s.store.updateTask(input.handoff.taskId, (task) => {
+          if (task.machineHandoff?.id !== input.id) return task
+          if (task.machineHandoff.state === 'staged')
+            throw new HttpError(409, 'The source handoff changed')
+          return {
+            ...task,
+            archived: task.machineHandoff.sourceArchived,
+            machineHandoff: undefined,
+          }
+        })
+      return {
+        state: cancelOnly || signal.aborted ? 'cancelled' : 'failed',
+        error:
+          'The staged destination thread was deleted. The source is available again. Start a new move to try again.',
+        targetTaskId: undefined,
+        targetRepositoryId: undefined,
+        path: undefined,
+      }
+    }
+    const complete = async (result: Result): Promise<Partial<ProjectTransfer>> => {
+      if (input.handoff) {
+        if (!result.taskId)
+          throw new HttpError(
+            409,
+            'The destination did not receive the thread. Update it and retry.',
+          )
+        s.store.updateTask(input.handoff.taskId, (task) => {
+          if (task.machineHandoff?.id !== input.id)
+            throw new HttpError(409, 'The source handoff changed')
+          return {
+            ...task,
+            machineHandoff: { ...task.machineHandoff, state: 'moved', targetTaskId: result.taskId },
+            archived: true,
+          }
+        })
+        await call(
+          'activate',
+          { id: input.id },
+          projectTransferResultSchema,
+          AbortSignal.timeout(30000),
+        )
+      }
+      return {
+        state: 'completed',
+        error: undefined,
+        path: result.path,
+        targetRepositoryId: result.repositoryId,
+        targetTaskId: result.taskId,
+        threadStartError: result.threadStartError,
+        bytes: this.jobs.get(input.id)?.job.totalBytes ?? 0,
+      }
+    }
     try {
       await this.ready
       signal.throwIfAborted()
@@ -422,19 +580,43 @@ export class ProjectTransfers {
         }
       }
       const status = await call('status', { id: input.id }, statusSchema)
+      if (status.discarded) return recoverDiscarded()
+      if (status.result) return await complete(status.result)
+      if (
+        input.handoff &&
+        s.store.taskSummary(input.handoff.taskId).machineHandoff?.state === 'moved'
+      )
+        throw new HttpError(
+          409,
+          'The committed destination receipt is missing. Keep the source saved and inspect the destination before recovery.',
+        )
+      if (cancelOnly) {
+        const discarded = await call('discard', { id: input.id }, discardSchema)
+        if (discarded.discarded) return recoverDiscarded()
+        if (discarded.result) return await complete(discarded.result)
+        if (input.handoff)
+          s.store.updateTask(input.handoff.taskId, (task) => ({
+            ...task,
+            machineHandoff:
+              task.machineHandoff?.id === input.id && task.machineHandoff.state === 'preparing'
+                ? undefined
+                : task.machineHandoff,
+          }))
+        return { state: 'cancelled' as const, error: undefined }
+      }
+      if (input.handoff && !status.threadHandoffsSupported)
+        throw new HttpError(409, 'Update the destination computer to continue threads there')
       if ((input.worktreePath || input.thread) && !status.worktreesSupported)
         throw new HttpError(
           409,
           'Update the destination computer to copy worktrees and create threads',
         )
-      if (status.result) {
-        return complete(status.result)
-      }
       if (retrying) {
         // A prior attempt may have lost its cleanup response. Wait for any commit
         // and reconcile its receipt before starting a new receiving session.
         const discarded = await call('discard', { id: input.id }, discardSchema)
-        if (discarded.result) return complete(discarded.result)
+        if (discarded.discarded) return recoverDiscarded()
+        if (discarded.result) return await complete(discarded.result)
       }
       if (input.worktreePath && !status.linkedWorktreesSupported)
         throw new HttpError(409, 'Update the destination computer to copy linked worktrees')
@@ -444,19 +626,31 @@ export class ProjectTransfers {
           'Choose the destination project or its parent folder before copying a worktree',
         )
       await mkdir(folder, { mode: 0o700 })
-      const { skippedLinks, project, ...prepared } = await prepareTransfer(
-        s,
-        input.repositoryId,
-        input.ignoredFiles,
-        folder,
-        signal,
-        input.worktreePath,
-      )
+      const prepare = () =>
+        prepareTransfer(
+          s,
+          input.repositoryId,
+          input.ignoredFiles,
+          folder,
+          signal,
+          input.worktreePath,
+        )
+      const { skippedLinks, project, ...prepared } = input.handoff
+        ? await s.tasks.withCheckoutMutation(
+            await s.checkouts.fileDirectory(input.handoff.taskId),
+            prepare,
+          )
+        : await prepare()
+      if (input.handoff)
+        await prepareThreadTransfer(s, input.handoff.taskId, folder, prepared.entries)
       const manifest: ProjectTransferManifest = {
         ...prepared,
         id: input.id,
         runtimeId: peer.runtimeId!,
         thread: input.thread,
+        handoff: input.handoff
+          ? { sourceTaskId: input.handoff.taskId, sourceRuntimeId: s.runtimeId }
+          : undefined,
         worktree:
           project && input.destination ? { ...project, destination: input.destination } : undefined,
       }
@@ -524,7 +718,7 @@ export class ProjectTransfers {
       await flush()
       this.update(input.id, { state: 'registering' })
       const result = await call('commit', { id: input.id }, projectTransferResultSchema)
-      return complete(result)
+      return await complete(result)
     } catch (error) {
       // Commit may succeed even when the response is lost. Reconcile before reporting a
       // failure or cancellation, and retry the same ID rather than creating a duplicate.
@@ -538,8 +732,9 @@ export class ProjectTransfers {
             statusSchema,
             AbortSignal.timeout(5000),
           )
+          if (status.discarded) return recoverDiscarded()
           if (status.result) {
-            return complete(status.result)
+            return await complete(status.result)
           }
           const discarded = await call(
             'discard',
@@ -547,9 +742,18 @@ export class ProjectTransfers {
             discardSchema,
             AbortSignal.timeout(5000),
           )
+          if (discarded.discarded) return recoverDiscarded()
           if (discarded.result) {
-            return complete(discarded.result)
+            return await complete(discarded.result)
           }
+          if (input.handoff)
+            s.store.updateTask(input.handoff.taskId, (task) => ({
+              ...task,
+              machineHandoff:
+                task.machineHandoff?.id === input.id && task.machineHandoff.state === 'preparing'
+                  ? undefined
+                  : task.machineHandoff,
+            }))
         } catch (cleanup) {
           if (!signal.aborted)
             console.warn(
@@ -558,6 +762,11 @@ export class ProjectTransfers {
             )
         }
       }
+      if (input.handoff && s.store.taskSummary(input.handoff.taskId).machineHandoff)
+        return {
+          state: 'failed' as const,
+          error: `The transfer outcome is not confirmed. Retry when the destination is online. The source is saved and blocked. ${errorMessage(error)}`,
+        }
       return {
         state: signal.aborted ? ('cancelled' as const) : ('failed' as const),
         error: signal.aborted ? undefined : errorMessage(error),
@@ -570,16 +779,73 @@ export class ProjectTransfers {
     }
   }
   private receipt(id: string, device: string) {
-    const saved = this.results.get(id)
+    // Read the durable value so task deletion and its receipt share the store transaction,
+    // including rollback. The startup cache must not outlive a discarded destination.
+    const row = this.services()
+      .db.prepare('SELECT value FROM project_transfer_receipts WHERE id=?')
+      .get(id)
+    const saved = row
+      ? decode(
+          savedIncomingSchema,
+          JSON.parse(decode(mutableStruct({ value: Schema.String }), row).value),
+        )
+      : undefined
     if (saved && saved.device !== device) throw new HttpError(404, 'Project copy not found')
     return saved
   }
+  /** Call inside the transaction that deletes the task. Activated destinations never
+   * produce discard proof: their source must remain read-only. */
+  discardStagedThread(taskId: string) {
+    const s = this.services()
+    const handoff = s.store.taskSummary(taskId).machineHandoff
+    if (handoff?.state !== 'staged') return
+    const row = s.db
+      .prepare('SELECT value FROM project_transfer_receipts WHERE id=?')
+      .get(handoff.id)
+    if (!row) throw new HttpError(409, 'The staged thread receipt is missing')
+    const saved = decode(
+      savedIncomingSchema,
+      JSON.parse(decode(mutableStruct({ value: Schema.String }), row).value),
+    )
+    if (saved.result?.taskId !== taskId || saved.discarded)
+      throw new HttpError(409, 'The staged thread receipt changed')
+    s.db
+      .prepare('UPDATE project_transfer_receipts SET value=? WHERE id=?')
+      .run(JSON.stringify({ id: saved.id, device: saved.device, discarded: true }), handoff.id)
+  }
+  activate(id: string, device: string) {
+    const saved = this.receipt(id, device)
+    if (saved?.discarded) throw new HttpError(409, 'The staged destination thread was deleted')
+    if (!saved?.result?.taskId) throw new HttpError(404, 'Staged thread not found')
+    // The durable acknowledgement also survives deletion or a later handoff of an
+    // already activated destination. It never grants source execution again.
+    if (saved.activated) return saved.result
+    const s = this.services()
+    const taskId = saved.result.taskId
+    s.store.transaction(() => {
+      const task = s.store.taskSummary(taskId)
+      if (task.machineHandoff?.id === id && task.machineHandoff.state === 'staged') {
+        s.store.updateTask(task.id, (task) => ({
+          ...task,
+          machineHandoff: undefined,
+          archivedAt: undefined,
+        }))
+      } else if (task.machineHandoff)
+        throw new HttpError(409, 'The destination thread has another handoff')
+      s.db
+        .prepare('UPDATE project_transfer_receipts SET value=? WHERE id=?')
+        .run(JSON.stringify({ ...saved, activated: true }), id)
+    })
+    return saved.result
+  }
   status(id: string, device: string) {
     return {
+      discarded: this.receipt(id, device)?.discarded,
       result: this.receipt(id, device)?.result,
       worktreesSupported: true,
       batchesSupported: true,
       linkedWorktreesSupported: true,
+      threadHandoffsSupported: true,
     }
   }
   async begin(manifest: ProjectTransferManifest, device: string) {
@@ -591,6 +857,7 @@ export class ProjectTransfers {
         'The destination is a different computer. Pair it again before copying.',
       )
     const saved = this.receipt(manifest.id, device)
+    if (saved?.discarded) throw new HttpError(409, 'This transfer was discarded. Start a new move.')
     if (saved?.result) return { ok: true as const }
     if (this.incoming.has(manifest.id))
       throw new HttpError(409, 'This copy is already receiving files')
@@ -624,6 +891,13 @@ export class ProjectTransfers {
       manifest.entries.filter((entry) => entry.kind === 'index').length > 1
     )
       throw new HttpError(400, 'Invalid Git workspace manifest')
+    if (manifest.thread && manifest.handoff) throw new HttpError(400, 'Ambiguous thread transfer')
+    if (
+      manifest.entries.filter((entry) => entry.kind === 'thread').length !==
+        (manifest.handoff ? 1 : 0) ||
+      (!manifest.handoff && manifest.entries.some((entry) => entry.kind === 'attachment'))
+    )
+      throw new HttpError(400, 'Invalid thread transfer manifest')
     if (manifest.worktree) {
       if (!manifest.git) throw new HttpError(400, 'Missing worktree Git history')
       await validateWorktreeDestination(this.services(), manifest.worktree)
@@ -712,6 +986,7 @@ export class ProjectTransfers {
   }
   async commit(id: string, device: string, authorize: () => void) {
     const saved = this.receipt(id, device)
+    if (saved?.discarded) throw new HttpError(409, 'This transfer was discarded. Start a new move.')
     if (saved?.result) return saved.result
     const entry = this.receiving(id, device)
     if (entry.pending) return entry.pending
@@ -739,6 +1014,7 @@ export class ProjectTransfers {
           throw new HttpError(409, 'A copied file failed verification. Start the copy again.')
       }
       let linked: Awaited<ReturnType<typeof installWorktreeTransfer>> | undefined
+      const threadPayload = await readThreadTransfer(manifest, entry.folder)
       let repository: Repository
       if (manifest.worktree) {
         linked = await installWorktreeTransfer(
@@ -836,6 +1112,8 @@ export class ProjectTransfers {
           })
           result.taskId = task.id
         }
+        if (threadPayload)
+          result.taskId = receiveThreadTransfer(s, manifest, repository, threadPayload, linked)
         s.db
           .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
           .run(manifest.id, JSON.stringify(saved))
@@ -884,7 +1162,8 @@ export class ProjectTransfers {
       await rm(entry.folder, { recursive: true, force: true })
       this.incoming.delete(id)
     }
-    return { ok: true as const, result: this.receipt(id, device)?.result }
+    const saved = this.receipt(id, device)
+    return { ok: true as const, result: saved?.result, discarded: saved?.discarded }
   }
   async dispose() {
     this.closed = true

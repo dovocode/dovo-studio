@@ -21,6 +21,7 @@ import {
 } from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
+import { MachineHandoffNotice } from '../detail/machine-handoff-notice'
 import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
 import { checkpointUndoTurn } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
@@ -920,6 +921,14 @@ export function Composer({
         )}
       </>
     ) : null
+  // A moved thread stays readable here, but only its destination accepts new input.
+  if (task.machineHandoff)
+    return (
+      <>
+        {renderAbove?.(null)}
+        <MachineHandoffNotice handoff={task.machineHandoff} taskId={task.id} />
+      </>
+    )
   if (
     snapshot?.questions.some(
       (question) => question.taskId === task.id && question.prompt.blocking !== false,

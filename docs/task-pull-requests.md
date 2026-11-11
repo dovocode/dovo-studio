@@ -218,3 +218,20 @@ node scripts/check-mobile-integration-continuity-browser.mjs
 node scripts/check-preference-storage-browser.mjs
 node scripts/check-mobile-preference-storage-browser.mjs
 ```
+
+## PR overview and detail reads
+
+Opening a PR uses its runtime cache. Use **Refresh** to force a provider read immediately. Returning
+from the background also revalidates the detail. Desktop and mobile load detail sections when needed
+and share live reads for the same runtime, project and account. Unchanged responses keep the current
+view and offline snapshot. Saved data remains available when the owning computer is offline.
+
+Running checks update every 10 seconds. Settled checks update every 30 seconds. The description and
+stack update every 60 seconds. Provider cache freshness can add to these intervals. The desktop
+panel reuses pipeline capabilities for its project and polls settled pipeline summaries every 30
+seconds. Running summaries keep a 10-second interval after the next completed poll. The overview
+keeps loaded pages in place and periodically checks older pages. A failed page refresh preserves the
+last complete list. Account or project changes require the existing source verification.
+
+See [PR performance verification](performance.md#pr-overview-and-panels-2026-11-11) for protocol
+behavior, test commands and measurement limits.

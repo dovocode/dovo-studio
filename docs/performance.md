@@ -773,3 +773,128 @@ Shared settings retain a separate revision for each edited category. The replica
 these categories as separate immutable values. Concurrent name and pin edits can both survive.
 Legacy whole-entry records still load. Settings history joins category changes into past values;
 restoring a past value commits all changed categories in one journal transaction.
+
+### PR overview and panels, 2026-11-11
+
+Desktop and mobile share identical in-flight PR reads within one runtime, pairing, project binding
+and account. A versioned live result can serve adjacent reads for one second. This adds no wait to
+navigation. An explicit refresh bypasses this reuse. If a background read is already running,
+callers share one forced follow-up read. There is no queue of repeated refreshes.
+
+The runtime returns a content version with opt-in PR section and overview reads. A later request
+sends that version. Matching content returns a 99-byte JSON body. Clients retain the live object and
+skip unchanged PR snapshot writes. Account and destination validation still run before the runtime
+compares versions. Saved offline snapshots never authorize a conditional response. Older runtimes
+return full responses through the same request; no capability probe is needed. Their in-flight reads
+are shared, but the next open revalidates an unversioned result.
+
+Descriptions and stacks poll every 60 seconds. Discussion polls every 30 seconds. Status and checks
+poll every 10 seconds while work is running, every 30 seconds when settled, and every 60 seconds for
+closed PRs. A clean diff pinned to both commit hashes needs no repeat read. Detail polling parks
+while hidden or disconnected, but offline hydration still runs. Explicit refresh and foreground
+resume force revalidation. A stale response without a refresh error uses a two-second follow-up
+interval to collect the runtime’s background result promptly. Failed detail reads back off to at
+most 120 seconds; explicit refresh bypasses the timer.
+
+The overview retains loaded pages while page one is unchanged. It rechecks the whole loaded prefix
+on the first available poll after 120 seconds. A changed page-one boundary, an error or explicit
+refresh also rechecks that prefix. Failed later-page reads keep the previous coherent list and
+retry. The existing overview timers remain 30 seconds on desktop and 10 seconds on mobile.
+
+The desktop PR panel also retains pipeline capabilities for the captured project scope. Pagination
+and summary polls reuse them. Explicit refresh rechecks them. Pipeline summaries poll every 30
+seconds when settled and every 10 seconds when running. Each completed polling cycle sets the next
+interval. One poller waits for offline hydration before its first read, so hydration cannot start a
+duplicate read or replace a newer network result.
+
+The comparison used T3 Code commit
+[`79bca436b24a6eabb05d3d1a95348ae40d31e713`](https://github.com/pingdotgg/t3code/tree/79bca436b24a6eabb05d3d1a95348ae40d31e713),
+including `usePullRequestDetail.ts`, `usePullRequestIntentPrefetch.ts`, shared query state and
+`pullRequestChecks.ts`. Dovo uses the same useful patterns: shared reads, stable result identity,
+separate sections and adaptive checks refresh. Dovo keeps a shorter running-check interval and loads
+on navigation without a prefetch delay.
+
+In the browser boundary fixture, one idle minute with a 16 KB description previously used 36 PR
+requests, 595,908 JSON response bytes and 74 cache writes for one desktop panel. The updated fixture
+uses two open consumers: desktop makes 6 PR requests with 594 response bytes; mobile makes 4 with
+396 bytes. Both make zero PR section snapshot writes. Desktop still makes 16 identity cache writes
+across the two consumers. These numbers exclude HTTP headers, identity response bytes, initial
+loading and provider traffic. The fixture holds provider content and freshness metadata constant.
+Real freshness changes produce full replies, so these are regression limits, not production savings.
+
+Reproduce after building dependencies:
+
+```sh
+pnpm --filter @dovo/runtime... -r build
+pnpm exec playwright install chromium
+node scripts/check-pull-network-browser.mjs
+node scripts/check-pr-read-continuity-browser.mjs
+node scripts/check-mobile-pull-handoff-browser.mjs
+node scripts/check-pull-pipelines-browser.mjs
+node scripts/check-mobile-metro-modules.mjs
+pnpm exec vp test packages/client-runtime/src/effects/conditional-read-cache.test.ts packages/client-runtime/src/effects/polling.test.ts packages/studio-core/src/scm/pull-reads.test.ts packages/runtime/src/http/scm-source-guards.test.ts
+```
+
+The network fixture runs the real desktop and mobile hooks, pollers and conditional-read client. It
+replaces transport and native controls. It checks shared consumers, running-check cadence, immediate
+refresh, unchanged pagination, periodic older-page updates and failed-page recovery. The runtime
+test also checks real HTTP responses for a 64 KB description with a provider double. The Metro check
+builds and runs the shared PR reader with the production iOS Hermes transform settings. It provides
+text codecs in the Node VM; it does not run Hermes or native UI. Physical iPhone behavior, real
+forge bandwidth and end-to-end mobile network latency were not measured.
+
+## Jira reads
+
+Desktop and mobile share concurrent Jira reads within the runtime connection, source, account,
+destination, filters, issue section and cursor. Adjacent reads reuse a versioned live response for
+one second. Explicit refresh bypasses reuse and reaches the runtime at once. Each connection keeps
+at most 64 live responses, with an approximate 8 MiB limit. Offline snapshots do not supply live
+versions. Older runtimes keep working with full responses and no capability probe.
+
+Jira lists, issue overviews, discussion pages, action metadata, boards and sprints accept
+conditional reads. The runtime validates pairing, the account and the destination before comparing
+versions. Matching data returns a 99-byte JSON body. Versions include freshness and errors. A new
+cache time or freshness state can require a full response even when the description did not change.
+
+Issue lists and discussion poll every 30 seconds. A stale runtime result uses a two-second
+follow-up; errors use a 60-second interval. Hidden views and inactive mobile apps do not issue these
+reads. Action metadata refreshes every five minutes. A manual refresh, action retry or successful
+issue action checks it at once. Board and sprint discovery remains demand-driven. A failed local
+browse-cache read does not prevent the live request.
+
+Unchanged page one retains the opened list or discussion pages. The first available poll after 120
+seconds rechecks the loaded prefix. Changed page-one data, an error or explicit refresh also
+rechecks that prefix. Refreshed pages publish together. A failed later page retains the previous
+visible prefix. Unchanged responses skip issue, discussion and list snapshot writes.
+
+Before the change, the discussion fixture made 6 requests, transferred 97,976 JSON response bytes,
+and wrote 6 snapshots per idle minute on each client. It uses two consumers, a 16 KB description,
+and two comment pages in the first consumer. The same fixture now makes 2 requests, transfers 198
+bytes and writes zero snapshots on both clients. A separate collection fixture opens two list pages
+with 16 KB descriptions. It makes 2 requests, transfers 198 bytes and writes zero list/options
+snapshots per idle minute on each client.
+
+These fixtures run the real hooks, pollers and conditional reader. Transport and native controls are
+doubles. Measurements exclude initial loading, HTTP headers, identity probes and provider traffic.
+Fixture content and freshness metadata stay constant. These are regression limits, not measured
+production savings. Tests also cover older-page changes, failed-page recovery and immediate refresh.
+HTTP tests use the real server and provider doubles to check a 64 KB description, legacy clients,
+separate sections, permission failures, account/site changes and invalid pairing tokens.
+
+Reproduce after building dependencies:
+
+```sh
+pnpm --filter @dovo/runtime... -r build
+pnpm exec playwright install chromium
+node scripts/check-jira-network-browser.mjs
+node scripts/check-jira-collection-network-browser.mjs
+node scripts/check-desktop-source-readers-browser.mjs
+node scripts/check-mobile-integration-continuity-browser.mjs
+node scripts/check-mobile-metro-modules.mjs
+pnpm exec vp test packages/runtime/src/http/jira-conditional-reads.test.ts packages/runtime/src/scm/work/jira-account-guards.test.ts packages/studio-core/src/scm/jira-reads.test.ts packages/extension-scm/src/work/work-source-page.test.ts
+```
+
+The Metro check builds the Jira reader with the production iOS Hermes transform settings and runs it
+in a Node VM. It does not run Hermes or a physical iPhone. Live Jira bandwidth, CLI latency and
+physical-device behavior remain unmeasured. This applies the shared-read patterns from the T3 PR
+review; it does not claim a Jira-specific T3 implementation.

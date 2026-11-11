@@ -111,6 +111,20 @@ export class Attachments {
       return decode(attachmentSchema, JSON.parse(row.metadata))
     })
   }
+  /** Called only after the paired transfer verifies the blob hash and thread references. */
+  receiveHandoff(taskId: string, file: Attachment, data: Buffer): Attachment {
+    if (data.length !== file.size || data.length > MAX_ATTACHMENT_BYTES)
+      throw new HttpError(400, 'Transferred attachment size does not match its metadata')
+    const attachment = decode(attachmentSchema, {
+      ...file,
+      id: randomUUID(),
+      name: attachmentFileName(file.name),
+    })
+    this.db
+      .prepare('INSERT INTO attachments VALUES(?,?,?,?)')
+      .run(attachment.id, taskId, JSON.stringify(attachment), data)
+    return attachment
+  }
   /** A fork owns independent attachment records, including inherited conversation files. */
   copy(sourceId: string, taskId: string, ids: string[]): Attachment[] {
     return ids.map((id) => {
@@ -247,6 +261,11 @@ export class Attachments {
       if (!owner) throw new HttpError(404, 'Attachment not found')
       const attachmentRow = decode(mutableStruct({ task: Schema.String }), owner)
       const task = this.store.taskSummary(attachmentRow.task)
+      if (task.machineHandoff)
+        throw new HttpError(
+          409,
+          'This thread is continuing on another computer. Its attachments are read-only.',
+        )
       if (row.recovered) {
         if (!this.uploadHandled(device, id))
           throw new HttpError(409, 'The recovered attachment is no longer in its destination')
@@ -273,6 +292,11 @@ export class Attachments {
   }
   draftUploadGuard(taskId: string) {
     const task = this.store.taskSummary(taskId)
+    if (task.machineHandoff)
+      throw new HttpError(
+        409,
+        'This thread is continuing on another computer. Its attachments are read-only.',
+      )
     if (task.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
     return createHash('sha256')
       .update(
@@ -384,6 +408,11 @@ export class Attachments {
     const completed = previousReceipt()
     if (completed) return completed
     const task = this.store.taskSummary(input.taskId)
+    if (task.machineHandoff)
+      throw new HttpError(
+        409,
+        'This thread is continuing on another computer. Its attachments are read-only.',
+      )
     if (
       input.queuedMessageId &&
       !task.queue?.some((message) => message.id === input.queuedMessageId)
@@ -442,6 +471,11 @@ export class Attachments {
       if (completed) return completed
       this.assertUploadActive(input.id)
       const current = this.store.taskSummary(input.taskId)
+      if (current.machineHandoff)
+        throw new HttpError(
+          409,
+          'This thread is continuing on another computer. Its attachments are read-only.',
+        )
       if (current.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
       if (
         !input.queuedMessageId &&
@@ -533,7 +567,11 @@ export class Attachments {
   }
   removeDraft(taskId: string, id: string) {
     this.store.transaction(() => {
-      this.store.taskSummary(taskId)
+      if (this.store.taskSummary(taskId).machineHandoff)
+        throw new HttpError(
+          409,
+          'This thread is continuing on another computer. Its attachments are read-only.',
+        )
       const owner = this.db.prepare('SELECT task FROM attachments WHERE id=?').get(id)
       const cancelled = this.db
         .prepare('SELECT task FROM cancelled_attachment_uploads WHERE id=?')

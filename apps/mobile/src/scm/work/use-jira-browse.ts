@@ -35,14 +35,25 @@ function useBrowseResource<T extends { stale?: boolean; refreshError?: string },
     setState({ key, busy: connected, error: '' })
     void tasks.run(
       Effect.gen(function* () {
-        const saved = yield* cache?.readEffect(key, schema) ?? Effect.succeed(undefined)
+        const saved = yield* (
+          cache
+            ?.readEffect(key, schema)
+            .pipe(
+              Effect.catch(() =>
+                Effect.logWarning('Could not read saved Jira browse data').pipe(
+                  Effect.as(undefined),
+                ),
+              ),
+            ) ?? Effect.succeed(undefined)
+        )
         if (!stopped && saved)
           setState({ key, value: { ...saved.value, stale: true }, busy: connected, error: '' })
         if (!connected) return
         const value = yield* load(refresh)
         if (stopped) return
-        yield* cache?.writeEffect(key, value) ?? Effect.void
-        if (!stopped) setState({ key, value, busy: false, error: value.refreshError ?? '' })
+        setState({ key, value, busy: false, error: value.refreshError ?? '' })
+        if (JSON.stringify(saved?.value) !== JSON.stringify(value))
+          yield* cache?.writeEffect(key, value) ?? Effect.void
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
@@ -90,6 +101,8 @@ export function useJiraBrowse(
         (path, body, codec, method) => readRuntimeEffect(source.profile, path, body, codec, method),
         workSourceContentIdentity(source),
         workSourceInput(source),
+        undefined,
+        cache,
       )
       return yield* read(
         `/api/scm/work/jira/${operation}`,

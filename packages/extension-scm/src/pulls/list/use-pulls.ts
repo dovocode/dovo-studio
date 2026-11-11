@@ -1,3 +1,5 @@
+import { readPullPage } from '@dovo/studio-core/pull-reads'
+import { pullPageReadSchema } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema, Semaphore } from 'effect'
@@ -34,24 +36,38 @@ const cachedPullPageSchema = mutableStruct({
 const cacheKey = (source: PullSource, state: string) =>
   pullListCacheKey(source.repository, state, source.reader.readerIdentity)
 const readPage = (source: PullSource, input: { state: string; page: number; refresh?: boolean }) =>
-  Effect.gen(function* () {
-    const readGuard = yield* verifySourceReader(source.reader)
-    const response = yield* source.reader.requestEffect(
-      '/api/scm/pulls/overview',
-      {
-        ...input,
-        repositoryId: source.reader.repository.id,
-        ...readGuard,
-      },
-      pullPageSchema,
-    )
-    if (source.reader.key === source.key) return response
-    return {
-      ...response,
-      destination: source.destination,
-      pulls: response.pulls.map((pull) => ({ ...pull, destination: source.destination })),
-    }
-  })
+  readPullPage(
+    source.reader.readCache,
+    JSON.stringify([
+      source.reader.scope,
+      source.reader.readerIdentity,
+      source.destination,
+      input.state,
+      input.page,
+    ]),
+    (knownVersion) =>
+      Effect.gen(function* () {
+        const readGuard = yield* verifySourceReader(source.reader)
+        const response = yield* source.reader.requestEffect(
+          '/api/scm/pulls/overview',
+          {
+            ...input,
+            repositoryId: source.reader.repository.id,
+            ...readGuard,
+            conditional: true,
+            knownVersion,
+          },
+          pullPageReadSchema,
+        )
+        if ('unchanged' in response || source.reader.key === source.key) return response
+        return {
+          ...response,
+          destination: source.destination,
+          pulls: response.pulls.map((pull) => ({ ...pull, destination: source.destination })),
+        }
+      }),
+    input.refresh,
+  )
 const defaultVisibility: PullProjectVisibility = {}
 export function usePulls(state: string, repositoryId = '', visibility = defaultVisibility) {
   const allSources = useRepositorySources()
@@ -122,10 +138,11 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
     const commands = clientTaskScope()
     const update = (source: PullSource, page: CachedPullPage, error?: string) => {
       if (current !== generation.current) return
-      setStored((previous) => ({
-        ...previous,
-        [source.key]: { ...page, source, reader: source.reader, error },
-      }))
+      setStored((previous) =>
+        previous[source.key] === page && previous[source.key]?.error === error
+          ? previous
+          : { ...previous, [source.key]: { ...page, source, reader: source.reader, error } },
+      )
     }
     setStored((previous) =>
       Object.fromEntries(
@@ -204,6 +221,9 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
         ),
       ),
     )
+    const firstPages = new Map<string, PullPage>()
+    const prefixChecked = new Map<string, number>()
+    const savedPages = new Map<string, CachedPullPage>()
     const load = Effect.gen(function* () {
       yield* hydrated
       if (document.visibilityState !== 'visible') return
@@ -226,7 +246,15 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
               JSON.stringify(previous?.firstPageIds) !==
               JSON.stringify(response.pulls.map((pull) => String(pull.number)))
             let last = response
-            if (retainNewerPullSnapshot(previous, response, refresh) === response)
+            const unchanged =
+              !refresh &&
+              previous &&
+              !previous.stale &&
+              !previous.refreshError &&
+              !previous.error &&
+              firstPages.get(source.key) === response &&
+              Date.now() - (prefixChecked.get(source.key) ?? 0) < 120_000
+            if (!unchanged && retainNewerPullSnapshot(previous, response, refresh) === response)
               for (let number = 2; last.hasMore && number <= (previous?.page ?? 1); number++) {
                 last = yield* readPage(source, {
                   state: remoteState,
@@ -237,11 +265,19 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
                 laterPages.push(last)
                 if (last.stale || last.refreshError) break
               }
-            const page = refreshPullPage(previous, response, laterPages, refresh)
+            const page = unchanged
+              ? previous
+              : refreshPullPage(previous, response, laterPages, refresh)
+            firstPages.set(source.key, response)
+            if (!unchanged && !page.stale && !page.refreshError)
+              prefixChecked.set(source.key, Date.now())
             update(source, page, page.refreshError)
             if (!page.stale && !page.refreshError && current === generation.current)
               forcedRemotes.current.delete(remote)
-            yield* save(source, page)
+            if (!unchanged && savedPages.get(source.key) !== page) {
+              yield* save(source, page)
+              savedPages.set(source.key, page)
+            }
           }).pipe(
             Effect.catch((error) =>
               Effect.sync(() =>

@@ -20,6 +20,7 @@ import {
   projectTransferLabel,
   projectTransferPeers,
   type ProjectTransfer,
+  type ProjectTransferStart,
   type Repository,
 } from '@dovo/protocol'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
@@ -28,10 +29,13 @@ import { Button, Input, FormField, Dialog, DialogContent, DialogTitle } from '@d
 export function ProjectTransferSettings({
   repository,
   sourceTask,
+  continuation = false,
   initiallyOpen = false,
 }: {
   repository: Repository
   sourceTask?: Task
+  /** Move `sourceTask` with its conversation instead of copying the checkout. */
+  continuation?: boolean
   initiallyOpen?: boolean
 }) {
   const store = useWorkspace()
@@ -44,7 +48,10 @@ export function ProjectTransferSettings({
   )
   const [worktreePath, setWorktreePath] = useState('')
   const [worktrees, setWorktrees] = useState<typeof worktreeChoicesSchema.Type.worktrees>([])
-  const [createThread, setCreateThread] = useState(!!sourceTask)
+  const handoffTask = continuation ? sourceTask : undefined
+  const [createThread, setCreateThread] = useState(!!sourceTask && !continuation)
+  const [stopSource, setStopSource] = useState(false)
+  const sourceRunning = handoffTask?.status === 'running'
   const [prompt, setPrompt] = useState('')
   const [targets, setTargets] = useState<typeof projectTransferTargetsSchema.Type>([])
   const [targetId, setTargetId] = useState(''),
@@ -67,10 +74,17 @@ export function ProjectTransferSettings({
   const [planRevision, setPlanRevision] = useState(0)
   const [localJob, setLocalJob] = useState<ProjectTransfer | null>(null)
   const latest = store.snapshot?.projectTransfers
-    ?.filter((job) => job.repositoryId === repository.id)
+    ?.filter((job) =>
+      handoffTask
+        ? job.sourceTaskId === handoffTask.id
+        : job.repositoryId === repository.id && !job.sourceTaskId,
+    )
     .at(-1)
   const job = (latest?.updatedAt ?? 0) >= (localJob?.updatedAt ?? 0) ? latest : localJob
   const active = !!job && projectTransferActive(job)
+  // A started move keeps its ID until it completes or the destination confirms cancellation.
+  const startable = !handoffTask || !job || job.state === 'cancelled'
+  const unsettledStart = useRef<{ key: string; input: ProjectTransferStart } | null>(null)
   const pending = useRef(false),
     refreshed = useRef('')
   const act = async (action: () => Promise<void>) => {
@@ -260,11 +274,17 @@ export function ProjectTransferSettings({
     }
   }, [open, worktreePath, targetId, planKey, active, planRevision, directUnavailable, transport])
   if (repository.kind === 'scratch') return null
-  if (!store.snapshot?.projectTransfersSupported)
+  if (continuation && !handoffTask) return null
+  if (
+    !store.snapshot?.projectTransfersSupported ||
+    (handoffTask && !store.snapshot.threadHandoffsSupported)
+  )
     return (
       <div className="grid gap-4">
         <p className="text-xs text-muted-foreground">
-          Update this computer to copy projects to another computer.
+          {handoffTask
+            ? 'Update this computer to continue threads on another computer.'
+            : 'Update this computer to copy projects to another computer.'}
         </p>
         <div className="flex justify-end">
           <Button variant="outline" onClick={() => host.navigate({ viewId: 'runtime' })}>
@@ -287,22 +307,27 @@ export function ProjectTransferSettings({
       }
       if (!destinationReady)
         throw new Error('Choose the destination project or its parent folder before copying.')
-      const parsed = decodeResult(projectTransferStartSchema, {
-        id: randomUUID(),
+      if (sourceRunning && !stopSource)
+        throw new Error('Stop the current turn before you move this thread.')
+      const fields = {
         repositoryId: repository.id,
         worktreePath: worktreePath || undefined,
         destination: worktreePath ? destination : undefined,
-        thread: createThread
-          ? {
-              title:
-                prompt.trim().slice(0, 200) ||
-                `${repository.name} on ${targets.find((target) => target.id === targetId)?.name ?? 'another computer'}`.slice(
-                  0,
-                  200,
-                ),
-              prompt,
-            }
+        handoff: handoffTask
+          ? { taskId: handoffTask.id, stop: sourceRunning && stopSource }
           : undefined,
+        thread:
+          createThread && !handoffTask
+            ? {
+                title:
+                  prompt.trim().slice(0, 200) ||
+                  `${repository.name} on ${targets.find((target) => target.id === targetId)?.name ?? 'another computer'}`.slice(
+                    0,
+                    200,
+                  ),
+                prompt,
+              }
+            : undefined,
         targetId,
         ignoredFiles: ignored,
         ...(transport === 'ssh'
@@ -316,20 +341,34 @@ export function ProjectTransferSettings({
               },
             }
           : {}),
+      }
+      // Retry an uncertain reply with the identical request and ID, even if the turn stopped
+      // since. Only changed choices start a new transfer.
+      const key = JSON.stringify({
+        ...fields,
+        handoff: handoffTask ? { taskId: handoffTask.id, stop: stopSource } : undefined,
       })
-      if (!parsed.success)
-        throw new Error(
-          validationMessages(parsed.error)[0] ?? 'Check the destination and SSH settings.',
-        )
-      const input = parsed.data
+      let input = unsettledStart.current?.key === key ? unsettledStart.current.input : undefined
+      if (!input) {
+        const parsed = decodeResult(projectTransferStartSchema, { id: randomUUID(), ...fields })
+        if (!parsed.success)
+          throw new Error(
+            validationMessages(parsed.error)[0] ?? 'Check the destination and SSH settings.',
+          )
+        input = parsed.data
+        unsettledStart.current = { key, input }
+      }
       setLocalJob(
         await store.request('/api/scm/project-transfer/start', input, projectTransferSchema),
       )
+      unsettledStart.current = null
     })
   return (
     <section
       className="project-transfer space-y-3 rounded-lg border p-3"
-      aria-label="Copy project to another computer"
+      aria-label={
+        handoffTask ? 'Continue thread on another computer' : 'Copy project to another computer'
+      }
     >
       <div className="project-transfer-panel space-y-3">
         <div className="project-transfer-header flex items-center gap-3">
@@ -337,16 +376,20 @@ export function ProjectTransferSettings({
             <MonitorUp className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">Add to another computer</p>
+            <p className="text-sm font-medium">
+              {handoffTask ? 'Continue on another computer' : 'Add to another computer'}
+            </p>
             <p className="text-xs text-muted-foreground">
-              Copy files and local Git history. Chats stay here.
+              {handoffTask
+                ? 'Move the full saved conversation, checklist, attachments and files. Provider sessions and credentials stay here.'
+                : 'Copy files and local Git history. Chats stay here.'}
             </p>
           </div>
           <Button
             size="sm"
             variant="ghost"
             aria-expanded={open}
-            aria-label="Configure project copy"
+            aria-label={handoffTask ? 'Configure thread move' : 'Configure project copy'}
             onClick={() => {
               setOpen(!open)
               if (!open) void load()
@@ -360,17 +403,28 @@ export function ProjectTransferSettings({
             <p className={job.state === 'failed' ? 'text-destructive' : ''}>
               {projectTransferLabel(job)}
             </p>
+            {handoffTask && job.state === 'failed' && (
+              <p className="text-muted-foreground">
+                This thread stays read-only. Retry the move, or cancel it. Cancel unlocks the thread
+                only after {job.targetName} confirms that it removed its copy. If {job.targetName}{' '}
+                already received the thread, cancel finishes the move instead.
+              </p>
+            )}
             {active && (
               <progress
                 className="h-1.5 w-full"
-                aria-label="Project copy progress"
+                aria-label={handoffTask ? 'Thread move progress' : 'Project copy progress'}
                 value={job.state === 'preparing' ? undefined : job.bytes}
                 max={job.totalBytes || 1}
               />
             )}
-            {job.targetTaskId && (
+            {job.targetTaskId && (!handoffTask || job.state === 'completed') && (
               <>
-                <p>Thread created on {job.targetName}.</p>
+                <p>
+                  {handoffTask
+                    ? `This thread continues on ${job.targetName}. Open it there and send your next message. The copy here stays read-only for recovery.`
+                    : `Thread created on ${job.targetName}.`}
+                </p>
                 <Button
                   size="sm"
                   variant="outline"
@@ -402,7 +456,7 @@ export function ProjectTransferSettings({
             {!!job.skippedLinks && (
               <p className="text-muted-foreground">{job.skippedLinks} symbolic links skipped.</p>
             )}
-            {active && (
+            {(active || (!!handoffTask && job.state === 'failed')) && (
               <Button
                 size="sm"
                 variant="outline"
@@ -417,7 +471,7 @@ export function ProjectTransferSettings({
                   })
                 }
               >
-                Cancel copy
+                {handoffTask ? 'Cancel move' : 'Cancel copy'}
               </Button>
             )}
           </div>
@@ -427,7 +481,7 @@ export function ProjectTransferSettings({
             disabled={busy || active || !store.connected}
             className="space-y-3 disabled:opacity-60"
           >
-            {!!worktrees.length && (
+            {!handoffTask && !!worktrees.length && (
               <FormField label="Source checkout">
                 <select
                   aria-label="Source checkout"
@@ -451,7 +505,26 @@ export function ProjectTransferSettings({
                 </select>
               </FormField>
             )}
-            {!!store.snapshot?.projectWorktreeTransfersSupported && (
+            {handoffTask && (
+              <div className="space-y-2 text-xs">
+                <p className="text-muted-foreground">
+                  The destination thread uses that computer’s default harness, with no more access
+                  than this thread has. Nothing runs until you send the next message there. You can
+                  change its model after it opens. This thread stays here, read-only, for recovery.
+                </p>
+                {sourceRunning && (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={stopSource}
+                      onChange={(event) => setStopSource(event.target.checked)}
+                    />
+                    Stop the current turn first
+                  </label>
+                )}
+              </div>
+            )}
+            {!handoffTask && !!store.snapshot?.projectWorktreeTransfersSupported && (
               <div className="space-y-2 text-xs">
                 <label className="flex items-center gap-2">
                   <input
@@ -671,26 +744,31 @@ export function ProjectTransferSettings({
       </div>
       {open && !active && (
         <div className="project-transfer-actions flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={
-              busy ||
-              !inspection ||
-              !targetId ||
-              !store.connected ||
-              !destinationReady ||
-              (directUnavailable && transport !== 'ssh')
-            }
-            onClick={() => void start()}
-          >
-            {busy
-              ? 'Preparing…'
-              : createThread
-                ? 'Copy and create thread'
-                : worktreePath
-                  ? 'Copy worktree'
-                  : 'Copy project'}
-          </Button>
+          {startable && (
+            <Button
+              size="sm"
+              disabled={
+                busy ||
+                !inspection ||
+                !targetId ||
+                !store.connected ||
+                !destinationReady ||
+                (sourceRunning && !stopSource) ||
+                (directUnavailable && transport !== 'ssh')
+              }
+              onClick={() => void start()}
+            >
+              {busy
+                ? 'Preparing…'
+                : handoffTask
+                  ? 'Move thread'
+                  : createThread
+                    ? 'Copy and create thread'
+                    : worktreePath
+                      ? 'Copy worktree'
+                      : 'Copy project'}
+            </Button>
+          )}
           {job?.state === 'failed' && (
             <Button
               size="sm"
@@ -698,7 +776,7 @@ export function ProjectTransferSettings({
               disabled={busy || !store.connected}
               onClick={() => void start(true)}
             >
-              Retry copy
+              {handoffTask ? 'Retry move' : 'Retry copy'}
             </Button>
           )}
           <Button
@@ -724,10 +802,13 @@ export function ProjectTransferSettings({
 export function ProjectTransferDialog({
   repository,
   sourceTask,
+  continuation = false,
   onClose,
 }: {
   repository: Repository
   sourceTask?: Task
+  /** Requires `sourceTask`. Moves the thread instead of copying the checkout. */
+  continuation?: boolean
   onClose: () => void
 }) {
   return (
@@ -739,13 +820,20 @@ export function ProjectTransferDialog({
     >
       <DialogContent className="project-transfer-dialog max-w-xl">
         <DialogTitle>
-          {sourceTask
-            ? sourceTask.execution === 'worktree'
-              ? 'Copy worktree to another computer'
-              : 'Copy project checkout to another computer'
-            : 'Add to another computer'}
+          {sourceTask && continuation
+            ? 'Continue on another computer'
+            : sourceTask
+              ? sourceTask.execution === 'worktree'
+                ? 'Copy worktree to another computer'
+                : 'Copy project checkout to another computer'
+              : 'Add to another computer'}
         </DialogTitle>
-        <ProjectTransferSettings repository={repository} sourceTask={sourceTask} initiallyOpen />
+        <ProjectTransferSettings
+          repository={repository}
+          sourceTask={sourceTask}
+          continuation={continuation}
+          initiallyOpen
+        />
       </DialogContent>
     </Dialog>
   )
