@@ -36,10 +36,12 @@ import {
 } from 'react'
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
   Keyboard,
   Platform,
   View as NativeView,
+  type KeyboardEvent,
 } from 'react-native'
 import { IconButton } from '../ui/controls/icon-button'
 import { Text } from '../ui/content/text'
@@ -381,11 +383,21 @@ export function Workbench() {
   const [keyboard, setKeyboard] = useApplicationState(false)
   const detail = active === 'settings' ? pathname.startsWith('/settings/automations/') : routeDetail
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboard(true)),
-      hide = Keyboard.addListener('keyboardDidHide', () => setKeyboard(false))
+    // The shortcut responder has an empty native input view. Its zero-height keyboard
+    // events must not pad the entire navigator out of view when iOS unlocks.
+    const show = (event: KeyboardEvent) =>
+      setKeyboard(AppState.currentState === 'active' && event.endCoordinates.height > 0)
+    const subscriptions = [
+      Keyboard.addListener('keyboardWillShow', show),
+      Keyboard.addListener('keyboardDidShow', show),
+      Keyboard.addListener('keyboardWillHide', () => setKeyboard(false)),
+      Keyboard.addListener('keyboardDidHide', () => setKeyboard(false)),
+      AppState.addEventListener('change', (state) => {
+        if (state !== 'active') setKeyboard(false)
+      }),
+    ]
     return () => {
-      show.remove()
-      hide.remove()
+      for (const subscription of subscriptions) subscription.remove()
     }
   }, [])
   const finishShortcut = (runtimeId?: string, taskId?: string) => {
@@ -680,6 +692,7 @@ export function Workbench() {
       <SafeAreaView style={styles.screen} edges={Platform.OS === 'ios' ? [] : ['top']}>
         <KeyboardAvoidingView
           style={styles.screen}
+          enabled={keyboard}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <TaskListViewProvider>

@@ -4,6 +4,7 @@ import { SettingsScopePage, Button, Disclosure } from '@dovo/studio-ui'
 import { ScopedAgents } from './scoped-agents'
 import { HarnessUpdates } from './harness-updates'
 import { AcpRegistrySettings } from './acp-registry'
+import { HarnessInstructions } from './harness-instructions'
 export default function AgentsView() {
   const host = useStudioHost()
   return (
@@ -42,7 +43,12 @@ export default function AgentsView() {
               />
             )}
           </div>
-          {scope === 'environment' && <EnvironmentTools />}
+          {scope === 'environment' && (
+            <>
+              <HarnessInstructions />
+              <EnvironmentTools />
+            </>
+          )}
         </>
       )}
     </SettingsScopePage>

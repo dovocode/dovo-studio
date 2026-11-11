@@ -1779,6 +1779,9 @@ it('allows bounded sandboxed OAuth popups that keep the opener and close with th
   const second = popupWindow()
   created?.(first, { url: request.url })
   created?.(second, { url: request.url })
+  expect(mocks.extensions.addTab).toHaveBeenCalledWith('default', first.webContents, first)
+  first.on.mock.calls.find(([name]) => name === 'focus')?.[1]()
+  expect(mocks.extensions.selectTab).toHaveBeenLastCalledWith('default', first.webContents)
   expect(open(request)).toEqual({ action: 'deny' })
   noOpener.createWindow?.({})
   const navigate = first.webContents.on.mock.calls.find(([name]) => name === 'will-navigate')?.[1]
@@ -1798,6 +1801,8 @@ it('allows bounded sandboxed OAuth popups that keep the opener and close with th
   await call(event, { action: 'close', key: 'shared' })
   expect(first.close).toHaveBeenCalledOnce()
   expect(second.close).toHaveBeenCalledOnce()
+  first.once.mock.calls.find(([name]) => name === 'closed')?.[1]()
+  expect(mocks.extensions.removeTab).toHaveBeenCalledWith('default', first.webContents)
 })
 
 it('closes popups and stops queueing when a view leaves the workspace browser', async () => {
@@ -3410,6 +3415,102 @@ function workspaceTarget(id: number) {
     },
   }
 }
+
+it.each(['https://accounts.example.com/authorize', 'about:blank'])(
+  'adopts website auth guest %s into the control-less browser with its extensions and POST flow',
+  async (url) => {
+    const target = {
+      ...workspaceTarget(2),
+      setParentWindow: vi.fn<(window: unknown) => void>(),
+      close: vi.fn<() => void>(),
+      destroy: vi.fn<() => void>(),
+    }
+    const create = vi.fn<NonNullable<Parameters<typeof registerBrowser>[3]>['create']>(
+      async () => target as never,
+    )
+    registrations.push(
+      registerBrowser('/app/index.html', undefined, undefined, { create, list: () => [] }),
+    )
+    const call = mocks.handle.mock.calls.at(-1)![1]
+    await call(event, { ...workspaceShow, profileId: 'work' })
+    const result = openHandler()({
+      url,
+      disposition: 'new-window',
+      features: 'popup,width=500,height=600',
+      postBody: {
+        contentType: 'application/x-www-form-urlencoded',
+        data: [{ type: 'rawData', bytes: Buffer.from('state=keep') }],
+      },
+    })
+    expect(result.action).toBe('allow')
+    expect(result.createWindow).toBeTypeOf('function')
+    mocks.contents.loadURL.mockClear()
+    const guest = result.createWindow?.({})
+    expect(guest).toBe(mocks.contents)
+    await vi.waitFor(() => expect(target.contentView.addChildView).toHaveBeenCalled())
+    expect(create).toHaveBeenCalledExactlyOnceWith(true, true)
+    expect(target.setParentWindow).toHaveBeenCalledWith(mocks.window)
+    expect(mocks.extensions.addTab).toHaveBeenLastCalledWith('work', guest, target)
+    expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+    mocks.windowFor = target
+    const adopted = await call(event, { action: 'status', key: 'popup-workspace', tabCount: 1 })
+    expect(adopted).toMatchObject({
+      movedTabs: [{ tab: { profileId: 'work', url: expect.any(String), kind: 'web' } }],
+    })
+    mocks.windowFor = undefined
+    await call(event, { action: 'close', key: 'shared' })
+    expect(target.close).toHaveBeenCalledOnce()
+  },
+)
+it('closes a pending auth guest if its opener closes while the control-less shell loads', async () => {
+  const target = { ...workspaceTarget(2), destroy: vi.fn<() => void>() }
+  let ready!: (window: import('electron').BrowserWindow) => void
+  const create = vi.fn<NonNullable<Parameters<typeof registerBrowser>[3]>['create']>(
+    () =>
+      new Promise((resolve) => {
+        ready = resolve
+      }),
+  )
+  registrations.push(
+    registerBrowser('/app/index.html', undefined, undefined, { create, list: () => [] }),
+  )
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  await call(event, workspaceShow)
+  const result = openHandler()({
+    url: 'https://accounts.example.com/login',
+    disposition: 'new-window',
+    features: 'popup,width=500',
+  })
+  result.createWindow?.({})
+  await call(event, { action: 'close', key: 'shared' })
+  ready(target as never)
+  await vi.waitFor(() => expect(target.destroy).toHaveBeenCalledOnce())
+  expect(target.contentView.addChildView).not.toHaveBeenCalled()
+})
+
+it('keeps the opener and reports a failed control-less auth shell', async () => {
+  const create = vi.fn<NonNullable<Parameters<typeof registerBrowser>[3]>['create']>(async () => {
+    throw new Error('Shell load failed')
+  })
+  registrations.push(
+    registerBrowser('/app/index.html', undefined, undefined, { create, list: () => [] }),
+  )
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  await call(event, workspaceShow)
+  const result = openHandler()({
+    url: 'https://accounts.example.com/login',
+    disposition: 'new-window',
+    features: 'popup,width=500',
+  })
+  mocks.contents.close.mockClear()
+  result.createWindow?.({})
+  await vi.waitFor(() => expect(mocks.contents.close).toHaveBeenCalledOnce())
+  await expect(call(event, { action: 'status', key: 'shared' })).rejects.toThrow(
+    'Shell load failed',
+  )
+  expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+})
+
 const placeholderState = {
   action: 'sync-tabs' as const,
   key: 'workspace',

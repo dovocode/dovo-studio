@@ -30,6 +30,7 @@ export * from './tasks/model-catalog-cache.js'
 export * from './auth/permission-policy.js'
 export * from './tasks/acp-harness.js'
 export * from './tasks/harness-availability.js'
+export * from './tasks/harness-instructions.js'
 
 export * from './shared/commands.js'
 

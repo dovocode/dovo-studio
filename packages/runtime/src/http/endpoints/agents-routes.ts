@@ -15,6 +15,7 @@ import { runtimeOperation, errorMessage } from '../../errors.js'
 import { approvalDecisionSchema, linkedCheckoutsSchema } from '@dovo/protocol'
 import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
 import { scopedSettingsRoute } from './scoped-settings-routes.js'
+import { harnessInstructionRoute } from './harness-instruction-routes.js'
 import { decodeResult } from '@dovo/protocol'
 import { codexNetworkDiagnostics } from '../../agents/execution/codex-network-diagnostics.js'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
@@ -41,8 +42,8 @@ import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { openContainedPreview } from '../../scm/repositories/file-preview-open.js'
 import { withFileWrite } from '../../scm/repositories/file-writes.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
-import { ModelCatalogCache, configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
-import { HarnessAvailabilityCache } from '../../agents/catalogs/harness-availability.js'
+import { configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
+import { agentDiscoveryCache } from '../../agents/catalogs/discovery-cache.js'
 import { harnessAvailabilityCandidates } from '@dovo/protocol'
 import { modelMentionReference, matchingModelMentions, type ModelMention } from '@dovo/protocol'
 import {
@@ -68,8 +69,6 @@ import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 import { nativeThreadReadSchema } from '@dovo/protocol'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
-const modelCaches = new WeakMap<object, ModelCatalogCache>()
-const availabilityCaches = new WeakMap<object, HarnessAvailabilityCache>()
 export function agentsRoute(request: IncomingMessage, path: string) {
   if (path.startsWith('/api/tasks/codex-sessions/')) return codexSessionRoute(request, path)
   if (path.startsWith('/api/tasks/pi-sessions/')) return codexSessionRoute(request, path)
@@ -77,6 +76,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
   return routeProgram(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
+      if (path.startsWith('/api/agents/instructions/'))
+        return yield* harnessInstructionRoute(request, path)
       const publicDefaults = (value: unknown) =>
         decode(runtimeDefaultsSchema, s.store.publicValue(value))
       const method = request.method
@@ -87,18 +88,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         const task = s.store.taskSummary(taskId)
         if (query.trim().length < 2) return { models: [], unavailable: [] }
-        let availability = availabilityCaches.get(s.db)
-        if (!availability) {
-          availability = new HarnessAvailabilityCache()
-          availabilityCaches.set(s.db, availability)
-        }
-        let catalogs = modelCaches.get(s.db)
-        if (!catalogs) {
-          catalogs = new ModelCatalogCache(s.db)
-          modelCaches.set(s.db, catalogs)
-        }
-        const checker = availability,
-          cache = catalogs
+        const { availability: checker, catalogs: cache } = agentDiscoveryCache(s.db, s.agents)
         const installations = s.acpInstallations.list()
         const candidates = harnessAvailabilityCandidates(
           s.store.agentsFor(task.repositoryId),
@@ -168,12 +158,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        let cache = availabilityCaches.get(s.db)
-        if (!cache) {
-          cache = new HarnessAvailabilityCache()
-          availabilityCaches.set(s.db, cache)
-        }
-        const checker = cache
+        const { availability: checker } = agentDiscoveryCache(s.db, s.agents)
         return yield* serviceResult(
           Promise.all(
             harnessAvailabilityCandidates(
@@ -667,11 +652,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         const agent = modelDiscoveryInput(s.agents.configure(input))
         const key = configuredModelCatalogKey(input, s.agents, s.acpInstallations.list())
-        let cache = modelCaches.get(s.db)
-        if (!cache) {
-          cache = new ModelCatalogCache(s.db)
-          modelCaches.set(s.db, cache)
-        }
+        const { catalogs: cache } = agentDiscoveryCache(s.db, s.agents)
         if (path === '/api/agents/models/cached') return cache.peek(key)
         const adapter = yield* serviceResult(s.agents.get(agent.provider))
         const models = adapter.models
@@ -785,6 +766,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.preserveQueuePause,
           input.sendNow,
           input.initialTitle,
+          'accepted',
         )
         if (firstSubmission && input.initialTitle) {
           const expectedTitle = input.initialTitle.after

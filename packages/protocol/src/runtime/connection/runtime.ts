@@ -234,6 +234,7 @@ export const snapshotSchema = mutableStruct({
   smartModelSelectionEnabled: Schema.optional(Schema.Boolean),
   autoProjectModelSelection: Schema.optional(taskModelSelectionSchema),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
+  harnessInstructionsSupported: Schema.optional(Schema.Boolean),
   permissionPolicySupported: Schema.optional(Schema.Boolean),
   secretReferencesSupported: Schema.optional(Schema.Boolean),
   workspaceReconciliationSupported: Schema.optional(Schema.Boolean),

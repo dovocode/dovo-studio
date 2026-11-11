@@ -161,8 +161,11 @@ export class Tasks {
     memoryScopes: (taskId: string) => MemoryScope[] = () => [],
     private maxActiveChildAgents: () => number = () => 4,
     deviceHubEnabled: () => boolean = () => false,
-    private resolveModel: (id: string, text?: string) => Effect.Effect<void, RuntimeFailure> = () =>
-      Effect.void,
+    private resolveModel: (
+      id: string,
+      text?: string,
+      signal?: AbortSignal,
+    ) => Effect.Effect<void, RuntimeFailure> = () => Effect.void,
     studioTools: () => StudioTools = noStudioTools,
     linkedProjectsEnabled: () => boolean = () => true,
   ) {
@@ -1468,6 +1471,7 @@ export class Tasks {
     preserveQueuePause = false,
     sendNow = false,
     initialTitle?: { before: string; after: string },
+    preparation: 'ready' | 'accepted' = 'ready',
   ) {
     return runtimeOperation(() => {
       this.requireExecutionOwner(id)
@@ -1475,7 +1479,11 @@ export class Tasks {
         throw new HttpError(409, 'This thread is being deleted.')
       return this.attachments.metadata(id, attachmentIds)
     }).pipe(
-      Effect.tap(() => (turnSettings ? Effect.void : this.resolveModel(id, text))),
+      Effect.tap(() =>
+        turnSettings || (preparation === 'accepted' && !queueOnly)
+          ? Effect.void
+          : this.resolveModel(id, text),
+      ),
       Effect.flatMap((attachments) =>
         runtimeOperation(() => {
           this.requireExecutionOwner(id)
@@ -1538,6 +1546,7 @@ export class Tasks {
               undefined,
               false,
               sendNow ? messageId : undefined,
+              preparation,
             ).pipe(
               Effect.catch((error) =>
                 runtimeOperation(() => {
@@ -1788,6 +1797,7 @@ export class Tasks {
     continuingRunId?: string,
     retryFailed = false,
     directMessageId?: string,
+    preparation: 'ready' | 'accepted' = 'ready',
   ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
     return Effect.suspend(() => {
       if (this.store.taskSummary(id).machineHandoff)
@@ -1843,12 +1853,12 @@ export class Tasks {
         next.runPhase !== 'finalizing'
       )
         return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
-      return (
+      const selectModel = (signal?: AbortSignal) =>
         (!retryFailed && firstMessage?.turnSettings) ||
         (continuingRunId && next.runAttempt?.turnSettings)
           ? Effect.void
-          : this.resolveModel(id)
-      ).pipe(
+          : this.resolveModel(id, undefined, signal)
+      return (preparation === 'accepted' ? Effect.void : selectModel()).pipe(
         Effect.flatMap(() =>
           this.nativeSessions.has(id)
             ? Effect.void
@@ -2040,6 +2050,10 @@ export class Tasks {
           )
           this.running.set(id, run)
           const work = Effect.gen({ self: this }, function* () {
+            // Selection belongs to the admitted run, so Send can finish and Stop can
+            // cancel its utility model before checkout or coding work starts.
+            if (preparation === 'accepted') yield* selectModel(run.controller.signal)
+            yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
             const cwd = yield* runtimeOperation(() =>
               this.checkouts.directory(id, run.controller.signal),
             )
@@ -2377,6 +2391,10 @@ export class Tasks {
           fiber.addObserver((exit) => {
             if (exit._tag === 'Failure') Effect.runSync(Deferred.failCause(ready, exit.cause))
           })
+          // Interactive sends acknowledge the saved input and admitted worker. Checkout work
+          // continues in that owned worker, with progress/failures published to the thread.
+          // Holding its HTTP response here also holds the client's sender for other threads.
+          if (preparation === 'accepted') return Effect.succeed({ completion: Fiber.join(fiber) })
           return Deferred.await(ready).pipe(
             // Startup failures are actionable only after the worker releases its ownership.
             Effect.catchCause((cause) =>

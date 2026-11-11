@@ -318,6 +318,7 @@ export function runtimeSnapshot(
           : canUpdateServer(),
       defaults: decode(runtimeDefaultsSchema, s.store.publicValue(currentDefaults)),
       scopedAgentsSupported: true,
+      harnessInstructionsSupported: true,
       permissionPolicySupported: true,
       secretReferencesSupported: true,
       workspaceReconciliationSupported: true,

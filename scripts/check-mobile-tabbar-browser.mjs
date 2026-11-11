@@ -40,7 +40,9 @@ const stubs = [
     contents: `
 export const Platform={get OS(){return window.fixture?.platform??'ios'}};
 export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={style}>{children}</div>;export const Modal=({children})=><div role="dialog">{children}</div>;export const Pressable=({children,onPress,accessibilityLabel,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>;
-export const KeyboardAvoidingView=View;export const ActivityIndicator=()=>null;
+export const KeyboardAvoidingView=({children,enabled})=><div data-keyboard-avoidance={String(enabled)}>{children}</div>;export const ActivityIndicator=()=>null;
+export const AppState={currentState:'active',addEventListener:(name,callback)=>{window.appStateListener=callback;return {remove(){delete window.appStateListener}}}};
+window.setAppState=state=>{AppState.currentState=state;window.appStateListener?.(state)};
 export const Keyboard={dismiss(){},addListener:(name,callback)=>{window.keyboardListeners[name]=callback;return {remove(){}}}};`,
   },
   {
@@ -262,7 +264,9 @@ try {
   assert.ok(
     !(await page.evaluate(() => window.hardwareCommands.enabledCommands)).includes('newThread'),
   )
-  await page.evaluate(() => window.keyboardListeners.keyboardDidShow())
+  await page.evaluate(() =>
+    window.keyboardListeners.keyboardDidShow({ endCoordinates: { height: 300, screenY: 500 } }),
+  )
   await plus.waitFor({ state: 'hidden' })
   assert.deepEqual(
     await nativeInsets(),
@@ -270,6 +274,33 @@ try {
     'Keyboard avoidance owns the collection bottom while the keyboard is visible',
   )
   await page.evaluate(() => window.keyboardListeners.keyboardDidHide())
+  await plus.waitFor({ state: 'visible' })
+  const keyboardEnabled = () =>
+    page.locator('[data-keyboard-avoidance]').getAttribute('data-keyboard-avoidance')
+  // The empty shortcut input can report screenY=0. RN's padding calculation would
+  // otherwise use the whole viewport as keyboard height and hide the navigator.
+  await page.evaluate(() =>
+    window.keyboardListeners.keyboardWillShow({ endCoordinates: { height: 0, screenY: 0 } }),
+  )
+  assert.equal(await keyboardEnabled(), 'false')
+  await plus.waitFor({ state: 'visible' })
+  await page.evaluate(() =>
+    window.keyboardListeners.keyboardWillShow({ endCoordinates: { height: 300, screenY: 500 } }),
+  )
+  await plus.waitFor({ state: 'hidden' })
+  assert.equal(await keyboardEnabled(), 'true')
+  await page.evaluate(() => window.setAppState('background'))
+  await plus.waitFor({ state: 'visible' })
+  assert.equal(await keyboardEnabled(), 'false')
+  await page.evaluate(() => {
+    window.keyboardListeners.keyboardDidShow({ endCoordinates: { height: 300, screenY: 500 } })
+    window.setAppState('active')
+  })
+  assert.equal(await keyboardEnabled(), 'false')
+  await page.evaluate(() =>
+    window.keyboardListeners.keyboardDidShow({ endCoordinates: { height: 0, screenY: 0 } }),
+  )
+  assert.equal(await keyboardEnabled(), 'false')
   await plus.waitFor({ state: 'visible' })
   await page.evaluate(() =>
     window.updateFixture({
@@ -354,6 +385,24 @@ try {
     'Composer and preview routes own their bottom inset, including when the header hides',
   )
   assert.equal(await draft.inputValue(), 'Unsaved draft', 'Inset changes preserve the editor')
+  await page.evaluate(() => {
+    window.keyboardListeners.keyboardWillShow({ endCoordinates: { height: 300, screenY: 500 } })
+    window.setAppState('inactive')
+    window.setAppState('background')
+  })
+  await page.waitForFunction(
+    () => document.querySelector('[data-keyboard-avoidance]').dataset.keyboardAvoidance === 'false',
+  )
+  await page.evaluate(() => {
+    window.setAppState('active')
+    window.keyboardListeners.keyboardWillShow({ endCoordinates: { height: 0, screenY: 0 } })
+  })
+  assert.equal(await keyboardEnabled(), 'false')
+  assert.equal(
+    await draft.inputValue(),
+    'Unsaved draft',
+    'Sleep and wake must keep the open composer mounted',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile New thread: trailing native action, preserved tab, offline guard, keyboard hiding, no More tab and Android floating action pass. Native controls use browser adapters.',

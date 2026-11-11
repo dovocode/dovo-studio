@@ -6,6 +6,7 @@ import {
   decodeResult,
   defaultTaskHarness,
   modelCatalogSchema,
+  modelDiscoveryInput,
   modelPreferenceKey,
   mutableStruct,
   providerSchema,
@@ -15,6 +16,7 @@ import {
   taskHarnessSchema,
   type AcpInstallation,
   type Agent,
+  type Task,
   type TaskHarness,
 } from '@dovo/protocol'
 import { Effect, Schema } from 'effect'
@@ -24,8 +26,8 @@ import { RuntimeDefaults } from '../../storage/runtime-defaults.js'
 import { RuntimePreferences } from '../../storage/runtime-preferences.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { AgentRegistry } from '../configuration/registry.js'
-import { HarnessAvailabilityCache } from '../catalogs/harness-availability.js'
-import { ModelCatalogCache, configuredModelCatalogKey } from '../catalogs/model-cache.js'
+import { agentDiscoveryCache } from '../catalogs/discovery-cache.js'
+import { configuredModelCatalogKey } from '../catalogs/model-cache.js'
 import { HttpError, runtimeOperation, runtimeProgram } from '../../errors.js'
 import type { TitleGeneration } from './title-generation.js'
 
@@ -40,10 +42,34 @@ type Candidate = {
   reasoning: readonly { id: string; name: string }[]
 }
 
+// Once Send saves a prompt, draft edits and title/view updates are independent of
+// that selection. Compare its input and execution choices, rather than all UI state.
+const selectionState = (task: Task, text?: string) => ({
+  repositoryId: task.repositoryId,
+  autoProject: task.autoProject,
+  linkedCheckouts: task.linkedCheckouts,
+  pendingLinkedCheckouts: task.pendingLinkedCheckouts,
+  execution: task.execution,
+  existingWorktreePath: task.existingWorktreePath,
+  agentId: task.agentId,
+  harness: task.harness,
+  agentOverrides: task.agentOverrides,
+  modelSelection: task.modelSelection,
+  modelSelectionDifficulty: task.modelSelectionDifficulty,
+  sessionId: task.sessionId,
+  delegation: task.delegation,
+  turns: task.turns?.length,
+  message: nextQueuedMessage(task) ?? task.messages.find((message) => message.role === 'user'),
+  draft:
+    text ??
+    (nextQueuedMessage(task) || task.messages.some((message) => message.role === 'user')
+      ? undefined
+      : task.draft),
+})
+
 /** Resolves only pending first-turn modes. The durable concrete harness owns later turns. */
 export class ModelSelection {
-  private availability = new HarnessAvailabilityCache()
-  private catalogs: ModelCatalogCache
+  private discovery: ReturnType<typeof agentDiscoveryCache>
   constructor(
     private db: Database.Database,
     private store: WorkspaceStore,
@@ -51,7 +77,7 @@ export class ModelSelection {
     private titles: TitleGeneration,
     private installations: () => readonly AcpInstallation[] = () => [],
   ) {
-    this.catalogs = new ModelCatalogCache(db)
+    this.discovery = agentDiscoveryCache(db, registry)
   }
 
   private requireEnabled() {
@@ -62,9 +88,10 @@ export class ModelSelection {
       )
   }
 
-  resolveEffect(id: string, text?: string) {
+  resolveEffect(id: string, text?: string, signal?: AbortSignal) {
     return runtimeProgram(
       Effect.gen({ self: this }, function* () {
+        signal?.throwIfAborted()
         const before = this.store.task(id)
         if (!before.modelSelection) return
         if (before.modelSelection !== 'inherit') this.requireEnabled()
@@ -97,6 +124,7 @@ export class ModelSelection {
           const candidates = yield* runtimeOperation(() =>
             this.candidates(before.repositoryId, defaults, before.modelSelection === 'auto'),
           )
+          signal?.throwIfAborted()
           if (!candidates.length)
             throw new HttpError(
               409,
@@ -138,6 +166,7 @@ export class ModelSelection {
               ),
             }),
             before.modelSelection,
+            signal,
           )
           let raw: unknown
           try {
@@ -194,9 +223,15 @@ export class ModelSelection {
             throw new HttpError(502, 'Model selection did not choose a reasoning level. Try again.')
           harness = { ...chosen.harness, reasoning: selectedReasoning ?? chosen.harness.reasoning }
         }
+        signal?.throwIfAborted()
         if (before.modelSelection !== 'inherit') this.requireEnabled()
+        const latest = this.store.task(id)
         if (
-          !isDeepStrictEqual(this.store.task(id), before) ||
+          !isDeepStrictEqual(selectionState(latest, text), selectionState(before, text)) ||
+          !isDeepStrictEqual(
+            resolveTaskAgent(latest, this.store.get().agents) ?? projectDefaults,
+            current,
+          ) ||
           !isDeepStrictEqual(this.store.taskDefaults(before.repositoryId).harness, projectDefaults)
         )
           throw new HttpError(409, 'The thread changed during model selection. Try again.')
@@ -236,14 +271,29 @@ export class ModelSelection {
     for (let offset = 0; offset < agents.length; offset += 4) {
       const results = await Promise.allSettled(
         agents.slice(offset, offset + 4).map(async (agent) => {
-          if (!(await this.availability.check(agent, this.registry))) return []
+          if (!(await this.discovery.availability.check(agent, this.registry))) return []
           const generation = configuredModelCatalogKey(agent, this.registry, this.installations())
           const adapter = await this.registry.get(agent.provider)
           const models = adapter.models
           const catalog = models
-            ? await this.catalogs.get(
-                configuredModelCatalogKey(agent, this.registry, this.installations()),
-                async () => decode(modelCatalogSchema, await models(agent)),
+            ? await this.discovery.catalogs.get(
+                generation,
+                async () =>
+                  decode(
+                    modelCatalogSchema,
+                    await models(modelDiscoveryInput(this.registry.configure(agent))),
+                  ),
+                false,
+                () => {
+                  if (
+                    generation !==
+                    configuredModelCatalogKey(agent, this.registry, this.installations())
+                  )
+                    throw new HttpError(
+                      409,
+                      'Model configuration changed during discovery. Try again.',
+                    )
+                },
               )
             : { models: [{ id: '', name: 'Provider default' }], reasoning: [] }
           // Keep account/launch configuration from the candidate; access comes from the project's policy.

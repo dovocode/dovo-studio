@@ -10,6 +10,7 @@ import { ScopedAgents } from '../agents/scoped-agents'
 import { HarnessUpdates } from '../agents/harness-updates'
 import { AcpRegistrySettings } from '../agents/acp-registry'
 import { TitleSettings } from '../agents/title-settings'
+import { HarnessInstructions } from '../agents/harness-instructions'
 export default function AgentsScreen() {
   const { styles } = useTheme()
   return (
@@ -28,7 +29,12 @@ export default function AgentsScreen() {
                 onPress={() => router.push('/settings/task-defaults')}
               />
             </View>
-            {scope === 'environment' && <EnvironmentTools />}
+            {scope === 'environment' && (
+              <>
+                <HarnessInstructions />
+                <EnvironmentTools />
+              </>
+            )}
             {(scope === 'global' || scope === 'project') && (
               <Text style={styles.muted}>
                 Choose the Computer level to manage installations, accounts, titles and dictation.

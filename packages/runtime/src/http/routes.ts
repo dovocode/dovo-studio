@@ -328,6 +328,8 @@ export function route(
         )
       }
       const agentDeviceAccess = !!run || request.headers['x-dovo-agent-access'] === '1'
+      if (agentDeviceAccess && path.startsWith('/api/agents/instructions/'))
+        throw new HttpError(403, 'Harness instruction files require a paired human client.')
       if (
         path === '/api/device-hosts' ||
         path.startsWith('/api/device-hosts/') ||

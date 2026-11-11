@@ -18,7 +18,7 @@ afterEach(async () => {
   vi.mocked(processes.spawn).mockReset()
 })
 
-function fixture() {
+function fixture(errors: Record<string, { code: number; message: string }> = {}) {
   const child = new ChildProcess()
   const input = new PassThrough()
   const output = new PassThrough()
@@ -34,6 +34,10 @@ function fixture() {
     const message = JSON.parse(data.toString()) as { id?: number; method: string; params: unknown }
     if (message.id === undefined || !message.method) return
     requests.push(message)
+    if (errors[message.method]) {
+      send({ id: message.id, error: errors[message.method] })
+      return
+    }
     const result =
       message.method === 'thread/start' || message.method === 'thread/resume'
         ? { thread: { id: 'thread' } }
@@ -77,6 +81,36 @@ function fixture() {
   adapters.push(adapter)
   return { child, input, output, stop, spawn, send, started, controller, run, adapter, requests }
 }
+
+it.each([-32600, -32601])(
+  'starts without an exit grace wait for optional account error %s',
+  async (code) => {
+    const f = fixture({
+      'account/read': { code, message: 'Account metadata unavailable' },
+      'account/rateLimits/read': { code, message: 'Account limits unavailable' },
+    })
+    const timers = vi.spyOn(globalThis, 'setTimeout')
+    const result = f.adapter.run(f.run)
+    void result.catch(() => {})
+    try {
+      await vi.waitFor(() => expect(f.started).toHaveBeenCalledOnce())
+      expect(timers.mock.calls.filter(([, delay]) => delay === 1000)).toHaveLength(0)
+      f.send({ method: 'turn/completed', params: { turn: { id: 'turn', status: 'completed' } } })
+      await result
+    } finally {
+      f.controller.abort()
+      await result.catch(() => {})
+    }
+  },
+)
+
+it('reports a rejected thread start without waiting for a process exit', async () => {
+  const f = fixture({ 'thread/start': { code: -32602, message: 'Invalid thread settings' } })
+  const timers = vi.spyOn(globalThis, 'setTimeout')
+  await expect(f.adapter.run(f.run)).rejects.toThrow('Invalid thread settings')
+  expect(timers.mock.calls.filter(([, delay]) => delay === 1000)).toHaveLength(0)
+  expect(f.started).not.toHaveBeenCalled()
+})
 
 it.each(['get', 'clear', 'pause'] as const)(
   'executes native goal %s without starting a model turn',

@@ -16,7 +16,7 @@ import { formQuestions } from '../shared/form-questions.js'
 import { OwnedProcessShutdownError, stopOwnedChild } from '../../execution/stop-owned-child.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createMessageConnection } from 'vscode-jsonrpc/node'
+import { createMessageConnection, ErrorCodes, ResponseError } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
 import type { AgentAdapter, AgentInput, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
@@ -299,6 +299,18 @@ export function createCodexAdapter(): AgentAdapter {
             throw new Error('Codex finished before answering')
           }),
         ]).catch(async (error: unknown) => {
+          // A server rejection is already the answer. Only transport failures need time
+          // for the child exit event; optional account reads must not delay every start.
+          if (
+            error instanceof ResponseError &&
+            ![
+              ErrorCodes.MessageWriteError,
+              ErrorCodes.MessageReadError,
+              ErrorCodes.PendingResponseRejected,
+              ErrorCodes.ConnectionInactive,
+            ].some((code) => code === error.code)
+          )
+            throw error
           throw await Promise.race([
             completed.then(
               () => error,

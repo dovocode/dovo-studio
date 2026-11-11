@@ -234,7 +234,7 @@ export function registerBrowser(
   directory?: string,
   preload?: string,
   browserWindows?: {
-    create: (pageOnly?: boolean) => Promise<BrowserWindow>
+    create: (pageOnly?: boolean, transient?: boolean) => Promise<BrowserWindow>
     pageOnly?: (window: BrowserWindow) => boolean
     isMain?: (window: BrowserWindow) => boolean
     list: () => BrowserWindow[]
@@ -1308,10 +1308,16 @@ export function registerBrowser(
               },
             ]).popup({ window: popup })
           })
+      } else {
+        // Auth windows have no tab controls, but remain browser pages in the opener's
+        // profile. Extensions need a tab/window identity for their scripts and APIs.
+        extensions.addTab(profileId, contents, popup)
+        popup.on('focus', () => extensions.selectTab(profileId, contents))
       }
       created.popups.add(popup)
       popup.once('closed', () => {
         created.popups.delete(popup)
+        if (!documentPip) extensions.removeTab(profileId, contents)
         if (created.documentPip === popup) {
           created.documentPip = undefined
           created.documentPipContents = undefined
@@ -1328,6 +1334,7 @@ export function registerBrowser(
         return { action: 'deny' }
       })
     }
+    let openingPopups = 0
     view.webContents.setWindowOpenHandler((details) => {
       if (
         !created.workspace ||
@@ -1358,6 +1365,73 @@ export function registerBrowser(
         }
       }
       if (details.frameName?.startsWith(DOCUMENT_PIP_NAME)) return { action: 'deny' }
+      const popupUrl =
+        openableUrl(details.url) ??
+        (details.url === '' || details.url === 'about:blank' ? 'about:blank' : undefined)
+      if (browserWindows && popupRequest(details) && popupUrl) {
+        if (created.popups.size + openingPopups >= MAX_POPUPS) return { action: 'deny' }
+        return {
+          action: 'allow',
+          createWindow: (options) => {
+            // Adopt Electron's pending guest once. Loading the URL again would lose
+            // the real opener, POST body and the site's window.close/postMessage flow.
+            const id = randomUUID()
+            const key = `popup:${id}`
+            const child = createEntry(
+              created.window,
+              JSON.stringify([created.windowId, key]),
+              key,
+              profileId,
+              true,
+              options,
+            )
+            child.prepareNavigation(popupUrl)
+            child.pageCreated = true
+            child.url = popupUrl
+            openingPopups++
+            void browserWindows
+              .create(true, true)
+              .then((target) => {
+                if (
+                  views.get(JSON.stringify([created.windowId, created.key])) !== created ||
+                  created.contents.isDestroyed() ||
+                  child.contents.isDestroyed() ||
+                  target.isDestroyed()
+                ) {
+                  if (!target.isDestroyed()) target.destroy()
+                  releaseView(JSON.stringify([child.windowId, key]))
+                  return
+                }
+                registerWindow(target)
+                target.setParentWindow(created.window)
+                moveEntry(child, target)
+                created.popups.add(target)
+                target.once('closed', () => created.popups.delete(target))
+                child.contents.once('destroyed', () => {
+                  if (!target.isDestroyed()) target.close()
+                })
+                const tab: BrowserWorkspaceTab = {
+                  id,
+                  kind: 'web',
+                  profileId,
+                  url: popupUrl,
+                  title: '',
+                }
+                tabEvents(target.id).moved.push(movedTab(key, tab, child))
+                workspaceStates.set(target.id, { tabs: [{ key, tab }], activeId: id })
+                target.webContents.send('browser:focus-workspace')
+              })
+              .catch((error: unknown) => {
+                releaseView(JSON.stringify([child.windowId, key]))
+                created.navigationError = `Could not open website popup: ${String(error)}`
+              })
+              .finally(() => {
+                openingPopups--
+              })
+            return child.contents
+          },
+        }
+      }
       const pageOnly = browserWindows?.pageOnly?.(created.window) ?? false
       if (details.postBody && !pageOnly) {
         // Never replay a form POST as a GET tab; load it here, or refuse it visibly.
@@ -1389,7 +1463,8 @@ export function registerBrowser(
               contextIsolation: true,
               nodeIntegration: false,
               disableBlinkFeatures: 'DocumentPictureInPictureAPI',
-              nodeIntegrationInSubFrames: false,
+              // Session extension preloads also run in cross-origin auth frames.
+              nodeIntegrationInSubFrames: true,
               webviewTag: false,
             },
           },

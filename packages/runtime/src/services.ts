@@ -266,7 +266,7 @@ export function createServices(
       (taskId) => memory.availableScopes(taskId),
       () => preferences.get().maxActiveChildAgents,
       () => deviceHosts.settings.get().enabled ?? false,
-      (id, text) => modelSelection.resolveEffect(id, text),
+      (id, text, signal) => modelSelection.resolveEffect(id, text, signal),
       () => enabledStudioTools(preferences.get()),
       () => preferences.get().enableLinkedProjectsTool,
     ),

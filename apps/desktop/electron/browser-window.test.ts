@@ -157,6 +157,20 @@ it('destroys a failed-load window and keeps the registry usable', async () => {
   await expect(f.invoke!(event, undefined)).resolves.toBeUndefined()
 })
 
+it('closes a transient control-less popup without moving its auth page to the main window', async () => {
+  const returnTabs = vi.fn<() => Promise<void>>(async () => {})
+  registration.onClose(returnTabs)
+  await registration.create(true, true)
+  const window = f.windows[0]!
+  expect(window.options.width).toBe(620)
+  expect(window.options.webPreferences?.additionalArguments).toEqual(['--dovo-browser-page'])
+  await registration.returnAll()
+  expect(returnTabs).not.toHaveBeenCalled()
+  window.close()
+  expect(window.destroyed).toBe(true)
+  expect(returnTabs).not.toHaveBeenCalled()
+})
+
 it('waits for tabs to return before closing and coalesces repeated close requests', async () => {
   let finish = () => {}
   const returnTabs = vi.fn<() => Promise<void>>(

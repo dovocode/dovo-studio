@@ -599,6 +599,27 @@ app.whenReady().then(async () => {
       assert.equal(auth.value,'https://'+extension.id+'.chromiumapp.org/callback#code=native-smoke')
       const interaction = await workerAPI('identity','launchWebAuthFlow',[{url:page,interactive:false}])
       assert.match(interaction.error,/requires interaction/)
+      // Website auth uses the control-less browser, with extensions and the real opener.
+      await main.executeJavaScript('window.authPopup=window.open('+JSON.stringify(page+'sign-in')+',"auth-fixture","popup,width=620,height=760")')
+      let authWindow: BrowserWindow | undefined
+      let authPage: Electron.WebContents | undefined
+      for(let i=0;i<100;i++) {
+        authPage=webContents.getAllWebContents().find(contents=>contents.getURL()===page+'sign-in')
+        authWindow=BrowserWindow.getAllWindows().find(window=>window.contentView.children.some((view:any)=>view.webContents===authPage))
+        if(authWindow&&authPage?.getTitle().startsWith('CS:'))break
+        await wait(50)
+      }
+      assert.ok(authWindow&&authPage,'Website sign-in must open.')
+      assert.equal(authPage.session,work_,'Sign-in must keep the Work profile.')
+      assert.ok(authWindow.webContents.getLastWebPreferences().additionalArguments?.includes('--dovo-browser-page'),'Auth must use the control-less shell.')
+      assert.ok(authPage.getTitle().startsWith('CS:'),'Extensions must load in sign-in windows.')
+      assert.equal(await authPage.executeJavaScript('window.opener!==null'),true,'Auth must keep the real opener.')
+      const authTabs=await api('chrome.tabs.query({url:'+JSON.stringify(page+'sign-in')+'})')
+      assert.equal(authTabs.length,1,'The auth page must have an extension tab identity.')
+      await authPage.executeJavaScript('window.close()')
+      for(let i=0;i<100&&!authWindow.isDestroyed();i++)await wait(20)
+      assert.equal(authWindow.isDestroyed(),true,'Site window.close must close the sign-in shell.')
+      assert.equal((await api('chrome.tabs.query({url:'+JSON.stringify(page+'sign-in')+'})')).length,0,'Closing sign-in must remove its extension tab.')
       await workerAPI('history','addUrl',[{url:page+'history-proof'}])
       const history = await api('chrome.history.search({text:"history-proof",startTime:0})')
       assert.equal(history.length,1)

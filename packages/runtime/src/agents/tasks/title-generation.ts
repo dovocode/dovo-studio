@@ -210,9 +210,10 @@ export class TitleGeneration {
         'Scope mode is experimental and disabled on this computer. Enable it in this computer’s settings, or choose a project manually.',
       )
   }
-  selectModelEffect(text: string, mode: 'auto' | 'smart' = 'smart') {
-    return this.trackEffect((controller) =>
-      this.runEffect(text, controller, mode === 'auto' ? 'tune' : 'maestro'),
+  selectModelEffect(text: string, mode: 'auto' | 'smart' = 'smart', signal?: AbortSignal) {
+    return this.trackEffect(
+      (controller) => this.runEffect(text, controller, mode === 'auto' ? 'tune' : 'maestro'),
+      signal,
     )
   }
   routeWorkspaceEffect(value: unknown) {
@@ -455,10 +456,16 @@ export class TitleGeneration {
   cleanup(value: unknown) {
     return runClientEffect(this.cleanupEffect(value))
   }
-  private trackEffect<A, E>(run: (controller: AbortController) => Effect.Effect<A, E>) {
+  private trackEffect<A, E>(
+    run: (controller: AbortController) => Effect.Effect<A, E>,
+    signal?: AbortSignal,
+  ) {
     return Effect.suspend(() => {
       if (this.stopped) return Effect.fail(runtimeFailure(new Error('Runtime shutting down')))
       const controller = new AbortController()
+      const abort = () => controller.abort(signal?.reason)
+      if (signal?.aborted) abort()
+      else signal?.addEventListener('abort', abort, { once: true })
       const fiber = this.executor.runFork(
         Effect.yieldNow.pipe(
           Effect.andThen(
@@ -467,6 +474,7 @@ export class TitleGeneration {
           Effect.ensuring(
             Effect.sync(() => {
               this.running.delete(controller)
+              signal?.removeEventListener('abort', abort)
             }),
           ),
           Effect.uninterruptible,

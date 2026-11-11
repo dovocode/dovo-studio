@@ -3,6 +3,7 @@
   "version": "0.0.9",
   "private": true,
   "scripts": {
+    "test:harness-instructions:browser": "node scripts/check-harness-instructions-browser.mjs",
     "test:confirmations:browser": "node scripts/check-confirmations-browser.mjs && node scripts/check-task-confirmations-browser.mjs",
     "test:detail-transitions:browser": "node scripts/check-detail-transitions-browser.mjs",
     "test:plan-mode:browser": "node scripts/check-plan-mode-browser.mjs",

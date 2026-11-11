@@ -10,9 +10,10 @@ import { registerQuitShortcut } from './quit-shortcut.js'
 export function registerBrowserWindows(rendererPath: string, preload: string) {
   const windows = new Set<BrowserWindow>()
   const pageWindows = new Set<BrowserWindow>()
+  const transientWindows = new Set<BrowserWindow>()
   let returnTabs: ((window: BrowserWindow) => Promise<void>) | undefined
   let quitting = false
-  const create = async (pageOnly = false) => {
+  const create = async (pageOnly = false, transient = false) => {
     const settings = readLocalSettingsSection('app')
     if (
       !settings ||
@@ -30,8 +31,8 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
       readWindowColors(app.getPath('userData')) ??
       defaultWindowColors(nativeTheme.shouldUseDarkColors)
     const window = new BrowserWindow({
-      width: 1180,
-      height: 800,
+      width: transient ? 620 : 1180,
+      height: transient ? 760 : 800,
       minWidth: pageOnly ? 480 : 840,
       minHeight: 560,
       title: 'Dovo Browser',
@@ -52,10 +53,12 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
     })
     windows.add(window)
     if (pageOnly) pageWindows.add(window)
+    if (transient) transientWindows.add(window)
     let returned = false
     let returning = false
     window.on('close', (event) => {
-      if (quitting || returned || !returnTabs) return
+      // Website popups close their auth document; they must never move it to the main window.
+      if (transient || quitting || returned || !returnTabs) return
       event.preventDefault()
       if (returning) return
       returning = true
@@ -77,6 +80,7 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
     window.once('closed', () => {
       windows.delete(window)
       pageWindows.delete(window)
+      transientWindows.delete(window)
     })
     window.webContents.setWindowOpenHandler(({ url }) => {
       void offerLink(window, url)
@@ -124,12 +128,14 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
     },
     returnAll: async () => {
       if (returnTabs)
-        for (const window of windows) if (!window.isDestroyed()) await returnTabs(window)
+        for (const window of windows)
+          if (!window.isDestroyed() && !transientWindows.has(window)) await returnTabs(window)
     },
     dispose: () => {
       for (const window of windows) window.destroy()
       windows.clear()
       pageWindows.clear()
+      transientWindows.clear()
     },
   }
 }

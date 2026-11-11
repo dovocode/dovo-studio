@@ -1,5 +1,64 @@
 # Performance verification
 
+## Thread Send admission and discovery
+
+Desktop and mobile now use one live runtime discovery cache for model pickers, model mentions and
+first-turn model selection. A first send reuses fresh availability and catalog results, including an
+in-flight lookup. Account, executable, configuration and secret-reference changes still select
+different cache entries. Explicit refresh updates the same cache. Stored presentation data never
+counts as live availability.
+
+The message endpoint returns after it saves input and admits its owned worker. Tune/Maestro model
+selection and checkout preparation continue in that worker. Stop also cancels the selection model.
+Failures keep the accepted message in the queue for recovery. Progress and errors stay in the
+thread. Preparation no longer holds the HTTP response or the client's sender for other threads.
+Internal callers that need a prepared checkout still wait for it.
+
+Scope project selection still finishes before admission. Queue-only staging also resolves its model
+before returning. The selected model, reasoning level and project policy stay the same. A local
+trace before the change showed about 4.9 seconds in automatic model selection before queue
+acceptance; recent checkpoint measurements were 0.08–0.25 seconds. This is diagnostic evidence from
+one computer, not a measured speedup or a latency guarantee. Provider inference and the first reply
+still take time.
+
+Codex server errors no longer wait for the one-second process-exit grace period. A local read-only
+app-server probe returned a rate-limit error immediately with API-key authentication. The old
+request helper then waited one second. Both optional metadata reads and required RPC errors now
+return at once. Transport failures still wait briefly for the process exit reason.
+
+Run these checks:
+
+```sh
+pnpm exec vp test packages/runtime/src/http/thread-start-discovery.test.ts packages/runtime/src/agents/tasks/model-selection.test.ts packages/runtime/src/agents/tasks/tasks.test.ts
+```
+
+The HTTP tests hold checkout preparation until after Send returns. They check completion, failure
+and cancellation during both model selection and checkout preparation. They also check retries,
+rename preservation, and provider calls across picker requests, first sends, refresh and account
+changes. They use a local runtime, SQLite and mocked provider adapters. They do not measure real
+provider inference, WAN delay or phone performance.
+
+## Mobile wake and website auth windows
+
+The mobile root only applies keyboard spacing for a nonzero keyboard frame while the app is active.
+Sleep clears that spacing without replacing the navigator, thread or composer. This handles empty
+keyboard events from the native shortcut responder. Run
+`node scripts/check-mobile-tabbar-browser.mjs` to check zero-height frames, sleep/wake and draft
+retention through mocked native events. A physical iPhone lock/unlock test is still required to
+confirm the reported black-screen issue.
+
+Website auth popups use the control-less browser shell and the shared page code. They keep the
+opener's profile and extensions. Electron's original guest preserves POST data, `window.opener`,
+`postMessage` and `window.close`. These temporary windows close their page instead of returning it
+to the main window. Run
+`pnpm exec vp test apps/desktop/electron/browser.test.ts apps/desktop/electron/browser-window.test.ts`
+for mocked boundary checks. The native smoke command is
+`xvfb-run -a node apps/desktop/scripts/check-browser-extensions-native.mjs` on Linux. This checkout
+cannot start that check because Electron's SUID sandbox helper lacks the required owner/mode. Real
+Google sign-in and extension behavior remain unverified here.
+
+## Workspace and conversation reads
+
 Task summaries and complete conversations have separate types and storage paths. Workspace reads and
 metadata edits use summaries. Operations that need messages or checkpoints explicitly request a
 complete task; SQLite remains authoritative, and complete histories use a cache capped at 32 tasks
