@@ -1,21 +1,27 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { IpcMainInvokeEvent } from 'electron'
+import type { DesktopSyncCursor } from '@dovo/protocol'
 const f = vi.hoisted(() => ({
   handlers: new Map<
     string,
-    (event: IpcMainInvokeEvent, value: unknown, retry?: unknown) => unknown
+    (event: IpcMainInvokeEvent, value: unknown, retry?: unknown, cursor?: unknown) => unknown
   >(),
   subscribe: vi.fn<(id: string, input: unknown, publish: (event: unknown) => void) => void>(),
   unsubscribe: vi.fn<(id: string) => void>(),
-  refresh: vi.fn<(id: string, retry: boolean) => void>(),
+  refresh: vi.fn<(id: string, retry: boolean, cursor?: DesktopSyncCursor) => void>(),
   dispose: vi.fn<() => void>(),
 }))
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (
       name: string,
-      handler: (event: IpcMainInvokeEvent, value: unknown, retry?: unknown) => unknown,
+      handler: (
+        event: IpcMainInvokeEvent,
+        value: unknown,
+        retry?: unknown,
+        cursor?: unknown,
+      ) => unknown,
     ) => f.handlers.set(name, handler),
   },
 }))
@@ -99,6 +105,15 @@ it('validates subscriptions and scopes refresh/unwatch by window identity', () =
   ).toThrow(/connection/)
   f.handlers.get('runtime:sync-refresh')?.(main.event, 'subscription', true)
   f.handlers.get('runtime:sync-unwatch')?.(main.event, 'subscription')
-  expect(f.refresh).toHaveBeenCalledWith('1:subscription', true)
+  expect(f.refresh).toHaveBeenCalledWith('1:subscription', true, undefined)
+  const cursor = { epoch: 'renderer-epoch', sequence: 3 }
+  f.handlers.get('runtime:sync-refresh')?.(main.event, 'subscription', false, cursor)
+  expect(f.refresh).toHaveBeenCalledWith('1:subscription', false, cursor)
+  expect(() =>
+    f.handlers.get('runtime:sync-refresh')?.(main.event, 'subscription', false, {
+      ...cursor,
+      sequence: -1,
+    }),
+  ).toThrow(/sequence/)
   expect(f.unsubscribe).toHaveBeenCalledWith('1:subscription')
 })

@@ -111,9 +111,9 @@ contextBridge.exposeInMainWorld('dovo', {
         .invoke('runtime:sync-watch', input)
         .catch((error: unknown) => runtimeSyncError(input.id, error))
     },
-    refresh: (id: string, retry: boolean) => {
+    refresh: (id: string, retry: boolean, cursor?: import('@dovo/protocol').DesktopSyncCursor) => {
       void ipcRenderer
-        .invoke('runtime:sync-refresh', id, retry)
+        .invoke('runtime:sync-refresh', id, retry, cursor)
         .catch((error: unknown) => runtimeSyncError(id, error))
     },
   },

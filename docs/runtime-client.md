@@ -39,6 +39,75 @@ retry rules still apply; uncertain mutations are not replayed on another transpo
 Use `/api/snapshot?scope=overview` for connection checks and task status. Full snapshots include
 conversation histories and file contents, which readiness and pairing-recovery checks do not need.
 
+## Remote thread updates
+
+The shared desktop, web and mobile sync client requests
+`/api/sync/ticket?format=4&history=paged&subscriptions=live&incremental=1`. Current runtimes return
+format 6. Older runtimes ignore the extra option and keep their format-4/5 scoped path. Older
+clients keep their existing format. HTTP remains supported for LAN and VPN connections. Pairing
+tokens and device revocation checks remain required. Accounts and HTTPS remain optional.
+
+Format 6 patches changed runtime fields and individual turn fields. A token count change does not
+send the other turns or their checkpoints again. Removed optional fields and reordered turns have
+explicit updates. Reconciliation retains unchanged objects, and a runtime-only update retains the
+whole workspace object. Desktop window updates use the same incremental format internally.
+
+The client keeps recent departed selections for up to five minutes. The cache holds at most eight
+snapshots and 4 MiB of estimated retained data per open connection. It stays in memory and belongs
+to that connection's credentials. Larger snapshots use the existing scoped handoff. Returning to a
+cached selection sends its epoch and sequence with the watch request. The server confirms the exact
+baseline with `selection-resume`, then replays missed updates under the existing send-buffer limit.
+The client publishes the selection after replay reaches the server's confirmed sequence, so an older
+cached snapshot cannot replace newer workspace state while catch-up runs. Unknown epochs, evicted
+replay history and cache misses use a scoped handoff or fresh baseline. A client with a missing or
+inconsistent baseline reconnects for a full baseline.
+
+Cache admission counts strings and reuses sizes of unchanged objects. It does not serialize whole
+histories during navigation. Sent format-6 watches include an increasing `watchId`. The server sends
+`watch-ack` after the selection response, including when the selected view stays the same. The
+client keeps requested baselines until their watches are acknowledged. Pending navigation keeps only
+the latest watch between resume requests. Scope-only watches preserve a pending thread selection.
+This adds no debounce or client request queue.
+
+Committed workspace changes wake sync after 20 ms. The periodic tick still handles other service
+changes and connection checks. One active build and one pending wake bound this work. Repeated
+foreground wakeups share a resume request. A stale resume on an established socket catches up from
+the last sent cursor, so crossing live updates do not replay twice. Cancelled selection tickets
+start their replacement without failure backoff. Web and desktop keep cold HTTP fallback immediate,
+then cancel it when the stream provides a usable snapshot.
+
+Desktop windows keep their own IPC sequence and last delivered projection. Changing one window's
+thread selection sends a patch from that projection, without repeating the retained conversation or
+moving another window's cursor. Source updates can skip views that omit a window's selected history;
+the next covered source patches directly from that window's baseline. Unchanged source workspaces
+reuse their projected workspace.
+
+Renderer subscription changes merge within one microtask. Initial subscription stays immediate.
+Refresh flushes the current selection before it reaches the main process, and stop cancels pending
+updates. Foreground refresh supplies the renderer's cursor. A matching epoch and a sequence at or
+behind the last sent sequence need no new baseline, because IPC preserves order. A missing, future
+or foreign cursor requests a baseline. If the runtime is offline, that recovery request stays
+pending until the next usable source snapshot. The cursor remains optional for existing callers.
+
+This follows the same approach as T3 Code's
+[per-thread resume state](https://github.com/pingdotgg/t3code/blob/79bca436/packages/client-runtime/src/state/threads.ts)
+and
+[bounded replay](https://github.com/pingdotgg/t3code/blob/79bca436/apps/server/src/orchestration-v2/ThreadStream.ts).
+Dovo retains its existing workspace patches, mutation receipts and shared-thread replication.
+
+After building the runtime and its dependencies, verify the real browser boundary with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:remote-thread-sync:browser
+```
+
+The test uses managed Chromium and a real loopback runtime. It checks remote changes while a thread
+is hidden, exact history restoration, checkpoint identity, 40 rapid switches, prepared navigation,
+connection reuse and reconnect replay. It measures decoded application bytes, not compressed network
+traffic or physical-device latency. `pnpm test:desktop-runtime-connections` checks native Electron,
+production preload source, IPC, shared fallback polling, selection handoffs and foreground refresh.
+
 ## Computer and resource scope
 
 Keep these identities separate:

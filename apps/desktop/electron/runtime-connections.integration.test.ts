@@ -46,14 +46,33 @@ it('shares a real HTTP runtime stream, unions thread histories, and keeps the po
   })
   const main: DesktopSyncEvent[] = [],
     popout: DesktopSyncEvent[] = []
-  manager.subscribe('main', input('author'), (event) => main.push(event))
+  let mainSnapshot: RuntimeSnapshot | undefined
+  let mainSequence: number | undefined
+  const publishMain = (event: DesktopSyncEvent) => {
+    main.push(event)
+    if (event.type === 'snapshot') {
+      mainSnapshot = event.snapshot
+      mainSequence = event.sequence
+    } else if (event.type === 'delta') {
+      if (!mainSnapshot || event.base !== mainSequence || event.sequence !== event.base + 1)
+        throw Error('Invalid main window cursor')
+      mainSnapshot = applySnapshotDelta(mainSnapshot, event.delta)
+      mainSequence = event.sequence
+    }
+  }
+  manager.subscribe('main', input('author'), publishMain)
   let popoutSnapshot: RuntimeSnapshot | undefined
+  let popoutSequence: number | undefined
   manager.subscribe('popout', input('reviewer'), (event) => {
     popout.push(event)
-    if (event.type === 'snapshot') popoutSnapshot = event.snapshot
-    else if (event.type === 'delta') {
-      if (!popoutSnapshot) throw new Error('Delta arrived before baseline')
+    if (event.type === 'snapshot') {
+      popoutSnapshot = event.snapshot
+      popoutSequence = event.sequence
+    } else if (event.type === 'delta') {
+      if (!popoutSnapshot || event.base !== popoutSequence || event.sequence !== event.base + 1)
+        throw new Error('Invalid popout cursor')
       popoutSnapshot = applySnapshotDelta(popoutSnapshot, event.delta)
+      popoutSequence = event.sequence
     }
   })
   await vi.waitFor(() =>
@@ -72,11 +91,16 @@ it('shares a real HTTP runtime stream, unions thread histories, and keeps the po
   expect(
     popoutSnapshot?.workspace.tasks.find((task) => task.id === 'reviewer')?.messages[0]?.text,
   ).toBe('reviewer history')
-  const mainSnapshot = main.find((event) => event.type === 'snapshot')
-  expect(mainSnapshot?.type === 'snapshot' ? mainSnapshot.snapshot.detailTaskIds : []).toEqual([
+  const mainBaseline = main.find((event) => event.type === 'snapshot')
+  expect(mainBaseline?.type === 'snapshot' ? mainBaseline.snapshot.detailTaskIds : []).toEqual([
     'author',
   ])
   expect(start).toHaveBeenCalledOnce()
+  const handoffStart = main.length
+  manager.subscribe('main', { ...input('reviewer'), id: 'author' }, publishMain)
+  expect(main.slice(handoffStart).some((event) => event.type === 'snapshot')).toBe(false)
+  expect(mainSnapshot?.detailTaskIds).toEqual(['reviewer'])
+  expect(mainSnapshot?.workspace.tasks.find((task) => task.id === 'author')?.messages).toEqual([])
   runtime.services.store.updateTask('reviewer', (task) => ({
     ...task,
     draft: 'Changed through runtime',

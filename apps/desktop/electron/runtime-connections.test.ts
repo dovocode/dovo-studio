@@ -215,18 +215,117 @@ it('upgrades browser thread details on demand and removes them when the linked t
   setRuntimeSnapshotTag(source, 'same-revision')
   f.options.get('http://paired.lan:8787')!.onSnapshot(source)
   f.manager.subscribe('browser', f.input('browser', []), (event) => events.push(event))
+  const baseline = events.at(-1)!
+  if (baseline.type !== 'snapshot') throw Error('Missing baseline')
   f.manager.subscribe('browser', f.input('browser'), (event) => events.push(event))
   const selected = events.at(-1)!
-  if (selected.type !== 'snapshot') throw Error('Missing selected baseline')
-  expect(selected.snapshot.detailTaskIds).toEqual(['thread'])
-  expect(selected.snapshot.workspace.tasks[0]?.messages).toHaveLength(80)
+  if (selected.type !== 'delta') throw Error('Missing selection delta')
+  const selectedSnapshot = applySnapshotDelta(baseline.snapshot, selected.delta)
+  expect(selectedSnapshot.detailTaskIds).toEqual(['thread'])
+  expect(selectedSnapshot.workspace.tasks[0]?.messages).toHaveLength(80)
   f.manager.subscribe('browser', f.input('browser', []), (event) => events.push(event))
   const deselected = events.at(-1)!
-  if (deselected.type !== 'snapshot') throw Error('Missing deselected baseline')
-  expect(deselected.snapshot.detailTaskIds).toEqual([])
-  expect(deselected.snapshot.workspace.tasks[0]?.messages).toEqual([])
+  if (deselected.type !== 'delta') throw Error('Missing deselection delta')
+  const deselectedSnapshot = applySnapshotDelta(selectedSnapshot, deselected.delta)
+  expect(deselectedSnapshot.detailTaskIds).toEqual([])
+  expect(deselectedSnapshot.workspace.tasks[0]?.messages).toEqual([])
+  expect(selected.base).toBe(baseline.sequence)
+  expect(deselected.base).toBe(selected.sequence)
   expect(selected.tag).toBeDefined()
   expect(deselected.tag).not.toBe(selected.tag)
+})
+it('patches a window selection without repeating retained history or changing another window cursor', () => {
+  const f = fixture(),
+    main: DesktopSyncEvent[] = [],
+    popout: DesktopSyncEvent[] = []
+  const publish = (event: DesktopSyncEvent) => main.push(event)
+  f.manager.subscribe('main', f.input('main'), publish)
+  const source = conversation(f)
+  const other = { ...source.workspace.tasks[0]!, id: 'other', title: 'Other thread' }
+  source.detailTaskIds = ['thread', 'other']
+  source.workspace = { ...source.workspace, tasks: [...source.workspace.tasks, other] }
+  f.options.get('http://paired.lan:8787')!.onSnapshot(source)
+  f.manager.subscribe('popout', f.input('popout', ['other']), (event) => popout.push(event))
+  const baseline = main.findLast((event) => event.type === 'snapshot')!
+  if (baseline.type !== 'snapshot') throw Error('Missing baseline')
+  f.manager.subscribe('main', f.input('main', ['thread', 'other']), publish)
+  main.length = 0
+  const count = popout.length
+  f.manager.subscribe('main', f.input('main', ['other']), publish)
+  const selected = main.at(-1)!
+  expect(selected.type).toBe('delta')
+  expect(JSON.stringify(selected).length).toBeLessThan(JSON.stringify(baseline).length / 100)
+  expect(popout).toHaveLength(count)
+  f.options.get('http://paired.lan:8787')!.onSnapshot({ ...source, revision: 2 })
+  const later = main.at(-1)!,
+    otherWindow = popout.at(-1)!
+  if (selected.type !== 'delta' || later.type !== 'delta' || otherWindow.type !== 'delta')
+    throw Error('Missing delta')
+  expect(later.base).toBe(selected.sequence)
+  const otherBaseline = popout.findLast((event) => event.type === 'snapshot')!
+  if (otherBaseline.type !== 'snapshot') throw Error('Missing popout baseline')
+  expect(otherWindow.base).toBe(otherBaseline.sequence)
+})
+it('keeps valid renderer cursors on foreground refresh and rebases missing or stale cursors', () => {
+  const f = fixture(),
+    events: DesktopSyncEvent[] = []
+  f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+  f.online.add('http://paired.lan:8787')
+  f.options.get('http://paired.lan:8787')!.onSnapshot(conversation(f))
+  const baseline = events.at(-1)!
+  if (
+    baseline.type !== 'snapshot' ||
+    baseline.epoch === undefined ||
+    baseline.sequence === undefined
+  )
+    throw Error('Missing cursor')
+  const count = events.length
+  f.manager.refresh('main', false, { epoch: baseline.epoch, sequence: baseline.sequence })
+  expect(events).toHaveLength(count)
+  f.options.get('http://paired.lan:8787')!.onSnapshot({ ...conversation(f), revision: 2 })
+  const crossed = events.length
+  f.manager.refresh('main', false, { epoch: baseline.epoch, sequence: baseline.sequence })
+  expect(events).toHaveLength(crossed)
+  f.manager.refresh('main', false, { epoch: 'old-runtime', sequence: baseline.sequence })
+  expect(events.at(-1)?.type).toBe('snapshot')
+  expect(events).toHaveLength(crossed + 1)
+  f.manager.refresh('main', false)
+  expect(events).toHaveLength(crossed + 2)
+})
+it('remembers renderer baseline recovery through an outage and an unchanged stream resume', () => {
+  const f = fixture(),
+    events: DesktopSyncEvent[] = []
+  f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+  const stream = f.options.get('http://paired.lan:8787')!
+  const source = conversation(f)
+  stream.onSnapshot(source)
+  stream.onStatus?.('reconnecting')
+  events.length = 0
+  f.manager.refresh('main', false)
+  expect(events).toHaveLength(0)
+  stream.onSnapshot(source)
+  expect(events.at(-1)?.type).toBe('snapshot')
+  expect(events.filter((event) => event.type === 'delta')).toHaveLength(0)
+})
+it('patches from a window baseline after source versions omitted its selected history', () => {
+  const f = fixture(),
+    events: DesktopSyncEvent[] = []
+  f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+  const source = conversation(f)
+  const stream = f.options.get('http://paired.lan:8787')!
+  stream.onSnapshot(source)
+  const baseline = events.at(-1)!
+  if (baseline.type !== 'snapshot') throw Error('Missing baseline')
+  events.length = 0
+  stream.onSnapshot({ ...source, revision: 2, detailTaskIds: [] })
+  stream.onSnapshot({ ...source, revision: 3, detailTaskIds: [] })
+  expect(events).toHaveLength(0)
+  stream.onSnapshot({ ...source, revision: 4 })
+  const delta = events.at(-1)!
+  if (delta.type !== 'delta') throw Error('Missing delta')
+  expect(delta.base).toBe(baseline.sequence)
+  expect(applySnapshotDelta(baseline.snapshot, delta.delta).revision).toBe(4)
+  expect(JSON.stringify(delta).length).toBeLessThan(500)
 })
 it('shares one stream and fallback poller across main and popout; closing main preserves the popout', async () => {
   const f = fixture(),
@@ -366,6 +465,33 @@ it('does not replay a disconnected cached snapshot as a live connection to a new
   await vi.advanceTimersByTimeAsync(0)
   f.manager.subscribe('popout', f.input('popout'), (event) => popout.push(event))
   expect(popout.some((event) => event.type === 'snapshot')).toBe(false)
+})
+it('cancels redundant HTTP only after the stream provides a snapshot', async () => {
+  const f = fixture(),
+    events: DesktopSyncEvent[] = []
+  f.read.mockImplementationOnce(
+    (_connection, _path, signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('Superseded HTTP request')), {
+          once: true,
+        })
+      }),
+  )
+  f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+  const signal = f.read.mock.calls[0]![2]
+  const stream = f.options.get('http://paired.lan:8787')!
+  f.online.add('http://paired.lan:8787')
+  stream.onStatus?.('live')
+  expect(signal.aborted).toBe(false)
+  stream.onSnapshot(f.snapshot(['thread']))
+  expect(signal.aborted).toBe(true)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(events.some((event) => event.type === 'error')).toBe(false)
+  expect(events.at(-1)?.type).toBe('snapshot')
+  f.online.clear()
+  stream.onStatus?.('reconnecting')
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.read).toHaveBeenCalledTimes(2)
 })
 it('ignores a late failed HTTP read after the shared stream becomes live', async () => {
   const f = fixture(),

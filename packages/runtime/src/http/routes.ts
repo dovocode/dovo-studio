@@ -1295,27 +1295,32 @@ export function route(
       if (method === 'POST' && path === '/api/sync/ticket') {
         const format =
           url.searchParams.get('format') === '4' && url.searchParams.get('subscriptions') === 'live'
-            ? '5'
+            ? url.searchParams.get('incremental') === '1'
+              ? '6'
+              : '5'
             : url.searchParams.get('format')
-        const tasks = format === '4' || format === '5' ? syncTasks(url) : undefined
+        const tasks =
+          format === '4' || format === '5' || format === '6' ? syncTasks(url) : undefined
         return {
           ticket: s.tickets.issue(
             token,
-            format === '5'
-              ? 'runtime-sync-5'
-              : format === '4'
-                ? 'runtime-sync-4'
-                : format === '3'
-                  ? 'runtime-sync-3'
-                  : format === '2'
-                    ? 'runtime-sync-2'
-                    : 'runtime-sync',
+            format === '6'
+              ? 'runtime-sync-6'
+              : format === '5'
+                ? 'runtime-sync-5'
+                : format === '4'
+                  ? 'runtime-sync-4'
+                  : format === '3'
+                    ? 'runtime-sync-3'
+                    : format === '2'
+                      ? 'runtime-sync-2'
+                      : 'runtime-sync',
             undefined,
             tasks,
             url.searchParams.get('history') === 'paged',
             settledLimit(),
           ),
-          ...(format === '4' || format === '5' ? { format: Number(format) } : {}),
+          ...(format === '4' || format === '5' || format === '6' ? { format: Number(format) } : {}),
         }
       }
       if (method === 'POST' && path === '/api/tasks/history') {

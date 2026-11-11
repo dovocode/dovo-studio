@@ -1,3 +1,4 @@
+/// <reference lib="es2024" />
 import { DurableState } from '@dovo/durable-connections'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
@@ -142,6 +143,163 @@ it('changes thread details on one connection without changing another client or 
   first.socket.send(JSON.stringify({ type: 'watch', tasks: ['task'], scopes: [] }))
   expect((await first.wait('snapshot')).snapshot.detailTaskIds).toEqual(['task'])
   expect(first.socket.readyState).toBe(WebSocket.OPEN)
+})
+it.each(['burst', 'scope-only', 'resume-barrier'])(
+  'replaces pending navigation while a projection is slow (%s)',
+  async (mode) => {
+    const { runtime, open } = await setup()
+    const template = runtime.services.store.task('task')!
+    runtime.services.store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        ...workspace.tasks,
+        ...Array.from({ length: 41 }, (_, index) => ({ ...template, id: `thread-${index}` })),
+      ],
+    }))
+    const client = await open(token, 6, ['task'], true)
+    client.socket.send(JSON.stringify({ type: 'resume' }))
+    const baseline = await client.wait('snapshot')
+    await client.wait('heartbeat')
+    client.frames.length = 0
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const available = runtime.services.scratch.available.bind(runtime.services.scratch)
+    const projection = vi
+      .spyOn(runtime.services.scratch, 'available')
+      .mockImplementation(async () => {
+        entered.resolve()
+        await release.promise
+        return available()
+      })
+    cleanup.push(() => projection.mockRestore())
+    try {
+      client.socket.send(
+        JSON.stringify({
+          type: 'watch',
+          watchId: 0,
+          tasks: ['thread-0'],
+          scopes: [],
+          selectionDelta: true,
+        }),
+      )
+      await entered.promise
+      for (let index = 1; index <= 40; index++) {
+        client.socket.send(
+          JSON.stringify({
+            type: 'watch',
+            watchId: index,
+            tasks: [`thread-${index}`],
+            scopes: index === 40 ? ['thread-40'] : [],
+            selectionDelta: true,
+          }),
+        )
+        if (mode === 'resume-barrier' && index === 20)
+          client.socket.send(JSON.stringify({ type: 'resume' }))
+      }
+      if (mode === 'scope-only')
+        client.socket.send(JSON.stringify({ type: 'watch', watchId: 41, scopes: ['thread-40'] }))
+      // Ping is handled after the preceding messages, without waiting for their projections.
+      const pong = Promise.race([
+        once(client.socket, 'pong').then(() => true),
+        once(client.socket, 'close').then(() => false),
+      ])
+      client.socket.ping()
+      expect(await pong).toBe(true)
+      expect(client.socket.readyState).toBe(WebSocket.OPEN)
+    } finally {
+      release.resolve()
+    }
+    let snapshot = baseline.snapshot
+    await expect
+      .poll(() => {
+        snapshot = baseline.snapshot
+        for (const frame of client.frames)
+          if (frame.type === 'selection' || frame.type === 'delta')
+            snapshot = applySnapshotDelta(snapshot, frame.delta)
+          else if (frame.type === 'snapshot') snapshot = frame.snapshot
+        return snapshot.detailTaskIds
+      })
+      .toEqual(['thread-40'])
+    const count = mode === 'resume-barrier' ? 3 : 2
+    expect(projection).toHaveBeenCalledTimes(count)
+    expect(client.frames.filter((frame) => frame.type === 'selection')).toHaveLength(count)
+    expect(
+      client.frames
+        .filter((frame) => frame.type === 'selection' || frame.type === 'watch-ack')
+        .map((frame) => frame.type),
+    ).toEqual(Array.from({ length: count }, () => ['selection', 'watch-ack']).flat())
+    expect(
+      client.frames.filter((frame) => frame.type === 'watch-ack').map((frame) => frame.watchId),
+    ).toEqual(mode === 'resume-barrier' ? [0, 20, 40] : [0, mode === 'scope-only' ? 41 : 40])
+    const resumed = client.frames.find((frame) => frame.type === 'snapshot')
+    expect(resumed?.snapshot.detailTaskIds).toEqual(
+      mode === 'resume-barrier' ? ['thread-20'] : undefined,
+    )
+    runtime.services.activity.add('tool', 'thread-40', 'Final scope', {}, 'tool')
+    expect((await client.wait('activity')).scope).toBe('thread-40')
+    expect(client.socket.readyState).toBe(WebSocket.OPEN)
+    client.frames.length = 0
+    client.socket.send(
+      JSON.stringify({ type: 'watch', watchId: 42, tasks: ['thread-40'], scopes: [] }),
+    )
+    expect((await client.wait('watch-ack')).watchId).toBe(42)
+    expect(
+      client.frames.some((frame) => frame.type === 'selection' || frame.type === 'snapshot'),
+    ).toBe(false)
+  },
+)
+it.each([false, true])(
+  'does not repeat deltas for duplicate or crossing resumes (established=%s)',
+  async (established) => {
+    const { runtime, open } = await setup()
+    const first = await open(token, 6, ['task'], true)
+    first.socket.send(JSON.stringify({ type: 'resume' }))
+    const baseline = await first.wait('snapshot')
+    await first.wait('heartbeat')
+    if (!established) {
+      first.socket.close()
+      await once(first.socket, 'close')
+    }
+    runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Crossing update' }))
+    const client = established ? first : await open(token, 6, ['task'], true)
+    const delivered = established ? await first.wait('delta') : undefined
+    client.frames.length = 0
+    const resume = JSON.stringify({
+      type: 'resume',
+      epoch: baseline.epoch,
+      sequence: baseline.sequence,
+    })
+    client.socket.send(resume)
+    client.socket.send(resume)
+    await expect
+      .poll(() => client.frames.filter((frame) => frame.type === 'heartbeat').length)
+      .toBe(2)
+    const replay = client.frames.filter((frame) => frame.type === 'delta')
+    expect(replay).toHaveLength(established ? 0 : 1)
+    expect(client.frames.some((frame) => frame.type === 'snapshot')).toBe(false)
+    const heartbeat = client.frames.find((frame) => frame.type === 'heartbeat')!
+    expect(heartbeat.sequence).toBe(delivered?.sequence ?? replay[0]?.sequence)
+    client.frames.length = 0
+    runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Following update' }))
+    expect((await client.wait('delta')).base).toBe(heartbeat.sequence)
+    expect(client.socket.readyState).toBe(WebSocket.OPEN)
+  },
+)
+it('wakes live sync on a committed thread change instead of waiting for its periodic tick', async () => {
+  const { runtime, open } = await setup()
+  const client = await open(token, 6, ['task'], true)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await client.wait('snapshot')
+  await client.wait('heartbeat')
+  // Let the initial wake finish, then observe scheduling without replacing real timers/WS.
+  const timer = vi.spyOn(globalThis, 'setTimeout')
+  cleanup.push(() => timer.mockRestore())
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Immediate commit' }))
+  expect(timer).toHaveBeenCalledWith(expect.any(Function), 20)
+  const delta = await client.wait('delta')
+  expect(applySnapshotDelta(baseline.snapshot, delta.delta).workspace.tasks[0]?.title).toBe(
+    'Immediate commit',
+  )
 })
 it('pushes small deltas and replays updates after reconnect without a second baseline', async () => {
   const { runtime, open } = await setup()
@@ -445,6 +603,148 @@ it('negotiates field deltas while keeping legacy clients on complete task metada
   expect(restored.workspace.tasks[0]?.draft).toBe('Next input')
   expect(restored.workspace.tasks[0]?.error).toBeUndefined()
   expect(restored.workspace.tasks[0]?.files).toBe(baseline.snapshot.workspace.tasks[0]?.files)
+})
+it('sends incremental remote turn updates and selection metadata only to opted-in clients', async () => {
+  const { runtime, open, address } = await setup()
+  const negotiation = await fetch(
+    `${address}/api/sync/ticket?format=4&subscriptions=live&incremental=1&task=task&history=paged`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  )
+  expect(await negotiation.json()).toMatchObject({ format: 6 })
+  runtime.services.defaults.save({
+    ...runtime.services.defaults.get(),
+    setupCommand: 'setup\n'.repeat(3000),
+  })
+  runtime.services.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    turns: [
+      {
+        id: 'active',
+        assistantId: 'reply',
+        agentId: '',
+        provider: 'codex',
+        model: 'fixture',
+        startedAt: '2026-10-01',
+        status: 'running',
+        checkpoint: {
+          before: 'commit',
+          files: [
+            { path: 'source.ts', before: '', after: 'source\n'.repeat(10000), viewed: false },
+          ],
+          omitted: [],
+        },
+      },
+    ],
+  }))
+  const legacy = await open(token, 5, ['task'], true)
+  const current = await open(token, 6, ['task'], true)
+  legacy.socket.send(JSON.stringify({ type: 'resume' }))
+  current.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await current.wait('snapshot')
+  await legacy.wait('snapshot')
+  runtime.services.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    turns: task.turns?.map((turn) => ({ ...turn, tokens: 123 })),
+  }))
+  const next = await current.wait('delta')
+  const old = await legacy.wait('delta')
+  expect(next.delta.workspace.tasks?.changes[0]?.turns?.changes).toEqual([
+    { id: 'active', fieldDelta: { values: { tokens: 123 }, removed: [] } },
+  ])
+  expect(old.delta.workspace.tasks?.changes[0]?.turns).toBeUndefined()
+  expect(
+    old.delta.workspace.tasks?.changes[0]?.fieldDelta?.values.turns?.[0]?.checkpoint,
+  ).toBeDefined()
+  expect(JSON.stringify(next).length).toBeLessThan(JSON.stringify(old).length / 100)
+  const updated = applySnapshotDelta(baseline.snapshot, next.delta)
+  expect(updated.workspace.tasks[0]?.turns?.[0]?.tokens).toBe(123)
+  expect(updated.workspace.tasks[0]?.turns?.[0]?.checkpoint).toBe(
+    baseline.snapshot.workspace.tasks[0]?.turns?.[0]?.checkpoint,
+  )
+  for (const client of [legacy, current])
+    client.socket.send(
+      JSON.stringify({ type: 'watch', tasks: [], scopes: [], selectionDelta: true }),
+    )
+  const handoff = await current.wait('selection')
+  const oldHandoff = await legacy.wait('selection')
+  expect(handoff.delta.state).toBeUndefined()
+  expect(handoff.delta.stateDelta?.values.detailTaskIds).toEqual([])
+  expect(handoff.delta.stateDelta?.values.defaults).toBeUndefined()
+  expect(oldHandoff.delta.state?.defaults?.setupCommand).toBeDefined()
+  const selected = applySnapshotDelta(updated, handoff.delta)
+  expect(selected.detailTaskIds).toEqual([])
+  expect(selected.workspace.tasks[0]?.messages).toEqual([])
+  expect(selected.defaults).toBe(baseline.snapshot.defaults)
+})
+it('resumes a revisited remote thread from its cached cursor and rebases an unknown cursor', async () => {
+  const { runtime, open } = await setup()
+  const current = await open(token, 6, ['task'], true)
+  current.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await current.wait('snapshot')
+  current.socket.send(
+    JSON.stringify({ type: 'watch', tasks: [], scopes: [], selectionDelta: true }),
+  )
+  await current.wait('selection')
+  runtime.services.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    messages: task.messages.map((message) => ({
+      ...message,
+      text: message.text + 'Updated remotely',
+    })),
+  }))
+  current.frames.length = 0
+  current.socket.send(
+    JSON.stringify({
+      type: 'watch',
+      tasks: ['task'],
+      scopes: [],
+      selectionDelta: true,
+      resume: { epoch: baseline.epoch, sequence: baseline.sequence },
+    }),
+  )
+  const resumed = await current.wait('selection-resume')
+  const delta = await current.wait('delta')
+  expect(resumed).toEqual({
+    type: 'selection-resume',
+    epoch: baseline.epoch,
+    sequence: baseline.sequence,
+    through: delta.sequence,
+  })
+  expect(
+    current.frames.some((frame) => frame.type === 'snapshot' || frame.type === 'selection'),
+  ).toBe(false)
+  const restored = applySnapshotDelta(baseline.snapshot, delta.delta)
+  expect(restored.workspace.tasks[0]?.messages[0]?.text).toBe(
+    'History '.repeat(10000) + 'Updated remotely',
+  )
+  expect(JSON.stringify(resumed).length + JSON.stringify(delta).length).toBeLessThan(
+    JSON.stringify(baseline).length / 50,
+  )
+  current.frames.length = 0
+  current.socket.send(
+    JSON.stringify({ type: 'watch', tasks: [], scopes: [], selectionDelta: true }),
+  )
+  const empty = await current.wait('selection')
+  current.frames.length = 0
+  // A cursor for another selection can never be used as this thread's baseline.
+  current.socket.send(
+    JSON.stringify({
+      type: 'watch',
+      tasks: ['task'],
+      scopes: [],
+      selectionDelta: true,
+      resume: { epoch: empty.epoch, sequence: empty.sequence },
+    }),
+  )
+  const rebased = await current.wait('selection')
+  expect(current.frames.some((frame) => frame.type === 'selection-resume')).toBe(false)
+  const withoutDetails = applySnapshotDelta(restored, empty.delta)
+  expect(applySnapshotDelta(withoutDetails, rebased.delta).workspace.tasks[0]?.messages).toEqual(
+    restored.workspace.tasks[0]?.messages,
+  )
 })
 it('streams scoped activity and rejects reused tickets and revoked devices', async () => {
   const { runtime, open, address } = await setup()

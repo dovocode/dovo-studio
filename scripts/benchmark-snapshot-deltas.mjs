@@ -35,6 +35,11 @@ async function compile(source) {
   )
 }
 const current = await compile(await readFile(new URL(`../${modulePath}`, import.meta.url), 'utf8'))
+const fixtures = await compile(`
+export {decode} from '../../shared/schema.js';
+export {runtimeDefaultsSchema} from './runtime-setup.js';
+export {snapshotSchema} from './runtime.js';
+`)
 const baseline = baselineRef
   ? await compile(
       execFileSync('git', ['show', `${baselineRef}:${modulePath}`], {
@@ -187,6 +192,268 @@ const selection = {
   fullDeflatedBytes: deflateRawSync(fullFrame, { level: 3 }).length,
   handoffDeflatedBytes: deflateRawSync(selectionFrame, { level: 3 }).length,
 }
+// Remote navigation changes a small selection field; token updates change one turn.
+// Keep realistic, unchanged settings and checkpoint source in both comparisons.
+const remoteBefore = fixtures.decode(fixtures.snapshotSchema, workload(0).previous)
+remoteBefore.detailTaskIds = ['thread']
+const source = Array.from(
+  { length: 700 },
+  (_, index) => `export const item${index} = { id: ${index}, label: "Workspace item ${index}" };\n`,
+).join('')
+remoteBefore.defaults = fixtures.decode(fixtures.runtimeDefaultsSchema, {
+  setupCommand: source.slice(0, 16000),
+})
+remoteBefore.workspace.tasks[0].turns = Array.from({ length: 6 }, (_, index) => ({
+  id: `turn-${index}`,
+  assistantId: `m${index}`,
+  agentId: '',
+  provider: 'codex',
+  model: 'fixture',
+  startedAt: '2026-10-01',
+  status: index === 5 ? 'running' : 'completed',
+  checkpoint: {
+    before: `commit-${index}`,
+    files: [
+      { path: `source-${index}.ts`, before: source, after: source + '// edited\n', viewed: false },
+    ],
+    omitted: [],
+  },
+}))
+const remoteAfter = {
+  ...remoteBefore,
+  revision: 2,
+  workspace: {
+    ...remoteBefore.workspace,
+    tasks: remoteBefore.workspace.tasks.map((task) => ({
+      ...task,
+      turns: task.turns.map((turn, index) => (index === 5 ? { ...turn, tokens: 123 } : turn)),
+    })),
+  },
+}
+const remote = [
+  { scenario: 'turn-token-update', next: remoteAfter },
+  { scenario: 'thread-selection', next: { ...remoteBefore, detailTaskIds: [] } },
+].map(({ scenario, next }) => {
+  const legacy = current.snapshotDelta(remoteBefore, next, true, true)
+  const incremental = current.snapshotDelta(remoteBefore, next, true, true, true)
+  if (!isDeepStrictEqual(current.applySnapshotDelta(remoteBefore, incremental), next))
+    throw new Error(`${scenario} did not reconstruct the full snapshot`)
+  const beforeWire = JSON.stringify(legacy)
+  const afterWire = JSON.stringify(incremental)
+  return {
+    scenario,
+    legacyJsonBytes: Buffer.byteLength(beforeWire),
+    incrementalJsonBytes: Buffer.byteLength(afterWire),
+    legacyDeflatedBytes: deflateRawSync(beforeWire, { level: 3 }).length,
+    incrementalDeflatedBytes: deflateRawSync(afterWire, { level: 3 }).length,
+  }
+})
+// Measure the actual navigation microtask, including selection-cache admission.
+// Transport is simulated here; the separate browser check uses real HTTP/WS.
+const liveSource = await readFile(
+  new URL('../packages/protocol/src/runtime/connection/live-sync.ts', import.meta.url),
+  'utf8',
+)
+const sizingVariants = [
+  {
+    sizing: 'json',
+    module: await compile(
+      liveSource.replace(
+        'const bytes = retainedBytes(snapshot)',
+        'const bytes = JSON.stringify(snapshot).length * 2',
+      ),
+    ),
+  },
+  { sizing: 'bounded', module: await compile(liveSource) },
+]
+const navigationWorkspace = {
+  ...remoteBefore,
+  workspace: {
+    ...remoteBefore.workspace,
+    tasks: [
+      {
+        ...remoteBefore.workspace.tasks[0],
+        turns: undefined,
+        messages: Array.from({ length: 1000 }, (_, i) => ({
+          id: `m${i}`,
+          role: 'assistant',
+          text: `Message ${i} ` + 'text '.repeat(120),
+        })),
+      },
+      ...Array.from({ length: 300 }, (_, i) => ({
+        ...remoteBefore.workspace.tasks[0],
+        id: `summary-${i}`,
+        draft: 'draft '.repeat(20),
+        turns: undefined,
+        messages: [],
+      })),
+    ],
+  },
+}
+const originalFetch = globalThis.fetch
+const originalSocket = globalThis.WebSocket
+const navigation = []
+try {
+  globalThis.fetch = async () => Response.json({ ticket: 'benchmark', format: 6 })
+  for (const { sizing, module: live } of sizingVariants) {
+    for (const scenario of [
+      'checkpoints',
+      'padding-1MiB',
+      'oversized-8MiB',
+      '300-summaries-1000-messages',
+    ]) {
+      const paddingBytes =
+        scenario === 'padding-1MiB'
+          ? 1024 * 1024
+          : scenario === 'oversized-8MiB'
+            ? 8 * 1024 * 1024
+            : 0
+      const samples = []
+      const afterDelta = []
+      const snapshot = {
+        ...(scenario === '300-summaries-1000-messages' ? navigationWorkspace : remoteBefore),
+        detailTaskIds: ['thread'],
+        runtimeHost: 'x'.repeat(paddingBytes),
+      }
+      const changed = {
+        ...snapshot,
+        revision: 2,
+        workspace: {
+          ...snapshot.workspace,
+          tasks: snapshot.workspace.tasks.map((task, index) =>
+            index ? task : { ...task, title: 'Updated title' },
+          ),
+        },
+      }
+      const deltaWire = JSON.stringify({
+        type: 'delta',
+        epoch: 'benchmark',
+        base: 1,
+        sequence: 2,
+        tag: 'updated',
+        delta: current.snapshotDelta(snapshot, changed, true, true, true),
+      })
+      let admitted = false
+      const frame = JSON.stringify({
+        type: 'snapshot',
+        epoch: 'benchmark',
+        sequence: 1,
+        tag: 'benchmark',
+        snapshot,
+      })
+      for (let index = 0; index < 15; index++) {
+        const created = Promise.withResolvers()
+        globalThis.WebSocket = class {
+          readyState = 0
+          sent = []
+          constructor() {
+            created.resolve(this)
+          }
+          send(wire) {
+            this.sent.push(JSON.parse(wire))
+          }
+          close() {
+            this.readyState = 3
+          }
+        }
+        const connection = {
+          address: `http://navigation-${sizing}-${scenario}-${index}.invalid`,
+          token: 'benchmark-paired-token',
+        }
+        const release = live.watchRuntimeTask(connection, 'thread')
+        const stream = live.startRuntimeSync(connection, { onSnapshot() {} })
+        let next
+        try {
+          const socket = await created.promise
+          socket.readyState = 1
+          socket.onopen()
+          socket.onmessage({ data: frame })
+          const started = performance.now()
+          release()
+          next = live.watchRuntimeTask(connection, 'other')
+          await Promise.resolve()
+          samples.push(performance.now() - started)
+          if (socket.sent.at(-1)?.tasks?.[0] !== 'other')
+            throw new Error('Navigation was not sent immediately')
+          socket.onmessage({ data: deltaWire })
+          const updatedAt = performance.now()
+          next()
+          next = live.watchRuntimeTask(connection, 'thread')
+          await Promise.resolve()
+          afterDelta.push(performance.now() - updatedAt)
+          admitted = socket.sent.at(-1)?.resume?.sequence === 2
+        } finally {
+          stream.stop()
+          release()
+          next?.()
+        }
+      }
+      samples.sort((a, b) => a - b)
+      afterDelta.sort((a, b) => a - b)
+      navigation.push({
+        sizing,
+        scenario,
+        snapshotJsonBytes: Buffer.byteLength(JSON.stringify(snapshot)),
+        admitted,
+        medianMs: Number(samples[7].toFixed(3)),
+        p95Ms: Number(samples[14].toFixed(3)),
+        afterDeltaMedianMs: Number(afterDelta[7].toFixed(3)),
+      })
+    }
+  }
+} finally {
+  globalThis.fetch = originalFetch
+  globalThis.WebSocket = originalSocket
+}
+// Field-only updates must not scale with retained conversation length. Workspace
+// metadata updates must not build a task lookup when no tasks changed.
+const reconciliation = []
+for (const scenario of ['thread-field', 'workspace-metadata']) {
+  for (const count of [100, 1000, 10000]) {
+    const { previous } = workload(0)
+    previous.workspace.tasks[0].messages = Array.from({ length: count }, (_, index) => ({
+      id: `history-${index}`,
+      role: 'assistant',
+      text: `Message ${index}`,
+    }))
+    const next = {
+      ...previous,
+      revision: 2,
+      workspace: {
+        ...previous.workspace,
+        tasks: [{ ...previous.workspace.tasks[0], draft: 'New draft' }],
+      },
+    }
+    if (scenario === 'workspace-metadata') {
+      previous.workspace.tasks = Array.from({ length: count }, (_, index) => ({
+        ...previous.workspace.tasks[0],
+        id: `thread-${index}`,
+        messages: [],
+      }))
+      next.workspace = { ...previous.workspace, runtimeAddress: 'http://paired.lan:8787' }
+    }
+    const delta = current.snapshotDelta(previous, next, true, true, true)
+    function measureApply(module) {
+      if (!isDeepStrictEqual(module.applySnapshotDelta(previous, delta), next))
+        throw Error('Field-only reconciliation changed snapshot contents')
+      for (let index = 0; index < 30; index++) module.applySnapshotDelta(previous, delta)
+      const samples = []
+      for (let sample = 0; sample < 25; sample++) {
+        const start = performance.now()
+        for (let iteration = 0; iteration < 30; iteration++)
+          module.applySnapshotDelta(previous, delta)
+        samples.push((performance.now() - start) / 30)
+      }
+      return Number(samples.sort((a, b) => a - b)[12].toFixed(4))
+    }
+    reconciliation.push({
+      scenario,
+      entities: count,
+      currentMedianMs: measureApply(current),
+      ...(baseline ? { baselineMedianMs: measureApply(baseline) } : {}),
+    })
+  }
+}
 console.log(
   JSON.stringify(
     {
@@ -194,6 +461,9 @@ console.log(
       baselineRef,
       results,
       selection,
+      remote,
+      navigation,
+      reconciliation,
     },
     null,
     2,

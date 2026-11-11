@@ -242,17 +242,46 @@ export function startRuntimeSync(
         .filter(([, listeners]) => [...listeners].some((listener) => value.details.has(listener)))
         .map(([scope]) => scope),
     })
-    const live = {
-      online: () => online,
-      status: () => status,
-      watch: () => bridge.update(input()),
-      retry: () => bridge.refresh(id, true),
-    }
-    value.live = live
+    const initialInput = input()
+    let lastInput = JSON.stringify(initialInput)
+    let watchQueued = false
     let bridgeSnapshot: RuntimeSnapshot | undefined
     let bridgeEpoch: string | undefined
     let bridgeSequence: number | undefined
-    const unsubscribe = bridge.subscribe(input(), (event) => {
+    const sendWatch = () => {
+      if (stopped) return
+      const next = input()
+      const identity = JSON.stringify(next)
+      if (identity === lastInput) return
+      lastInput = identity
+      bridge.update(next)
+    }
+    const refresh = (retry: boolean) => {
+      if (stopped) return
+      sendWatch()
+      bridge.refresh(
+        id,
+        retry,
+        bridgeEpoch !== undefined && bridgeSequence !== undefined
+          ? { epoch: bridgeEpoch, sequence: bridgeSequence }
+          : undefined,
+      )
+    }
+    const live = {
+      online: () => online,
+      status: () => status,
+      watch: () => {
+        if (stopped || watchQueued) return
+        watchQueued = true
+        queueMicrotask(() => {
+          watchQueued = false
+          sendWatch()
+        })
+      },
+      retry: () => refresh(true),
+    }
+    value.live = live
+    const unsubscribe = bridge.subscribe(initialInput, (event) => {
       if (stopped) return
       if (event.type === 'status') {
         online = event.online
@@ -306,7 +335,7 @@ export function startRuntimeSync(
       shared: true,
       online: live.online,
       retry: live.retry,
-      refresh: () => bridge.refresh(id, false),
+      refresh: () => refresh(false),
       stop: () => {
         if (stopped) return
         stopped = true
@@ -350,6 +379,72 @@ export function startRuntimeSync(
   let snapshot: RuntimeSnapshot | undefined = cached?.snapshot
   let snapshotTasks = taskIdentity
   let taskUpdates = false
+  let incremental = false
+  let selectionThrough: number | undefined
+  // Keep at most eight departed selections and 4 MiB of estimated retained data.
+  // This cache is private to the authenticated connection and dies with its stream owner.
+  const selections = new Map<
+    string,
+    { cursor: NonNullable<Registration['cursor']>; bytes: number }
+  >()
+  let selectionBytes = 0
+  let watchId = 0
+  const pendingSelections = new Map<string, number>()
+  const selectionSizes = new WeakMap<object, number>()
+  // Navigation must not serialize whole histories just to decide whether to keep them.
+  // Count strings by length, reuse immutable subtrees and stop above the admission limit.
+  const retainedBytes = (value: unknown): number => {
+    if (typeof value === 'string') return value.length * 2 + 16
+    if (!value || typeof value !== 'object') return 8
+    const known = selectionSizes.get(value)
+    if (known !== undefined) return known
+    let bytes = 64
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        bytes += 8 + retainedBytes(item)
+        if (bytes > 4 * 1024 * 1024) break
+      }
+    } else {
+      for (const [key, item] of Object.entries(value)) {
+        bytes += key.length * 2 + 16 + retainedBytes(item)
+        if (bytes > 4 * 1024 * 1024) break
+      }
+    }
+    selectionSizes.set(value, bytes)
+    return bytes
+  }
+  const cursorKey = (epoch: string, sequence: number) => JSON.stringify([epoch, sequence])
+  const trimSelections = () => {
+    for (const [id, entry] of selections) {
+      if (pendingSelections.has(id)) continue
+      if (
+        selections.size <= 8 &&
+        selectionBytes <= 4 * 1024 * 1024 &&
+        Date.now() - entry.cursor.time < 5 * 60 * 1000
+      )
+        continue
+      selections.delete(id)
+      selectionBytes -= entry.bytes
+    }
+  }
+  const rememberSelection = () => {
+    if (!snapshot || epoch === undefined || sequence === undefined || !incremental) return
+    const id = cursorKey(epoch, sequence)
+    if (selections.has(id)) return
+    const bytes = retainedBytes(snapshot)
+    if (bytes > 4 * 1024 * 1024) return
+    for (const [key, entry] of selections)
+      if (entry.cursor.tasks === snapshotTasks && !pendingSelections.has(key)) {
+        selections.delete(key)
+        selectionBytes -= entry.bytes
+      }
+    selections.set(id, {
+      cursor: { snapshot, epoch, sequence, tasks: snapshotTasks, time: Date.now() },
+      bytes,
+    })
+    selectionBytes += bytes
+    trimSelections()
+  }
   let lastSeen = 0
   let socketStarted = 0
   let resumeStarted: number | undefined
@@ -372,6 +467,7 @@ export function startRuntimeSync(
     listLimit = nextLimit
     const next = selectionIdentity(value.tasks.keys(), listLimit)
     if (next !== taskIdentity) {
+      rememberSelection()
       taskIdentity = next
       value.cursor = undefined
       if (listChanged || !taskUpdates || socket?.readyState !== 1) {
@@ -391,18 +487,27 @@ export function startRuntimeSync(
       }
     }
     if (socket?.readyState !== 1) return
-    const wire = JSON.stringify({
+    trimSelections()
+    const retained = incremental
+      ? [...selections.values()].reverse().find(({ cursor }) => cursor.tasks === taskIdentity)
+          ?.cursor
+      : undefined
+    const input = {
       type: 'watch',
       ...(taskUpdates ? { tasks: [...value.tasks.keys()], selectionDelta: true } : {}),
+      ...(retained ? { resume: { epoch: retained.epoch, sequence: retained.sequence } } : {}),
       scopes: [...value.scopes.keys()].slice(0, 8),
       detailScopes: [...value.scopes.entries()]
         .filter(([, listeners]) => [...listeners].some((listener) => value.details.has(listener)))
         .map(([scope]) => scope)
         .slice(0, 8),
-    })
+    }
+    const wire = JSON.stringify(input)
     if (wire === lastWatch) return
     try {
-      socket.send(wire)
+      if (incremental && retained)
+        pendingSelections.set(cursorKey(retained.epoch, retained.sequence), watchId + 1)
+      socket.send(incremental ? JSON.stringify({ ...input, watchId: ++watchId }) : wire)
       lastWatch = wire
     } catch {
       failHandshake()
@@ -444,6 +549,7 @@ export function startRuntimeSync(
   // A suspended native socket may never emit close. Detach it first so late
   // callbacks cannot update the cursor or prevent a replacement connection.
   const closeSocket = () => {
+    pendingSelections.clear()
     const previous = socket
     socket = undefined
     lastWatch = undefined
@@ -495,7 +601,13 @@ export function startRuntimeSync(
     request = new AbortController()
     const requestedTasks = taskIdentity
     try {
-      const query = new URLSearchParams({ format: '4', history: 'paged', subscriptions: 'live' })
+      // Older runtimes ignore incremental and retain their scoped format-4/5 path.
+      const query = new URLSearchParams({
+        format: '4',
+        history: 'paged',
+        subscriptions: 'live',
+        incremental: '1',
+      })
       for (const id of value.tasks.keys()) query.append('task', id)
       if (listLimit !== undefined) query.set('settled', String(listLimit))
       const ticket = await createRuntimeClient(connection).request(
@@ -511,7 +623,8 @@ export function startRuntimeSync(
         options.active?.() === false
       )
         return
-      taskUpdates = ticket.format === 5
+      taskUpdates = ticket.format === 5 || ticket.format === 6
+      incremental = ticket.format === 6
       const address = createRuntimeClient(connection).socketUrl('/ws/sync', ticket, {
         route: 'stream',
       })
@@ -543,6 +656,12 @@ export function startRuntimeSync(
           if (typeof event.data !== 'string') throw new Error('Invalid sync frame')
           const frame = decode(syncFrameSchema, JSON.parse(event.data))
           lastSeen = Date.now()
+          if (frame.type === 'watch-ack') {
+            for (const [key, through] of pendingSelections)
+              if (through <= frame.watchId) pendingSelections.delete(key)
+            trimSelections()
+            return
+          }
           if (frame.type === 'activity' || frame.type === 'activity-delta') {
             if (!value.scopes.has(frame.scope)) return
             const old = activities.get(frame.scope) ?? []
@@ -569,7 +688,19 @@ export function startRuntimeSync(
               )
             return
           }
-          if (frame.type === 'snapshot') {
+          if (frame.type === 'selection-resume') {
+            // Accept only a baseline this connection actually retained. A missing/expired
+            // cache falls through the normal full-baseline recovery path.
+            const retained = selections.get(cursorKey(frame.epoch, frame.sequence))?.cursor
+            if (!retained || frame.through < frame.sequence)
+              throw new Error('Sync selection baseline is missing')
+            snapshot = retained.snapshot
+            snapshotTasks = retained.tasks
+            epoch = retained.epoch
+            sequence = retained.sequence
+            selectionThrough = frame.through
+          } else if (frame.type === 'snapshot') {
+            selectionThrough = undefined
             snapshot = frame.snapshot
             snapshotTasks = taskUpdates
               ? selectionIdentity(
@@ -591,6 +722,7 @@ export function startRuntimeSync(
             snapshot = applySnapshotDelta(snapshot, frame.delta)
             epoch = frame.epoch
             sequence = frame.sequence
+            if (frame.type === 'selection') selectionThrough = undefined
             if (frame.type === 'selection')
               snapshotTasks = selectionIdentity(
                 snapshot.detailTaskIds ?? [],
@@ -616,6 +748,13 @@ export function startRuntimeSync(
           if (Date.now() - healthySince >= 30000) failures = 0
           setStatus('live')
           if (
+            selectionThrough !== undefined &&
+            sequence !== undefined &&
+            sequence >= selectionThrough
+          )
+            selectionThrough = undefined
+          if (
+            selectionThrough === undefined &&
             snapshotTasks === taskIdentity &&
             (becameOnline || frame.type !== 'heartbeat' || Date.now() - publishedAt >= 30000)
           ) {
@@ -628,6 +767,9 @@ export function startRuntimeSync(
           epoch = undefined
           sequence = undefined
           value.cursor = undefined
+          selections.clear()
+          pendingSelections.clear()
+          selectionBytes = 0
           activities.clear()
           for (const compact of value.compactors.values()) compact([])
           online = false
@@ -649,7 +791,7 @@ export function startRuntimeSync(
         }
       }
     } catch (error) {
-      if (retryRequested || stopped) return
+      if (retryRequested || stopped || request?.signal.aborted) return
       if (
         error &&
         typeof error === 'object' &&
@@ -718,8 +860,9 @@ export function startRuntimeSync(
       if (socket?.readyState === 1) {
         // A native socket can remain OPEN after VPN changes or suspend. Require
         // the server's resume acknowledgement instead of waiting for a heartbeat timeout.
-        if (resumeStarted === undefined) resumeResent = false
-        resumeStarted ??= Date.now()
+        if (resumeStarted !== undefined) return
+        resumeResent = false
+        resumeStarted = Date.now()
         sendResume()
       } else if (!connecting) {
         if (retry) Effect.runFork(Fiber.interrupt(retry))
@@ -729,6 +872,9 @@ export function startRuntimeSync(
     },
     stop: () => {
       stopped = true
+      selections.clear()
+      pendingSelections.clear()
+      selectionBytes = 0
       request?.abort()
       online = false
       replacingSince = undefined

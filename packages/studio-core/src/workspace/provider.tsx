@@ -1652,6 +1652,7 @@ export function WorkspaceProvider({
           profile.connection.token === connection.token,
       )?.id ?? runtimeProfile(connection).id
     let wakeFallback = () => {}
+    let fallbackRequest: AbortController | undefined
     const live = startRuntimeSync(connection, {
       onConnection: (latest) => {
         if (stopped || latest.token !== localOwnerToken.current || changingConnection.current)
@@ -1678,6 +1679,7 @@ export function WorkspaceProvider({
           return
         const checkpoint = synchronization.checkpoint()
         snapshotOrder.current.set(id, (snapshotOrder.current.get(id) ?? 0) + 1)
+        fallbackRequest?.abort()
         setSnapshot(value, connection)
         setConnected(true)
         void runClientEffect(mutations.recoverEffect(connection)).catch(() => undefined)
@@ -1707,23 +1709,30 @@ export function WorkspaceProvider({
       const order = (snapshotOrder.current.get(id) ?? 0) + 1
       snapshotOrder.current.set(id, order)
       const checkpoint = synchronization.checkpoint()
+      const controller = new AbortController()
+      fallbackRequest = controller
       return Effect.gen(function* () {
         // A large workspace on a slow link needs longer than a small one on a LAN. Allow three
         // times the last successful read, between 10 and 60 seconds.
         const startedAt = Date.now()
         const response = yield* Effect.result(
-          createRuntimeClient(connection).requestEffect(
-            runtimeSnapshotPath(connection),
-            undefined,
-            snapshotSchema,
-            {
-              method: 'GET',
-              timeoutMs: Math.min(
-                60000,
-                Math.max(10000, (snapshotDurations.current.get(id) ?? 0) * 3),
+          Effect.tryPromise({
+            try: () =>
+              createRuntimeClient(connection).request(
+                runtimeSnapshotPath(connection),
+                undefined,
+                snapshotSchema,
+                {
+                  method: 'GET',
+                  signal: controller.signal,
+                  timeoutMs: Math.min(
+                    60000,
+                    Math.max(10000, (snapshotDurations.current.get(id) ?? 0) * 3),
+                  ),
+                },
               ),
-            },
-          ),
+            catch: connectionError,
+          }),
         )
         if (Result.isSuccess(response)) {
           snapshotDurations.current.set(id, Date.now() - startedAt)
@@ -1750,6 +1759,7 @@ export function WorkspaceProvider({
               error: null,
             })
         } else {
+          if (controller.signal.aborted) return
           const error = response.failure
           if (connection.token === localOwnerToken.current) {
             const recovered = yield* Effect.result(
@@ -1805,6 +1815,7 @@ export function WorkspaceProvider({
         Effect.ensuring(
           Effect.sync(() => {
             busySnapshots.current.delete(id)
+            if (fallbackRequest === controller) fallbackRequest = undefined
           }),
         ),
       )
@@ -1828,6 +1839,7 @@ export function WorkspaceProvider({
     document.addEventListener('visibilitychange', wake)
     return () => {
       stopped = true
+      fallbackRequest?.abort()
       live.stop()
       window.removeEventListener('online', wake)
       window.removeEventListener('focus', wake)

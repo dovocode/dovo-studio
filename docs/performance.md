@@ -241,6 +241,110 @@ results. Delta measurements compare actual source implementations and assert equ
 zero-file delta fixture did not improve measurably. Additional unit coverage checks migration,
 rollback, cursor ownership, Unicode, cache eviction, chunk boundaries and transcript rotation.
 
+## Remote thread transfers, 2026-11-11
+
+Format-6 sync sends patches for runtime metadata and individual turns. It avoids repeating settings
+when only the selected thread changes, and avoids repeating checkpoint contents when a turn's token
+count changes. Desktop window reconciliation uses the same patches. State-only deltas retain the
+workspace object, and turn patches retain unchanged turns and checkpoints.
+
+The isolated benchmark below compares the existing format with format 6. Both reconstruct the same
+snapshot. The fixture has six turns with source-file checkpoints and a 16 KB setup command. Raw
+deflate uses independent level-3 payloads; these are synthetic payload measurements.
+
+| Update                 | Before JSON | After JSON | Before deflate | After deflate |
+| ---------------------- | ----------: | ---------: | -------------: | ------------: |
+| One turn's token count |     568,932 |        156 |         65,558 |           114 |
+| Thread selection field |      17,127 |         74 |          2,258 |            68 |
+
+The client also retains bounded recent selections and their exact cursors. A warm revisit replays
+only missed updates. The real Chromium-to-runtime check reopened a changed thread with 651 decoded
+application bytes versus a 184,251-byte saved snapshot. It used one socket and kept the checkpoint
+object. Reconnect used the existing cursor without another full baseline. These checks use loopback
+HTTP/WebSocket. They do not measure radio traffic, WAN delay, physical phones or cold app startup.
+Shared-thread archive replication keeps its existing durable protocol.
+
+The latency review with Fable 5.2 and Opus 5.5 added immediate replacement of obsolete pending
+watches, cursor pinning until watch acknowledgment, cancellation of redundant HTTP fallback, and
+protection against duplicate resume replay. Workspace commits now wake sync after 20 ms. Repeated
+focus events share one pending resume. Cancelled navigation tickets do not start failure backoff. No
+navigation debounce or client request queue was added.
+
+With a held snapshot projection, 40 pending thread switches previously stopped making progress. The
+real WebSocket regression now builds only the active view and the final view. Resume barriers,
+scope-only updates and final activity subscriptions remain correct. Managed Chromium completed 40
+rapid switches without another reconnect. The direct warm-selection fixture took 5.4 ms on loopback.
+Twelve store commits reached the browser in 25.27 ms median and 27.90 ms maximum, including decoding
+and the browser-to-test callback. These figures exclude rendering the complete Studio interface.
+
+The synthetic navigation benchmark measures the real client microtask with simulated transport. It
+compares JSON size accounting with bounded object size accounting. Both admitted the 761,472-byte
+fixture with 300 summaries and 1,000 messages. Its first walk was about the same (0.52 vs 0.56 ms);
+after one delta, median work fell from 0.45 to 0.04 ms. A cacheable 1.64 MB fixture fell from 0.96
+to 0.11 ms. An oversized 8 MiB string fixture fell from 8.07 to 0.05 ms; both versions rejected it.
+These are local synthetic results, not end-to-end application latency.
+
+The browser fixture also exercises `prepareRuntimeTask` followed by screen subscription and old
+lease release. After warming both singleton selections, the first overlapping pair transferred
+180,797 bytes. The next prepared revisit transferred 269 bytes. The cache supports exact selections;
+a new pair still needs detail transfer. The early-load and independent-pane behavior stays intact.
+These tests do not measure physical-device rendering or WAN/VPN latency.
+
+The next reconciliation pass removes lookup work for unchanged collections. A task field patch keeps
+the message array without building a message lookup. A workspace metadata patch does not build a
+task lookup. The synthetic apply benchmark compares `HEAD` with the checkout and checks that both
+restore the same snapshot. With 10,000 retained messages, a draft-field patch fell from 0.4362 ms to
+0.0060 ms median. Live sync pages history to at most 75 messages per thread, so the 10,000-message
+case checks scaling; the saving on a normal live page is microseconds. With 10,000 task summaries, a
+workspace address change fell from 0.4258 ms to less than 0.01 ms. These are isolated client CPU
+costs, not complete UI timings. The change adds no timer, queue or protocol format. Message changes
+still validate their baseline and preserve order. Run the same benchmark command below; see its
+`reconciliation` results.
+
+```sh
+node scripts/benchmark-snapshot-deltas.mjs --baseline-ref HEAD
+pnpm exec vp test packages/protocol/src/runtime/connection/sync.test.ts packages/protocol/src/runtime/connection/live-sync.test.ts packages/runtime/src/http/runtime-sync.test.ts apps/desktop/electron/runtime-connections.test.ts
+pnpm --filter @dovo/runtime... -r build
+pnpm exec playwright install chromium
+pnpm test:remote-thread-sync:browser
+node scripts/check-startup-performance-browser.mjs
+```
+
+See [Remote thread updates](runtime-client.md#remote-thread-updates) for negotiation, cache limits,
+fallback behavior and the T3 Code references.
+
+## Desktop thread handoffs, 2026-11-11
+
+Each renderer now has its own IPC sequence and projected baseline. Thread selection changes use
+patches, and unchanged source workspaces reuse their projection. Source changes can skip a window
+whose detail is absent, then patch from its last delivered snapshot when detail returns. One
+window's selection does not change another window's cursor.
+
+Renderer watch changes merge within one microtask. The first subscription and explicit refresh stay
+immediate. Foreground refresh passes the renderer cursor and keeps its baseline when IPC already has
+the missing updates in order. Missing or invalid cursors still request a full baseline, including
+when recovery must wait through an outage. A stopped owner cannot send a queued update afterward.
+
+The native fixture compares the manager at `HEAD` with the checkout. It uses the production preload
+source, two real Electron renderers and one HTTP fallback poller. Both runs retain the same thread
+content and keep the popout live when the main window closes. The fixture has large conversation
+bodies. These are decoded application bytes across IPC, including any fallback update that crosses
+the measured operation; they are not compressed runtime network bytes or complete UI timings.
+
+| Operation                                      | HEAD IPC bytes | Checkout IPC bytes |
+| ---------------------------------------------- | -------------: | -----------------: |
+| Drop the old thread after a two-thread handoff |        360,902 |                421 |
+| Foreground refresh with a valid cursor         |        360,701 |                125 |
+
+```sh
+xvfb-run -a node scripts/check-desktop-runtime-connections.mjs --baseline-ref HEAD
+xvfb-run -a pnpm test:desktop-runtime-connections
+```
+
+Use the commands without `xvfb-run -a` on a machine with an active display. The native fixture
+supplies the synchronous app-info response used by the production preload and checks incremental
+events, so it does not mistake a healthy stream of patches for missing snapshots.
+
 ## Shared thread replication
 
 The runtime journal reads records after its current sequence. A transaction saves new records and

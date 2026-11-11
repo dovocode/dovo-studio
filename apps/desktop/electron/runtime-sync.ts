@@ -2,6 +2,7 @@ import { ipcMain, type WebContents } from 'electron'
 import {
   decode,
   desktopSyncSubscriptionSchema,
+  desktopSyncCursorSchema,
   type DesktopSyncEvent,
   type RuntimeConnection,
 } from '@dovo/protocol'
@@ -45,11 +46,15 @@ export function registerRuntimeSync(
     connections.unsubscribe(`${event.sender.id}:${id}`)
     owners.get(event.sender)?.delete(id)
   })
-  ipcMain.handle('runtime:sync-refresh', (event, id: unknown, retry: unknown) => {
+  ipcMain.handle('runtime:sync-refresh', (event, id: unknown, retry: unknown, cursor: unknown) => {
     requireTrustedRenderer(event, rendererPath)
     if (typeof id !== 'string' || typeof retry !== 'boolean')
       throw new Error('Invalid runtime refresh')
-    connections.refresh(`${event.sender.id}:${id}`, retry)
+    connections.refresh(
+      `${event.sender.id}:${id}`,
+      retry,
+      cursor === undefined ? undefined : decode(desktopSyncCursorSchema, cursor),
+    )
   })
   return {
     dispose: () => {

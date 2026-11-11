@@ -3,6 +3,7 @@ import { decode, mutableArray, mutableStruct } from '../../shared/schema.js'
 import {
   messageSchema,
   taskSchema,
+  turnSchema,
   workspaceSchema,
   type Workspace,
   type Task,
@@ -10,6 +11,26 @@ import {
 import { snapshotSchema, type RuntimeSnapshot } from './runtime.js'
 import { activitySchema, activityEventSchema } from '../../automation/activity.js'
 const order = mutableArray(Schema.String)
+const stateFieldsSchema = snapshotSchema.mapFields(Struct.omit(['workspace', 'revision']))
+const stateFieldDeltaSchema = mutableStruct({
+  values: stateFieldsSchema.mapFields(Struct.map(Schema.optional)),
+  removed: mutableArray(Schema.Literals(Object.keys(stateFieldsSchema.fields))),
+})
+const turnFieldsSchema = turnSchema.mapFields(Struct.omit(['id']))
+const turnFieldDeltaSchema = mutableStruct({
+  values: turnFieldsSchema.mapFields(Struct.map(Schema.optional)),
+  removed: mutableArray(Schema.Literals(Object.keys(turnFieldsSchema.fields))),
+})
+const turnsDeltaSchema = mutableStruct({
+  order: Schema.optional(order),
+  changes: mutableArray(
+    mutableStruct({
+      id: Schema.String,
+      fields: Schema.optional(turnSchema),
+      fieldDelta: Schema.optional(turnFieldDeltaSchema),
+    }),
+  ),
+})
 const taskFieldsSchema = taskSchema.mapFields(Struct.omit(['messages']))
 const taskUpdatesSchema = taskFieldsSchema
   .mapFields(Struct.omit(['id']))
@@ -24,15 +45,29 @@ const assertTaskFields: (
   input: unknown,
 ) => asserts input is Schema.Schema.Type<typeof taskFieldsSchema> = (input) =>
   Schema.asserts(taskFieldsSchema, input)
-function applyTaskFields(before: Task, delta: Schema.Schema.Type<typeof taskFieldDeltaSchema>) {
-  const { messages: _messages, ...previous } = before
-  const removed = new Set<string>(delta.removed)
+const assertTurn: (input: unknown) => asserts input is Schema.Schema.Type<typeof turnSchema> = (
+  input,
+) => Schema.asserts(turnSchema, input)
+const assertStateFields: (
+  input: unknown,
+) => asserts input is Schema.Schema.Type<typeof stateFieldsSchema> = (input) =>
+  Schema.asserts(stateFieldsSchema, input)
+function patchFields<T>(
+  previous: object,
+  delta: { values: object; removed: readonly string[] },
+  assert: (input: unknown) => asserts input is T,
+): T {
+  const removed = new Set(delta.removed)
   const fields = Object.fromEntries(
     Object.entries({ ...previous, ...delta.values }).filter(([key]) => !removed.has(key)),
   )
   // Validate without decoding/copying unchanged arrays, preserving render identities.
-  assertTaskFields(fields)
+  assert(fields)
   return fields
+}
+function applyTaskFields(before: Task, delta: Schema.Schema.Type<typeof taskFieldDeltaSchema>) {
+  const { messages: _messages, ...previous } = before
+  return patchFields(previous, delta, assertTaskFields)
 }
 const messagesSchema = mutableStruct({
   order: Schema.optional(order),
@@ -55,6 +90,7 @@ const messagesSchema = mutableStruct({
 export const snapshotDeltaSchema = mutableStruct({
   revision: Schema.optional(snapshotSchema.fields.revision),
   state: Schema.optional(snapshotSchema.mapFields(Struct.omit(['workspace']))),
+  stateDelta: Schema.optional(stateFieldDeltaSchema),
   workspace: mutableStruct({
     metadata: Schema.optional(
       workspaceSchema.mapFields(Struct.omit(['tasks', 'agents', 'repositories', 'automations'])),
@@ -71,6 +107,7 @@ export const snapshotDeltaSchema = mutableStruct({
             updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
             fields: Schema.optional(taskSchema.mapFields(Struct.omit(['messages']))),
             fieldDelta: Schema.optional(taskFieldDeltaSchema),
+            turns: Schema.optional(turnsDeltaSchema),
             messages: Schema.optional(messagesSchema),
           }),
         ),
@@ -118,6 +155,7 @@ const syncSnapshotSchema: Schema.Codec<RuntimeSnapshot, (typeof snapshotSchema)[
 const syncDeltaSchema: Schema.Codec<SnapshotDelta, (typeof snapshotDeltaSchema)['Encoded']> =
   snapshotDeltaSchema
 export const syncFrameSchema = Schema.Union([
+  mutableStruct({ type: Schema.Literal('watch-ack'), watchId: cursor.sequence }),
   mutableStruct({
     type: Schema.Literal('snapshot'),
     ...cursor,
@@ -141,6 +179,8 @@ export const syncFrameSchema = Schema.Union([
     tag: Schema.String,
     delta: syncDeltaSchema,
   }),
+  // A format-6 client retained this exact scoped snapshot. Select it before replay.
+  mutableStruct({ type: Schema.Literal('selection-resume'), ...cursor, through: cursor.sequence }),
   mutableStruct({
     type: Schema.Literal('activity'),
     scope: Schema.String,
@@ -167,7 +207,9 @@ export const syncInputSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('watch'),
+    watchId: Schema.optional(cursor.sequence),
     selectionDelta: Schema.optional(Schema.Literal(true)),
+    resume: Schema.optional(mutableStruct(cursor)),
     tasks: Schema.optional(
       mutableArray(Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))).pipe(
         Schema.check(Schema.isMaxLength(8)),
@@ -189,7 +231,17 @@ export const syncTicketSchema = mutableStruct({
 })
 export type SyncFrame = Schema.Schema.Type<typeof syncFrameSchema>
 export type SnapshotDelta = Schema.Schema.Type<typeof snapshotDeltaSchema>
-const taskMetadata = ({ messages: _messages, updatedAt: _updatedAt, ...metadata }: Task) => metadata
+function taskMetadata(
+  { messages: _messages, updatedAt, turns, ...metadata }: Task,
+  compact: boolean,
+  incremental: boolean,
+) {
+  return {
+    ...metadata,
+    ...(!compact ? { updatedAt } : {}),
+    ...(!incremental ? { turns } : {}),
+  }
+}
 function equalArrayItems(a: readonly unknown[], b: readonly unknown[]) {
   if (a.length !== b.length) return false
   for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false
@@ -211,11 +263,48 @@ function equalFields(a: object, b: object) {
 }
 const stateMetadata = ({ revision: _revision, ...metadata }: Omit<RuntimeSnapshot, 'workspace'>) =>
   metadata
+function changedFields(previous: object, next: object) {
+  return {
+    values: Object.fromEntries(
+      Object.entries(next).filter(
+        ([key, value]) => value !== undefined && !equal(value, Reflect.get(previous, key)),
+      ),
+    ),
+    removed: Object.keys(previous).filter(
+      (key) => Reflect.get(previous, key) !== undefined && Reflect.get(next, key) === undefined,
+    ),
+  }
+}
+function turnDelta(
+  previous: Task['turns'],
+  next: NonNullable<Task['turns']>,
+): Schema.Schema.Type<typeof turnsDeltaSchema> | undefined {
+  if (previous === next) return undefined
+  const old = new Map(previous?.map((turn) => [turn.id, turn]))
+  const changes: Schema.Schema.Type<typeof turnsDeltaSchema>['changes'] = []
+  for (const turn of next) {
+    const before = old.get(turn.id)
+    if (before && (before === turn || equalFields(before, turn))) continue
+    changes.push({
+      id: turn.id,
+      ...(before
+        ? { fieldDelta: decode(turnFieldDeltaSchema, changedFields(before, turn)) }
+        : { fields: turn }),
+    })
+  }
+  const orderChanged = !equal(
+    previous?.map((turn) => turn.id),
+    next.map((turn) => turn.id),
+  )
+  if (!orderChanged && !changes.length) return undefined
+  return { ...(orderChanged ? { order: next.map((turn) => turn.id) } : {}), changes }
+}
 export function snapshotDelta(
   previous: RuntimeSnapshot,
   next: RuntimeSnapshot,
   compact = false,
   fieldUpdates = false,
+  incremental = false,
 ): SnapshotDelta {
   const { workspace, ...state } = next
   const { tasks, agents, repositories, automations, ...metadata } = workspace
@@ -226,11 +315,18 @@ export function snapshotDelta(
     if (before === task) continue
     const { messages, ...fields } = task
     const { messages: oldMessages, ...oldFields } = before ?? { messages: [] }
+    const turns =
+      incremental && fieldUpdates && before && task.turns !== undefined
+        ? turnDelta(before.turns, task.turns)
+        : undefined
     const fieldsChanged =
       !before ||
-      (compact
-        ? !equalFields(taskMetadata(task), taskMetadata(before))
-        : !equalFields(fields, oldFields))
+      !!turns ||
+      (incremental && before.turns !== undefined && task.turns === undefined) ||
+      !equalFields(
+        taskMetadata(task, compact, incremental && fieldUpdates),
+        taskMetadata(before, compact, incremental && fieldUpdates),
+      )
     const updatedAtChanged =
       compact && before && !fieldsChanged && task.updatedAt !== before.updatedAt
     const messageChanges: Schema.Schema.Type<typeof messagesSchema>['changes'] = []
@@ -257,32 +353,38 @@ export function snapshotDelta(
       )
     }
     const messagesChanged = messageChanges.length > 0 || messageOrderChanged
+    const fieldDelta =
+      fieldsChanged && fieldUpdates && before
+        ? decode(taskFieldDeltaSchema, {
+            values: Object.fromEntries(
+              Object.entries(fields).filter(
+                ([key, value]) =>
+                  key !== 'id' &&
+                  !(key === 'turns' && turns) &&
+                  value !== undefined &&
+                  !equal(value, Reflect.get(oldFields, key)),
+              ),
+            ),
+            removed: Object.keys(oldFields).filter(
+              (key) =>
+                key !== 'id' &&
+                Reflect.get(oldFields, key) !== undefined &&
+                Reflect.get(fields, key) === undefined,
+            ),
+          })
+        : undefined
     if (fieldsChanged || messagesChanged || updatedAtChanged)
       changes.push({
         id: task.id,
         ...(updatedAtChanged ? { updatedAt: task.updatedAt ?? null } : {}),
-        ...(fieldsChanged
-          ? fieldUpdates && before
-            ? {
-                fieldDelta: decode(taskFieldDeltaSchema, {
-                  values: Object.fromEntries(
-                    Object.entries(fields).filter(
-                      ([key, value]) =>
-                        key !== 'id' &&
-                        value !== undefined &&
-                        !equal(value, Reflect.get(oldFields, key)),
-                    ),
-                  ),
-                  removed: Object.keys(oldFields).filter(
-                    (key) =>
-                      key !== 'id' &&
-                      Reflect.get(oldFields, key) !== undefined &&
-                      Reflect.get(fields, key) === undefined,
-                  ),
-                }),
-              }
-            : { fields }
-          : {}),
+        ...(fieldDelta
+          ? Object.keys(fieldDelta.values).length || fieldDelta.removed.length
+            ? { fieldDelta }
+            : {}
+          : fieldsChanged
+            ? { fields }
+            : {}),
+        ...(turns ? { turns } : {}),
         ...(messagesChanged
           ? {
               messages: {
@@ -308,8 +410,21 @@ export function snapshotDelta(
     tasks.map((task) => task.id),
   )
   return {
-    ...(!compact || !equalFields(stateMetadata(state), stateMetadata(oldState)) ? { state } : {}),
-    ...(compact && state.revision !== oldState.revision ? { revision: state.revision } : {}),
+    ...(incremental
+      ? !equalFields(stateMetadata(state), stateMetadata(oldState))
+        ? {
+            stateDelta: decode(
+              stateFieldDeltaSchema,
+              changedFields(stateMetadata(oldState), stateMetadata(state)),
+            ),
+          }
+        : {}
+      : !compact || !equalFields(stateMetadata(state), stateMetadata(oldState))
+        ? { state }
+        : {}),
+    ...((compact || incremental) && state.revision !== oldState.revision
+      ? { revision: state.revision }
+      : {}),
     workspace: {
       ...(!compact || !equalFields(metadata, oldMetadata) ? { metadata } : {}),
       ...(!equal(previous.workspace.agents, agents) ? { agents } : {}),
@@ -330,7 +445,18 @@ export function applySnapshotDelta(
   previous: RuntimeSnapshot,
   delta: SnapshotDelta,
 ): RuntimeSnapshot {
-  const tasks = new Map(previous.workspace.tasks.map((task) => [task.id, task]))
+  if (delta.state && delta.stateDelta) throw new Error('Sync state baseline is ambiguous')
+  const { workspace: _workspace, ...previousState } = previous
+  const state = delta.stateDelta
+    ? patchFields(stateMetadata(previousState), delta.stateDelta, assertStateFields)
+    : (delta.state ?? previous)
+  const revision = delta.revision ?? delta.state?.revision ?? previous.revision
+  // Terminal/status changes do not rebuild the thread workspace or its lookup map.
+  if (Object.values(delta.workspace).every((value) => value === undefined))
+    return { ...state, revision, workspace: previous.workspace }
+  const tasks = new Map(
+    delta.workspace.tasks ? previous.workspace.tasks.map((task) => [task.id, task]) : [],
+  )
   for (const change of delta.workspace.tasks?.changes ?? []) {
     const before = tasks.get(change.id)
     if (change.fieldDelta && (!before || change.fields))
@@ -340,27 +466,59 @@ export function applySnapshotDelta(
         ? applyTaskFields(before, change.fieldDelta)
         : (change.fields ?? before)
     if (!fields || fields.id !== change.id) throw new Error('Sync task baseline is missing')
-    const messages = new Map(before?.messages.map((message) => [message.id, message]) ?? [])
-    for (const message of change.messages?.changes ?? []) {
-      const old = messages.get(message.fields.id)
-      if (typeof message.text !== 'string' && (!old || old.text.length !== message.text.length))
-        throw new Error('Sync text baseline does not match')
-      const text =
-        typeof message.text === 'string' ? message.text : (old?.text ?? '') + message.text.append
-      messages.set(message.fields.id, { ...message.fields, text })
+    let turns: Task['turns']
+    if (change.turns) {
+      if (
+        !before ||
+        change.fields ||
+        change.fieldDelta?.values.turns !== undefined ||
+        change.fieldDelta?.removed.includes('turns')
+      )
+        throw new Error('Sync turn baseline is missing or ambiguous')
+      const byId = new Map(before.turns?.map((turn) => [turn.id, turn]))
+      for (const update of change.turns.changes) {
+        const last = byId.get(update.id)
+        if (update.fieldDelta && (!last || update.fields))
+          throw new Error('Sync turn baseline is missing or ambiguous')
+        if (!last && !change.turns.order) throw new Error('Sync turn order is missing')
+        const turn =
+          update.fieldDelta && last
+            ? patchFields(last, update.fieldDelta, assertTurn)
+            : update.fields
+        if (!turn || turn.id !== update.id) throw new Error('Sync turn identity does not match')
+        byId.set(update.id, turn)
+      }
+      const ids = change.turns.order ?? before.turns?.map((turn) => turn.id) ?? []
+      if (new Set(ids).size !== ids.length) throw new Error('Sync turn order has duplicate IDs')
+      turns = ids.map((id) => {
+        const turn = byId.get(id)
+        if (!turn) throw new Error('Sync turn baseline is missing')
+        return turn
+      })
     }
-    const ordered =
-      change.messages?.order?.map((id) => {
+    let ordered = before?.messages ?? []
+    if (change.messages) {
+      const messages = new Map(ordered.map((message) => [message.id, message]))
+      for (const message of change.messages.changes) {
+        const old = messages.get(message.fields.id)
+        if (typeof message.text !== 'string' && (!old || old.text.length !== message.text.length))
+          throw new Error('Sync text baseline does not match')
+        const text =
+          typeof message.text === 'string' ? message.text : (old?.text ?? '') + message.text.append
+        messages.set(message.fields.id, { ...message.fields, text })
+      }
+      const getMessage = (id: string) => {
         const message = messages.get(id)
         if (!message) throw new Error('Sync message baseline is missing')
         return message
-      }) ??
-      (change.messages
-        ? before?.messages.map((message) => messages.get(message.id)!)
-        : before?.messages) ??
-      []
+      }
+      ordered = change.messages.order
+        ? change.messages.order.map(getMessage)
+        : ordered.map((message) => getMessage(message.id))
+    }
     tasks.set(change.id, {
       ...fields,
+      ...(turns ? { turns } : {}),
       ...(change.updatedAt !== undefined ? { updatedAt: change.updatedAt ?? undefined } : {}),
       messages: ordered,
     })
@@ -381,8 +539,8 @@ export function applySnapshotDelta(
         : previous.workspace.tasks),
   }
   return {
-    ...(delta.state ?? previous),
-    revision: delta.revision ?? delta.state?.revision ?? previous.revision,
+    ...state,
+    revision,
     workspace,
   }
 }

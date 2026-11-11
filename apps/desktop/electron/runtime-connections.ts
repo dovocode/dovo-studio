@@ -12,6 +12,7 @@ import {
   scopedTaskSummary,
   type DesktopSyncSubscription,
   type DesktopSyncEvent,
+  type DesktopSyncCursor,
   type RuntimeConnection,
   type RuntimeSnapshot,
   type RuntimeSyncStatus,
@@ -22,6 +23,8 @@ type Subscriber = {
   publish: (event: DesktopSyncEvent) => void
   sequence?: number
   snapshot?: RuntimeSnapshot
+  sourceVersion?: number
+  sourceWorkspace?: RuntimeSnapshot['workspace']
 }
 type Pool = {
   connection: RuntimeConnection
@@ -117,8 +120,10 @@ export class RuntimeConnections {
     const subscriber: Subscriber = {
       input,
       publish,
-      sequence: selectionChanged ? undefined : old?.sequence,
-      snapshot: selectionChanged ? undefined : old?.snapshot,
+      sequence: old?.sequence,
+      snapshot: old?.snapshot,
+      sourceVersion: old?.sourceVersion,
+      sourceWorkspace: old?.sourceWorkspace,
     }
     pool.subscribers.set(id, subscriber)
     this.subscriptions.set(id, pool)
@@ -130,6 +135,7 @@ export class RuntimeConnections {
           if (owner.stopped) return
           owner.streamVersion++
           owner.reachable = true
+          owner.request?.abort()
           this.publishSnapshot(owner, snapshot)
         },
         onStatus: (status) => {
@@ -147,10 +153,9 @@ export class RuntimeConnections {
       pool.reachable &&
       pool.snapshot &&
       this.covers(pool.snapshot, input.tasks) &&
-      (subscriber.sequence !== pool.sequence ||
-        (old && JSON.stringify(old.input.tasks) !== JSON.stringify(input.tasks)))
+      (subscriber.sourceVersion !== pool.sequence || selectionChanged)
     )
-      this.baseline(pool, subscriber)
+      this.updateSubscriber(pool, subscriber)
     for (const scope of input.scopes) {
       const cached = pool.activities.get(scope)
       if (cached) publish(cached)
@@ -167,6 +172,12 @@ export class RuntimeConnections {
   }
   private project(snapshot: RuntimeSnapshot, subscriber: Subscriber): RuntimeSnapshot {
     const details = new Set(subscriber.input.tasks)
+    const previous = subscriber.snapshot
+    const sameSelection =
+      previous?.detailTaskIds?.length === details.size &&
+      previous.detailTaskIds.every((id) => details.has(id))
+    if (previous && sameSelection && subscriber.sourceWorkspace === snapshot.workspace)
+      return { ...snapshot, detailTaskIds: previous.detailTaskIds, workspace: previous.workspace }
     return {
       ...snapshot,
       detailTaskIds: [...details],
@@ -191,17 +202,42 @@ export class RuntimeConnections {
       type: 'snapshot',
       snapshot,
       epoch: pool.epoch,
-      sequence: pool.sequence,
+      sequence: subscriber.sequence ?? 0,
       tag: this.tag(pool, subscriber),
     })
-    subscriber.sequence = pool.sequence
+    subscriber.sequence ??= 0
     subscriber.snapshot = snapshot
+    subscriber.sourceVersion = pool.sequence
+    subscriber.sourceWorkspace = pool.snapshot.workspace
+  }
+  private updateSubscriber(pool: Pool, subscriber: Subscriber) {
+    if (!pool.snapshot || !this.covers(pool.snapshot, subscriber.input.tasks)) return
+    if (!subscriber.snapshot || subscriber.sequence === undefined) {
+      this.baseline(pool, subscriber)
+      return
+    }
+    const projected = this.project(pool.snapshot, subscriber)
+    // A window's selection changes independently of the shared source version and of
+    // other windows. Patch from its own last delivered projection, even across gaps.
+    const base = subscriber.sequence
+    subscriber.publish({
+      type: 'delta',
+      delta: snapshotDelta(subscriber.snapshot, projected, true, true, true),
+      epoch: pool.epoch,
+      base,
+      sequence: base + 1,
+      tag: this.tag(pool, subscriber),
+    })
+    subscriber.sequence = base + 1
+    subscriber.snapshot = projected
+    subscriber.sourceVersion = pool.sequence
+    subscriber.sourceWorkspace = pool.snapshot.workspace
   }
   private publishSnapshot(pool: Pool, snapshot: RuntimeSnapshot) {
     const previous = pool.snapshot
     if (previous === snapshot) {
       for (const subscriber of pool.subscribers.values())
-        if (subscriber.sequence !== pool.sequence) this.baseline(pool, subscriber)
+        if (subscriber.sourceVersion !== pool.sequence) this.updateSubscriber(pool, subscriber)
       return
     }
     const restarted = previous && previous.runtimeInstanceId !== snapshot.runtimeInstanceId
@@ -209,23 +245,10 @@ export class RuntimeConnections {
       pool.epoch = crypto.randomUUID()
       for (const subscriber of pool.subscribers.values()) subscriber.sequence = undefined
     }
-    const base = pool.sequence++
+    pool.sequence++
     pool.snapshot = snapshot
     for (const subscriber of pool.subscribers.values()) {
-      if (!this.covers(snapshot, subscriber.input.tasks)) continue
-      if (!restarted && subscriber.snapshot && subscriber.sequence === base) {
-        const projected = this.project(snapshot, subscriber)
-        subscriber.publish({
-          type: 'delta',
-          delta: snapshotDelta(subscriber.snapshot, projected, true, true),
-          epoch: pool.epoch,
-          base,
-          sequence: pool.sequence,
-          tag: this.tag(pool, subscriber),
-        })
-        subscriber.sequence = pool.sequence
-        subscriber.snapshot = projected
-      } else this.baseline(pool, subscriber)
+      this.updateSubscriber(pool, subscriber)
     }
   }
   private broadcast(pool: Pool, event: DesktopSyncEvent) {
@@ -340,11 +363,24 @@ export class RuntimeConnections {
           )
       })
   }
-  refresh(id: string, retry: boolean) {
+  refresh(id: string, retry: boolean, cursor?: DesktopSyncCursor) {
     const pool = this.subscriptions.get(id)
     if (!pool) return
     const subscriber = pool.subscribers.get(id)
-    if (subscriber && pool.reachable) this.baseline(pool, subscriber)
+    const current =
+      cursor &&
+      subscriber?.snapshot &&
+      cursor.epoch === pool.epoch &&
+      subscriber.sequence !== undefined &&
+      cursor.sequence <= subscriber.sequence
+    if (subscriber && !current) {
+      // A renderer that lost its baseline cannot apply the next delta. Keep that
+      // recovery intent through an outage and rebase it when the source returns.
+      subscriber.snapshot = undefined
+      subscriber.sourceVersion = undefined
+      subscriber.sourceWorkspace = undefined
+      if (pool.reachable) this.baseline(pool, subscriber)
+    }
     if (retry) pool.live?.retry()
     else pool.live?.refresh()
     this.poll(pool)

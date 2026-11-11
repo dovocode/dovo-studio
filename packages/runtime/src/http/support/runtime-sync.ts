@@ -37,6 +37,7 @@ type View = {
   settledLimit?: number
   compact: boolean
   fieldUpdates: boolean
+  incremental: boolean
   device: { id: string; owner: boolean }
   epoch: string
   expiry?: ReturnType<typeof setTimeout>
@@ -62,13 +63,24 @@ export function attachRuntimeSync(
   pagedHistory = false,
   taskUpdates = false,
   settledLimit?: number,
+  incremental = false,
 ) {
   let hub = hubs.get(services)
   if (!hub) {
     hub = new RuntimeSync(services)
     hubs.set(services, hub)
   }
-  hub.attach(socket, token, compact, fieldUpdates, taskIds, pagedHistory, taskUpdates, settledLimit)
+  hub.attach(
+    socket,
+    token,
+    compact,
+    fieldUpdates,
+    taskIds,
+    pagedHistory,
+    taskUpdates,
+    settledLimit,
+    incremental,
+  )
 }
 export async function disposeRuntimeSync(services: Services) {
   const hub = hubs.get(services)
@@ -81,6 +93,7 @@ class RuntimeSync {
   private timer?: Fiber.Fiber<never, never>
   private busy = false
   private wakeup?: ReturnType<typeof setTimeout>
+  private stopCommitted?: () => void
   private dirty = false
   private wake() {
     if (this.controller.signal.aborted || this.wakeup) return
@@ -124,6 +137,7 @@ class RuntimeSync {
   constructor(private services: Services) {}
   async dispose() {
     this.controller.abort()
+    this.stopCommitted?.()
     clearTimeout(this.wakeup)
     if (this.timer) await Effect.runPromise(Fiber.interrupt(this.timer))
     const pending: Promise<void>[] = []
@@ -150,11 +164,12 @@ class RuntimeSync {
     taskIds?: readonly string[],
     pagedHistory = false,
     settledLimit?: number,
+    incremental = false,
   ) {
     const device = this.services.devices.authenticate(token)
     const viewId = JSON.stringify([
       device.id,
-      fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy',
+      incremental ? 'incremental' : fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy',
       taskIds ? [...taskIds].sort() : null,
       pagedHistory,
       settledLimit,
@@ -169,6 +184,7 @@ class RuntimeSync {
         settledLimit,
         compact,
         fieldUpdates,
+        incremental,
         epoch: randomUUID(),
         token,
         clients: new Set(),
@@ -219,8 +235,17 @@ class RuntimeSync {
     pagedHistory = false,
     taskUpdates = false,
     settledLimit?: number,
+    incremental = false,
   ) {
-    let current = this.view(token, compact, fieldUpdates, taskIds, pagedHistory, settledLimit)
+    let current = this.view(
+      token,
+      compact,
+      fieldUpdates,
+      taskIds,
+      pagedHistory,
+      settledLimit,
+      incremental,
+    )
     clearTimeout(current.expiry)
     const client: Client = {
       socket,
@@ -241,7 +266,37 @@ class RuntimeSync {
     }, 10000)
     let handling = Promise.resolve()
     let queued = 0
+    let pendingWatch: { input: Schema.Schema.Type<typeof syncInputSchema> } | undefined
     socket.on('message', (raw) => {
+      let input: Schema.Schema.Type<typeof syncInputSchema>
+      try {
+        this.services.devices.authenticate(token)
+        const buffer = Buffer.isBuffer(raw)
+          ? raw
+          : Array.isArray(raw)
+            ? Buffer.concat(raw)
+            : Buffer.from(raw)
+        input = decode(syncInputSchema, JSON.parse(buffer.toString('utf8')))
+      } catch {
+        socket.close(1008, 'Invalid sync request')
+        return
+      }
+      // Watch describes the complete desired selection. Replace obsolete pending work
+      // without delaying the first request or crossing an ordered resume barrier.
+      if (input.type === 'watch' && pendingWatch?.input.type === 'watch') {
+        pendingWatch.input =
+          input.tasks !== undefined
+            ? input
+            : {
+                ...pendingWatch.input,
+                scopes: input.scopes,
+                detailScopes: input.detailScopes,
+                watchId: input.watchId ?? pendingWatch.input.watchId,
+              }
+        return
+      }
+      const request = { input }
+      pendingWatch = input.type === 'watch' ? request : undefined
       if (++queued > 32) {
         queued--
         socket.close(1008, 'Too many sync requests')
@@ -249,14 +304,10 @@ class RuntimeSync {
       }
       handling = handling.then(async () => {
         try {
+          if (pendingWatch === request) pendingWatch = undefined
           if (this.controller.signal.aborted || socket.readyState !== WebSocket.OPEN) return
           this.services.devices.authenticate(token)
-          const buffer = Buffer.isBuffer(raw)
-            ? raw
-            : Array.isArray(raw)
-              ? Buffer.concat(raw)
-              : Buffer.from(raw)
-          const input = decode(syncInputSchema, JSON.parse(buffer.toString('utf8')))
+          const input = request.input
           if (input.type === 'watch') {
             if (taskUpdates && input.tasks) {
               const nextView = this.view(
@@ -266,6 +317,7 @@ class RuntimeSync {
                 [...new Set(input.tasks)],
                 pagedHistory,
                 settledLimit,
+                incremental,
               )
               if (nextView !== current) {
                 // The view's current snapshot is a valid predecessor only when
@@ -284,7 +336,29 @@ class RuntimeSync {
                 this.trimViews()
                 await this.refresh(current)
                 if (this.controller.signal.aborted || socket.readyState !== WebSocket.OPEN) return
-                if (current.snapshot && current.tag)
+                const resume = incremental ? input.resume : undefined
+                const replay = current.history.filter(
+                  (item) => resume && item.sequence > resume.sequence,
+                )
+                const canResume =
+                  resume &&
+                  resume.epoch === current.epoch &&
+                  resume.sequence <= current.sequence &&
+                  (resume.sequence === current.sequence ||
+                    replay[0]?.sequence === resume.sequence + 1)
+                if (canResume) {
+                  this.send(
+                    client,
+                    JSON.stringify({
+                      type: 'selection-resume',
+                      epoch: current.epoch,
+                      sequence: resume.sequence,
+                      through: current.sequence,
+                    } satisfies SyncFrame),
+                  )
+                  client.sequence = resume.sequence
+                  this.catchUp(current, client)
+                } else if (current.snapshot && current.tag) {
                   this.send(
                     client,
                     JSON.stringify(
@@ -296,7 +370,13 @@ class RuntimeSync {
                             epoch: current.epoch,
                             sequence: current.sequence,
                             tag: current.tag,
-                            delta: snapshotDelta(previous, current.snapshot, compact, fieldUpdates),
+                            delta: snapshotDelta(
+                              previous,
+                              current.snapshot,
+                              compact,
+                              fieldUpdates,
+                              incremental,
+                            ),
                           } satisfies SyncFrame)
                         : ({
                             type: 'snapshot',
@@ -307,7 +387,8 @@ class RuntimeSync {
                           } satisfies SyncFrame),
                     ),
                   )
-                client.sequence = current.sequence
+                  client.sequence = current.sequence
+                }
                 client.ready = true
               }
             }
@@ -341,11 +422,23 @@ class RuntimeSync {
             }
             client.scopes = next
             client.activityVersions.clear()
+            if (incremental && input.watchId !== undefined)
+              this.send(
+                client,
+                JSON.stringify({ type: 'watch-ack', watchId: input.watchId } satisfies SyncFrame),
+              )
             this.wake()
             return
           }
           if (client.resuming) return
           client.resuming = true
+          // Frames already sent on this socket precede this acknowledgement. A stale
+          // resume crossing a live update must not replay those same deltas again.
+          const continuing =
+            client.ready &&
+            input.epoch === current.epoch &&
+            input.sequence !== undefined &&
+            input.sequence <= client.sequence
           client.ready = false
           await this.refresh(current)
           if (this.controller.signal.aborted || socket.readyState !== WebSocket.OPEN) return
@@ -358,7 +451,8 @@ class RuntimeSync {
             sequence !== undefined &&
             sequence <= current.sequence &&
             (sequence === current.sequence || replay[0]?.sequence === sequence + 1)
-          if (canReplay) for (const item of replay) this.send(client, item.wire)
+          if (continuing) this.catchUp(current, client)
+          else if (canReplay) for (const item of replay) this.send(client, item.wire)
           else if (current.snapshot && current.tag)
             this.send(
               client,
@@ -375,11 +469,11 @@ class RuntimeSync {
             JSON.stringify({
               type: 'heartbeat',
               epoch: current.epoch,
-              sequence: current.sequence,
+              sequence: continuing ? client.sequence : current.sequence,
             } satisfies SyncFrame),
           )
           client.ready = true
-          client.sequence = current.sequence
+          if (!continuing) client.sequence = current.sequence
           client.resuming = false
           client.heartbeat = Date.now()
           clearTimeout(timeout)
@@ -397,6 +491,8 @@ class RuntimeSync {
       client.activityVersions.clear()
       this.leave(current, client)
       if (![...this.views.values()].some((item) => item.clients.size)) {
+        this.stopCommitted?.()
+        this.stopCommitted = undefined
         if (this.timer) Effect.runFork(Fiber.interrupt(this.timer))
         this.timer = undefined
         clearTimeout(this.wakeup)
@@ -405,6 +501,7 @@ class RuntimeSync {
       }
     })
     if (!this.timer) {
+      this.stopCommitted = this.services.store.onCommitted(() => this.wake())
       this.timer = Effect.runFork(
         Effect.forever(Effect.promise(() => this.tick()).pipe(Effect.andThen(Effect.sleep(200)))),
       )
@@ -543,7 +640,7 @@ class RuntimeSync {
         sequence: view.sequence,
         base,
         tag,
-        delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates),
+        delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates, view.incremental),
       } satisfies SyncFrame),
     )
     view.history.push({ sequence: view.sequence, wire })

@@ -25,6 +25,11 @@ export const desktopSyncSubscriptionSchema = mutableStruct({
   detailScopes: maxValue(mutableArray(id), 8),
 })
 export type DesktopSyncSubscription = typeof desktopSyncSubscriptionSchema.Type
+export const desktopSyncCursorSchema = mutableStruct({
+  epoch: id,
+  sequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+})
+export type DesktopSyncCursor = typeof desktopSyncCursorSchema.Type
 export type DesktopSyncEvent =
   | { type: 'snapshot'; snapshot: RuntimeSnapshot; tag?: string; epoch?: string; sequence?: number }
   | {
@@ -45,7 +50,7 @@ export type DesktopRuntimeSyncBridge = {
     listener: (event: DesktopSyncEvent) => void,
   ) => () => void
   update: (input: DesktopSyncSubscription) => void
-  refresh: (id: string, retry: boolean) => void
+  refresh: (id: string, retry: boolean, cursor?: DesktopSyncCursor) => void
 }
 const bridgeSchema = mutableStruct({
   dovo: mutableStruct({

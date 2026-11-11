@@ -1,7 +1,8 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
-import { defaultTaskHarness, resolveTaskAgent } from '../../workspace.js'
+import { defaultTaskHarness, resolveTaskAgent, type TaskTurn } from '../../workspace.js'
+import { runtimeDefaultsSchema } from './runtime-setup.js'
 import {
   applySnapshotDelta,
   snapshotDelta,
@@ -41,6 +42,159 @@ const snapshot = () =>
     devices: [],
     pendingDevices: [],
   })
+const turn = (id: string): TaskTurn => ({
+  id,
+  assistantId: `${id}-reply`,
+  agentId: '',
+  provider: 'codex',
+  model: 'fixture',
+  startedAt: '2026-10-01',
+  status: 'running',
+})
+it.each([false, true])(
+  'reconciles incremental state and turn fields without repeating unchanged bodies (compact %s)',
+  (compact) => {
+    const previous = snapshot()
+    previous.runtimeHost = 'Old name'
+    previous.defaults = decode(runtimeDefaultsSchema, { setupCommand: 'setup\n'.repeat(3000) })
+    const task = previous.workspace.tasks[0]!
+    task.turns = [
+      { ...turn('completed'), status: 'completed' },
+      {
+        ...turn('active'),
+        error: 'Previous error',
+        checkpoint: {
+          before: 'commit',
+          files: [
+            { path: 'source.ts', before: '', after: 'source\n'.repeat(10000), viewed: false },
+          ],
+          omitted: [],
+        },
+      },
+    ]
+    const next = {
+      ...previous,
+      revision: 2,
+      runtimeHost: undefined,
+      detailTaskIds: ['one'],
+      workspace: {
+        ...previous.workspace,
+        tasks: [
+          {
+            ...task,
+            turns: [task.turns[0]!, { ...task.turns[1]!, tokens: 100, error: undefined }],
+          },
+          previous.workspace.tasks[1]!,
+        ],
+      },
+    }
+    const delta = decode(
+      snapshotDeltaSchema,
+      JSON.parse(JSON.stringify(snapshotDelta(previous, next, compact, true, true))),
+    )
+    expect(delta.state).toBeUndefined()
+    expect(delta.stateDelta).toEqual({
+      values: { detailTaskIds: ['one'] },
+      removed: ['runtimeHost'],
+    })
+    expect(delta.workspace.tasks?.changes[0]?.fieldDelta).toBeUndefined()
+    expect(delta.workspace.tasks?.changes[0]?.turns).toEqual({
+      changes: [{ id: 'active', fieldDelta: { values: { tokens: 100 }, removed: ['error'] } }],
+    })
+    const restored = applySnapshotDelta(previous, delta)
+    expect(restored).toEqual(next)
+    expect(restored.defaults).toBe(previous.defaults)
+    expect(restored.workspace.tasks[0]?.turns?.[0]).toBe(task.turns[0])
+    expect(restored.workspace.tasks[0]?.turns?.[1]?.checkpoint).toBe(task.turns[1]?.checkpoint)
+    expect(restored.workspace.tasks[1]).toBe(previous.workspace.tasks[1])
+    const legacy = snapshotDelta(previous, next, compact, true)
+    expect(legacy.state?.defaults).toEqual(previous.defaults)
+    expect(legacy.workspace.tasks?.changes[0]?.fieldDelta?.values.turns).toEqual(
+      next.workspace.tasks[0]?.turns,
+    )
+    expect(JSON.stringify(delta).length).toBeLessThan(JSON.stringify(legacy).length / 100)
+  },
+)
+it('retains the whole workspace when only runtime metadata changes', () => {
+  const previous = snapshot()
+  const next = { ...previous, runtimeHost: 'Renamed computer' }
+  const restored = applySnapshotDelta(previous, snapshotDelta(previous, next, true, true, true))
+  expect(restored).toEqual(next)
+  expect(restored.workspace).toBe(previous.workspace)
+})
+it('retains thread collections when only workspace metadata changes', () => {
+  const previous = snapshot()
+  const next = {
+    ...previous,
+    workspace: { ...previous.workspace, runtimeAddress: 'http://paired.lan:8787' },
+  }
+  const restored = applySnapshotDelta(previous, snapshotDelta(previous, next, true, true, true))
+  expect(restored).toEqual(next)
+  expect(restored.workspace.tasks).toBe(previous.workspace.tasks)
+  expect(restored.workspace.agents).toBe(previous.workspace.agents)
+  expect(restored.workspace.repositories).toBe(previous.workspace.repositories)
+  expect(restored.workspace.automations).toBe(previous.workspace.automations)
+})
+it('keeps turn membership, order and optional removal exact across incremental updates', () => {
+  let previous = snapshot()
+  for (const turns of [[], [turn('a'), turn('b')], [turn('c'), turn('a')], [], undefined]) {
+    const next = {
+      ...previous,
+      revision: previous.revision + 1,
+      workspace: {
+        ...previous.workspace,
+        tasks: previous.workspace.tasks.map((task) =>
+          task.id === 'one' ? { ...task, turns } : task,
+        ),
+      },
+    }
+    const delta = decode(
+      snapshotDeltaSchema,
+      JSON.parse(JSON.stringify(snapshotDelta(previous, next, true, true, true))),
+    )
+    previous = applySnapshotDelta(previous, delta)
+    expect(previous).toEqual(next)
+  }
+})
+it('rejects missing or ambiguous incremental baselines instead of silently losing updates', () => {
+  const previous = snapshot()
+  previous.workspace.tasks[0]!.turns = [turn('active')]
+  expect(() =>
+    applySnapshotDelta(previous, { workspace: {}, stateDelta: { values: {}, removed: ['owner'] } }),
+  ).toThrow('Schema validation failed')
+  expect(() =>
+    applySnapshotDelta(previous, {
+      workspace: {},
+      state: previous,
+      stateDelta: { values: {}, removed: [] },
+    }),
+  ).toThrow('ambiguous')
+  for (const turns of [
+    { changes: [{ id: 'missing', fieldDelta: { values: { tokens: 1 }, removed: [] } }] },
+    { changes: [{ id: 'active', fields: turn('other') }] },
+    {
+      changes: [{ id: 'active', fields: turn('active'), fieldDelta: { values: {}, removed: [] } }],
+    },
+    { changes: [{ id: 'new', fields: turn('new') }] },
+    { order: ['missing'], changes: [] },
+    { order: ['active', 'active'], changes: [] },
+  ]) {
+    expect(() =>
+      applySnapshotDelta(previous, { workspace: { tasks: { changes: [{ id: 'one', turns }] } } }),
+    ).toThrow('Sync turn')
+  }
+  expect(() =>
+    applySnapshotDelta(previous, {
+      workspace: {
+        tasks: {
+          changes: [
+            { id: 'one', turns: { changes: [] }, fieldDelta: { values: {}, removed: ['turns'] } },
+          ],
+        },
+      },
+    }),
+  ).toThrow('ambiguous')
+})
 it('avoids serializing reused array items and still sends replacement file contents', () => {
   const previous = snapshot()
   const file = {
@@ -255,6 +409,7 @@ it('patches task fields without repeating unchanged file history and removes opt
   expect(restored).toEqual(next)
   expect(restored.workspace.tasks[1]).toBe(previous.workspace.tasks[1])
   expect(restored.workspace.tasks[0]?.files).toBe(task.files)
+  expect(restored.workspace.tasks[0]?.messages).toBe(task.messages)
   expect(task.error).toBe('Old error')
   expect(() =>
     applySnapshotDelta({ ...previous, workspace: { ...previous.workspace, tasks: [] } }, delta),

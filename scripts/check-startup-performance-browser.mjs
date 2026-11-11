@@ -17,6 +17,8 @@ import {TaskMessageResponse} from './packages/extension-tasks/src/chat/thread/ta
 import {StudioHostProvider} from './packages/studio-core/src/host-context';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state';
 const localMode=new URL(location.href).searchParams.has('local');
+const cancelMode=new URL(location.href).searchParams.has('cancel');
+window.holdFallback=cancelMode;window.fallbackSignals=[];window.cancelledFallbacks=0;
 window.profiles=Array.from({length:5},(_,i)=>runtimeProfile({address:localMode&&i===0?'http://127.0.0.1:4300':'http://host'+i+'.lan:8787',token:'paired-host-token-for-startup-'+i},'Computer '+i));
 const registry={version:1,activeId:window.profiles[0].id,profiles:window.profiles};
 localStorage.setItem('dovo.runtimes.v1',JSON.stringify(registry));
@@ -25,11 +27,18 @@ window.inactiveStarted=0;window.selectedReads=0;window.transportRenders=0;window
 window.inactiveWait=new Promise(resolve=>window.releaseInactive=resolve);
 window.currentLocalWait=new Promise(resolve=>window.releaseCurrentLocal=resolve);
 window.dovo={runtimeConnection:()=>new Promise(resolve=>window.releaseLocal=resolve)};
-window.fetch=async(url)=>{
+window.fetch=async(url,options)=>{
   const parsed=new URL(url);const path=parsed.pathname;
   if(parsed.port==='4300')throw Error('Previous local port is unavailable');
   if(localMode&&parsed.port==='4310'){window.currentLocalStarted=true;await window.currentLocalWait}
-  if(path==='/api/snapshot')return Response.json(window.snapshot);
+  if(path==='/api/snapshot'){
+    if(cancelMode)window.fallbackSignals.push(options?.signal);
+    if(window.holdFallback&&window.syncOptions?.[parsed.origin]){
+      window.heldFallbackSignal=options.signal;
+      return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>{window.cancelledFallbacks++;reject(new DOMException('Aborted','AbortError'))},{once:true}));
+    }
+    return Response.json(window.snapshot);
+  }
   if(path==='/api/mutations/status')return Response.json({version:1});
   if(path==='/api/workspace/recovered-edits')return Response.json({edits:[]});
   if(path==='/api/scm/pulls')return Response.json({pulls:[]});
@@ -76,7 +85,7 @@ window.changeUnrelatedWorkspace=()=>window.workspace.setWorkspace(value=>({...va
   [
     {
       path: '@dovo/protocol',
-      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=(connection,options)=>{window.syncOptions??={};window.syncOptions[connection.address]=options;return {online:()=>false,refresh:()=>{},stop:()=>{}}};`,
+      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=(connection,options)=>{window.syncOptions??={};window.syncOptions[connection.address]=options;return {online:()=>window.syncOnline===true,refresh:()=>{},stop:()=>{}}};`,
     },
     {
       path: './read-cache',
@@ -179,9 +188,41 @@ try {
     () =>
       window.workspace.connected && window.workspace.connection.address === 'http://127.0.0.1:4310',
   )
+  const cancelContext = await browser.newContext()
+  await cancelContext.route('http://startup.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const cancelPage = await cancelContext.newPage()
+  cancelPage.on('pageerror', (error) => errors.push(error.message))
+  await cancelPage.goto('http://startup.lan/?cancel=1')
+  await cancelPage.addScriptTag({ content: built.outputFiles[0].text })
+  await cancelPage.waitForFunction(
+    () => window.heldFallbackSignal && window.syncOptions?.['http://host0.lan:8787'],
+  )
+  await cancelPage.evaluate(() => {
+    const stream = window.syncOptions['http://host0.lan:8787']
+    window.syncOnline = true
+    stream.onStatus('live')
+    window.abortedBeforeSnapshot = window.heldFallbackSignal.aborted
+    window.readsBeforeReconnect = window.fallbackSignals.length
+    stream.onSnapshot({ ...window.snapshot, revision: 2 })
+  })
+  await cancelPage.waitForFunction(
+    () => window.cancelledFallbacks === 1 && window.workspace.connected,
+  )
+  assert.equal(await cancelPage.evaluate(() => window.abortedBeforeSnapshot), false)
+  assert.equal(await cancelPage.evaluate(() => window.workspace.syncError), null)
+  await cancelPage.evaluate(() => {
+    window.holdFallback = false
+    window.syncOnline = false
+    window.syncOptions['http://host0.lan:8787'].onStatus('reconnecting')
+  })
+  await cancelPage.waitForFunction(
+    () => window.fallbackSignals.length > window.readsBeforeReconnect && window.workspace.connected,
+  )
   assert.deepEqual(errors, [])
   console.log(
-    'Selected computer becomes ready before inactive caches/local runtime; unrelated updates preserve chat transport subscriptions.',
+    'Selected computer becomes ready before inactive caches/local runtime; unrelated updates preserve chat transport subscriptions; confirmed streaming cancels HTTP fallback and reconnect restores it.',
   )
 } finally {
   await browser.close()

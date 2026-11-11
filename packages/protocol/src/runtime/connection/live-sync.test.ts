@@ -176,6 +176,169 @@ async function routedSocketFixture(id: string, constructorFailure = false) {
   })
   return { connection, Socket, tickets, fetcher, receive, live, frame }
 }
+it('reopens a remote thread from its retained selection cursor and applies only missed updates', async () => {
+  const address = 'http://warm-thread.local'
+  const connection = { address, token: 'stalled-socket-test-token' }
+  const stopA = watchRuntimeTask(connection, 'a')
+  stopped.push(stopA)
+  const { Socket, frame, receive, live } = await stalledSocketFixture(address, 6)
+  const socket = Socket.instances[0]!
+  socket.readyState = 1
+  socket.onopen?.()
+  const a = { ...JSON.parse(frame).snapshot, detailTaskIds: ['a'] }
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'snapshot', snapshot: a, epoch: 'a', sequence: 1, tag: 'a1' }),
+  })
+  stopA()
+  const stopB = watchRuntimeTask(connection, 'b')
+  stopped.push(stopB)
+  await vi.waitFor(() => expect(JSON.parse(socket.sent.at(-1)!).tasks).toEqual(['b']))
+  const b = { ...a, revision: 2, detailTaskIds: ['b'] }
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'selection',
+      previousEpoch: 'a',
+      base: 1,
+      epoch: 'b',
+      sequence: 1,
+      tag: 'b1',
+      delta: snapshotDelta(a, b, true, true, true),
+    }),
+  })
+  stopB()
+  stopped.push(watchRuntimeTask(connection, 'a'))
+  await vi.waitFor(() =>
+    expect(JSON.parse(socket.sent.at(-1)!).resume).toEqual({ epoch: 'a', sequence: 1 }),
+  )
+  const beforeReplay = receive.mock.calls.length
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'selection-resume', epoch: 'a', sequence: 1, through: 2 }),
+  })
+  expect(receive).toHaveBeenCalledTimes(beforeReplay)
+  const updatedA = { ...a, revision: 3, runtimeHost: 'Updated remote computer' }
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'delta',
+      epoch: 'a',
+      base: 1,
+      sequence: 2,
+      tag: 'a2',
+      delta: snapshotDelta(a, updatedA, true, true, true),
+    }),
+  })
+  expect(receive.mock.lastCall?.[0]).toEqual(updatedA)
+  expect(live.online()).toBe(true)
+  expect(Socket.instances).toHaveLength(1)
+  expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
+  expect(requestUrl(vi.mocked(fetch).mock.calls[0]![0]).searchParams.get('incremental')).toBe('1')
+})
+it('pins a requested cursor until its ordered watch acknowledgment, then expires it', async () => {
+  const address = 'http://pinned-selection.local'
+  const connection = { address, token: 'stalled-socket-test-token' }
+  let release = watchRuntimeTask(connection, 'a')
+  stopped.push(release)
+  const { Socket, frame, clock, receive } = await stalledSocketFixture(address, 6)
+  const socket = Socket.instances[0]!
+  socket.readyState = 1
+  socket.onopen?.()
+  const a = { ...JSON.parse(frame).snapshot, detailTaskIds: ['a'] }
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'snapshot', snapshot: a, epoch: 'a', sequence: 1, tag: 'a' }),
+  })
+  release()
+  release = watchRuntimeTask(connection, 'b')
+  stopped.push(release)
+  await Promise.resolve()
+  const b = { ...a, detailTaskIds: ['b'] }
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'snapshot', snapshot: b, epoch: 'b', sequence: 1, tag: 'b' }),
+  })
+  release()
+  release = watchRuntimeTask(connection, 'a')
+  stopped.push(release)
+  await Promise.resolve()
+  const requested = JSON.parse(socket.sent.at(-1)!)
+  expect(requested.resume).toEqual({ epoch: 'a', sequence: 1 })
+  clock.mockReturnValue(6 * 60 * 1000)
+  release()
+  release = watchRuntimeTask(connection, 'c')
+  stopped.push(release)
+  await Promise.resolve()
+  const before = receive.mock.calls.length
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'selection-resume', epoch: 'a', sequence: 1, through: 1 }),
+  })
+  socket.onmessage?.({ data: JSON.stringify({ type: 'watch-ack', watchId: requested.watchId }) })
+  expect(receive).toHaveBeenCalledTimes(before)
+  const c = { ...a, detailTaskIds: ['c'] }
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'selection',
+      previousEpoch: 'a',
+      base: 1,
+      epoch: 'c',
+      sequence: 1,
+      tag: 'c',
+      delta: snapshotDelta(a, c, true, true, true),
+    }),
+  })
+  expect(receive.mock.lastCall?.[0]).toEqual(c)
+  release()
+  stopped.push(watchRuntimeTask(connection, 'a'))
+  await Promise.resolve()
+  expect(JSON.parse(socket.sent.at(-1)!).resume).toBeUndefined()
+  expect(Socket.instances).toHaveLength(1)
+})
+it.each(['expired', 'oversized', 'evicted', 'budget'] as const)(
+  'does not resume a remote selection whose cache is %s',
+  async (reason) => {
+    const address = `http://selection-${reason}.local`
+    const connection = { address, token: 'stalled-socket-test-token' }
+    let release = watchRuntimeTask(connection, 'a')
+    stopped.push(release)
+    const { Socket, frame, clock } = await stalledSocketFixture(address, 6)
+    const socket = Socket.instances[0]!
+    socket.readyState = 1
+    socket.onopen?.()
+    const initial = JSON.parse(frame).snapshot
+    if (reason === 'oversized') initial.runtimeHost = 'x'.repeat(2 * 1024 * 1024)
+    if (reason === 'budget') initial.runtimeHost = 'x'.repeat(500 * 1024)
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        snapshot: { ...initial, detailTaskIds: ['a'] },
+        epoch: 'a',
+        sequence: 1,
+        tag: 'a',
+      }),
+    })
+    for (let index = 0; index < (reason === 'evicted' ? 9 : reason === 'budget' ? 5 : 1); index++) {
+      release()
+      const id = `other-${index}`
+      release = watchRuntimeTask(connection, id)
+      stopped.push(release)
+      await vi.waitFor(() => expect(JSON.parse(socket.sent.at(-1)!).tasks).toEqual([id]))
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: 'snapshot',
+          snapshot: {
+            ...initial,
+            runtimeHost: reason === 'budget' ? initial.runtimeHost : undefined,
+            detailTaskIds: [id],
+          },
+          epoch: id,
+          sequence: 1,
+          tag: id,
+        }),
+      })
+    }
+    if (reason === 'expired') clock.mockReturnValue(6 * 60 * 1000)
+    release()
+    stopped.push(watchRuntimeTask(connection, 'a'))
+    await vi.waitFor(() => expect(JSON.parse(socket.sent.at(-1)!).tasks).toEqual(['a']))
+    expect(JSON.parse(socket.sent.at(-1)!).resume).toBeUndefined()
+  },
+)
 
 it.each(['error', 'close', 'timeout', 'silent-open', 'constructor'])(
   'advances a failed %s handshake to a verified VPN stream with a fresh ticket while HTTP stays on the proxy',
@@ -584,6 +747,19 @@ it('keeps an acknowledged resume online without replacing the healthy socket', a
   expect(Socket.instances).toHaveLength(1)
   expect(live.online()).toBe(true)
 })
+it('coalesces foreground wakeups while waiting for a resume acknowledgment', async () => {
+  const { Socket, live, frame } = await stalledSocketFixture('http://focus-burst.local', 6)
+  const socket = Socket.instances[0]!
+  socket.readyState = 1
+  socket.onopen?.()
+  socket.onmessage?.({ data: frame })
+  socket.sent.length = 0
+  for (let index = 0; index < 40; index++) live.refresh()
+  expect(socket.sent.map((wire) => JSON.parse(wire).type)).toEqual(['resume'])
+  socket.onmessage?.({ data: JSON.stringify({ type: 'heartbeat', epoch: 'stalled', sequence: 1 }) })
+  live.refresh()
+  expect(socket.sent.map((wire) => JSON.parse(wire).type)).toEqual(['resume', 'resume'])
+})
 it('does not carry a foreground resume deadline into a replacement socket handshake', async () => {
   vi.useFakeTimers()
   const { clock, Socket, live, frame } = await stalledSocketFixture('http://replaced-runtime.local')
@@ -628,6 +804,44 @@ it.each([401, 404])(
     expect(snapshot).not.toHaveBeenCalled()
   },
 )
+it('replaces a cancelled selection ticket immediately without reconnect backoff', async () => {
+  const connection = {
+    address: 'http://selection-ticket.local',
+    token: 'selection-ticket-test-token',
+  }
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementationOnce(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          )
+        }),
+    )
+    .mockImplementation(async () => Response.json({ ticket: 'new-selection', format: 6 }))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal(
+    'WebSocket',
+    class {
+      readyState = 0
+      close() {}
+    },
+  )
+  const status = vi.fn<(value: RuntimeSyncStatus) => void>()
+  const release = watchRuntimeTask(connection, 'a')
+  stopped.push(release)
+  const live = startRuntimeSync(connection, { onSnapshot() {}, onStatus: status })
+  stopped.push(live.stop)
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
+  release()
+  stopped.push(watchRuntimeTask(connection, 'b'))
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+  expect(requestUrl(fetcher.mock.calls[1]![0]).searchParams.getAll('task')).toEqual(['b'])
+  expect(status).not.toHaveBeenCalledWith('reconnecting')
+})
 it('cancels an unfinished ticket request when the app backgrounds or switches servers', async () => {
   let signal: AbortSignal | null | undefined
   vi.stubGlobal(
@@ -834,7 +1048,7 @@ it('increases backoff across briefly healthy sessions and resets after sustained
   expect(live.online()).toBe(false)
 })
 
-it('uses the desktop connection owner for snapshots, activity, watches and retry without opening a renderer socket', () => {
+it('uses the desktop connection owner for snapshots, activity, watches and retry without opening a renderer socket', async () => {
   const connection = {
     address: 'http://desktop-shared.lan:8787',
     token: 'desktop-shared-runtime-token',
@@ -876,6 +1090,7 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
   })
   const reviewer = watchRuntimeTask(connection, 'reviewer')
   stopped.push(reviewer)
+  await Promise.resolve()
   expect(update.mock.calls.at(-1)?.[0].tasks).toEqual(['author', 'reviewer'])
   receive?.({ type: 'status', status: 'live', online: true })
   expect(runtimeSyncOnline(connection, 'author')).toBe(true)
@@ -933,6 +1148,82 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
   expect(activity).toHaveBeenCalledTimes(1)
 })
 
+it('coalesces desktop subscription handoffs, flushes refresh immediately and cancels stopped updates', async () => {
+  const connection = { address: 'http://desktop-handoff.local', token: 'desktop-handoff-token' }
+  let receive: ((event: import('./desktop-sync.js').DesktopSyncEvent) => void) | undefined
+  const calls: string[] = []
+  const subscribe = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['subscribe']>(
+    (_input, listener) => {
+      receive = listener
+      return () => {}
+    },
+  )
+  const update = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['update']>(() =>
+    calls.push('update'),
+  )
+  const refresh = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['refresh']>(() =>
+    calls.push('refresh'),
+  )
+  vi.stubGlobal('window', { dovo: { runtimeSync: { subscribe, update, refresh } } })
+  const a = watchRuntimeTask(connection, 'a')
+  stopped.push(a)
+  const live = startRuntimeSync(connection, { onSnapshot() {} })
+  stopped.push(live.stop)
+  expect(subscribe).toHaveBeenCalledOnce()
+  const b = watchRuntimeTask(connection, 'b'),
+    c = watchRuntimeTask(connection, 'c')
+  stopped.push(b, c)
+  a()
+  b()
+  expect(update).not.toHaveBeenCalled()
+  await Promise.resolve()
+  expect(update).toHaveBeenCalledOnce()
+  expect(update.mock.lastCall?.[0].tasks).toEqual(['c'])
+  const duplicate = watchRuntimeTask(connection, 'c')
+  duplicate()
+  await Promise.resolve()
+  expect(update).toHaveBeenCalledOnce()
+  receive?.({
+    type: 'snapshot',
+    snapshot: decode(snapshotSchema, {
+      revision: 1,
+      owner: false,
+      workspace: {
+        version: 1,
+        runtimeAddress: '',
+        agents: [],
+        repositories: [],
+        tasks: [],
+        automations: [],
+      },
+      approvals: [],
+      questions: [],
+      terminals: [],
+      runs: [],
+      devices: [],
+      pendingDevices: [],
+    }),
+    epoch: 'window',
+    sequence: 7,
+  })
+  stopped.push(watchRuntimeTask(connection, 'd'))
+  calls.length = 0
+  live.refresh()
+  expect(calls).toEqual(['update', 'refresh'])
+  expect(refresh).toHaveBeenLastCalledWith(expect.any(String), false, {
+    epoch: 'window',
+    sequence: 7,
+  })
+  await Promise.resolve()
+  expect(update).toHaveBeenCalledTimes(2)
+  stopped.push(watchRuntimeTask(connection, 'e'))
+  live.stop()
+  await Promise.resolve()
+  expect(update).toHaveBeenCalledTimes(2)
+  live.refresh()
+  live.retry()
+  expect(refresh).toHaveBeenCalledOnce()
+})
 it('automatically retries a transient forbidden ticket with the same credential', async () => {
   vi.useFakeTimers()
   const connection = { address: 'http://transient-ticket.local', token: 'unchanged-pairing-token' }

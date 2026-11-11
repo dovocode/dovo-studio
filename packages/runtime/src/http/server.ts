@@ -310,6 +310,7 @@ export function createRuntimeServer(
             'runtime-sync-3',
             'runtime-sync-4',
             'runtime-sync-5',
+            'runtime-sync-6',
           ].includes(ticket.resourceId)
         )
           throw new HttpError(401, 'Invalid sync ticket')
@@ -322,11 +323,14 @@ export function createRuntimeServer(
             ticket.token,
             services,
             ticket.resourceId !== 'runtime-sync',
-            ['runtime-sync-3', 'runtime-sync-4', 'runtime-sync-5'].includes(ticket.resourceId),
+            ['runtime-sync-3', 'runtime-sync-4', 'runtime-sync-5', 'runtime-sync-6'].includes(
+              ticket.resourceId,
+            ),
             ticket.syncTasks,
             ticket.pagedHistory,
-            ticket.resourceId === 'runtime-sync-5',
+            ticket.resourceId === 'runtime-sync-5' || ticket.resourceId === 'runtime-sync-6',
             ticket.settledLimit,
+            ticket.resourceId === 'runtime-sync-6',
           )
         })
         return
