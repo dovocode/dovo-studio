@@ -18,6 +18,8 @@ import {StudioHostProvider} from './packages/studio-core/src/host-context';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state';
 const localMode=new URL(location.href).searchParams.has('local');
 const cancelMode=new URL(location.href).searchParams.has('cancel');
+window.holdConnectionCommit=new URL(location.href).searchParams.has('ordering');
+window.connectionCommitWait=new Promise(resolve=>window.releaseConnectionCommit=resolve);
 window.holdFallback=cancelMode;window.fallbackSignals=[];window.cancelledFallbacks=0;
 window.profiles=Array.from({length:5},(_,i)=>runtimeProfile({address:localMode&&i===0?'http://127.0.0.1:4300':'http://host'+i+'.lan:8787',token:'paired-host-token-for-startup-'+i},'Computer '+i));
 const registry={version:1,activeId:window.profiles[0].id,profiles:window.profiles};
@@ -105,8 +107,14 @@ window.readWhileEditing=()=>Promise.all([
       importer: root + 'packages/studio-core/src/workspace/provider.tsx',
       contents: `
 import {Effect} from 'effect';
-import {browserReadCache as realCache} from '${root}packages/studio-core/src/workspace/read-cache.ts';
+import {browserReadCache as realCache,writeWorkspaceDocument as realWriteDocument} from '${root}packages/studio-core/src/workspace/read-cache.ts';
 export * from '${root}packages/studio-core/src/workspace/read-cache.ts';
+export const writeWorkspaceDocument=async(key,value)=>{
+ if(window.holdConnectionCommit&&key.endsWith('.before-connection')){
+   window.connectionCommitStarted=true;await window.connectionCommitWait;
+ }
+ return realWriteDocument(key,value);
+};
 export const browserReadCache=connection=>{
  const cache=realCache(connection);
  return {...cache,readEffect:(key,schema)=>key!=='snapshot'?cache.readEffect(key,schema):Effect.gen(function*(){
@@ -239,10 +247,33 @@ try {
   )
   const orderingPage = await orderingContext.newPage()
   orderingPage.on('pageerror', (error) => errors.push(error.message))
-  await orderingPage.goto('http://startup.lan/')
+  await orderingPage.goto('http://startup.lan/?ordering=1')
   await orderingPage.addScriptTag({ content: built.outputFiles[0].text })
-  await orderingPage.waitForFunction(() => window.workspace?.connected)
-  await orderingPage.evaluate(() => window.holdWorkspaceEdit())
+  await orderingPage.waitForFunction(
+    () => window.workspace?.connected && window.connectionCommitStarted,
+  )
+  await assert.rejects(
+    orderingPage.evaluate(() => window.holdWorkspaceEdit()),
+    /Connection is changing\. Wait before editing\./,
+  )
+  assert.equal(await orderingPage.evaluate(() => window.patchStarted), undefined)
+  assert.equal(await orderingPage.evaluate(() => window.workspace.workspace.agents.length), 0)
+  await orderingPage.evaluate(() => window.releaseConnectionCommit())
+  // Connected means a snapshot arrived. Wait for the startup connection guard to
+  // release before admitting this edit; rejected attempts cannot change the workspace.
+  await orderingPage.waitForFunction(() => {
+    try {
+      window.holdWorkspaceEdit()
+      return true
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'Connection is changing. Wait before editing.'
+      )
+        return false
+      throw error
+    }
+  })
   await orderingPage.waitForFunction(() => window.patchStarted)
   assert.equal(
     await orderingPage.evaluate(() =>
