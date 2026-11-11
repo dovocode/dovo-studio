@@ -54,7 +54,7 @@ window.uploads=[];window.answers=[];window.acknowledged=[];window.alerts=[];wind
 const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
 window.request=async(path,input)=>{if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
 const read=(...args)=>Effect.tryPromise({try:()=>window.request(...args),catch:e=>e});
-function App(){const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <><TaskQuestions taskId="task"/><textarea aria-label="Normal message" defaultValue={task.draft}/></>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <><TaskQuestions taskId="task"/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></>};createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -206,6 +206,22 @@ function App(){const[connected,setConnected]=useState(true);const[question,setQu
       await page.getByRole('textbox', { name: 'Normal message', exact: true }).inputValue(),
       'Untouched message',
     )
+    if (!mobile) {
+      await page.evaluate(() => window.setQuestion('empty-composer-enter'))
+      const composer = page.getByRole('textbox', { name: 'Normal message', exact: true })
+      const before = await page.evaluate(() => window.answers.length)
+      await composer.focus()
+      await composer.press('Enter')
+      assert.equal(
+        await page.evaluate(() => window.answers.length),
+        before,
+        'Typed composer text does not answer a question',
+      )
+      await composer.fill('')
+      await composer.press('Enter')
+      await page.waitForFunction(() => window.answers.at(-1)?.id === 'empty-composer-enter')
+      assert.equal(await composer.inputValue(), '')
+    }
     assert.deepEqual(errors, [])
     await page.close()
   }

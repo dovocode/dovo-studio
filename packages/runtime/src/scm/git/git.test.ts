@@ -1,7 +1,9 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { readFile, writeFile, symlink, chmod, rm } from 'node:fs/promises'
+import { readFile, writeFile, symlink, chmod, rm, mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
+import { commandsSchema, decode } from '@dovo/protocol'
 import { GitService } from './git'
 it('normalizes GHE clone path case only on a configured GitHub host', async () => {
   const f = await fixture()
@@ -502,3 +504,157 @@ it('retains unavailable identities briefly while allowing explicit recovery imme
     clock.mockRestore()
   }
 })
+
+/** A Git wrapper that records each invocation and can fail commands matching a shell pattern. */
+async function recordingGit(fail = '') {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-recording-git-'))
+  const executable = join(directory, 'git'),
+    log = join(directory, 'log')
+  await writeFile(log, '')
+  await writeFile(
+    executable,
+    `#!/bin/sh\necho "$*" >> '${log}'\n${fail ? `case "$*" in ${fail}) exit 1;; esac\n` : ''}exec git "$@"\n`,
+  )
+  await chmod(executable, 0o755)
+  return {
+    git: new GitService(() => decode(commandsSchema, { git: executable })),
+    commands: async () => (await readFile(log, 'utf8')).split('\n').filter(Boolean),
+    cleanup: () => rm(directory, { recursive: true, force: true }),
+  }
+}
+const blobReads = (commands: string[]) => commands.filter((line) => line.startsWith('cat-file'))
+
+it.skipIf(process.platform === 'win32')(
+  'reads every embedded old side through one batch process and keeps order, classification and budget',
+  async () => {
+    const f = await fixture(),
+      recorded = await recordingGit(),
+      git = recorded.git
+    try {
+      const boundary = 'b'.repeat(64 * 1024)
+      const committed: Record<string, string | Buffer> = {
+        'a-utf8.txt': 'héllo → wörld\n',
+        'b-binary.dat': Buffer.from([1, 0, 2]),
+        'c-invalid-utf8.txt': Buffer.from([0x66, 0xff, 0xfe, 0x0a]),
+        'd-picture.png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1]),
+        'e-boundary.txt': boundary,
+        'f-large.txt': 'l'.repeat(64 * 1024 + 1),
+        'g-deleted.txt': 'deleted\n',
+        'h-empty.txt': '',
+        'i-link-target.txt': 'target\n',
+      }
+      // Each pair uses 120 KiB of the 1 MiB budget, so only some of these can be embedded.
+      for (let i = 0; i < 10; i++) committed[`z-budget-${i}.txt`] = `${i}`.repeat(60 * 1024)
+      for (const [name, contents] of Object.entries(committed))
+        await writeFile(join(f.directory, name), contents)
+      await git.stage(f.directory, Object.keys(committed))
+      await git.commit(f.directory, 'Old sides')
+      for (const name of Object.keys(committed))
+        if (name !== 'g-deleted.txt' && name !== 'i-link-target.txt')
+          await writeFile(join(f.directory, name), 'next\n')
+      for (let i = 0; i < 10; i++)
+        await writeFile(join(f.directory, `z-budget-${i}.txt`), 'n'.repeat(60 * 1024))
+      await rm(join(f.directory, 'g-deleted.txt'))
+      await rm(join(f.directory, 'i-link-target.txt'))
+      await symlink('hello.txt', join(f.directory, 'i-link-target.txt'))
+      await writeFile(join(f.directory, 'hello.txt'), 'changed\n')
+      const before = (await recorded.commands()).length
+
+      const files = await git.changes(f.directory)
+      const commands = (await recorded.commands()).slice(before)
+      expect(blobReads(commands)).toEqual(['cat-file --batch'])
+      expect(files.map((file) => file.path)).toEqual(
+        [...Object.keys(committed), 'hello.txt'].sort(),
+      )
+      const byPath = new Map(files.map((file) => [file.path, file]))
+      expect(byPath.get('a-utf8.txt')).toMatchObject({ before: 'héllo → wörld\n', after: 'next\n' })
+      expect(byPath.get('hello.txt')).toMatchObject({ before: 'original\n', after: 'changed\n' })
+      expect(byPath.get('e-boundary.txt')).toMatchObject({ before: boundary, after: 'next\n' })
+      expect(byPath.get('g-deleted.txt')).toMatchObject({ before: 'deleted\n', after: '' })
+      expect(byPath.get('g-deleted.txt')?.preview).toBeUndefined()
+      expect(byPath.get('h-empty.txt')).toMatchObject({ before: '', after: 'next\n' })
+      expect(byPath.get('h-empty.txt')?.preview).toBeUndefined()
+      for (const [name, kind] of [
+        ['b-binary.dat', 'binary'],
+        ['c-invalid-utf8.txt', 'binary'],
+        ['d-picture.png', 'image'],
+        ['f-large.txt', 'large'],
+        ['i-link-target.txt', 'symlink'],
+      ])
+        expect(byPath.get(name)).toMatchObject({ before: '', after: '', preview: { kind } })
+      const budget = files.filter((file) => file.path.startsWith('z-budget-'))
+      const embedded = budget.filter((file) => !file.preview)
+      expect(embedded.length).toBeGreaterThan(0)
+      expect(embedded.length).toBeLessThan(10)
+      expect(budget.slice(0, embedded.length)).toEqual(embedded)
+      for (const [i, file] of embedded.entries())
+        expect(file).toMatchObject({
+          before: `${i}`.repeat(60 * 1024),
+          after: 'n'.repeat(60 * 1024),
+        })
+      for (const file of budget.slice(embedded.length))
+        expect(file.preview).toMatchObject({ kind: 'deferred', before: { size: 60 * 1024 } })
+      const total = files
+        .filter((file) => !file.preview)
+        .reduce(
+          (sum, file) => sum + Buffer.byteLength(file.before) + Buffer.byteLength(file.after),
+          0,
+        )
+      expect(total).toBeLessThanOrEqual(1024 * 1024)
+      // Opening one file keeps its bounded single-blob read.
+      const large = await git.workingFilePreview(f.directory, 'f-large.txt')
+      expect(large.before).toMatchObject({ kind: 'text', truncated: true })
+      expect(large.before?.text).toHaveLength(64 * 1024)
+    } finally {
+      await recorded.cleanup()
+      await f.cleanup()
+    }
+  },
+)
+
+it.skipIf(process.platform === 'win32')(
+  'starts no blob process without old sides and reads blobs singly when the batch fails',
+  async () => {
+    const f = await fixture(),
+      recorded = await recordingGit(),
+      failing = await recordingGit("'cat-file --batch'")
+    try {
+      await writeFile(join(f.directory, 'added.txt'), 'added\n')
+      expect(await recorded.git.changes(f.directory)).toMatchObject([
+        { path: 'added.txt', before: '', after: 'added\n' },
+      ])
+      await rm(join(f.directory, '.git', 'refs', 'heads'), { recursive: true })
+      await recorded.git.command(f.directory, ['rm', '-q', '--cached', 'hello.txt'])
+      expect(
+        (await recorded.git.changes(f.directory)).map((file) => [file.path, file.after]),
+      ).toEqual([
+        ['added.txt', 'added\n'],
+        ['hello.txt', 'original\n'],
+      ])
+      expect(blobReads(await recorded.commands())).toEqual([])
+    } finally {
+      await recorded.cleanup()
+      await f.cleanup()
+    }
+    const g = await fixture()
+    try {
+      await writeFile(join(g.directory, 'second.txt'), 'second\n')
+      await failing.git.stage(g.directory, ['second.txt'])
+      await failing.git.commit(g.directory, 'Second')
+      await writeFile(join(g.directory, 'hello.txt'), 'changed\n')
+      await writeFile(join(g.directory, 'second.txt'), 'changed too\n')
+      expect(await failing.git.changes(g.directory)).toMatchObject([
+        { path: 'hello.txt', before: 'original\n', after: 'changed\n' },
+        { path: 'second.txt', before: 'second\n', after: 'changed too\n' },
+      ])
+      expect(blobReads(await failing.commands()).sort()).toEqual([
+        expect.stringMatching(/^cat-file --batch$/),
+        expect.stringMatching(/^cat-file blob [0-9a-f]{40}$/),
+        expect.stringMatching(/^cat-file blob [0-9a-f]{40}$/),
+      ])
+    } finally {
+      await failing.cleanup()
+      await g.cleanup()
+    }
+  },
+)

@@ -32,7 +32,7 @@ import {useWorkSources} from '${root}/packages/extension-scm/src/work/use-work-s
 }
 const profile={id:'owner',name:'Owner',createdAt:'2026-11-11',connection:{address:'http://owner.lan',token:'paired-fixture'}};
 window.reads=[];window.wireBytes=0;window.sectionWrites=0;window.pages=[[7,6],[5,4]];
-const cache={readEffect:()=>Effect.succeed(null),writeEffect:key=>Effect.sync(()=>{if(['work','jira-work'].includes(JSON.parse(key)[0]))window.sectionWrites++}),removeEffect:()=>Effect.void};
+const cache={readEffect:(key)=>Effect.tryPromise({try:async()=>{if(!window.holdCache&&!window.cacheReleased)return null;if(window.holdCache)await new Promise(resolve=>(window.releaseCache??=[]).push(resolve));window.cacheReturned=(window.cacheReturned??0)+1;return window.savedPage&&!key.includes('options')?{value:window.savedPage,cachedAt:0}:null},catch:error=>error}),writeEffect:key=>Effect.sync(()=>{if(['work','jira-work'].includes(JSON.parse(key)[0]))window.sectionWrites++}),removeEffect:()=>Effect.void};
 cache.read=(...args)=>Effect.runPromise(cache.readEffect(...args));cache.write=(...args)=>Effect.runPromise(cache.writeEffect(...args));cache.remove=(...args)=>Effect.runPromise(cache.removeEffect(...args));
 const runtimeReadCache=()=>cache;
 const issue=number=>({id:'TEAM-'+number,title:'Issue '+number+' older '+(window.olderRevision??0),body:'Description '+'x'.repeat(16000),state:'open',url:'https://team.atlassian.net/browse/TEAM-'+number,author:'Dominic',assignees:[],labels:[],updatedAt:'2026-11-11',revision:'same'});
@@ -41,6 +41,7 @@ const readRuntimeEffect=(_profile,path,input,schema)=>Effect.tryPromise({try:asy
  window.reads.push({path,input});if(input.cursor&&window.failLaterPage)throw Error('Older issue page unavailable');
  const index=input.cursor?1:0;
  const value=path.endsWith('/options')?{provider:'jira',issues:true,pipelines:false,pipelineActions:[],issueSearch:true}: {items:window.pages[index].map(number=>({...issue(number),title:'Issue '+number+' older '+(index?window.olderRevision??0:0)})),next:index?undefined:'30'};
+ if(value.items)window.savedPage={...value,items:value.items.map(item=>({...item,title:'Old saved issue'}))};if(window.failLive)throw Error('Live Jira unavailable');
  const version=JSON.stringify(value);let hash=0;for(const c of version)hash=(Math.imul(hash,31)+c.charCodeAt(0))>>>0;const readVersion=hash.toString(16).padStart(64,'0');
  const reply=input.conditional?(input.knownVersion===readVersion?{unchanged:true,readVersion}:{value,readVersion}):value;
  window.wireBytes+=JSON.stringify(reply).length;return decode(schema,reply);
@@ -122,8 +123,16 @@ try {
     page.setDefaultTimeout(7000)
     await page.clock.install()
     await page.setContent('<div id="app"></div>')
+    await page.addScriptTag({ content: 'window.holdCache=true' })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.waitForFunction(() => window.list?.pages[0]?.items.length === 2 && !window.list.busy)
+    await page.waitForFunction(() => window.releaseCache?.length > 0)
+    await page.evaluate(() => {
+      window.holdCache = false
+      window.cacheReleased = true
+      for (const release of window.releaseCache) release()
+    })
+    await page.waitForFunction(() => window.cacheReturned > 0)
     await page.evaluate(() => window.list.more(window.list.pages[0].source.key))
     await page.waitForFunction(() => window.list.pages[0].items.length === 4 && !window.list.busy)
     await page.evaluate(() => {
@@ -187,6 +196,21 @@ try {
         ...metrics,
       }),
     )
+    const offline = await browser.newPage()
+    offline.on('pageerror', (error) => errors.push(error.message))
+    await offline.setContent('<div id="app"></div>')
+    await offline.addScriptTag({ content: 'window.holdCache=true;window.failLive=true' })
+    await offline.addScriptTag({ content: built.outputFiles[0].text })
+    await offline.waitForFunction(() => window.list?.pages[0]?.error === 'Live Jira unavailable')
+    await offline.waitForFunction(() => window.releaseCache?.length > 0)
+    await offline.evaluate(() => {
+      window.holdCache = false
+      window.cacheReleased = true
+      for (const release of window.releaseCache) release()
+    })
+    await offline.waitForFunction(() => window.list.pages[0].items[0]?.title === 'Old saved issue')
+    assert.equal(await offline.evaluate(() => window.list.pages[0].error), 'Live Jira unavailable')
+    await offline.close()
     assert.deepEqual(errors, [])
     await page.close()
   }

@@ -6,7 +6,11 @@ import { browserElementCaptureSchema, browserElementResultSchema } from '@dovo/p
 import { BrowserDownloadsPanel } from './browser-downloads-panel'
 import { browserPageFavicon } from '@dovo/protocol'
 import { createPortal, flushSync } from 'react-dom'
-import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
+import {
+  nativeBrowserBounds,
+  observeNativeBrowserLayout,
+  nativeBrowserHole,
+} from './native-browser-layout'
 import { BrowserTabRow } from './browser-tab-row'
 import { SnoozeDialog } from '../dialogs/snooze-dialog'
 import { BrowserSiteControls } from './browser-site-controls'
@@ -613,12 +617,6 @@ function BrowserContent({
   }, [workspaceControl?.newTabRequest])
   const openedLink = useRef('')
   const controlsId = useId()
-  const [frozenPage, setFrozenPage] = useApplicationState<{
-    key: string
-    url: string
-    image: string
-  } | null>(null)
-  const frozenImage = useRef<HTMLImageElement>(null)
   const previewSource = tabs.find((tab) => tab.id === previewBackground?.tabId)
   const openerInput =
     previewBackground && previewBackground.input !== previewBackground.url
@@ -1562,14 +1560,14 @@ function BrowserContent({
     let alive = true
     let frame: number | undefined
     let previousCommand = ''
-    let revision = 0
-    let stopFrames: (() => void) | undefined
+    const hole = nativeBrowserHole(slot.current)
     const update = () => {
       frame = undefined
       if (!alive) return
       const rect = paneVisible && slot.current ? nativeBrowserBounds(slot.current) : undefined
-      const occlusion = slot.current && rect && nativeBrowserOcclusion(slot.current, rect)
+      const occlusion = slot.current && rect && hole.occlusion(rect)
       const obscured = !!occlusion
+      hole.update(obscured ? rect : undefined)
       const command =
         rect && !obscured
           ? {
@@ -1601,61 +1599,25 @@ function BrowserContent({
           : {
               action: 'hide' as const,
               key: browserKey,
-              ...(obscured ? { occluded: true } : {}),
+              ...(obscured
+                ? {
+                    occluded: true,
+                    bounds: rect
+                      ? {
+                          x: Math.max(0, Math.round(rect.x)),
+                          y: Math.max(0, Math.round(rect.y)),
+                          width: Math.round(rect.width),
+                          height: Math.round(rect.height),
+                        }
+                      : undefined,
+                  }
+                : {}),
               ...(occlusion === 'tooltip' ? { preserveFocus: true } : {}),
             }
       const signature = JSON.stringify(command)
       if (signature === previousCommand) return
       previousCommand = signature
-      const attempt = ++revision
-      void (async () => {
-        if (command.action === 'hide' && obscured && rect?.width && rect.height) {
-          // Native views sit above HTML menus. Keep their replacement live while occluded.
-          stopFrames ??= browserFrames?.(browserKey, (frame) => {
-            if (!alive) return
-            if (frozenImage.current) frozenImage.current.src = frame.image
-            else flushSync(() => setFrozenPage({ key: browserKey, url, image: frame.image }))
-          })
-          // Keep the live page until its replacement has decoded and committed. Hiding first
-          // exposes the empty native slot for at least one frame whenever a menu opens.
-          let timeout: ReturnType<typeof setTimeout> | undefined
-          try {
-            const captured = await Promise.race([
-              browser({ action: 'screenshot', key: browserKey }),
-              new Promise<undefined>((resolve) => {
-                timeout = setTimeout(() => resolve(undefined), 500)
-              }),
-            ])
-            if (captured?.image && alive && revision === attempt) {
-              const image = new Image()
-              image.src = captured.image
-              await image.decode()
-              if (alive && revision === attempt)
-                flushSync(() => setFrozenPage({ key: browserKey, url, image: captured.image! }))
-            }
-          } catch {
-            /* A hung or loading page must not prevent access to Studio's menus. */
-          } finally {
-            clearTimeout(timeout)
-          }
-        }
-        if (!alive || revision !== attempt) return
-        await browser(command)
-        if (!alive || revision !== attempt) return
-        if (command.action === 'show' || !obscured) {
-          // Restore native visibility before ending the underlay; a false hidden transition
-          // here could trigger the site's automatic picture-in-picture when a menu closes.
-          stopFrames?.()
-          stopFrames = undefined
-        }
-        // Keep the fallback behind the native page while its compositor resumes painting.
-        if (command.action === 'show')
-          requestAnimationFrame(() =>
-            requestAnimationFrame(() => {
-              if (alive && revision === attempt) setFrozenPage(null)
-            }),
-          )
-      })().catch((e) => {
+      void browser(command).catch((e) => {
         if (previousCommand === signature) previousCommand = ''
         if (alive) setError(String(e))
       })
@@ -1663,36 +1625,13 @@ function BrowserContent({
     const schedule = () => {
       frame ??= requestAnimationFrame(update)
     }
-    const resize = new ResizeObserver(schedule),
-      mutations = new MutationObserver(schedule)
-    if (slot.current) resize.observe(slot.current)
-    mutations.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: [
-        'open',
-        'hidden',
-        'style',
-        'class',
-        'role',
-        'aria-modal',
-        'data-state',
-        'data-preview-dragging',
-        'data-preview-overlay',
-      ],
-    })
-    window.addEventListener('resize', schedule)
-    window.addEventListener('scroll', schedule, true)
+    const stopLayout = slot.current ? observeNativeBrowserLayout(slot.current, schedule) : undefined
     update()
     return () => {
       alive = false
-      stopFrames?.()
+      hole.dispose()
       if (frame !== undefined) cancelAnimationFrame(frame)
-      resize.disconnect()
-      mutations.disconnect()
-      window.removeEventListener('resize', schedule)
-      window.removeEventListener('scroll', schedule, true)
+      stopLayout?.()
       void browser({
         action: 'hide',
         key: browserKey,
@@ -1701,7 +1640,6 @@ function BrowserContent({
     }
   }, [
     browser,
-    browserFrames,
     url,
     mode,
     scope,
@@ -4049,15 +3987,6 @@ function BrowserContent({
                       }
                 }
               >
-                {browser && frozenPage?.key === browserKey && frozenPage.url === url && (
-                  <img
-                    aria-hidden
-                    alt=""
-                    ref={frozenImage}
-                    src={frozenPage.image}
-                    className="pointer-events-none absolute inset-0 size-full object-fill"
-                  />
-                )}
                 {!browser && (
                   <iframe
                     key={reload}
@@ -4265,7 +4194,10 @@ function BrowserLayout({
       aria-label={devices ? 'Device previews' : 'Browser previews'}
     >
       {!sidebarState?.collapsed && sidebar}
-      <div className="@container/browser flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        data-native-browser-layout
+        className="@container/browser flex min-h-0 min-w-0 flex-1 flex-col"
+      >
         {header}
         <div
           className="@container/browser relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"

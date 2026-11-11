@@ -7,7 +7,7 @@ import {
   retainNewerPullSnapshot,
 } from '@dovo/protocol'
 import { useEffect, useRef, useMemo } from 'react'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { startPolling, runClientEffect } from '@dovo/client-runtime'
 import { useSourceReader } from '../../source-reader'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -72,6 +72,8 @@ function usePullSection(
     wasConnected.current = readConnected
     // Retain loaded details without reading disk or starting timers for closed tabs.
     if (!enabled) return
+    let liveLoaded = false
+    let liveFinished = false
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.gen(function* () {
@@ -79,7 +81,7 @@ function usePullSection(
           const cached =
             (yield* readCache.readEffect(cacheKey, pullDetailSchema)) ??
             (yield* readCache.readEffect(legacyCacheKey, pullDetailSchema))
-          if (cached && !stopped)
+          if (cached && !stopped && !liveLoaded)
             setState((current) => ({
               ...current,
               detail: current.detail ?? {
@@ -91,7 +93,8 @@ function usePullSection(
         }).pipe(
           Effect.catch(() =>
             Effect.sync(() => {
-              if (!stopped) setError('Saved details could not be read from this device.')
+              if (!stopped && !liveFinished)
+                setError('Saved details could not be read from this device.')
             }),
           ),
         ),
@@ -99,10 +102,8 @@ function usePullSection(
     )
     let changesLoaded = false
     let force = reconnected
-    let cacheLoaded = false
+    const hydration = Effect.runFork(hydrated)
     const load = Effect.gen(function* () {
-      yield* hydrated
-      cacheLoaded = true
       if (!enabled || !readConnected || !focused || AppState.currentState !== 'active') return
       const showRefresh = requestedRefresh.current
       const refresh = force || showRefresh
@@ -149,6 +150,7 @@ function usePullSection(
         Effect.tap((value) =>
           Effect.sync(() => {
             if (!stopped) {
+              liveLoaded = true
               changesLoaded = !!(
                 section === 'changes' &&
                 revision &&
@@ -197,13 +199,18 @@ function usePullSection(
           }),
         ),
       )
-    })
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          liveFinished = true
+        }),
+      ),
+    )
     const polling = startPolling(load, {
       interval: () =>
         stateRef.current.error ? 60_000 : pullSectionInterval(section, stateRef.current.detail),
       backoff: 120_000,
-      enabled: () =>
-        !cacheLoaded || (readConnected && focused && AppState.currentState === 'active'),
+      enabled: () => readConnected && focused && AppState.currentState === 'active',
       onError: (error) => {
         if (!stopped)
           setState((current) => ({
@@ -222,6 +229,7 @@ function usePullSection(
     return () => {
       stopped = true
       resumed.remove()
+      Effect.runFork(Fiber.interrupt(hydration))
       void polling.stop()
     }
   }, [

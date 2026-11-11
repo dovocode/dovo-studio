@@ -71,8 +71,9 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
               {
                 repositoryId: task.repositoryId,
                 taskId: task.id,
+                includeFiles: false,
               },
-              responses.files,
+              responses.changesRefresh,
             )
               .catch((error) => setError(String(error)))
               .finally(() => setBusy(false))

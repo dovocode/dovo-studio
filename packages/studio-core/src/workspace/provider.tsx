@@ -12,6 +12,9 @@ import {
   randomUUID,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
+  requestNeedsWorkspaceSync,
+  requestReadWorkspaceDependency,
+  requestWorkspaceTask,
   runtimeSnapshotPath,
   learnRuntimeRoutes,
   retryRuntimeSync,
@@ -545,6 +548,11 @@ export function WorkspaceProvider({
               lastSeen: entry.lastSeen,
               pulls: entry.pulls,
             })
+            yield* mutations.taskCreationsCachedEffect(
+              entry.profile.connection,
+              entry.snapshot.workspace.tasks,
+              entry.snapshot,
+            )
             if (resolveRuntimeTarget(registryRef.current.profiles, entry.profile))
               cacheWrites.current.set(entry.profile.id, {
                 token: entry.profile.connection.token,
@@ -584,8 +592,12 @@ export function WorkspaceProvider({
       window.removeEventListener('pagehide', polling.refresh)
       void polling.stop().then(() => runClientEffect(persist))
     }
-  }, [cacheFor, synchronization])
-  const flush = useCallback(() => synchronization.flush(), [synchronization])
+  }, [cacheFor, synchronization, mutations])
+  const flush = useCallback(
+    (taskId?: string) =>
+      taskId ? runClientEffect(synchronization.flushTaskEffect(taskId)) : synchronization.flush(),
+    [synchronization],
+  )
   const setWorkspace = useCallback<Dispatch<SetStateAction<Workspace>>>(
     (update) => {
       if (synchronization.isResolving())
@@ -989,13 +1001,22 @@ export function WorkspaceProvider({
         const check = Effect.try({ try: () => assertProfile(profile), catch: connectionError })
         yield* check
         if (
-          method !== 'GET' &&
-          path !== '/api/tasks/cancel' &&
+          requestNeedsWorkspaceSync(path, method) &&
           connectionRef.current?.address === profile.connection.address &&
           connectionRef.current.token === profile.connection.token
         ) {
-          yield* synchronization.flushEffect()
+          const taskId = requestWorkspaceTask(path, input)
+          yield* taskId ? synchronization.flushTaskEffect(taskId) : synchronization.flushEffect()
           yield* check
+        } else if (
+          connectionRef.current?.address === profile.connection.address &&
+          connectionRef.current.token === profile.connection.token
+        ) {
+          const dependency = requestReadWorkspaceDependency(path, input, method)
+          if (dependency) {
+            yield* synchronization.flushReadEffect(dependency)
+            yield* check
+          }
         }
         const value = yield* mutations.requestEffect(
           profile.connection,
@@ -1034,7 +1055,13 @@ export function WorkspaceProvider({
         })
         yield* check
         if (!target) return yield* Effect.fail(new Error('Connect to a runtime first'))
-        if (method !== 'GET' && path !== '/api/tasks/cancel') yield* synchronization.flushEffect()
+        if (requestNeedsWorkspaceSync(path, method)) {
+          const taskId = requestWorkspaceTask(path, input)
+          yield* taskId ? synchronization.flushTaskEffect(taskId) : synchronization.flushEffect()
+        } else {
+          const dependency = requestReadWorkspaceDependency(path, input, method)
+          if (dependency) yield* synchronization.flushReadEffect(dependency)
+        }
         yield* check
         const value = yield* mutations.requestEffect(target, path, input, schema, method)
         yield* check
@@ -1880,15 +1907,16 @@ export function WorkspaceProvider({
       if (entry.snapshot)
         mutations.acknowledgeMessages(entry.profile.connection, entry.snapshot.workspace.tasks)
   }, [overviews, mutationVersion, mutations])
-  const visibleWorkspace = useMemo(
-    () =>
-      previewWorkspace(
-        workspace,
-        connection,
-        previews.filter((item) => !snapshot || !taskPreviewConfirmed(item, snapshot, previews)),
-      ),
-    [workspace, connection, previews, snapshot],
-  )
+  const visibleWorkspace = useMemo(() => {
+    const preview = previewWorkspace(
+      workspace,
+      connection,
+      previews.filter((item) => !snapshot || !taskPreviewConfirmed(item, snapshot, previews)),
+    )
+    if (!connection) return preview
+    const tasks = mutations.pendingTasks(connection, preview.tasks)
+    return tasks === preview.tasks ? preview : { ...preview, tasks }
+  }, [workspace, connection, previews, snapshot, mutationVersion, mutations])
   useEffect(() => {
     setPreviews((items) => {
       const next = items.filter((item) => {
@@ -1905,8 +1933,21 @@ export function WorkspaceProvider({
     })
   }, [previews, overviews, runtimeRegistry.profiles])
   const visibleRuntimes = useMemo(
-    () => visibleRuntimeOverviews(runtimeRegistry.profiles, overviews, previews),
-    [runtimeRegistry.profiles, overviews, previews],
+    () =>
+      visibleRuntimeOverviews(runtimeRegistry.profiles, overviews, previews).map((entry) => {
+        if (!entry.snapshot) return entry
+        const tasks = mutations.pendingTasks(
+          entry.profile.connection,
+          entry.snapshot.workspace.tasks,
+        )
+        return tasks === entry.snapshot.workspace.tasks
+          ? entry
+          : {
+              ...entry,
+              snapshot: { ...entry.snapshot, workspace: { ...entry.snapshot.workspace, tasks } },
+            }
+      }),
+    [runtimeRegistry.profiles, overviews, previews, mutationVersion, mutations],
   )
   useEffect(() => {
     const publishError = () =>

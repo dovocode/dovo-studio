@@ -14,6 +14,7 @@ async function bundle(contents, mobile = false) {
     '@dovo/studio-core': `export const useAppPreferences=()=>({pullProjectVisibility:{}});export const updateAppPreferences=()=>{};export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({goBack:()=>window.goBack?.()??false,navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);export const formatDateTime=x=>x;`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
+    './intent-prefetch': `export const usePullIntentPrefetch=()=>({intent:()=>{},prefetch:null});`,
     './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:[{source:window.sources[0],reader:window.sources[0],pulls:window.pulls}],busy:false,connected:true,more:()=>{},refresh:()=>{}});`,
     '../detail/status': `export const Signal=()=>null;`,
     '../detail/detail': `export const PullDetail=({number,initialTab,initialFragment,onBack})=><section data-testid="detail" data-tab={initialTab} data-fragment={initialFragment}><p>Native PR detail {number}</p><button onClick={onBack}>Back to PRs</button></section>;`,

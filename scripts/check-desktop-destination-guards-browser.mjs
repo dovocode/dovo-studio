@@ -15,20 +15,24 @@ import {ApplicationStateProvider} from '@dovo/studio-core/state';
 import {PullCommentComposer,PullActions} from '${root}packages/extension-scm/src/pulls/list/actions.tsx';
 import {WorkForm} from '${root}packages/extension-scm/src/work/work-form.tsx';
 import {CreatePull} from '${root}packages/extension-scm/src/pulls/list/create.tsx';
-window.requests=[];window.completed=[];window.currentDestination='old-destination';
+import {useVerifiedRead} from '${root}packages/extension-scm/src/connections/verified-read.ts';
+import {Schema} from 'effect';
+window.requests=[];window.completed=[];window.currentDestination='old-destination';window.currentReader='same-account';
 window.pull={number:7,title:'PR',body:'Original description',base:'main',headSha:'same-sha',url:'https://github.com/team/project/pull/7',destination:'old-destination',provider:'github'};
 window.options={destination:'old-destination',provider:'github',issues:true,issueTypes:['Issue'],issueStates:['open','closed'],labels:true,assignees:true,pipelines:true,pipelineActions:['run']};
 window.issue={id:'7',title:'Original issue',body:'Original issue body',state:'open',revision:'same-revision',assignees:[],labels:[],destination:'old-destination',url:'https://github.com/team/project/issues/7'};
 window.store={activeRuntimeId:'a',connection:{address:'http://a',token:'paired'},connected:true,runtimes:[{profile:{id:'a',name:'Build computer',nameIsCustom:true,connection:{address:'http://a',token:'paired'}}}],workspace:{repositories:[{id:'repo',name:'Project',branch:'feature',path:'/repo',gitIdentity:'github.com/team/project'}],jiraSources:[{id:'jira',name:'Team issues',site:'https://team.atlassian.net',project:'TEAM'}],tasks:[]},request:async(path,input,schema)=>{
  window.requests.push({path,input});
- if(path==='/api/scm/source/identity')return decode(schema,{readerIdentity:'same-account',destination:window.currentDestination});
+ if(path==='/api/scm/source/identity')return decode(schema,{readerIdentity:window.currentReader,destination:window.currentDestination});
+ if(window.guardReads&&(input.expectedDestination!==window.currentDestination||input.expectedReaderIdentity!==window.currentReader))throw new RuntimeRequestError({kind:'response',status:409,message:'The read account or destination changed.'});
  if(path==='/api/scm/pulls/options/read')return decode(schema,{provider:'github',draft:true,destination:'old-destination'});
  if(path==='/api/scm/pulls/overview')return decode(schema,{pulls:[],page:1,hasMore:false});
  if(path==='/api/scm/work/pipelines/definitions')return decode(schema,{items:[{id:'build',name:'Build'}]});
  throw new RuntimeRequestError({kind:'response',status:409,message:'The displayed destination changed before dispatch.'});
 }};
+function ReadProbe(){const read=useVerifiedRead({repositoryId:'repo'});window.readVerified=()=>read('/api/scm/pulls/options/read',{repositoryId:'repo'},Schema.Unknown).then(()=>({ok:true}),error=>({error:error.message}));return <div>Read probe</div>}
 const app=createRoot(document.getElementById('app'));window.render=(mode=window.mode)=>{window.mode=mode;app.render(<ApplicationStateProvider><div key={mode}>
- {mode==='comment'?<PullCommentComposer repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['comment']}}} onDone={()=>window.completed.push('comment')}/>:
+ {mode==='read-probe'?<ReadProbe/>:mode==='comment'?<PullCommentComposer repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['comment']}}} onDone={()=>window.completed.push('comment')}/>:
  mode==='edit-pr'?<PullActions repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['edit'],reviewDecisions:[],mergeMethods:[]}}} mergeStatus={{headSha:window.pull.headSha,signals:[],warnings:[],checks:{busy:false,ready:true,error:'',readConnected:true,refresh:()=>{}}}} onDone={()=>window.completed.push('edit')}/>:
  mode==='create-pr'?<CreatePull initialRepositoryId="repo" onClose={()=>window.completed.push('close')} onCreated={()=>window.completed.push('create')}/>:
  <WorkForm kind={mode==='pipeline'?'run':mode.startsWith('create-')?'create':'edit'} repositoryId={mode==='create-jira'?undefined:'repo'} jiraSourceId={mode==='create-jira'?'jira':undefined} issue={mode==='edit-issue'?window.issue:undefined} initialRef="main" options={mode==='create-jira'?{...window.options,provider:'jira'}:window.options} onClose={()=>window.completed.push('close')} onDone={()=>window.completed.push('work')}/>}
@@ -178,8 +182,70 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   }
+  const page = await browser.newPage()
+  await page.setContent('<div id="app"></div>')
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.evaluate(() => {
+    window.guardReads = true
+    window.render('read-probe')
+  })
+  await page.getByText('Read probe').waitFor()
+  assert.deepEqual(
+    await page.evaluate(() => Promise.all([window.readVerified(), window.readVerified()])),
+    [{ ok: true }, { ok: true }],
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.path === '/api/scm/source/identity').length,
+    ),
+    1,
+  )
+  await page.evaluate(() => {
+    window.currentDestination = 'replacement-destination'
+  })
+  assert.match(
+    (await page.evaluate(() => window.readVerified())).error,
+    /account or destination changed/,
+  )
+  await page.evaluate(() => {
+    window.currentDestination = 'old-destination'
+    window.currentReader = 'another-account'
+  })
+  assert.match(
+    (await page.evaluate(() => window.readVerified())).error,
+    /account or destination changed/,
+  )
+  await page.evaluate(() => {
+    const request = window.store.request
+    window.store = { ...window.store, request: (...args) => request(...args) }
+    window.render('read-probe')
+  })
+  await page.getByText('Read probe').waitFor()
+  assert.match(
+    (await page.evaluate(() => window.readVerified())).error,
+    /account or destination changed/,
+  )
+  const reads = await page.evaluate(() =>
+    window.requests.filter((r) => r.path === '/api/scm/pulls/options/read'),
+  )
+  assert.equal(reads.length, 5)
+  assert.equal(
+    reads.every(
+      (r) =>
+        r.input.expectedDestination === 'old-destination' &&
+        r.input.expectedReaderIdentity === 'same-account',
+    ),
+    true,
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.path === '/api/scm/source/identity').length,
+    ),
+    1,
+  )
+  await page.close()
   console.log(
-    'Real desktop forms: issue creation and pipeline runs show captured project/source/computer targets; comments, PR edits/creation, issue creation/edits and pipeline runs retain their displayed destination, preserve drafts on 409, and verify read identities.',
+    'Real desktop forms retain displayed targets and drafts on 409. Concurrent verified reads share identity discovery and pin both account and destination across later reads.',
   )
 } finally {
   await browser.close()

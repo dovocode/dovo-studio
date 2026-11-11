@@ -34,7 +34,7 @@ import {usePulls} from '${root}/packages/extension-scm/src/pulls/list/use-pulls'
 }
 const profile={id:'owner',name:'Owner',createdAt:'2026-10-27',connection:{address:'http://owner.lan',token:'paired-fixture'}};
 window.reads=[];window.wireBytes=0;window.cacheWrites=0;window.sectionWrites=0;window.revision=0;window.pages=[[7,6],[5,4]];
-const cache={readEffect:()=>Effect.succeed(null),writeEffect:key=>Effect.sync(()=>{window.cacheWrites++;if(JSON.parse(key)[1]==='detail-section'||JSON.parse(key)[1]==='list-v2'&&JSON.parse(key)[4]!=='identity')window.sectionWrites++}),removeEffect:()=>Effect.void};
+const cache={readEffect:(key)=>Effect.tryPromise({try:async()=>{if(!window.holdCache)return null;await new Promise(resolve=>(window.releaseCache??=[]).push(resolve));window.cacheReturned=(window.cacheReturned??0)+1;const saved=key.includes('detail')?window.savedDetail:window.savedPage;return saved?{value:saved,cachedAt:0}:null},catch:error=>error}),writeEffect:key=>Effect.sync(()=>{window.cacheWrites++;if(JSON.parse(key)[1]==='detail-section'||JSON.parse(key)[1]==='list-v2'&&JSON.parse(key)[4]!=='identity')window.sectionWrites++}),removeEffect:()=>Effect.void};
 const runtimeReadCache=()=>cache;
 const pull=number=>({number,title:'PR '+number+' revision '+window.revision,url:'https://github.com/team/project/pull/'+number,state:'open',draft:false,author:'Dominic',viewerIsAuthor:true,updatedAt:'2026-10-27',head:'feature',base:'main',labels:[]});
 const readRuntimeEffect=(_profile,path,input,schema)=>Effect.tryPromise({try:async()=>{
@@ -49,6 +49,8 @@ const readRuntimeEffect=(_profile,path,input,schema)=>Effect.tryPromise({try:asy
   const value=path.endsWith('/overview')
     ? {pulls:(window.pages[input.page-1]??[]).map(number=>({...pull(number),title:'PR '+number+' older '+(input.page===2?window.olderRevision??0:0)})),page:input.page,hasMore:input.page<window.pages.length}
     : {destination:'destination',pull:{...pull(7),body:'Description '+'x'.repeat(16000),headSha:'a'.repeat(40),baseSha:'b'.repeat(40),checksState:window.pending?'PENDING':'SUCCESS',repositoryUrl:'https://github.com/team/project',additions:1,deletions:0,changedFiles:1,mergeable:true,reviewers:[],assignees:[]},files:[],comments:[],checks:window.pending?[{name:'Build',status:'IN_PROGRESS'}]:[],warnings:[]};
+  if(path.endsWith('/overview'))window.savedPage={...value,pulls:value.pulls.map(pull=>({...pull,title:'Old saved PR'}))};else window.savedDetail={...value,pull:{...value.pull,title:'Old saved PR'}};
+  if(window.failLive)throw Error('Live PR unavailable');
   const reply=input.conditional&&input.knownVersion===readVersion ? {unchanged:true,readVersion} : {...value,readVersion,stale:!!window.revalidating};
   window.wireBytes+=JSON.stringify(reply).length;
   return decode(schema,reply);
@@ -122,19 +124,37 @@ try {
   for (const platform of ['desktop', 'mobile']) {
     const built = await fixture(platform)
     const errors = []
-    const createPage = async (list = false) => {
+    const createPage = async (list = false, failLive = false) => {
       const page = await browser.newPage()
       page.setDefaultTimeout(7000)
       page.on('pageerror', (error) => errors.push(error.message))
       await page.clock.install()
       await page.setContent('<div id="app"></div>')
-      await page.evaluate((list) => (window.listMode = list), list)
+      await page.evaluate(
+        ({ list, failLive }) => {
+          window.listMode = list
+          window.failLive = failLive
+        },
+        { list, failLive },
+      )
+      await page.addScriptTag({ content: 'window.holdCache=true' })
       await page.addScriptTag({ content: built.outputFiles[0].text })
       return page
     }
     const page = await createPage()
     await page.waitForFunction(
       () => window.details?.[0]?.sections.status.ready && window.details[0].sections.stack.ready,
+    )
+    await page.waitForFunction(() => window.releaseCache?.length > 0)
+    await page.evaluate(() => {
+      window.holdCache = false
+      for (const release of window.releaseCache) release()
+    })
+    await page.waitForFunction(() => window.cacheReturned > 0)
+    assert.equal(
+      await page.getByText('Old saved PR', { exact: true }).count(),
+      0,
+      'Late saved PR detail cannot replace live content',
     )
     const initial = await page.evaluate(() => window.reads.length)
     await page.evaluate(() => window.addConsumer())
@@ -219,6 +239,17 @@ try {
 
     const list = await createPage(true)
     await list.waitForFunction(() => window.list?.pages[0]?.pulls.length === 2)
+    await list.waitForFunction(() => window.releaseCache?.length > 0)
+    await list.evaluate(() => {
+      window.holdCache = false
+      for (const release of window.releaseCache) release()
+    })
+    await list.waitForFunction(() => window.cacheReturned > 0)
+    assert.equal(
+      await list.getByText('Old saved PR', { exact: true }).count(),
+      0,
+      'Late saved PR list cannot replace live content',
+    )
     await list.evaluate(() =>
       window.list.more(window.list.pages[0].source?.key ?? window.list.pages[0].sourceKey),
     )
@@ -270,6 +301,28 @@ try {
       [8, 7, 6, 5],
     )
     await list.close()
+    for (const listMode of [false, true]) {
+      const offline = await createPage(listMode, true)
+      await offline.waitForFunction(
+        (list) => (list ? window.list?.pages[0]?.error : window.details?.[0]?.error),
+        listMode,
+      )
+      await offline.waitForFunction(() => window.releaseCache?.length > 0)
+      await offline.evaluate(() => {
+        window.holdCache = false
+        for (const release of window.releaseCache) release()
+      })
+      await offline.getByText('Old saved PR', { exact: true }).first().waitFor()
+      assert.equal(
+        await offline.evaluate(
+          (list) => (list ? window.list.pages[0].error : window.details[0].error),
+          listMode,
+        ),
+        'Live PR unavailable',
+        'Saved content must retain the live failure',
+      )
+      await offline.close()
+    }
     assert.deepEqual(errors, [])
     console.log(
       JSON.stringify({

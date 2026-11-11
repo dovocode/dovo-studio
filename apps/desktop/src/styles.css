@@ -7,3 +7,10 @@
 .input-preview-drag button {
   -webkit-app-region: no-drag;
 }
+
+/* Studio renders in a transparent native view. The app root paints its normal
+   background; browser slots can stay live below portalled menus and dialogs. */
+html,
+body {
+  background: transparent;
+}

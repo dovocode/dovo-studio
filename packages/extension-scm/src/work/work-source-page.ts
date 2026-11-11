@@ -12,7 +12,7 @@ import {
   type ForgePipeline,
   type ForgeWorkOptions,
 } from '@dovo/protocol'
-import { verifySourceReader } from '../connections/source-readers'
+import { recheckSourceReader, sourceReadGuard } from '../connections/source-readers'
 import type { WorkSource } from './work-sources'
 
 type ForgeIssuePage = typeof forgeIssuePageSchema.Type
@@ -160,7 +160,7 @@ export function loadWorkSourcePage(
   return Effect.gen(function* () {
     const reader = source.reader
     const request = jiraReader(reader.readCache, reader.scope, reader.requestEffect)
-    const readGuard = yield* verifySourceReader(reader)
+    const readGuard = yield* sourceReadGuard(reader)
     const jira = mode === 'issues' && !!source.jira
     const readOptions = request(
       '/api/scm/work/options',
@@ -272,5 +272,5 @@ export function loadWorkSourcePage(
         : undefined,
       optionsError,
     }
-  })
+  }).pipe(Effect.tapError((error) => recheckSourceReader(source.reader, error)))
 }

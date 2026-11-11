@@ -39,6 +39,7 @@ import {
 } from '@dovo/studio-ui'
 import { usePulls } from './use-pulls'
 import { PullRow } from './row'
+import { usePullIntentPrefetch } from './intent-prefetch'
 import { PullDetail } from '../detail/detail'
 import { CreatePull } from './create'
 import { ForgeConnections, useForgeConnections } from '../../connections/forge-connections'
@@ -302,6 +303,22 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
       open(pull.source, pull.number)
     }
   }
+  // Prefetch only a listed, connected row that is not already open.
+  const { intent, prefetch } = usePullIntentPrefetch(
+    (target) =>
+      !(
+        selected?.source.key === target.source.key &&
+        selected.source.scope === target.source.scope &&
+        selected.number === target.number
+      ) &&
+      pulls.some(
+        (pull) =>
+          pull.number === target.number &&
+          pull.source.key === target.source.key &&
+          pull.source.scope === target.source.scope &&
+          pull.source.connected,
+      ),
+  )
   const addSelection = (pull: (typeof pulls)[number]) => {
     const key = rowKey(pull)
     const chosen = marked.includes(key)
@@ -745,8 +762,12 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       selectionCount={marked.includes(rowKey(p)) ? marked.length : 1}
                       onClick={(event) => selectRow(p, event)}
                       onSelect={() => open(p.source, p.number)}
+                      onIntent={(resting) =>
+                        intent(resting ? { source: p.source, number: p.number } : null)
+                      }
                     />
                   ))}
+                  {prefetch}
                 </div>
                 {pages.map((page) => (
                   <div key={page.source.key} className="mt-3">

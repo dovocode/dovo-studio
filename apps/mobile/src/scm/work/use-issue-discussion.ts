@@ -85,7 +85,8 @@ function useSection(input: Input, section: Section) {
   }, [key, readCache])
   useEffect(() => {
     let stopped = false
-    let hydrated = false
+    let liveLoaded = false
+    let liveFinished = false
     const invalidated = token.current !== refreshToken
     if (invalidated) {
       forceNext.current = true
@@ -101,9 +102,39 @@ function useSection(input: Input, section: Section) {
       forceNext.current = false
       moreNext.current = undefined
     }
+    // Cache reads may finish after the live section. Cache invalidation stays ordered with writes.
+    const hydration = (async () => {
+      try {
+        if (invalidated) {
+          await readCache?.remove(key)
+          const legacy = await readCache?.read(cacheKey, cachedSchema)
+          if (legacy && !legacy.value.overviewOnly) await readCache?.remove(cacheKey)
+        }
+        const saved = invalidated
+          ? undefined
+          : ((await readCache?.read(key, cachedSchema)) ??
+            (await readCache?.read(cacheKey, cachedSchema)))
+        if (stopped || liveLoaded) return
+        if (saved && !saved.value.overviewOnly && matchingIssueSection(overview, saved.value)) {
+          depth.current = saved.value.loadedPages ?? 1
+          setState((current) => ({
+            ...current,
+            value: current.value ?? { ...saved.value, stale: true },
+            error: current.error,
+          }))
+        }
+      } catch (error) {
+        if (!stopped && !liveFinished)
+          setState((current) => ({
+            ...current,
+            error: error instanceof Error ? error.message : String(error),
+          }))
+      }
+    })()
     const loadSection = async () => {
       const publish = async (value: ForgeIssueDetail, pages: number) => {
         if (stopped) return
+        liveLoaded = true
         const unchanged = stateRef.current.scope === key && stateRef.current.value === value
         if (!unchanged)
           setState((current) => ({ ...current, value, error: value.refreshError ?? '' }))
@@ -114,27 +145,7 @@ function useSection(input: Input, section: Section) {
         }
       }
       try {
-        if (!hydrated) {
-          hydrated = true
-          if (invalidated) {
-            await readCache?.remove(key)
-            const legacy = await readCache?.read(cacheKey, cachedSchema)
-            if (legacy && !legacy.value.overviewOnly) await readCache?.remove(cacheKey)
-          }
-          const saved = invalidated
-            ? undefined
-            : ((await readCache?.read(key, cachedSchema)) ??
-              (await readCache?.read(cacheKey, cachedSchema)))
-          if (stopped) return
-          if (saved && !saved.value.overviewOnly && matchingIssueSection(overview, saved.value)) {
-            depth.current = saved.value.loadedPages ?? 1
-            setState((current) => ({
-              ...current,
-              value: current.value ?? { ...saved.value, stale: true },
-              error: '',
-            }))
-          }
-        }
+        if (invalidated) await hydration
         if (!enabled || !overview || !(AppState.currentState === 'active')) return
         setState((current) => ({ ...current, busy: true }))
         const refresh = force
@@ -202,6 +213,7 @@ function useSection(input: Input, section: Section) {
             value: current.value ? { ...current.value, stale: true } : undefined,
           }))
       } finally {
+        liveFinished = true
         if (!stopped) setState((current) => ({ ...current, busy: false }))
       }
     }

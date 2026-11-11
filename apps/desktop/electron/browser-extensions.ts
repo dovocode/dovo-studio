@@ -1,3 +1,4 @@
+import { studioContents } from './studio-window.js'
 import { readLocalSettingsSection } from '@dovo/protocol/local-settings'
 import {
   browserExtensionCommandSchema,
@@ -880,7 +881,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
         if (!profile.session.extensions.getExtension(record.id))
           throw new Error('Enable this extension before opening it.')
         const [width, height] = window.getContentSize()
-        const zoom = window.webContents.getZoomFactor()
+        const zoom = studioContents(window).getZoomFactor()
         const anchor = {
           x: Math.round(command.anchor.x * zoom),
           y: Math.round(command.anchor.y * zoom),

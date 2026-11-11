@@ -222,7 +222,7 @@ export class RuntimeConnections {
     const base = subscriber.sequence
     subscriber.publish({
       type: 'delta',
-      delta: snapshotDelta(subscriber.snapshot, projected, true, true, true),
+      delta: snapshotDelta(subscriber.snapshot, projected, true, true, true, true),
       epoch: pool.epoch,
       base,
       sequence: base + 1,

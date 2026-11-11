@@ -338,6 +338,7 @@ export function runtimeSnapshot(
       queuePausePreservationSupported: true,
       directMessageSupported: true,
       messageSetupSupported: true,
+      threadStartSupported: true,
       fullTurnSettingsSupported: true,
       promptSuggestionsEnabled: s.preferences.get().suggestNextPrompt,
       runtimeDictationSupported: true,

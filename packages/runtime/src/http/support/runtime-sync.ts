@@ -38,6 +38,7 @@ type View = {
   compact: boolean
   fieldUpdates: boolean
   incremental: boolean
+  fileUpdates: boolean
   device: { id: string; owner: boolean }
   epoch: string
   expiry?: ReturnType<typeof setTimeout>
@@ -64,6 +65,7 @@ export function attachRuntimeSync(
   taskUpdates = false,
   settledLimit?: number,
   incremental = false,
+  fileUpdates = false,
 ) {
   let hub = hubs.get(services)
   if (!hub) {
@@ -80,6 +82,7 @@ export function attachRuntimeSync(
     taskUpdates,
     settledLimit,
     incremental,
+    fileUpdates,
   )
 }
 export async function disposeRuntimeSync(services: Services) {
@@ -165,11 +168,20 @@ class RuntimeSync {
     pagedHistory = false,
     settledLimit?: number,
     incremental = false,
+    fileUpdates = false,
   ) {
     const device = this.services.devices.authenticate(token)
     const viewId = JSON.stringify([
       device.id,
-      incremental ? 'incremental' : fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy',
+      fileUpdates
+        ? 'files'
+        : incremental
+          ? 'incremental'
+          : fieldUpdates
+            ? 'fields'
+            : compact
+              ? 'lean'
+              : 'legacy',
       taskIds ? [...taskIds].sort() : null,
       pagedHistory,
       settledLimit,
@@ -185,6 +197,7 @@ class RuntimeSync {
         compact,
         fieldUpdates,
         incremental,
+        fileUpdates,
         epoch: randomUUID(),
         token,
         clients: new Set(),
@@ -236,6 +249,7 @@ class RuntimeSync {
     taskUpdates = false,
     settledLimit?: number,
     incremental = false,
+    fileUpdates = false,
   ) {
     let current = this.view(
       token,
@@ -245,6 +259,7 @@ class RuntimeSync {
       pagedHistory,
       settledLimit,
       incremental,
+      fileUpdates,
     )
     clearTimeout(current.expiry)
     const client: Client = {
@@ -318,6 +333,7 @@ class RuntimeSync {
                 pagedHistory,
                 settledLimit,
                 incremental,
+                fileUpdates,
               )
               if (nextView !== current) {
                 // The view's current snapshot is a valid predecessor only when
@@ -376,6 +392,7 @@ class RuntimeSync {
                               compact,
                               fieldUpdates,
                               incremental,
+                              fileUpdates,
                             ),
                           } satisfies SyncFrame)
                         : ({
@@ -623,7 +640,7 @@ class RuntimeSync {
           internetSetupSupported: !s.peers.internet.contains(view.device.id),
           relaySetupSupported: !s.peers.internet.contains(view.device.id),
         }
-    const tag = snapshotTag(next)
+    const tag = memoryAttribution(s).measure('sync tag', () => snapshotTag(next))
     view.signature = signature
     view.checked = Date.now()
     if (!tag || tag === view.tag) return
@@ -640,7 +657,14 @@ class RuntimeSync {
         sequence: view.sequence,
         base,
         tag,
-        delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates, view.incremental),
+        delta: snapshotDelta(
+          previous,
+          next,
+          view.compact,
+          view.fieldUpdates,
+          view.incremental,
+          view.fileUpdates,
+        ),
       } satisfies SyncFrame),
     )
     view.history.push({ sequence: view.sequence, wire })

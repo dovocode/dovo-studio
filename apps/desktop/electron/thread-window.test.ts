@@ -50,6 +50,16 @@ class MockWindow {
     ;(this.webContents.listeners.get('unresponsive') as (() => void) | undefined)?.()
   }
 }
+// Window lifecycle policy is tested here; native view composition has its own Electron check.
+vi.mock('./studio-window.js', () => ({
+  createStudioWindow: (options: Electron.BrowserWindowConstructorOptions) =>
+    new MockWindow(options),
+  studioContents: (window: MockWindow) => ({
+    ...window.webContents,
+    loadFile: window.loadFile,
+    loadURL: window.loadURL,
+  }),
+}))
 vi.mock('electron', () => ({
   app: { getPath: () => '/unused', getName: () => 'Dovo Studio' },
   nativeTheme: { shouldUseDarkColors: true },

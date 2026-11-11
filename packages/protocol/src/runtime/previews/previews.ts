@@ -191,6 +191,63 @@ export type BrowserWorkspaceState = {
   tabs: { key: string; tab: BrowserWorkspaceTab }[]
   activeId: string
 }
+const browserBoundsSchema = mutableStruct({
+  x: minValue(
+    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({
+          minimum: Number.MIN_SAFE_INTEGER,
+          maximum: Number.MAX_SAFE_INTEGER,
+        }),
+      ),
+    ),
+    0,
+  ),
+  y: minValue(
+    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({
+          minimum: Number.MIN_SAFE_INTEGER,
+          maximum: Number.MAX_SAFE_INTEGER,
+        }),
+      ),
+    ),
+    0,
+  ),
+  width: maxValue(
+    minValue(
+      Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({
+            minimum: Number.MIN_SAFE_INTEGER,
+            maximum: Number.MAX_SAFE_INTEGER,
+          }),
+        ),
+      ),
+      1,
+    ),
+    5000,
+  ),
+  height: maxValue(
+    minValue(
+      Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({
+            minimum: Number.MIN_SAFE_INTEGER,
+            maximum: Number.MAX_SAFE_INTEGER,
+          }),
+        ),
+      ),
+      1,
+    ),
+    5000,
+  ),
+})
+
 export const browserCommandSchema = Schema.Union([
   mutableStruct({
     action: Schema.Literal('element-snapshot'),
@@ -349,62 +406,7 @@ export const browserCommandSchema = Schema.Union([
         ),
       }),
     ),
-    bounds: mutableStruct({
-      x: minValue(
-        Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-          Schema.check(Schema.isInt()),
-          Schema.check(
-            Schema.isBetween({
-              minimum: Number.MIN_SAFE_INTEGER,
-              maximum: Number.MAX_SAFE_INTEGER,
-            }),
-          ),
-        ),
-        0,
-      ),
-      y: minValue(
-        Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-          Schema.check(Schema.isInt()),
-          Schema.check(
-            Schema.isBetween({
-              minimum: Number.MIN_SAFE_INTEGER,
-              maximum: Number.MAX_SAFE_INTEGER,
-            }),
-          ),
-        ),
-        0,
-      ),
-      width: maxValue(
-        minValue(
-          Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-            Schema.check(Schema.isInt()),
-            Schema.check(
-              Schema.isBetween({
-                minimum: Number.MIN_SAFE_INTEGER,
-                maximum: Number.MAX_SAFE_INTEGER,
-              }),
-            ),
-          ),
-          1,
-        ),
-        5000,
-      ),
-      height: maxValue(
-        minValue(
-          Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-            Schema.check(Schema.isInt()),
-            Schema.check(
-              Schema.isBetween({
-                minimum: Number.MIN_SAFE_INTEGER,
-                maximum: Number.MAX_SAFE_INTEGER,
-              }),
-            ),
-          ),
-          1,
-        ),
-        5000,
-      ),
-    }),
+    bounds: browserBoundsSchema,
   }),
   mutableStruct({
     action: Schema.Literal('watch-frames'),
@@ -418,6 +420,7 @@ export const browserCommandSchema = Schema.Union([
     occluded: Schema.optional(Schema.Boolean),
     /** Return keyboard focus to the page after a passive overlay, unless Studio receives input. */
     preserveFocus: Schema.optional(Schema.Boolean),
+    bounds: Schema.optional(browserBoundsSchema),
   }),
   mutableStruct({
     action: Schema.Literals([

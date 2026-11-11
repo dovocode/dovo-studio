@@ -7,8 +7,10 @@ import {
   forgeWorkOptionsSchema,
   forgeWorkQuerySchema,
   runtimeProfile,
+  RuntimeRequestError,
   type RuntimeReadCache,
 } from '@dovo/protocol'
+import { recheckSourceReader } from '../connections/source-readers'
 import type { WorkSource } from './work-sources'
 import {
   cachedWorkIssuePageSchema,
@@ -50,8 +52,11 @@ const issue = (id: number, state = 'Waiting for review') =>
     updatedAt: '',
     revision: '',
   })
+// Live identity verification is shared per source scope, so each fixture is its own source.
+let fixtures = 0
 function fixture(response: (input: unknown) => unknown) {
   const calls: { path: string; input: unknown }[] = []
+  const identity = { readerIdentity: 'jira-account', destination: 'jira-destination' }
   const profile = runtimeProfile(
     { address: 'http://mac.local:51464', token: 'paired-fixture-token' },
     'Mac',
@@ -63,7 +68,7 @@ function fixture(response: (input: unknown) => unknown) {
         return decode(
           schema,
           path === '/api/scm/source/identity'
-            ? { readerIdentity: 'jira-account', destination: 'jira-destination' }
+            ? identity
             : path.endsWith('/options')
               ? options
               : response(input),
@@ -73,7 +78,7 @@ function fixture(response: (input: unknown) => unknown) {
     })
   const source = {
     key: 'mac-jira-tracker',
-    scope: 'mac-jira-tracker-v1',
+    scope: `mac-jira-tracker-v1-${++fixtures}`,
     name: 'Team backlog',
     runtimeId: profile.id,
     runtimeName: 'Mac',
@@ -90,7 +95,7 @@ function fixture(response: (input: unknown) => unknown) {
     requestEffect,
     request: (path, input, schema) => Effect.runPromise(requestEffect(path, input, schema)),
   } satisfies WorkSource
-  return { source: { ...source, reader: source }, calls }
+  return { source: { ...source, reader: source }, calls, identity }
 }
 
 it('queries Jira before pagination so an older open issue with a custom status is discoverable', async () => {
@@ -364,6 +369,86 @@ for (const change of ['destination', 'readerIdentity'] as const) {
     expect(calls.filter((call) => call.path.endsWith('/list'))).toHaveLength(1)
   })
 }
+
+it('reuses the live-verified Jira account for later reads without another identity lookup', async () => {
+  const { source, calls } = fixture(() => ({ items: [issue(1)] }))
+  await Effect.runPromise(loadWorkSourcePage(source, 'issues', '', 'open', false))
+  await Effect.runPromise(loadWorkSourcePage(source, 'issues', '', 'open', true))
+  expect(calls.filter((call) => call.path.endsWith('/identity'))).toHaveLength(1)
+  const reads = calls.filter((call) => !call.path.endsWith('/identity'))
+  expect(reads.length).toBeGreaterThan(1)
+  for (const read of reads)
+    expect(read.input).toMatchObject({
+      expectedReaderIdentity: 'jira-account',
+      expectedDestination: 'jira-destination',
+    })
+})
+
+it('lets the runtime reject a changed Jira account, rediscovers it and never adopts it', async () => {
+  const { source, calls, identity } = fixture(() => ({ items: [issue(1)] }))
+  const rawRead = source.reader.requestEffect
+  const guardSchema = Schema.Struct({
+    expectedDestination: Schema.optional(Schema.String),
+    expectedReaderIdentity: Schema.optional(Schema.String),
+  })
+  // The runtime checks the sent guard against its current account, as forge-work does.
+  const attempts: { path: string; input: unknown }[] = []
+  source.reader.requestEffect = (path, input, schema) =>
+    Effect.gen(function* () {
+      attempts.push({ path, input })
+      if (!path.endsWith('/identity'))
+        yield* Effect.try({
+          try: () => guardSource(identity, decode(guardSchema, input)),
+          catch: (error) =>
+            new RuntimeRequestError({ kind: 'response', status: 409, message: String(error) }),
+        })
+      return yield* rawRead(path, input, schema)
+    })
+  // The collection pins the account its discovery verified.
+  const reader = { ...source.reader, readerIdentity: 'jira-account' }
+  const pinned = { ...source, reader }
+  await Effect.runPromise(loadWorkSourcePage(pinned, 'issues', '', 'open', false))
+  identity.readerIdentity = 'replacement-account'
+  attempts.length = 0
+  await expect(
+    Effect.runPromise(loadWorkSourcePage(pinned, 'issues', '', 'open', true)),
+  ).rejects.toThrow(/changed/)
+  // One guarded read with the old account, then rediscovery; the read is not retried.
+  expect(attempts.map((call) => call.path)).toEqual([
+    '/api/scm/work/issues/list',
+    '/api/scm/source/identity',
+  ])
+  expect(attempts[0]?.input).toMatchObject({ expectedReaderIdentity: 'jira-account' })
+  expect(calls.filter((call) => call.path.endsWith('/list'))).toHaveLength(1)
+  attempts.length = 0
+  // The rediscovered account differs from the pinned one, so the next read stops before dispatch.
+  await expect(
+    Effect.runPromise(loadWorkSourcePage(pinned, 'issues', '', 'open', true)),
+  ).rejects.toThrow(/account changed/)
+  expect(attempts).toEqual([])
+})
+
+it('verifies again after a failed discovery instead of reusing the old account', async () => {
+  const { source, calls } = fixture(() => ({ items: [issue(1)] }))
+  await Effect.runPromise(loadWorkSourcePage(source, 'issues', '', 'open', false))
+  const rawRead = source.reader.requestEffect
+  let fail = true
+  source.reader.requestEffect = (path, input, schema) =>
+    path.endsWith('/identity') && fail
+      ? Effect.fail(new RuntimeRequestError({ kind: 'connection', message: 'Offline' }))
+      : rawRead(path, input, schema)
+  // A 409 makes the reader rediscover; that discovery fails during an outage.
+  await Effect.runPromise(
+    recheckSourceReader(
+      source.reader,
+      new RuntimeRequestError({ kind: 'response', status: 409, message: 'changed' }),
+    ),
+  )
+  fail = false
+  calls.length = 0
+  await Effect.runPromise(loadWorkSourcePage(source, 'issues', '', 'open', true))
+  expect(calls[0]?.path).toBe('/api/scm/source/identity')
+})
 
 it('publishes Jira content while options are still pending and retains it on an options failure', async () => {
   const { source } = fixture(() => ({ items: [issue(1)] }))

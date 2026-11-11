@@ -607,6 +607,7 @@ export function startRuntimeSync(
         history: 'paged',
         subscriptions: 'live',
         incremental: '1',
+        files: '1',
       })
       for (const id of value.tasks.keys()) query.append('task', id)
       if (listLimit !== undefined) query.set('settled', String(listLimit))
@@ -623,8 +624,8 @@ export function startRuntimeSync(
         options.active?.() === false
       )
         return
-      taskUpdates = ticket.format === 5 || ticket.format === 6
-      incremental = ticket.format === 6
+      taskUpdates = ticket.format === 5 || ticket.format === 6 || ticket.format === 7
+      incremental = ticket.format === 6 || ticket.format === 7
       const address = createRuntimeClient(connection).socketUrl('/ws/sync', ticket, {
         route: 'stream',
       })

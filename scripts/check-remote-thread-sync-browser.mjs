@@ -3,7 +3,10 @@ import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { startRuntime } from '../packages/runtime/dist/index.js'
+import { fixture } from '../packages/runtime/dist/testing/fixture.js'
 import { chromium } from './browser/harness.mjs'
 
 // Real browser/client/runtime boundary. No transport or reconciliation mocks.
@@ -36,6 +39,7 @@ window.begin=connection=>{
   platform: 'browser',
 })
 const token = 'remote-thread-sync-browser-paired-owner-token'
+const project = await fixture()
 const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
 const server = createServer((_request, response) => {
   response.setHeader('Content-Type', 'text/html')
@@ -45,16 +49,22 @@ let browser
 try {
   runtime.services.store.update((workspace) => ({
     ...workspace,
+    repositories: project.workspace.repositories,
     tasks: ['a', 'b'].map((id) => ({
       id,
       title: `Thread ${id}`,
       agentId: '',
-      repositoryId: '',
+      repositoryId: 'repo',
       status: 'draft',
       createdAt: '2026-11-11',
       draft: '',
       example: false,
-      files: [],
+      files: ['a.ts', 'b.ts'].map((path) => ({
+        path,
+        before: '',
+        after: 'source\n'.repeat(10000),
+        viewed: false,
+      })),
       messages: [{ id: `reply-${id}`, role: 'assistant', text: `Remote ${id}\n`.repeat(10000) }],
       turns: [
         {
@@ -139,6 +149,35 @@ try {
   assert.equal(result.retainedCheckpoint, true)
   assert.equal(result.socketCount, 1)
   assert.deepEqual(requests, ['/api/sync/ticket'])
+  const reviewStart = await page.evaluate(() => {
+    window.beforeReview = window.snapshot.workspace.tasks.find((task) => task.id === 'a')
+    return window.frames.length
+  })
+  runtime.services.store.updateTaskHistory('a', (task) => ({
+    ...task,
+    files: task.files.map((file, index) => (index === 0 ? { ...file, viewed: true } : file)),
+  }))
+  await page.waitForFunction(
+    () => window.snapshot.workspace.tasks.find((task) => task.id === 'a')?.files[0]?.viewed,
+  )
+  const review = await page.evaluate((start) => {
+    const frames = window.frames.slice(start)
+    const task = window.snapshot.workspace.tasks.find((task) => task.id === 'a')
+    return {
+      bytes: new TextEncoder().encode(JSON.stringify(frames)).length,
+      changes: frames
+        .filter((frame) => frame.type === 'delta')
+        .flatMap((frame) => frame.delta.workspace.tasks?.changes ?? []),
+      retainedFile: task.files[1] === window.beforeReview.files[1],
+      retainedBody: task.files[0].after === window.beforeReview.files[0].after,
+    }
+  }, reviewStart)
+  assert.equal(review.retainedFile, true)
+  assert.equal(review.retainedBody, true)
+  assert(review.bytes < 1000)
+  assert.deepEqual(review.changes[0].files.changes, [
+    { path: 'a.ts', fieldDelta: { values: { viewed: true }, removed: [] } },
+  ])
   const reconnectStart = await page.evaluate(() => {
     window.sockets.at(-1).close()
     return window.frames.length
@@ -213,12 +252,39 @@ try {
     }
   }
   commitSamples.sort((a, b) => a - b)
+  await writeFile(
+    join(project.directory, 'hello.txt'),
+    'Background refresh reached the live thread\n',
+  )
+  const changesRefresh = await page.evaluate(
+    async ({ address, token }) => {
+      const response = await fetch(`${address}/api/scm/changes`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repositoryId: 'repo', taskId: 'a', includeFiles: false }),
+      })
+      return { status: response.status, body: await response.text() }
+    },
+    { address: `http://127.0.0.1:${runtime.port}`, token },
+  )
+  assert.deepEqual(changesRefresh, { status: 200, body: '{"ok":true}' })
+  await page.waitForFunction(() =>
+    window.snapshot.workspace.tasks
+      .find((task) => task.id === 'a')
+      ?.files.some(
+        (file) =>
+          file.path === 'hello.txt' &&
+          file.after === 'Background refresh reached the live thread\n',
+      ),
+  )
   assert.deepEqual(errors, [])
   await page.evaluate(() => window.stop())
   console.log(
     JSON.stringify({
       scope: 'Managed Chromium to real HTTP/WS runtime; decoded application bytes',
       ...result,
+      review,
+      changesRefresh,
       rapidSwitches: 40,
       preparedSelections,
       commitToBrowserMedianMs: Number(commitSamples[6].toFixed(2)),
@@ -233,4 +299,5 @@ try {
     ),
   )
   await runtime.close()
+  await project.cleanup()
 }

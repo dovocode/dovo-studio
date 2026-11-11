@@ -2,6 +2,11 @@
 
 interface Window {
   dovo: {
+    onNativeTooltipDismiss: (listener: () => void) => () => void
+    nativeTooltip: (
+      visible: boolean,
+      regions: import('@dovo/studio-ui/native-tooltip').NativeTooltipRegion[],
+    ) => Promise<void>
     terminalPorts: true
     browserPageOnly: boolean
     accountStorage: import('@dovo/protocol').AccountStorage

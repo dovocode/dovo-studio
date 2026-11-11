@@ -97,6 +97,9 @@ vi.mock('electron', () => ({
     loadFile() {
       return Promise.resolve()
     }
+    loadURL() {
+      return Promise.resolve()
+    }
     static getAllWindows() {
       return []
     }
@@ -108,6 +111,19 @@ vi.mock('./window-unload.js', () => ({
   registerWindowUnload: vi.fn<() => void>(),
   closeStudioWindows: fixture.closeWindows,
 }))
+// Startup/shutdown policy uses the UI contents; native composition is checked in Electron.
+vi.mock('./studio-window.js', async () => {
+  const { BrowserWindow } = await import('electron')
+  return {
+    createStudioWindow: (options: Electron.BrowserWindowConstructorOptions) =>
+      new BrowserWindow(options),
+    studioContents: (window: Electron.BrowserWindow) =>
+      Object.assign(window.webContents, {
+        loadFile: window.loadFile.bind(window),
+        loadURL: window.loadURL.bind(window),
+      }),
+  }
+})
 vi.mock('./runtime-connection-health.js', () => ({ checkRuntimeConnection: fixture.confirm }))
 vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
 vi.mock('./linux-desktop.js', () => ({
@@ -444,6 +460,7 @@ it('keeps the runtime alive when update closing is cancelled and reopens after p
   await expect(prepare(beforeStop)).rejects.toThrow('Update cancelled')
   expect(prepareLocalRuntimeUpdate).not.toHaveBeenCalled()
   expect(beforeStop).not.toHaveBeenCalled()
+  expect(fixture.browserQuitting).toHaveBeenLastCalledWith(false)
   const windows = fixture.windows
   const quits = fixture.quit.mock.calls.length
   fixture.closeWindows.mockImplementationOnce(async () => {
@@ -482,6 +499,7 @@ it('keeps repeated quit requests blocked until detached tabs are saved, and perm
   beforeQuit(event)
   await vi.waitFor(() => expect(fixture.error).toHaveBeenCalled())
   expect(fixture.quit).not.toHaveBeenCalled()
+  expect(fixture.browserQuitting).toHaveBeenLastCalledWith(false)
   expect(fixture.stop).not.toHaveBeenCalled()
   expect(fixture.browserQuitting).not.toHaveBeenCalledWith(true)
 

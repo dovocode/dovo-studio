@@ -1339,3 +1339,83 @@ it('discards an outdated suggestion and ignores automation turns', async () => {
     s.db.close()
   }
 })
+
+it.each(['success', 'invalid', 'edited'] as const)(
+  'publishes Scope stages and clears only its progress after %s',
+  async (outcome) => {
+    const s = autoFixture()
+    const gate = testGate()
+    const stages: string[] = []
+    const unsubscribe = s.store.onCommitted((_before, after) => {
+      const step = after.tasks.find((task) => task.id === 'auto')?.preparation?.current
+      if (step) stages.push(step)
+    })
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        await gate.promise
+        run.onText(
+          outcome === 'invalid'
+            ? 'invalid JSON'
+            : JSON.stringify({
+                status: 'selected',
+                repositoryId: 'web',
+                links: [],
+                reason: 'Dashboard request',
+              }),
+        )
+      },
+    })
+    const before = s.store.task('auto')
+    let pending: Promise<unknown> | undefined
+    try {
+      pending = runClientEffect(
+        s.titles.selectProjectsEffect({ id: 'auto', text: 'Change the dashboard' }),
+      )
+      await vi.waitFor(() =>
+        expect(s.store.taskSummary('auto')).toMatchObject({
+          status: 'draft',
+          autoProject: true,
+          preparation: { current: 'scope' },
+        }),
+      )
+      expect(stages).toContain('scope-context')
+      expect(stages).toContain('scope')
+      if (outcome === 'edited')
+        s.store.updateTask('auto', (task) => ({ ...task, draft: 'Keep my new draft' }))
+      gate.resolve()
+      const result = await pending.then(
+        () => undefined,
+        (error) => (error instanceof Error ? error.message : String(error)),
+      )
+      const expectedErrors = {
+        success: undefined,
+        invalid: expect.stringMatching(/Scope returned an invalid/),
+        edited: expect.stringMatching(/thread changed during Scope/),
+      }
+      const expectedTasks = {
+        success: expect.objectContaining({ repositoryId: 'web' }),
+        invalid: before,
+        edited: expect.objectContaining({ draft: 'Keep my new draft' }),
+      }
+      expect(result).toEqual(expectedErrors[outcome])
+      expect(s.store.task('auto')).toEqual(expectedTasks[outcome])
+      expect(s.store.task('auto').preparation).toBeUndefined()
+    } finally {
+      gate.resolve()
+      await pending?.catch(() => {})
+      unsubscribe()
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)
+
+function testGate() {
+  let complete: () => void
+  const promise = new Promise<void>((resolve) => {
+    complete = resolve
+  })
+  return { promise, resolve: () => complete() }
+}

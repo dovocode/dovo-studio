@@ -3,7 +3,7 @@ import { Check, GitFork, LoaderCircle, RotateCcw, X } from 'lucide-react'
 import { preparationElapsed, type TaskPreparation } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 
-/** Step-by-step progress while the runtime creates a task's worktree and runs its setup. */
+/** Step-by-step progress while the runtime selects projects/models and prepares the agent. */
 export function PreparationProgress({
   preparation,
   onRetry,
@@ -29,7 +29,7 @@ export function PreparationProgress({
   const elapsed = failed ? '' : preparationElapsed(preparation.startedAt, now)
   return (
     <section
-      aria-label="Worktree setup progress"
+      aria-label="Thread startup progress"
       className="mx-auto w-full max-w-[var(--chat-max)] px-5 py-2 motion-safe:animate-[dovo-fade-in_200ms_ease-out]"
     >
       <div
@@ -38,7 +38,7 @@ export function PreparationProgress({
         <div className="flex items-center gap-2 px-3 pt-3 text-xs">
           <GitFork className="size-4 text-muted-foreground" aria-hidden />
           <span className="flex-1 font-medium">
-            {failed ? 'Worktree setup stopped' : 'Setting up the worktree'}
+            {failed ? 'Thread startup stopped' : 'Starting thread'}
           </span>
           {elapsed && (
             <span className="tabular-nums text-muted-foreground" aria-hidden>

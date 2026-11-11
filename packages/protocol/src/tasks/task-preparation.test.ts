@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import { defaultTaskHarness } from '../workspace.js'
 import { preparationElapsed, taskPreparation } from './task-preparation.js'
 import type { Task } from '../workspace.js'
 
@@ -77,4 +78,37 @@ it('keeps showing the step a failed run stopped on, with its error', () => {
   expect(taskPreparation(task({ status: 'review', runPhase: undefined, preparation }))).toBe(
     undefined,
   )
+})
+
+it.each(['tune', 'maestro'])('shows model discovery and %s selection before the agent', (mode) => {
+  const result = taskPreparation(
+    task({
+      harness: { ...defaultTaskHarness('codex'), model: 'selected-model' },
+      preparation: {
+        steps: ['models', mode, 'agent'],
+        current: mode,
+        startedAt: '2026-09-27T10:00:00.000Z',
+      },
+    }),
+  )
+  expect(result?.steps.map((step) => [step.label, step.state])).toEqual([
+    ['Discover available models', 'done'],
+    [mode === 'tune' ? 'Tune is choosing a model' : 'Maestro is choosing a model', 'active'],
+    ['Start the agent', 'pending'],
+  ])
+  expect(result?.steps[2].detail).toBe('selected-model')
+})
+
+it('shows Scope steps on an automatic draft and hides them after selection', () => {
+  const preparation = {
+    steps: ['scope-context', 'scope'],
+    current: 'scope',
+    startedAt: '2026-09-27T10:00:00.000Z',
+  }
+  const draft = task({ status: 'draft', runPhase: undefined, autoProject: true, preparation })
+  expect(taskPreparation(draft)?.steps.map((step) => [step.label, step.state])).toEqual([
+    ['Scope is inspecting projects', 'done'],
+    ['Scope is choosing projects', 'active'],
+  ])
+  expect(taskPreparation({ ...draft, autoProject: undefined })).toBeUndefined()
 })

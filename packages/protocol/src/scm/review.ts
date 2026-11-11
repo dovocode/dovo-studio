@@ -131,14 +131,37 @@ export function filePreviewIdentity(preview: ChangedFile['preview']) {
       : null,
   )
 }
+const fileFingerprints = new WeakMap<
+  ChangedFile,
+  { path: string; before: string; after: string; preview: string; fingerprint: string }
+>()
 export function changedFileFingerprint(file: ChangedFile) {
+  const preview = filePreviewIdentity(file.preview)
+  const cached = fileFingerprints.get(file)
+  // Guard the actual hash inputs too: callers can still edit a file or nested preview in place.
+  if (
+    cached &&
+    cached.path === file.path &&
+    cached.before === file.before &&
+    cached.after === file.after &&
+    cached.preview === preview
+  )
+    return cached.fingerprint
   const hash = sha256.create()
   // Separate fields unambiguously, without allocating another copy of the entire diff.
-  for (const field of [file.path, file.before, file.after, filePreviewIdentity(file.preview)]) {
+  for (const field of [file.path, file.before, file.after, preview]) {
     hash.update(new TextEncoder().encode(`${field.length}:`))
     hash.update(new TextEncoder().encode(field))
   }
-  return bytesToHex(hash.digest())
+  const fingerprint = bytesToHex(hash.digest())
+  fileFingerprints.set(file, {
+    path: file.path,
+    before: file.before,
+    after: file.after,
+    preview,
+    fingerprint,
+  })
+  return fingerprint
 }
 export function pullFileFingerprint(
   file: PullDetail['files'][number],

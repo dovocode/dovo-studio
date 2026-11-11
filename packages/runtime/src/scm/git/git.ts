@@ -1266,29 +1266,33 @@ export class GitService {
   }
   async changes(path: string): Promise<ChangedFile[]> {
     const { path: root } = await this.inspect(path)
-    const tracked = (await this.command(root, ['ls-files', '-z'])).split('\0').filter(Boolean)
+    // Status and HEAD are independent reads; neither takes a repository lock.
+    const [status, head] = await Promise.all([
+      this.command(
+        root,
+        ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
+        { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+      ),
+      this.command(root, ['rev-parse', '--verify', 'HEAD']).then(
+        () => undefined,
+        (error: unknown) => ({ error }),
+      ),
+    ])
     const changed = new Map(
-      (
-        await this.command(
-          root,
-          ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
-          { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
-        )
-      )
+      status
         .split('\0')
         .filter(Boolean)
         .map((line) => [line.slice(3), workingGitStatus(line.slice(0, 2))] as const),
     )
     let hasHead = true
-    try {
-      await this.command(root, ['rev-parse', '--verify', 'HEAD'])
-    } catch (error) {
+    if (head) {
+      // Only a checkout without tracked files or without any commit is unborn.
       if (
-        !tracked.length ||
+        !(await this.command(root, ['ls-files', '-z'])).split('\0').some(Boolean) ||
         (await this.command(root, ['rev-list', '--all', '--count'])).trim() === '0'
       )
         hasHead = false
-      else throw error
+      else throw head.error
     }
     const names = [...changed.keys()]
     const old = hasHead
@@ -1296,65 +1300,84 @@ export class GitService {
       : new Map<string, NonNullable<FilePreviewMetadata['before']>>()
     const files: ChangedFile[] = []
     let remaining = 1024 * 1024
-    for (const [name, gitStatus] of changed) {
-      const before = old.get(name)
-      let unreadable = false
-      const after = await this.workingFile(root, name).catch(() => {
-        unreadable = true
-        return undefined
-      })
-      const sides = { before, after }
-      const entries = [before, after].filter((side) => side !== undefined)
-      let kind: FilePreviewMetadata['kind'] = entries.some((side) => side.mode === '160000')
-        ? 'submodule'
-        : entries.some((side) => side.mode === '120000')
-          ? 'symlink'
-          : entries.some((side) => side.size > 64 * 1024)
-            ? 'large'
-            : 'deferred'
-      if (
-        files.length < 200 &&
-        !unreadable &&
-        entries.length &&
-        entries.every(
-          (side) => side.mode !== '160000' && side.mode !== '120000' && side.size <= 64 * 1024,
-        ) &&
-        entries.reduce((sum, side) => sum + side.size, 0) <= remaining
-      ) {
-        try {
-          const preview = await this.workingFilePreview(root, name, sides)
-          if (
-            [preview.before, preview.after].every(
-              (side) => !side || (side.kind === 'text' && !side.truncated),
+    // One batch process serves every embedded old side; it starts only for the first read.
+    return this.withBlobs(root, async (blobs) => {
+      for (const [name, gitStatus] of changed) {
+        const before = old.get(name)
+        let unreadable = false
+        const after = await this.workingFile(root, name).catch(() => {
+          unreadable = true
+          return undefined
+        })
+        const sides = { before, after }
+        const entries = [before, after].filter((side) => side !== undefined)
+        let kind: FilePreviewMetadata['kind'] = entries.some((side) => side.mode === '160000')
+          ? 'submodule'
+          : entries.some((side) => side.mode === '120000')
+            ? 'symlink'
+            : entries.some((side) => side.size > 64 * 1024)
+              ? 'large'
+              : 'deferred'
+        if (
+          files.length < 200 &&
+          !unreadable &&
+          entries.length &&
+          entries.every(
+            (side) => side.mode !== '160000' && side.mode !== '120000' && side.size <= 64 * 1024,
+          ) &&
+          entries.reduce((sum, side) => sum + side.size, 0) <= remaining
+        ) {
+          try {
+            // Eligible sides are at most 64 KiB, so each blob is read whole and then bounded.
+            const preview = await this.workingFilePreview(
+              root,
+              name,
+              sides,
+              false,
+              false,
+              async (hash, limit) => {
+                if (hash !== before?.hash) return this.blobPrefix(root, hash, limit)
+                try {
+                  return (await blobs.bytes(hash, before.size)).subarray(0, limit)
+                } catch {
+                  // A failed batch must not hide the other files; read this blob on its own.
+                  return this.blobPrefix(root, hash, limit)
+                }
+              },
             )
-          ) {
-            const text = preview.after?.text ?? ''
-            files.push({
-              path: name,
-              before: preview.before?.text ?? '',
-              after: text,
-              diskContents: text,
-              viewed: false,
-              gitStatus,
-            })
-            remaining -= entries.reduce((sum, side) => sum + side.size, 0)
-            continue
+            if (
+              [preview.before, preview.after].every(
+                (side) => !side || (side.kind === 'text' && !side.truncated),
+              )
+            ) {
+              const text = preview.after?.text ?? ''
+              files.push({
+                path: name,
+                before: preview.before?.text ?? '',
+                after: text,
+                diskContents: text,
+                viewed: false,
+                gitStatus,
+              })
+              remaining -= entries.reduce((sum, side) => sum + side.size, 0)
+              continue
+            }
+            kind = /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name) ? 'image' : 'binary'
+          } catch {
+            // Keep an unreadable or concurrently removed path visible; opening it reports the error.
           }
-          kind = /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name) ? 'image' : 'binary'
-        } catch {
-          // Keep an unreadable or concurrently removed path visible; opening it reports the error.
         }
+        files.push({
+          path: name,
+          before: '',
+          after: '',
+          viewed: false,
+          gitStatus,
+          preview: { kind, ...sides },
+        })
       }
-      files.push({
-        path: name,
-        before: '',
-        after: '',
-        viewed: false,
-        gitStatus,
-        preview: { kind, ...sides },
-      })
-    }
-    return files
+      return files
+    })
   }
   private async workingFile(root: string, name: string) {
     // Validate the parent without following the leaf: symlink targets are previewed as text.
@@ -1398,6 +1421,8 @@ export class GitService {
     metadata?: Pick<FilePreviewMetadata, 'before' | 'after'>,
     full = false,
     includePatch = false,
+    readBlob: (hash: string, limit: number) => Promise<Buffer> = (hash, limit) =>
+      this.blobPrefix(root, hash, limit),
   ) {
     // Validate the requested working path before passing it to any Git command.
     const after = metadata ? undefined : await this.workingFile(root, name)
@@ -1417,7 +1442,7 @@ export class GitService {
       name,
       sides,
       async (hash, limit) => {
-        if (hash !== 'working') return this.blobPrefix(root, hash, limit)
+        if (hash !== 'working') return readBlob(hash, limit)
         // Revalidate before reading and never follow the final symlink as a regular file.
         const parent = dirname(name)
         const file =

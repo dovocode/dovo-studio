@@ -315,8 +315,8 @@ export default function TasksView({
     if (!task || task.replica || repository?.kind || editingFile.current) return
     await store.request(
       '/api/scm/changes',
-      { repositoryId: task.repositoryId, taskId: task.id },
-      responses.files,
+      { repositoryId: task.repositoryId, taskId: task.id, includeFiles: false },
+      responses.changesRefresh,
     )
   }, [task?.id, task?.repositoryId, repository?.kind, store.request])
   const changesError = useLiveRefresh(

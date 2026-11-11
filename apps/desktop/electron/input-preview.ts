@@ -1,3 +1,4 @@
+import { studioContents } from './studio-window.js'
 import {
   createRuntimeClient,
   decode,
@@ -130,7 +131,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     items = next.items
     enabled = next.enabled
     showWhileFocused = next.showWhileFocused === true
-    owner.webContents.setBackgroundThrottling(!enabled)
+    studioContents(owner).setBackgroundThrottling(!enabled)
     reconcile()
   })
   const requirePopup = (event: Electron.IpcMainInvokeEvent) => {
@@ -153,7 +154,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     dismissed.add(inputPreviewKey(item))
     popup?.hide()
     if (owner.isMinimized()) owner.restore()
-    owner.webContents.send('input-preview:open-thread', {
+    studioContents(owner).send('input-preview:open-thread', {
       runtimeId: item.runtimeId,
       entityId: item.parentTaskId ?? item.request.value.taskId,
     })

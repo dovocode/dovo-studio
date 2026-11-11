@@ -7,7 +7,7 @@ import {
   workspaceDraftConsumed,
 } from './workspace-reconciliation.js'
 import { runtimeSnapshotPath } from './live-sync.js'
-import { Effect, Result, Schema, Semaphore } from 'effect'
+import { Effect, Result, Schema, Semaphore, TxReentrantLock } from 'effect'
 import { decode, decodeResult, mutableArray, mutableStruct } from '../../shared/schema.js'
 import { RuntimeRequestError } from '../../shared/client.js'
 import {
@@ -18,13 +18,15 @@ import {
   workspacePatchResultSchema,
   type WorkspaceRecovery,
   type RuntimeConnection,
+  type RuntimeSnapshot,
 } from './runtime.js'
 import {
   WorkspaceStorageError,
   workspacePatchRejection,
   workspacePatchRejected,
 } from './workspace-mutations.js'
-import { taskMessageSchema } from '../../tasks/task-message.js'
+import { taskMessageSchema, threadStartResultSchema } from '../../tasks/task-message.js'
+import { settledThreadKey } from '../../tasks/settled-page.js'
 import { taskSchema, type Task } from '../../workspace.js'
 import { savedPendingMessages } from '../../conversation/workflow/pending-message.js'
 import {
@@ -165,10 +167,12 @@ type State = {
   /** Presentation handoff only; these commands have already left the durable journal. */
   confirmedMessages: MutationOutbox
   confirmedTasks: MutationOutbox
+  creationCursors: Map<string, { revision: number; runtimeInstanceId: string }>
   activeAttachments: Set<string>
   error: string | null
   /** Lock order: sender → admission → journal. Enqueue uses only the two local locks. */
-  lock: Semaphore.Semaphore
+  lock: TxReentrantLock.TxReentrantLock
+  lanes: Map<string, { lock: Semaphore.Semaphore; users: number }>
   /** Serializes admission with credential transfer, discard and forget. */
   admission: Semaphore.Semaphore
   /** Prevents a slow journal read from overwriting a newer durable update in memory. */
@@ -226,8 +230,56 @@ const operation = <A>(run: () => Promise<A>) =>
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   })
 
-/** A journal of user-authorized commands, separate from disposable read caches. One ordered
- * local sender per host/credential; journal updates are atomic across clients and
+// Unknown operations and shared settings remain global barriers. Only commands whose
+// authoritative owner is one thread may overlap another thread's sender.
+const threadCommands = new Set([
+  '/api/tasks/message',
+  '/api/tasks/steer',
+  '/api/tasks/queue',
+  '/api/tasks/lifecycle',
+  '/api/tasks/viewed',
+  '/api/tasks/checklist/clear',
+  '/api/scm/pulls/link-thread',
+])
+function mutationThread(path: string, input: unknown, method = 'POST') {
+  if (
+    input === null ||
+    typeof input !== 'object' ||
+    !('id' in input) ||
+    typeof input.id !== 'string'
+  )
+    return undefined
+  if (
+    (method === 'POST' && threadCommands.has(path)) ||
+    (method === 'PATCH' &&
+      path === '/api/workspace' &&
+      'collection' in input &&
+      input.collection === 'tasks')
+  )
+    return input.id
+  return undefined
+}
+class SharedMutationBarrier extends Error {}
+
+function createdTask(item: Pick<MutationOutbox[number], 'path' | 'input'>) {
+  if (item.path === '/api/workspace') {
+    const patch = decodeResult(patchSchema, item.input)
+    if (patch.success && patch.data.collection === 'tasks' && patch.data.create) {
+      const task = decodeResult(taskSchema, patch.data.create)
+      if (task.success && task.data.id === patch.data.id) return task.data
+    }
+  } else if (item.path === '/api/tasks/message') {
+    const input = item.input
+    if (input && typeof input === 'object' && 'createTask' in input && 'id' in input) {
+      const task = decodeResult(taskSchema, input.createTask)
+      if (task.success && task.data.id === input.id) return task.data
+    }
+  }
+  return undefined
+}
+
+/** A journal of user-authorized commands, separate from disposable read caches. Ordered
+ * thread senders share a host/credential barrier; journal updates are atomic across clients and
  * acknowledgements are removed by identity only after storage commits. */
 export class RuntimeMutations {
   private states = new Map<string, State>()
@@ -235,6 +287,32 @@ export class RuntimeMutations {
     private storage: MutationStorage,
     private changed: () => void = () => {},
   ) {}
+  private exclusive(state: State) {
+    return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      TxReentrantLock.withWriteLock(state.lock, effect)
+  }
+  private threadSender(state: State, id: string) {
+    return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.suspend(() => {
+        let lane = state.lanes.get(id)
+        if (!lane) {
+          lane = { lock: Effect.runSync(Semaphore.make(1)), users: 0 }
+          state.lanes.set(id, lane)
+        }
+        const captured = lane
+        captured.users++
+        return captured.lock
+          .withPermits(1)(TxReentrantLock.withReadLock(state.lock, effect))
+          .pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (--captured.users === 0 && state.lanes.get(id) === captured)
+                  state.lanes.delete(id)
+              }),
+            ),
+          )
+      })
+  }
   private state(connection: RuntimeConnection) {
     const key = connectionKey(connection)
     let state = this.states.get(key)
@@ -245,9 +323,11 @@ export class RuntimeMutations {
         pending: [],
         confirmedMessages: [],
         confirmedTasks: [],
+        creationCursors: new Map(),
         activeAttachments: new Set(),
         error: null,
-        lock: Effect.runSync(Semaphore.make(1)),
+        lock: Effect.runSync(TxReentrantLock.make()),
+        lanes: new Map(),
         automatic: new Map(),
         admission: Effect.runSync(Semaphore.make(1)),
         journal: Effect.runSync(Semaphore.make(1)),
@@ -282,7 +362,7 @@ export class RuntimeMutations {
   }
   attachmentPendingEffect(connection: RuntimeConnection, id: string) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       Effect.gen({ self: this }, function* () {
         yield* this.load(connection, state)
         return state.pending.some((item) => item.id === id && attachmentJournal(item))
@@ -353,7 +433,7 @@ export class RuntimeMutations {
   }
   retryAttachmentAfterReviewEffect(connection: RuntimeConnection, id: string) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       Effect.gen({ self: this }, function* () {
         if (
           state.replaced ||
@@ -425,7 +505,7 @@ export class RuntimeMutations {
   }
   stageAttachmentEffect(connection: RuntimeConnection, value: unknown, replacement: boolean) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       Effect.gen({ self: this }, function* () {
         if (
           state.replaced ||
@@ -453,7 +533,7 @@ export class RuntimeMutations {
   }
   finishAttachmentEffect(connection: RuntimeConnection, id: string) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       Effect.gen({ self: this }, function* () {
         if (
           state.replaced ||
@@ -503,7 +583,7 @@ export class RuntimeMutations {
   }
   discardAttachmentEffect(connection: RuntimeConnection, id: string) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       Effect.gen({ self: this }, function* () {
         if (
           state.replaced ||
@@ -604,7 +684,10 @@ export class RuntimeMutations {
         ...item,
         state: 'sending' as const,
       })),
-      ...savedPendingMessages(task, state.pending),
+      ...savedPendingMessages(
+        task,
+        state.pending.filter((item) => !state.confirmedTasks.some((saved) => saved.id === item.id)),
+      ),
     ]
   }
   acknowledgeMessages(connection: RuntimeConnection, tasks: readonly Task[]) {
@@ -620,15 +703,23 @@ export class RuntimeMutations {
       )
     })
   }
-  private retainMessage(state: State, item: MutationOutbox[number]) {
-    const patch = item.path === '/api/workspace' ? decodeResult(patchSchema, item.input) : undefined
-    if (
-      item.retainUntilCached &&
-      patch?.success &&
-      patch.data.collection === 'tasks' &&
-      patch.data.create
-    )
+  private retainMessage(state: State, item: MutationOutbox[number], result: unknown) {
+    if (item.retainUntilCached && createdTask(item)) {
       state.confirmedTasks = [...state.confirmedTasks.filter((entry) => entry.id !== item.id), item]
+      if (item.path === '/api/tasks/message') {
+        const ack = decodeResult(threadStartResultSchema, result)
+        if (
+          ack.success &&
+          ack.data.ok &&
+          ack.data.revision !== undefined &&
+          ack.data.runtimeInstanceId
+        )
+          state.creationCursors.set(item.id, {
+            revision: ack.data.revision,
+            runtimeInstanceId: ack.data.runtimeInstanceId,
+          })
+      }
+    }
     if (item.path === '/api/tasks/message' || item.path === '/api/tasks/steer')
       state.confirmedMessages = [
         ...state.confirmedMessages.filter((previous) => previous.id !== item.id),
@@ -743,7 +834,17 @@ export class RuntimeMutations {
           catch: (error) => (error instanceof Error ? error : new Error(String(error))),
         })
         yield* this.save(connection, state, (pending) => {
-          if (pending.some((entry) => entry.blocked || entry.reviewAfterRenewal))
+          const thread = mutationThread(path, input, method)
+          if (
+            pending.some(
+              (entry) =>
+                entry.reviewAfterRenewal ||
+                (entry.blocked &&
+                  (!thread ||
+                    !mutationThread(entry.path, entry.input, entry.method) ||
+                    mutationThread(entry.path, entry.input, entry.method) === thread)),
+            )
+          )
             throw new Error('Review saved actions before sending another message.')
           if (message?.success) {
             const content = (value: typeof message.data) =>
@@ -785,7 +886,7 @@ export class RuntimeMutations {
               path,
               method: method === 'PATCH' ? 'PATCH' : 'POST',
               input,
-              ...(patch?.success && patch.data.create ? { retainUntilCached: true } : {}),
+              ...(createdTask({ path, input }) ? { retainUntilCached: true } : {}),
             },
           ]
         })
@@ -799,15 +900,47 @@ export class RuntimeMutations {
   }
   /** Call only after the authoritative snapshot has been durably cached. Until then,
    * the creation receipt remains replayable and its full task remains recoverable offline. */
-  taskCreationsCachedEffect(connection: RuntimeConnection, tasks: readonly Task[]) {
+  taskCreationsCachedEffect(
+    connection: RuntimeConnection,
+    tasks: readonly Task[],
+    snapshot?: Pick<
+      RuntimeSnapshot,
+      'revision' | 'runtimeInstanceId' | 'runtimeId' | 'olderSettled'
+    >,
+  ) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       Effect.gen({ self: this }, function* () {
         const ids = new Set(
           state.confirmedTasks
             .filter((item) => {
-              const patch = decodeResult(patchSchema, item.input)
-              return patch.success && tasks.some((task) => task.id === patch.data.id)
+              const created = createdTask(item)
+              if (!created) return false
+              const task = tasks.find((task) => task.id === created.id)
+              if (task) {
+                if (item.path !== '/api/tasks/message') return true
+                const message = decodeResult(taskMessageSchema, item.input)
+                return (
+                  message.success &&
+                  [...task.messages, ...(task.queue ?? [])].some(
+                    (saved) => saved.id === message.data.messageId,
+                  )
+                )
+              }
+              const ack = state.creationCursors.get(item.id)
+              // An absent row proves deletion only after the acknowledgement's cursor.
+              // A settled page can omit a live row; incomplete paging metadata is not proof.
+              return !!(
+                ack &&
+                snapshot?.runtimeInstanceId === ack.runtimeInstanceId &&
+                snapshot.revision >= ack.revision &&
+                (!snapshot.olderSettled?.omitted ||
+                  (snapshot.runtimeId &&
+                    snapshot.olderSettled.threadKeys &&
+                    !snapshot.olderSettled.threadKeys.includes(
+                      settledThreadKey(created, snapshot.runtimeId),
+                    )))
+              )
             })
             .map((item) => item.id),
         )
@@ -816,7 +949,12 @@ export class RuntimeMutations {
           pending.filter((item) => !ids.has(item.id)),
         )
         state.confirmedTasks = state.confirmedTasks.filter((item) => !ids.has(item.id))
-        for (const id of ids) yield* this.acknowledge(connection, state, id)
+        state.confirmedMessages = state.confirmedMessages.filter((item) => !ids.has(item.id))
+        for (const id of ids) {
+          state.creationCursors.delete(id)
+          yield* this.acknowledge(connection, state, id)
+        }
+        this.changed()
       }),
     )
   }
@@ -825,6 +963,8 @@ export class RuntimeMutations {
     const state = this.state(connection)
     let result = tasks
     for (const item of [...state.confirmedTasks, ...state.confirmedMessages, ...state.pending]) {
+      const created = createdTask(item)
+      if (created && !result.some((task) => task.id === created.id)) result = [created, ...result]
       if (item.path === '/api/tasks/message') {
         const message = decodeResult(taskMessageSchema, item.input)
         if (message.success && message.data.initialTitle) {
@@ -1154,6 +1294,7 @@ export class RuntimeMutations {
     stopBefore?: string,
     allowBlockedCommands = false,
     onlyId?: string,
+    thread?: string,
   ) {
     return Effect.gen({ self: this }, function* () {
       if (!state.pending.length) return
@@ -1163,6 +1304,7 @@ export class RuntimeMutations {
         const item = state.pending.find(
           (entry) =>
             (!onlyId || entry.id === onlyId) &&
+            (!thread || mutationThread(entry.path, entry.input, entry.method) === thread) &&
             !skipped.has(entry.id) &&
             (!blockedError || entry.path === '/api/workspace'),
         )
@@ -1221,7 +1363,7 @@ export class RuntimeMutations {
           }
           return yield* Effect.fail(result.failure)
         }
-        this.retainMessage(state, item)
+        this.retainMessage(state, item, result.success)
         if (item.retainUntilCached) {
           skipped.add(item.id)
           continue
@@ -1342,70 +1484,65 @@ export class RuntimeMutations {
     confirmRenewalReplay = false,
     actionId?: string,
   ) {
-    return state.lock
-      .withPermits(1)(
-        Effect.gen({ self: this }, function* () {
-          if (
-            state.replaced ||
-            (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+    return this.exclusive(state)(
+      Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return
+        yield* this.load(connection, state)
+        if (actionId && !state.pending.some((item) => item.id === actionId)) return
+        if (confirmRenewalReplay)
+          yield* this.save(connection, state, (pending) =>
+            pending.map((item) =>
+              item.reviewAfterRenewal &&
+              (!actionId || item.id === actionId) &&
+              !attachmentJournal(item)
+                ? { ...item, reviewAfterRenewal: undefined, receiptToken: undefined }
+                : item,
+            ),
           )
-            return
-          yield* this.load(connection, state)
-          if (actionId && !state.pending.some((item) => item.id === actionId)) return
-          if (confirmRenewalReplay)
-            yield* this.save(connection, state, (pending) =>
-              pending.map((item) =>
-                item.reviewAfterRenewal &&
-                (!actionId || item.id === actionId) &&
-                !attachmentJournal(item)
-                  ? { ...item, reviewAfterRenewal: undefined, receiptToken: undefined }
-                  : item,
-              ),
-            )
-          if (!state.pending.length) {
-            if (state.error !== null) {
-              state.error = null
-              this.changed()
-            }
-            return
-          }
-          // An explicit retry after upgrading a legacy host must recheck its receipts.
-          if (
-            !(yield* this.supports(
-              connection,
-              state,
-              retry || state.pending.some((item) => item.path === '/api/workspace'),
-            ))
-          )
-            return yield* Effect.fail(
-              new RuntimeRequestError({
-                kind: 'response',
-                status: 426,
-                message: 'Update this runtime before recovering saved actions.',
-              }),
-            )
-          if (
-            state.error &&
-            !state.pending.some((item) => item.blocked || item.reviewAfterRenewal)
-          ) {
+        if (!state.pending.length) {
+          if (state.error !== null) {
             state.error = null
             this.changed()
           }
-          yield* this.drain(connection, state, retry, undefined, false, actionId)
+          return
+        }
+        // An explicit retry after upgrading a legacy host must recheck its receipts.
+        if (
+          !(yield* this.supports(
+            connection,
+            state,
+            retry || state.pending.some((item) => item.path === '/api/workspace'),
+          ))
+        )
+          return yield* Effect.fail(
+            new RuntimeRequestError({
+              kind: 'response',
+              status: 426,
+              message: 'Update this runtime before recovering saved actions.',
+            }),
+          )
+        if (state.error && !state.pending.some((item) => item.blocked || item.reviewAfterRenewal)) {
+          state.error = null
+          this.changed()
+        }
+        yield* this.drain(connection, state, retry, undefined, false, actionId)
+      }),
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          state.error = error.message
+          this.changed()
         }),
-      )
-      .pipe(
-        Effect.tapError((error) =>
-          Effect.sync(() => {
-            state.error = error.message
-            this.changed()
-          }),
-        ),
-      )
+      ),
+    )
   }
   discardEffect(connection: RuntimeConnection, actionId?: string) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       state.admission.withPermits(1)(
         Effect.gen({ self: this }, function* () {
           if (
@@ -1425,6 +1562,7 @@ export class RuntimeMutations {
             )
             state.confirmedMessages = state.confirmedMessages.filter((item) => item.id !== actionId)
             state.confirmedTasks = state.confirmedTasks.filter((item) => item.id !== actionId)
+            state.creationCursors.delete(actionId)
           } else if (loaded._tag === 'Success' && state.pending.some(attachmentJournal))
             yield* this.save(connection, state, (pending) => pending.filter(attachmentJournal))
           else {
@@ -1441,6 +1579,7 @@ export class RuntimeMutations {
           if (!actionId) {
             state.confirmedMessages = []
             state.confirmedTasks = []
+            state.creationCursors.clear()
           }
           state.error = state.pending.length ? 'Saved attachments need review.' : null
           this.changed()
@@ -1450,7 +1589,7 @@ export class RuntimeMutations {
   }
   assertEmptyEffect(connection: RuntimeConnection) {
     const state = this.state(connection)
-    return state.lock.withPermits(1)(
+    return this.exclusive(state)(
       state.admission.withPermits(1)(
         Effect.gen({ self: this }, function* () {
           if (
@@ -1557,9 +1696,9 @@ export class RuntimeMutations {
       this.changed()
     }).pipe(Effect.uninterruptible)
     return source === destination
-      ? source.lock.withPermits(1)(source.admission.withPermits(1)(transfer))
-      : states[0]!.lock.withPermits(1)(
-          states[1]!.lock.withPermits(1)(
+      ? this.exclusive(source)(source.admission.withPermits(1)(transfer))
+      : this.exclusive(states[0]!)(
+          this.exclusive(states[1]!)(
             states[0]!.admission.withPermits(1)(states[1]!.admission.withPermits(1)(transfer)),
           ),
         )
@@ -1572,6 +1711,7 @@ export class RuntimeMutations {
             state.pending = []
             state.confirmedMessages = []
             state.confirmedTasks = []
+            state.creationCursors.clear()
             state.error = null
           }),
         ),
@@ -1614,178 +1754,238 @@ export class RuntimeMutations {
     if (!recoverableMutation(path, method) || (path === '/api/tasks/queue' && !durableQueueAction))
       return createRuntimeClient(connection).requestEffect(path, input, schema, { method })
     const state = this.state(connection)
-    return state.lock
-      .withPermits(1)(
-        Effect.gen({ self: this }, function* () {
-          if (
-            state.replaced ||
-            (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+    const work = (thread?: string) =>
+      Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return yield* Effect.fail(new Error('Computer access changed. Try this action again.'))
+        yield* this.load(connection, state)
+        if (
+          thread &&
+          state.pending.some(
+            (entry) =>
+              entry.reviewAfterRenewal || !mutationThread(entry.path, entry.input, entry.method),
           )
-            return yield* Effect.fail(new Error('Computer access changed. Try this action again.'))
-          yield* this.load(connection, state)
-          if (path === '/api/tasks/queue') {
-            yield* this.supports(connection, state)
-            // Older hosts cannot receipt queue commands. Keep their foreground controls usable.
-            if (!state.queueMutations && !state.pending.some((entry) => entry.path === path))
-              return yield* createRuntimeClient(connection).requestEffect(path, input, schema, {
-                method,
-              })
+        )
+          return yield* Effect.fail(new SharedMutationBarrier())
+        if (path === '/api/tasks/queue') {
+          yield* this.supports(connection, state)
+          // Older hosts cannot receipt queue commands. Keep their foreground controls usable.
+          if (!state.queueMutations && !state.pending.some((entry) => entry.path === path))
+            return yield* createRuntimeClient(connection).requestEffect(path, input, schema, {
+              method,
+            })
+        }
+        // Resolve old rejected settings before accepting a new edit, without replaying
+        // unrelated commands or discarding conflicts with an uncertain outcome.
+        if (
+          state.pending.find(
+            (entry) => !thread || mutationThread(entry.path, entry.input, entry.method) === thread,
+          )?.blocked &&
+          state.pending.find(
+            (entry) => !thread || mutationThread(entry.path, entry.input, entry.method) === thread,
+          )?.path === '/api/workspace'
+        ) {
+          if (yield* this.supports(connection, state)) {
+            const next = state.pending.find(
+              (entry) =>
+                (!thread || mutationThread(entry.path, entry.input, entry.method) === thread) &&
+                (!entry.blocked || entry.path !== '/api/workspace' || entry.method !== 'PATCH'),
+            )
+            yield* this.drain(
+              connection,
+              state,
+              false,
+              next?.id,
+              path === '/api/workspace',
+              undefined,
+              thread,
+            )
           }
-          // Resolve old rejected settings before accepting a new edit, without replaying
-          // unrelated commands or discarding conflicts with an uncertain outcome.
+        }
+        // A UI retry of the same unresolved command keeps its identity, including after restart.
+        let item = state.pending.find((entry) => {
+          if (entry.path !== path || entry.method !== method) return false
+          if (JSON.stringify(entry.input) === JSON.stringify(input)) return true
+          // A remounted queue row creates a new candidate copy ID. An unresolved duplicate
+          // is a retry of the original intent, so keep its durable copy and receipt IDs.
           if (
-            state.pending[0]?.blocked &&
-            state.pending[0].path === '/api/workspace' &&
-            state.pending[0].method === 'PATCH'
-          ) {
-            if (yield* this.supports(connection, state)) {
-              const next = state.pending.find(
-                (entry) =>
-                  !entry.blocked || entry.path !== '/api/workspace' || entry.method !== 'PATCH',
-              )
-              yield* this.drain(connection, state, false, next?.id, path === '/api/workspace')
-            }
-          }
-          // A UI retry of the same unresolved command keeps its identity, including after restart.
-          let item = state.pending.find((entry) => {
-            if (entry.path !== path || entry.method !== method) return false
-            if (JSON.stringify(entry.input) === JSON.stringify(input)) return true
-            // A remounted queue row creates a new candidate copy ID. An unresolved duplicate
-            // is a retry of the original intent, so keep its durable copy and receipt IDs.
-            if (
-              path !== '/api/tasks/queue' ||
-              !queueAction?.success ||
-              queueAction.data.action !== 'duplicate'
-            )
-              return false
-            const previous = decodeResult(queueActionSchema, entry.input)
-            return (
-              previous.success &&
-              previous.data.action === 'duplicate' &&
-              previous.data.id === queueAction.data.id &&
-              previous.data.messageId === queueAction.data.messageId
-            )
-          })
-          const created = !item
-          if (!item) {
-            if (state.pending.some((entry) => entry.blocked) && path !== '/api/workspace')
-              return yield* Effect.fail(
-                new Error(
-                  'A saved action needs review. Retry or discard pending actions before sending another.',
-                ),
-              )
-            if (method !== 'POST' && method !== 'PATCH')
-              return yield* Effect.fail(new Error('Cannot journal a read'))
-            item = { id: this.storage.id(), path, method, input }
-            const appended = item
-            yield* this.save(connection, state, (pending) => [...pending, appended])
-          }
-          const command = item
-          let sent = false
-          const result = yield* Effect.result(
-            Effect.gen({ self: this }, function* () {
-              if (!(yield* this.supports(connection, state, path === '/api/workspace'))) {
-                // This new command has never reached the host. Legacy hosts can execute it
-                // normally; previously saved commands still require receipt support.
-                if (created && state.pending.length === 1 && path !== '/api/workspace') {
-                  sent = true
-                  return yield* createRuntimeClient(connection).requestEffect(path, input, schema, {
-                    method,
-                  })
-                }
-                return yield* Effect.fail(
-                  new RuntimeRequestError({
-                    kind: 'response',
-                    status: 426,
-                    message: 'Update this runtime before recovering saved actions.',
-                  }),
-                )
-              }
-              yield* this.drain(connection, state, false, command.id, path === '/api/workspace')
-              sent = true
-              return yield* this.send(connection, command)
-            }),
+            path !== '/api/tasks/queue' ||
+            !queueAction?.success ||
+            queueAction.data.action !== 'duplicate'
           )
-          if (result._tag === 'Failure') {
-            state.error = transientMutation(command, result.failure)
-              ? `Action saved for reconnect. ${result.failure.message}`
-              : result.failure.message
-            const rejectedLegacyCommand =
-              sent &&
-              state.supported === false &&
-              result.failure instanceof RuntimeRequestError &&
-              result.failure.status !== undefined &&
-              !transientMutation(command, result.failure)
-            const rejectedEdit = sent && settledFailure(command, result.failure)
-            if (
-              (!transientMutation(command, result.failure) && !sent && created) ||
-              rejectedLegacyCommand ||
-              rejectedEdit
-            )
-              yield* this.save(connection, state, (pending) =>
-                pending.filter((entry) => entry.id !== command.id),
-              )
-            if (rejectedEdit) yield* this.acknowledge(connection, state, command.id)
-            if (
-              !transientMutation(command, result.failure) &&
-              sent &&
-              !rejectedLegacyCommand &&
-              !rejectedEdit
-            )
-              yield* this.save(connection, state, (pending) =>
-                pending.map((entry) =>
-                  entry.id === command.id ? { ...entry, blocked: true } : entry,
-                ),
-              )
-            this.changed()
-            // A send is accepted into this client's durable queue. Clear its composer now,
-            // rather than resurrecting its text when reconnect later delivers it.
-            if (
-              transientMutation(command, result.failure) &&
-              ['/api/tasks/message', '/api/tasks/steer'].includes(path)
-            )
-              return yield* Effect.try({
-                try: () => decode(schema, { ok: true, pending: true }),
-                catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-              })
-            return yield* Effect.fail(result.failure)
-          }
-          const value = yield* Effect.try({
-            try: () =>
-              decode(
-                schema,
-                path === '/api/tasks/queue' &&
-                  !created &&
-                  typeof result.success === 'object' &&
-                  result.success !== null
-                  ? { ...result.success, recovered: true }
-                  : result.success,
+            return false
+          const previous = decodeResult(queueActionSchema, entry.input)
+          return (
+            previous.success &&
+            previous.data.action === 'duplicate' &&
+            previous.data.id === queueAction.data.id &&
+            previous.data.messageId === queueAction.data.messageId
+          )
+        })
+        const created = !item
+        if (!item) {
+          if (
+            state.pending.some(
+              (entry) =>
+                entry.blocked &&
+                (!thread || mutationThread(entry.path, entry.input, entry.method) === thread),
+            ) &&
+            path !== '/api/workspace'
+          )
+            return yield* Effect.fail(
+              new Error(
+                'A saved action needs review. Retry or discard pending actions before sending another.',
               ),
-            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-          })
-          this.retainMessage(state, command)
-          if (!command.retainUntilCached) {
+            )
+          if (method !== 'POST' && method !== 'PATCH')
+            return yield* Effect.fail(new Error('Cannot journal a read'))
+          item = {
+            id: this.storage.id(),
+            path,
+            method,
+            input,
+            ...(createdTask({ path, input }) ? { retainUntilCached: true } : {}),
+          }
+          const appended = item
+          yield* this.save(connection, state, (pending) => [...pending, appended])
+        }
+        const command = item
+        let sent = false
+        const result = yield* Effect.result(
+          Effect.gen({ self: this }, function* () {
+            if (!(yield* this.supports(connection, state, path === '/api/workspace'))) {
+              // This new command has never reached the host. Legacy hosts can execute it
+              // normally; previously saved commands still require receipt support.
+              if (
+                created &&
+                state.pending.filter(
+                  (entry) =>
+                    !thread || mutationThread(entry.path, entry.input, entry.method) === thread,
+                ).length === 1 &&
+                path !== '/api/workspace'
+              ) {
+                sent = true
+                return yield* createRuntimeClient(connection).requestEffect(path, input, schema, {
+                  method,
+                })
+              }
+              return yield* Effect.fail(
+                new RuntimeRequestError({
+                  kind: 'response',
+                  status: 426,
+                  message: 'Update this runtime before recovering saved actions.',
+                }),
+              )
+            }
+            yield* this.drain(
+              connection,
+              state,
+              false,
+              command.id,
+              path === '/api/workspace',
+              undefined,
+              thread,
+            )
+            sent = true
+            return yield* this.send(connection, command)
+          }),
+        )
+        if (result._tag === 'Failure') {
+          state.error = transientMutation(command, result.failure)
+            ? `Action saved for reconnect. ${result.failure.message}`
+            : result.failure.message
+          const rejectedLegacyCommand =
+            sent &&
+            state.supported === false &&
+            result.failure instanceof RuntimeRequestError &&
+            result.failure.status !== undefined &&
+            !transientMutation(command, result.failure)
+          const rejectedEdit = sent && settledFailure(command, result.failure)
+          if (
+            (!transientMutation(command, result.failure) && !sent && created) ||
+            rejectedLegacyCommand ||
+            rejectedEdit
+          )
             yield* this.save(connection, state, (pending) =>
               pending.filter((entry) => entry.id !== command.id),
             )
-            yield* this.acknowledge(connection, state, command.id)
-          }
-          if (!state.pending.some((entry) => entry.blocked)) state.error = null
+          if (rejectedEdit) yield* this.acknowledge(connection, state, command.id)
+          if (
+            !transientMutation(command, result.failure) &&
+            sent &&
+            !rejectedLegacyCommand &&
+            !rejectedEdit
+          )
+            yield* this.save(connection, state, (pending) =>
+              pending.map((entry) =>
+                entry.id === command.id ? { ...entry, blocked: true } : entry,
+              ),
+            )
           this.changed()
-          return value
+          // A send is accepted into this client's durable queue. Clear its composer now,
+          // rather than resurrecting its text when reconnect later delivers it.
+          if (
+            transientMutation(command, result.failure) &&
+            ['/api/tasks/message', '/api/tasks/steer'].includes(path)
+          )
+            return yield* Effect.try({
+              try: () => decode(schema, { ok: true, pending: true }),
+              catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+            })
+          return yield* Effect.fail(result.failure)
+        }
+        const value = yield* Effect.try({
+          try: () =>
+            decode(
+              schema,
+              path === '/api/tasks/queue' &&
+                !created &&
+                typeof result.success === 'object' &&
+                result.success !== null
+                ? { ...result.success, recovered: true }
+                : result.success,
+            ),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        })
+        this.retainMessage(state, command, result.success)
+        if (!command.retainUntilCached) {
+          yield* this.save(connection, state, (pending) =>
+            pending.filter((entry) => entry.id !== command.id),
+          )
+          yield* this.acknowledge(connection, state, command.id)
+        }
+        if (
+          !state.pending.some((entry) => !state.confirmedTasks.some((task) => task.id === entry.id))
+        )
+          state.error = null
+        this.changed()
+        return value
+      })
+    const thread = mutationThread(path, input, method)
+    return (
+      thread
+        ? this.threadSender(
+            state,
+            thread,
+          )(work(thread)).pipe(
+            Effect.catchIf(
+              (error) => error instanceof SharedMutationBarrier,
+              () => this.exclusive(state)(work()),
+            ),
+          )
+        : this.exclusive(state)(work())
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          state.error =
+            !state.pending.length && settledFailure({ path, method }, error) ? null : error.message
+          this.changed()
         }),
-      )
-      .pipe(
-        Effect.tapError((error) =>
-          Effect.sync(() => {
-            state.error =
-              !state.pending.length && settledFailure({ path, method }, error)
-                ? null
-                : error.message
-            this.changed()
-          }),
-        ),
-      )
+      ),
+    )
   }
 }
 

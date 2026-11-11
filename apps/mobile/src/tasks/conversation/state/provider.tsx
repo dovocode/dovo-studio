@@ -59,6 +59,8 @@ const Context = createContext<ReturnType<typeof applicationState<Conversation>>[
   null,
 )
 const PendingContext = createContext<readonly PendingMessage[]>([])
+type ConversationControls = Pick<Conversation, 'actions' | 'send' | 'stop'>
+const ControlsContext = createContext<ConversationControls | null>(null)
 const wholeConversation = (value: Conversation) => value
 export function useConversationSelector<A>(selector: (value: Conversation) => A) {
   const atom = useContext(Context)
@@ -90,6 +92,18 @@ export function useConversationPresentation(messageId: string) {
 }
 export function useTaskConversation() {
   return useConversationSelector(wholeConversation)
+}
+/**
+ * Composer controls from the provider's current render. `actions` is rebuilt with the live task
+ * on every provider render, so consumers still render once per provider render; no selector
+ * keeps it stable without stale closures. Context reaches the composer in the same render pass,
+ * while the atom publishes after commit and would render it a second time, first with the new
+ * task and the previous actions.
+ */
+export function useConversationControls(): ConversationControls {
+  const controls = useContext(ControlsContext)
+  if (!controls) throw new Error('Task conversation provider is missing')
+  return controls
 }
 export function usePendingConversationMessage(messageId: string) {
   return useContext(PendingContext).find((pending) => pending.message.id === messageId) ?? null
@@ -358,7 +372,7 @@ export function ConversationProvider({
               (!!actions.editing && !actions.snapshot?.fullTurnSettingsSupported)
             }
           >
-            {children}
+            <ControlsContext.Provider value={value}>{children}</ControlsContext.Provider>
           </ChatImageEditProvider>
         </AssistantRuntimeProvider>
       </PendingContext.Provider>

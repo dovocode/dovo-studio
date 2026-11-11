@@ -9,7 +9,7 @@ const built = await bundleBrowser(
     stdin: {
       contents: `
 import {createRoot} from 'react-dom/client';
-import {decode,runtimeProfile,snapshotSchema} from '@dovo/protocol';
+import {decode,runtimeProfile,snapshotSchema,responses} from '@dovo/protocol';
 import {WorkspaceProvider,useWorkspace} from './packages/studio-core/src/workspace/provider';
 import {useWorkspaceSelector,sameWorkspaceFields} from './packages/studio-core/src/workspace/selector';
 import {selectConversationConnection} from './packages/extension-tasks/src/chat/thread/workspace-selection';
@@ -42,12 +42,25 @@ window.fetch=async(url,options)=>{
   if(path==='/api/mutations/status')return Response.json({version:1});
   if(path==='/api/workspace/recovered-edits')return Response.json({edits:[]});
   if(path==='/api/scm/pulls')return Response.json({pulls:[]});
+  if(path==='/api/scm/pulls/detail')return Response.json({ok:true});
+  if(path==='/api/workspace'){
+    window.patchStarted=true;await window.editWait;
+    return Response.json({revision:2,runtimeInstanceId:'ordering-fixture',outcome:'applied'});
+  }
   throw Error('Unexpected request '+url);
 };
 function Probe(){window.workspace=useWorkspace();return <div>{window.workspace.ready?'Ready':'Loading'}</div>}
 function Transport(){useWorkspaceSelector(selectConversationConnection,sameWorkspaceFields);window.transportRenders++;return null}
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><StudioHostProvider api={{}}><WorkspaceProvider><Probe/><Transport/>{Array.from({length:24},(_,i)=><TaskMessageResponse key={i} taskId="thread">Read [the docs](https://example.com) for details.</TaskMessageResponse>)}</WorkspaceProvider></StudioHostProvider></ApplicationStateProvider>);
 window.changeUnrelatedWorkspace=()=>window.workspace.setWorkspace(value=>({...value,automations:[...value.automations]}));
+window.holdWorkspaceEdit=()=>{
+  window.editWait=new Promise(resolve=>window.releaseEdit=resolve);
+  window.workspace.setWorkspace(value=>({...value,agents:[{id:'held',name:'Held',provider:'codex',model:'',instructions:'',permission:'ask',endpoint:''}]}));
+};
+window.readWhileEditing=()=>Promise.all([
+ window.workspace.request('/api/scm/pulls/detail',{},responses.ok),
+ window.workspace.readRuntime(window.profiles[0],'/api/scm/pulls/detail',{},responses.ok),
+]);
 `,
       resolveDir: root,
       loader: 'tsx',
@@ -220,9 +233,32 @@ try {
   await cancelPage.waitForFunction(
     () => window.fallbackSignals.length > window.readsBeforeReconnect && window.workspace.connected,
   )
+  const orderingContext = await browser.newContext()
+  await orderingContext.route('http://startup.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const orderingPage = await orderingContext.newPage()
+  orderingPage.on('pageerror', (error) => errors.push(error.message))
+  await orderingPage.goto('http://startup.lan/')
+  await orderingPage.addScriptTag({ content: built.outputFiles[0].text })
+  await orderingPage.waitForFunction(() => window.workspace?.connected)
+  await orderingPage.evaluate(() => window.holdWorkspaceEdit())
+  await orderingPage.waitForFunction(() => window.patchStarted)
+  assert.equal(
+    await orderingPage.evaluate(() =>
+      Promise.race([
+        window.readWhileEditing().then(() => true),
+        new Promise((resolve) => setTimeout(() => resolve(false), 2000)),
+      ]),
+    ),
+    true,
+    'Pure POST reads must finish while a workspace write is held',
+  )
+  await orderingPage.evaluate(() => window.releaseEdit())
+  await orderingPage.waitForFunction(() => !window.workspace.pendingSync)
   assert.deepEqual(errors, [])
   console.log(
-    'Selected computer becomes ready before inactive caches/local runtime; unrelated updates preserve chat transport subscriptions; confirmed streaming cancels HTTP fallback and reconnect restores it.',
+    'Selected computer becomes ready before inactive caches/local runtime; unrelated updates preserve chat transport subscriptions; confirmed streaming cancels HTTP fallback and reconnect restores it; pure POST reads bypass held workspace writes.',
   )
 } finally {
   await browser.close()

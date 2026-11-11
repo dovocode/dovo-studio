@@ -124,6 +124,13 @@ export class WorkspaceSynchronization {
   private workspace: Workspace | null = null
   private durable: Effect.Effect<void, SynchronizationError> = Effect.void
   private readonly writer = Effect.runSync(Semaphore.make(1))
+  private readonly waiting = new Set<() => void>()
+  private readonly priorities = new Set<Set<string>>()
+
+  private changed() {
+    this.onChange()
+    for (const check of this.waiting) check()
+  }
 
   constructor(
     private onError: (message: string | null) => void,
@@ -148,7 +155,7 @@ export class WorkspaceSynchronization {
     this.staleConflict = false
     this.storageFailed = false
     this.refreshNeeded = false
-    this.onChange()
+    this.changed()
   }
 
   private save(
@@ -217,7 +224,7 @@ export class WorkspaceSynchronization {
     if (!this.connection) return
     this.pending.push(...patches)
     this.pendingIds.push(...patches.map(() => randomUUID()))
-    this.onChange()
+    this.changed()
     const generation = this.generation
     // Synchronous editor boundary: begin durability before allowing network flush.
     void runClientEffect(
@@ -445,7 +452,7 @@ export class WorkspaceSynchronization {
       this.pendingIds = ids
       this.version++
       this.conflicted = this.conflicts(host).length > 0
-      this.onChange()
+      this.changed()
       this.onError(this.conflicted ? 'Review the remaining competing edits before syncing.' : null)
       return projected
     }).pipe(
@@ -475,7 +482,7 @@ export class WorkspaceSynchronization {
         )
       if (this.draining) return this.draining
       this.version++
-      this.onChange()
+      this.changed()
       this.conflicted = false
       const generation = this.generation
       return Effect.gen({ self: this }, function* () {
@@ -537,7 +544,7 @@ export class WorkspaceSynchronization {
       if (!this.pending.length) this.workspace = null
       this.conflicted = changed && this.pending.length > 0
       this.version++
-      this.onChange()
+      this.changed()
       if (changed)
         return yield* Effect.fail(
           new SynchronizationError({
@@ -557,6 +564,74 @@ export class WorkspaceSynchronization {
   }
   discard(checkpoint: Checkpoint) {
     return runClientEffect(this.discardEffect(checkpoint))
+  }
+
+  /** Wait only for this thread and shared configuration captured by the action. The existing
+   * sender continues syncing other edits. Nothing can overtake a write already on the wire. */
+  flushTaskEffect(taskId: string): Effect.Effect<void, SynchronizationError> {
+    return this.flushDependenciesEffect(
+      (patch) => patch.collection !== 'tasks' || patch.id === taskId,
+    )
+  }
+
+  flushReadEffect({ taskId, repositoryId }: { taskId?: string; repositoryId?: string }) {
+    return this.flushDependenciesEffect(
+      (patch) =>
+        (patch.collection === 'tasks' && patch.id === taskId) ||
+        (patch.collection === 'repositories' && patch.id === repositoryId),
+    )
+  }
+
+  private flushDependenciesEffect(
+    matches: (patch: WorkspacePatch) => boolean,
+  ): Effect.Effect<void, SynchronizationError> {
+    return Effect.tryPromise({
+      try: (signal) =>
+        new Promise<void>((resolve, reject) => {
+          // Shared edits can depend on earlier task edits (for example deleting a project
+          // after moving its threads). Keep that prefix in order before prioritizing a task.
+          let shared = -1
+          this.pending.forEach((patch, index) => {
+            if (patch.collection !== 'tasks' && matches(patch)) shared = index
+          })
+          const ids = new Set(
+            this.pendingIds.filter((_, index) => index <= shared || matches(this.pending[index])),
+          )
+          if (!ids.size && !this.discarding) {
+            resolve()
+            return
+          }
+          let finished = false
+          const cleanup = () => {
+            this.waiting.delete(check)
+            this.priorities.delete(ids)
+            signal.removeEventListener('abort', abort)
+          }
+          const check = () => {
+            if (!finished && !this.pendingIds.some((id) => ids.has(id)) && !this.discarding) {
+              finished = true
+              cleanup()
+              resolve()
+            }
+          }
+          const fail = (cause: unknown) => {
+            if (finished) return
+            finished = true
+            cleanup()
+            reject(cause)
+          }
+          const abort = () => fail(signal.reason)
+          this.waiting.add(check)
+          this.priorities.add(ids)
+          signal.addEventListener('abort', abort, { once: true })
+          if (signal.aborted) {
+            abort()
+            return
+          }
+          void runClientEffect(this.flushEffect()).then(check, fail)
+        }),
+      catch: failure,
+    })
   }
 
   flushEffect(): Effect.Effect<void, SynchronizationError> {
@@ -585,9 +660,13 @@ export class WorkspaceSynchronization {
             while (pending.length && generation === this.generation) {
               yield* this.durable
               if (generation !== this.generation) return
-              const result = yield* Effect.result(
-                attempt(() => this.send(target, pending[0], pendingIds[0])),
+              const priority = pendingIds.findIndex((id) =>
+                [...this.priorities].some((ids) => ids.has(id)),
               )
+              const index = priority < 0 ? 0 : priority
+              const patch = pending[index]
+              const id = pendingIds[index]
+              const result = yield* Effect.result(attempt(() => this.send(target, patch, id)))
               if (
                 result._tag === 'Failure' &&
                 !workspacePatchRejected(result.failure.cause) &&
@@ -623,13 +702,18 @@ export class WorkspaceSynchronization {
                 }
               }
               // Preserve an acknowledged patch until the durable queue commits.
-              yield* this.save(target, pending.slice(1), pendingIds.slice(1), [pendingIds[0]]).pipe(
+              yield* this.save(
+                target,
+                pending.filter((_, i) => i !== index),
+                pendingIds.filter((_, i) => i !== index),
+                [id],
+              ).pipe(
                 Effect.tap(() =>
                   Effect.sync(() => {
-                    pending.shift()
-                    pendingIds.shift()
+                    pending.splice(index, 1)
+                    pendingIds.splice(index, 1)
                     this.version++
-                    this.onChange()
+                    this.changed()
                   }),
                 ),
                 Effect.uninterruptible,
@@ -673,7 +757,7 @@ export class WorkspaceSynchronization {
               Effect.sync(() => {
                 if (this.draining === work) {
                   this.draining = null
-                  this.onChange()
+                  this.changed()
                 }
               }),
             ),

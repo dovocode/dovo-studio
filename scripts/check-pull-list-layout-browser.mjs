@@ -80,6 +80,7 @@ async function bundle(isMobile) {
         './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:window.pages(),busy:!!window.refreshing,connected:window.sources.some(source=>source.connected),refresh:()=>{window.refreshed=true},more:async key=>{window.retried=key}});`,
         './add-to-thread': `export const AddPullsToThread=()=>null;`,
         '../detail/detail': `export const PullDetail=()=>null;`,
+        './intent-prefetch': `export const usePullIntentPrefetch=()=>({intent:()=>{},prefetch:null});`,
         './create': `export const CreatePull=()=>null;`,
         '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[]});`,
         '../../connections/source-picker': `export const SourcePicker=()=>null;`,

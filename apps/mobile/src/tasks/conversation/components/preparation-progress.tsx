@@ -9,7 +9,7 @@ import { Action } from '../../../ui/controls/action'
 
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 
-/** Step-by-step progress while the runtime creates a task's worktree and runs its setup. */
+/** Step-by-step progress while the runtime selects projects/models and prepares the agent. */
 export function PreparationProgress({
   preparation,
   onRetry,
@@ -68,7 +68,7 @@ export function PreparationProgress({
     <View
       accessible
       accessibilityRole={failed ? undefined : 'progressbar'}
-      accessibilityLabel={`${failed ? 'Worktree setup stopped' : 'Setting up the worktree'}. ${active ? active.label : ''}`}
+      accessibilityLabel={`${failed ? 'Thread startup stopped' : 'Starting thread'}. ${active ? active.label : ''}`}
       accessibilityValue={
         failed ? undefined : { min: 0, max: 100, now: Math.round(preparation.progress * 100) }
       }
@@ -76,9 +76,7 @@ export function PreparationProgress({
     >
       <View style={local.header}>
         <Icon name="changes" size={16} color={colors.muted} />
-        <Text style={local.title}>
-          {failed ? 'Worktree setup stopped' : 'Setting up the worktree'}
-        </Text>
+        <Text style={local.title}>{failed ? 'Thread startup stopped' : 'Starting thread'}</Text>
         {!!elapsed && <Text style={local.elapsed}>{elapsed}</Text>}
       </View>
       <View style={local.steps}>

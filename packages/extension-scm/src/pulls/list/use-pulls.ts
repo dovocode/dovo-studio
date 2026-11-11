@@ -20,7 +20,7 @@ import {
 } from '@dovo/studio-core'
 import {
   useSourceReaders,
-  verifySourceReader,
+  guardedSourceRead,
   chooseSourceReader,
 } from '../../connections/source-readers'
 import { refreshPullPage, type CachedPullPage } from './collection-pages'
@@ -46,9 +46,8 @@ const readPage = (source: PullSource, input: { state: string; page: number; refr
       input.page,
     ]),
     (knownVersion) =>
-      Effect.gen(function* () {
-        const readGuard = yield* verifySourceReader(source.reader)
-        const response = yield* source.reader.requestEffect(
+      guardedSourceRead(source.reader, (readGuard) =>
+        source.reader.requestEffect(
           '/api/scm/pulls/overview',
           {
             ...input,
@@ -58,14 +57,18 @@ const readPage = (source: PullSource, input: { state: string; page: number; refr
             knownVersion,
           },
           pullPageReadSchema,
-        )
-        if ('unchanged' in response || source.reader.key === source.key) return response
-        return {
-          ...response,
-          destination: source.destination,
-          pulls: response.pulls.map((pull) => ({ ...pull, destination: source.destination })),
-        }
-      }),
+        ),
+      ).pipe(
+        Effect.map((response) =>
+          'unchanged' in response || source.reader.key === source.key
+            ? response
+            : {
+                ...response,
+                destination: source.destination,
+                pulls: response.pulls.map((pull) => ({ ...pull, destination: source.destination })),
+              },
+        ),
+      ),
     input.refresh,
   )
 const defaultVisibility: PullProjectVisibility = {}
@@ -188,6 +191,7 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
           undefined,
         )
     }
+    const liveSources = new Set<string>()
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.forEach(
@@ -200,20 +204,31 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
                 cacheKey(source, remoteState),
                 cachedPullPageSchema,
               )
-              if (cached && !pagesRef.current[source.key])
-                update(source, {
-                  ...cached.value,
-                  stale: true,
-                  cachedAt: cached.value.cachedAt ?? cached.cachedAt,
-                })
+              if (
+                cached &&
+                !liveSources.has(source.key) &&
+                !pagesRef.current[source.key]?.pulls.length
+              )
+                update(
+                  source,
+                  {
+                    ...cached.value,
+                    stale: true,
+                    cachedAt: cached.value.cachedAt ?? cached.cachedAt,
+                  },
+                  pagesRef.current[source.key]?.error,
+                )
             }).pipe(
               Effect.catch(() =>
-                Effect.sync(() =>
-                  update(
-                    source,
-                    { pulls: [], page: 0, hasMore: false },
-                    'Saved PRs could not be read from this device.',
-                  ),
+                Effect.sync(
+                  () =>
+                    !liveSources.has(source.key) &&
+                    !pagesRef.current[source.key] &&
+                    update(
+                      source,
+                      { pulls: [], page: 0, hasMore: false },
+                      'Saved PRs could not be read from this device.',
+                    ),
                 ),
               ),
             ),
@@ -224,8 +239,8 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
     const firstPages = new Map<string, PullPage>()
     const prefixChecked = new Map<string, number>()
     const savedPages = new Map<string, CachedPullPage>()
+    void commands.run(hydrated)
     const load = Effect.gen(function* () {
-      yield* hydrated
       if (document.visibilityState !== 'visible') return
       setBusy(
         sources.some((source) => source.reader.connected) &&
@@ -240,6 +255,7 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
             const refresh = forcedRemotes.current.has(remote)
             const previous = pagesRef.current[source.key]
             const response = yield* readPage(source, { state: remoteState, page: 1, refresh })
+            liveSources.add(source.key)
             // Stage every opened page before publishing. Page boundaries move as PRs change.
             const laterPages: PullPage[] = []
             const changed =

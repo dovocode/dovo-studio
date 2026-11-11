@@ -40,3 +40,58 @@ it('does not reserialize an unchanged task while another thread streams', () => 
   expect(snapshotTag({ workspace: { ...workspace, tasks: [...workspace.tasks] } })).toBe(tag)
   expect(reads).toBe(1)
 })
+
+it('reuses unchanged nested files and workspace data when the active task streams', () => {
+  let fileReads = 0
+  let repositoryReads = 0
+  const file = {
+    path: 'source',
+    get after() {
+      fileReads++
+      return 'large body'
+    },
+  }
+  const files = [file]
+  const repository = {
+    id: 'repo',
+    get icon() {
+      repositoryReads++
+      return 'large icon'
+    },
+  }
+  const repositories = [repository]
+  const task = { id: 'one', files, messages: [{ text: 'first' }] }
+  const workspace = { tasks: [task], repositories }
+  const first = snapshotTag({ workspace })
+  const streamed = snapshotTag({
+    workspace: { ...workspace, tasks: [{ ...task, messages: [{ text: 'second' }] }] },
+  })
+  expect(streamed).not.toBe(first)
+  expect(fileReads).toBe(1)
+  expect(repositoryReads).toBe(1)
+  const reviewed = snapshotTag({
+    workspace: {
+      ...workspace,
+      tasks: [{ ...task, files: [{ path: 'source', after: 'large body', viewed: true }] }],
+    },
+  })
+  expect(reviewed).not.toBe(first)
+  expect(fileReads).toBe(1)
+})
+it('keeps JSON absence semantics and separates nested data from digest-shaped values', () => {
+  const tag = (value: object) => snapshotTag({ workspace: value })
+  expect(tag({ tasks: [], extra: undefined })).toBe(tag({ tasks: [] }))
+  expect(tag({ tasks: [], values: [undefined] })).toBe(tag({ tasks: [], values: [null] }))
+  expect(tag({ tasks: [], values: [] })).not.toBe(tag({ tasks: [], values: {} }))
+  expect(tag({ tasks: [], values: ['digest', 'x'] })).not.toBe(tag({ tasks: [], values: 'x' }))
+  expect(tag({ tasks: [], values: { a: 1, b: 2 } })).not.toBe(
+    tag({ tasks: [], values: { b: 2, a: 1 } }),
+  )
+})
+it('reads changing runtime state even when service collections reuse their identity', () => {
+  const workspace = { tasks: [] }
+  const runs = [{ status: 'running' }]
+  const before = snapshotTag({ workspace, runs })
+  runs[0]!.status = 'completed'
+  expect(snapshotTag({ workspace, runs })).not.toBe(before)
+})

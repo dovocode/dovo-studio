@@ -14,7 +14,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',...window.attachmentState,upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
-  './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
+  './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled,taskId})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-task-id={taskId} data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
 for (const [path, name] of [
   ['../../dialogs/harness-dialog', 'HarnessDialog'],
@@ -1124,6 +1124,87 @@ try {
     allow: false,
     decision: 'deny',
   })
+  // Empty-composer Enter approves its single request, before the editor consumes it.
+  // Nonempty input, other threads, modifiers and ambiguous requests keep their own keys.
+  const savedDraft = await input.inputValue()
+  await input.fill('')
+  await input.press('Enter')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path === '/api/approvals').length,
+    ),
+    approvalsBefore + 2,
+  )
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [],
+      approvals: [{ id: 'empty-enter', taskId: 'task', title: 'Approve with Enter', detail: '' }],
+    }),
+  )
+  await page.locator('[data-approval-id="empty-enter"]').waitFor()
+  await input.fill('Keep this text')
+  await input.press('Enter')
+  await input.fill('')
+  for (const key of ['Shift+Enter', 'Alt+Enter', 'Control+Enter']) await input.press(key)
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path === '/api/approvals').length,
+    ),
+    approvalsBefore + 2,
+  )
+  await input.press('Enter')
+  await page.waitForFunction(
+    (count) =>
+      window.requests.filter((item) => item.path === '/api/approvals').length === count + 3,
+    approvalsBefore,
+  )
+  assert.deepEqual(await page.evaluate(() => window.requests.at(-1).input), {
+    id: 'empty-enter',
+    allow: true,
+    decision: 'approve',
+  })
+  // Rich empty documents use the editor's content marker, including non-text content.
+  await page.evaluate(() => {
+    const editor = document.createElement('div')
+    editor.contentEditable = 'true'
+    editor.setAttribute('role', 'textbox')
+    editor.dataset.taskId = 'task'
+    editor.dataset.empty = ''
+    editor.id = 'rich-empty-shortcut'
+    document.body.append(editor)
+  })
+  const richEmpty = page.locator('#rich-empty-shortcut')
+  await richEmpty.focus()
+  await richEmpty.press('Enter')
+  await page.waitForFunction(
+    (count) =>
+      window.requests.filter((item) => item.path === '/api/approvals').length === count + 4,
+    approvalsBefore,
+  )
+  await richEmpty.evaluate((editor) => {
+    delete editor.dataset.empty
+    editor.innerHTML = '<img alt="attached image">'
+  })
+  await richEmpty.press('Enter')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path === '/api/approvals').length,
+    ),
+    approvalsBefore + 4,
+  )
+  await richEmpty.evaluate((editor) => {
+    editor.dataset.empty = ''
+    editor.dataset.taskId = 'other'
+  })
+  await richEmpty.press('Enter')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path === '/api/approvals').length,
+    ),
+    approvalsBefore + 4,
+  )
+  await richEmpty.evaluate((editor) => editor.remove())
+  await input.fill(savedDraft)
   // Watch notifications keep the queue compact and open full details without editing agent input.
   await page.evaluate(() => {
     window.setInputs({ questions: [], approvals: [] })

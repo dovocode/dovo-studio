@@ -277,6 +277,7 @@ export * from './scm/task-review-session.js'
 export * from './runtime/connection/desktop-sync.js'
 
 export * from './runtime/connection/workspace-mutations.js'
+export * from './runtime/connection/request-ordering.js'
 export { projectIconChoices } from './generated/project-icon-choices.js'
 export { taskPullLinks, taskPullStatusFor, pullLinkedTasks } from './tasks/task-pull-links.js'
 

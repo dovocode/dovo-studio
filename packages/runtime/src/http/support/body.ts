@@ -6,41 +6,66 @@ import { HttpError } from '../../errors.js'
 const compress = promisify(gzip)
 const cachedBodies = new WeakMap<IncomingMessage, { size: number; value: unknown }>()
 const observers = new WeakMap<IncomingMessage, (value: unknown) => void>()
-const workspaceFingerprints = new WeakMap<object, string>()
+// WorkspaceStore replaces changed objects. Weak keys reuse large task fields and workspace
+// collections without retaining them. Hash a new collection in one pass: a separate digest
+// for every small message made cold history loads slower in the benchmark.
+const contentFingerprints = new WeakMap<object, string>()
 const taskFingerprints = new WeakMap<object, string>()
-function workspaceFingerprint(workspace: object) {
-  // Immutable task identities survive updates to other threads. Hash their contents once,
-  // then hash only the small workspace shell and ordered digests during streaming.
-  if ('tasks' in workspace && Array.isArray(workspace.tasks)) {
-    const tasks = workspace.tasks.map((task: unknown) => {
-      if (!task || typeof task !== 'object') return task
-      let fingerprint = taskFingerprints.get(task)
-      if (!fingerprint) {
-        fingerprint = createHash('sha256').update(JSON.stringify(task)).digest('base64url')
-        taskFingerprints.set(task, fingerprint)
-      }
-      return fingerprint
-    })
-    return createHash('sha256')
-      .update('task-digests:')
-      .update(JSON.stringify({ ...workspace, tasks }))
-      .digest('base64url')
+const workspaceFingerprints = new WeakMap<object, string>()
+const digest = (value: unknown) =>
+  createHash('sha256').update(JSON.stringify(value)).digest('base64url')
+function contentFingerprint(value: object) {
+  let result = contentFingerprints.get(value)
+  if (!result) {
+    result = digest(value)
+    contentFingerprints.set(value, result)
   }
-  return createHash('sha256').update(JSON.stringify(workspace)).digest('base64url')
+  return result
+}
+// Keep scalar and digest domains separate, including user strings that resemble digests.
+const member = (value: unknown) =>
+  value !== null && typeof value === 'object'
+    ? ['digest', contentFingerprint(value)]
+    : ['value', value]
+const entries = (value: object) => Object.entries(value).filter(([, item]) => item !== undefined)
+function taskFingerprint(task: object) {
+  let result = taskFingerprints.get(task)
+  if (!result) {
+    result = digest(entries(task).map(([key, value]) => [key, member(value)]))
+    taskFingerprints.set(task, result)
+  }
+  return result
+}
+function workspaceFingerprint(workspace: object) {
+  let result = workspaceFingerprints.get(workspace)
+  if (!result) {
+    result = digest(
+      entries(workspace).map(([key, value]) => [
+        key,
+        key === 'tasks' && Array.isArray(value)
+          ? [
+              'tasks',
+              value.map((task: unknown) =>
+                task && typeof task === 'object'
+                  ? ['digest', taskFingerprint(task)]
+                  : ['value', task],
+              ),
+            ]
+          : member(value),
+      ]),
+    )
+    workspaceFingerprints.set(workspace, result)
+  }
+  return result
 }
 export function snapshotTag(data: unknown) {
   if (!data || typeof data !== 'object' || !('workspace' in data)) return undefined
   const { workspace, ...state } = data
   if (!workspace || typeof workspace !== 'object') return undefined
-  let fingerprint = workspaceFingerprints.get(workspace)
-  if (!fingerprint) {
-    fingerprint = workspaceFingerprint(workspace)
-    workspaceFingerprints.set(workspace, fingerprint)
-  }
-  // WorkspaceStore replaces its workspace object on every change. The other, smaller
-  // snapshot sections can change without a workspace revision (approvals, devices, etc.).
+  // The smaller runtime state can change independently of the workspace revision.
   const hash = createHash('sha256')
-    .update(fingerprint)
+    .update('snapshot-digests:')
+    .update(workspaceFingerprint(workspace))
     .update(JSON.stringify(state))
     .digest('base64url')
   return `W/"snapshot-${hash}"`

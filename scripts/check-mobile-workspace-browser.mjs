@@ -130,7 +130,7 @@ window.storage={};window.routes=[];window.requests=[];window.focused=true;window
 const owner=id=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'private-'+id}},connected:true,snapshot:{terminalRecoverySupported:true,workspace:{repositories:[{id:'general-'+id,name:'General',kind:'scratch',path:'/scratch',branch:''},{id:'project',name:'Project '+id,path:'/project',branch:'main'}],agents:[],tasks:[{id:'existing-'+id,title:'Existing '+id}]}}});window.owners=[owner('a'),owner('b')];
 window.publish=()=>{window.version++;listeners.forEach(fn=>fn())};
 window.refresh=async()=>{if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}};
-window.request=async(profile,path,input)=>{window.requests.push({owner:profile.id,path,input});
+window.request=async(profile,path,input,schema,method,options)=>{window.requests.push({owner:profile.id,path,input:JSON.parse(JSON.stringify(input)),defer:!!options?.defer});
 if(path==='/api/tasks/workspace/route'){if(window.selectionMode)return {mode:window.selectionMode,reason:'GLiClass suggestion',selections:input.catalogs?.runtime?{runtime:'runtime:b'}:input.catalogs?.project?{project:window.selectionMode==='terminal'?'none':'project:project'}:input.catalogs?.model?{model:input.catalogs.model.find(item=>item.label.includes('Opus')).id}:{profile:'profile:work'}};if(window.holdRoute)await new Promise(resolve=>window.finishRoute=resolve);return window.decision??{mode:'terminal',reason:'A shell command'}};
 if(path==='/api/previews/browser/profiles/read')return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};
 if(path==='/api/agents/availability')return [{id:'harness:codex',available:true},{id:'agent:dovo:codex',available:true},{id:'agent:dovo:claude',available:true}];
@@ -253,6 +253,47 @@ try {
   )
   assert.equal(tasks.length, 1)
   assert.equal(tasks[0].input.create.harness.model, 'chosen')
+
+  // Runtimes with thread starts admit one durable command and navigate without a creation request.
+  await reset()
+  await page.evaluate(() => {
+    window.owners[0].snapshot.threadStartSupported = true
+    window.publish()
+  })
+  await page.getByLabel('Destination', { exact: true }).selectOption('thread')
+  await page.getByRole('button', { name: 'Choose test model' }).click()
+  await request.fill('Start in one request')
+  await page.evaluate(() => {
+    window.failMessage = true
+  })
+  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.getByText('Lost message response', { exact: false }).waitFor()
+  assert.equal(await page.getByText('Thread saved.', { exact: false }).count(), 0)
+  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.waitForFunction(() => window.routes.length)
+  const starts = await page.evaluate(() =>
+    window.requests.filter(
+      (r) => r.path !== '/api/agents/availability' && r.path !== '/api/agents/models/cached',
+    ),
+  )
+  assert.deepEqual(
+    starts.map((r) => [r.path, r.defer]),
+    [
+      ['/api/tasks/message', true],
+      ['/api/tasks/message', true],
+    ],
+  )
+  assert.equal(starts[0].input.messageId, starts[1].input.messageId)
+  assert.deepEqual(starts[0].input.createTask, starts[1].input.createTask)
+  assert.equal(starts[0].input.createTask.id, starts[0].input.id)
+  assert.equal(starts[0].input.createTask.harness.model, 'chosen')
+  assert.equal(starts[0].input.createTask.title, 'Start in one request')
+  assert.equal(starts[0].input.createTask.draft, '')
+  assert.equal(starts[0].input.text, 'Start in one request')
+  await page.evaluate(() => {
+    delete window.owners[0].snapshot.threadStartSupported
+    window.publish()
+  })
 
   await reset()
   await page.getByLabel('Destination', { exact: true }).selectOption('thread')

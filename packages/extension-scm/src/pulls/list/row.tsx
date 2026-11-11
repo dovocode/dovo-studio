@@ -22,6 +22,7 @@ export function PullRow({
   compact = false,
   onClick,
   onAddToThread,
+  onIntent,
   selectionCount = 1,
 }: {
   pull: PullSummary
@@ -31,6 +32,8 @@ export function PullRow({
   onSelect: () => void
   onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
   onAddToThread?: () => void
+  /** True while the pointer or focus rests on the row; false when both leave it. */
+  onIntent?: (resting: boolean) => void
   selectionCount?: number
 }) {
   const [error, setError] = useApplicationState('')
@@ -118,6 +121,17 @@ export function PullRow({
               }}
               aria-current={selected ? 'true' : undefined}
               onClick={onClick ?? onSelect}
+              // A touch tap opens at once; only a resting mouse or pen pointer shows intent.
+              onPointerEnter={(event) => {
+                if (event.pointerType !== 'touch') onIntent?.(true)
+              }}
+              onPointerLeave={(event) => {
+                if (event.currentTarget !== document.activeElement) onIntent?.(false)
+              }}
+              onFocus={() => onIntent?.(true)}
+              onBlur={(event) => {
+                if (!event.currentTarget.matches(':hover')) onIntent?.(false)
+              }}
               className="studio-collection-row min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-primary"
             >
               <div className="studio-collection-body grid gap-x-6 gap-y-2 @[64rem]/pr-row:grid-cols-[minmax(0,1fr)_14rem]">

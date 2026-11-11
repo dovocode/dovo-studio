@@ -1,4 +1,4 @@
-import { changedFileFingerprint, type TaskMetadata } from '@dovo/protocol'
+import { filePreviewIdentity, type TaskMetadata } from '@dovo/protocol'
 
 /** Version metadata lives beside files, preserving existing workspace PATCH preconditions. */
 export function versionReviewedFiles<T extends TaskMetadata>(task: T, previous?: TaskMetadata): T {
@@ -25,7 +25,13 @@ export function versionReviewedFiles<T extends TaskMetadata>(task: T, previous?:
   const versions: [string, number][] = []
   const files = task.files.map((file) => {
     const old = prior.get(file.path)
-    const changed = !!old && changedFileFingerprint(old) !== changedFileFingerprint(file)
+    // Compare the fingerprint inputs directly. A viewed-only edit must not hash every body.
+    const changed =
+      !!old &&
+      old !== file &&
+      (old.before !== file.before ||
+        old.after !== file.after ||
+        filePreviewIdentity(old.preview) !== filePreviewIdentity(file.preview))
     const viewed = changed ? false : file.viewed
     const viewedVersion =
       old && !changed && old.viewed === viewed ? (previousVersions?.[file.path] ?? 0) : ++version

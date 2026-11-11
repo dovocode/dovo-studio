@@ -21,7 +21,7 @@ export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/s
     export const useStudioHost=()=>useContext(Host);
     export const SettingsTargetProvider=({children})=>children;
     export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
-    export const updateAppPreferences=()=>{};
+    export const updateAppPreferences=changes=>{(window.preferenceWrites??=[]).push(changes)};
     export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
     const confirmSettingsNavigation=()=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : Promise.resolve(window.allowSettings);export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
     export function WorkspaceProvider({children}) {
@@ -404,6 +404,13 @@ try {
   await page.keyboard.press('Escape')
   await pipelineDialog.waitFor({ state: 'hidden' })
   assert.deepEqual(errors, [])
+  assert.equal(
+    await page.evaluate(
+      () => (window.preferenceWrites ?? []).filter((changes) => 'lastThreadId' in changes).length,
+    ),
+    0,
+    'Thread navigation must not synchronously rewrite unused preferences',
+  )
   console.log(
     'Actual workbench navigation restores thread and real composer drafts across sections, keeps computer selections separate, respects settings cancellation and preserves fresh startup/New thread.',
   )

@@ -74,7 +74,7 @@ import {
 import { Effect, Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import type { BackgroundStart } from '../conversation/state/use-actions'
-import { useTaskConversation } from '../conversation/state/provider'
+import { useConversationControls } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
 import { ComposerActivity } from './composer-activity'
@@ -123,7 +123,7 @@ export function Composer({
   const conceal = FadeOut.duration(120).reduceMotion(motion)
 
   const insets = useSafeAreaInsets()
-  const { actions, send, stop } = useTaskConversation()
+  const { actions, send, stop } = useConversationControls()
   const {
     connected,
     snapshot,

@@ -454,8 +454,8 @@ function PrimaryReviewPane({
             setRefreshBusy(true)
             void request(
               '/api/scm/changes',
-              { repositoryId: task.repositoryId, taskId: task.id },
-              responses.files,
+              { repositoryId: task.repositoryId, taskId: task.id, includeFiles: false },
+              responses.changesRefresh,
             )
               .catch((cause: unknown) =>
                 setReviewError(cause instanceof Error ? cause.message : String(cause)),

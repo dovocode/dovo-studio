@@ -56,7 +56,8 @@ const corrupt = () =>
  * summary in the same transactions, so loading the workspace reads no conversation. A missing or
  * stale summary is derived again from that task's history. */
 export class WorkspaceDocuments {
-  private readonly serializedTasks = new WeakMap<TaskSummary, string>()
+  private readonly serializedTasks = new WeakMap<TaskSummary, { metadata: string; files: string }>()
+  private readonly serializedFiles = new WeakMap<TaskSummary['files'], string>()
   private readonly serializedHistories = new WeakMap<TaskSummary['history'], string>()
   private unreadableTaskIds: string[] = []
   private readonly recoveredTasks = new Map<
@@ -305,8 +306,16 @@ export class WorkspaceDocuments {
       const value = this.serializeTask(task)
       const historyChanged = full || old?.history !== task.history
       if (historyChanged) upsertHistory.run(task.id, this.serializeHistory(task.history))
-      if (!full && old && !historyChanged && this.serializeTask(old) === value) continue
-      upsert.run(task.id, value, task.history.messages, task.history.turns ?? 0)
+      if (!full && old && !historyChanged) {
+        const prior = this.serializeTask(old)
+        if (prior.metadata === value.metadata && prior.files === value.files) continue
+      }
+      upsert.run(
+        task.id,
+        `${value.metadata.slice(0, -1)},"files":${value.files}}`,
+        task.history.messages,
+        task.history.turns ?? 0,
+      )
     }
     const retained = new Set(next.tasks.map((task) => task.id))
     if (!full)
@@ -341,11 +350,22 @@ export class WorkspaceDocuments {
   private serializeTask(task: TaskSummary) {
     let value = this.serializedTasks.get(task)
     if (value === undefined) {
-      value = JSON.stringify({
-        ...taskMetadata(task),
-        messages: [],
-        ...(task.history.turns !== undefined ? { turns: [] } : {}),
-      })
+      let files = this.serializedFiles.get(task.files)
+      if (files === undefined) {
+        files = JSON.stringify(task.files)
+        this.serializedFiles.set(task.files, files)
+      }
+      // Keep the version 3 row shape. Streaming changes the small metadata, but must not
+      // encode unchanged review bodies again or retain another complete serialized copy.
+      value = {
+        metadata: JSON.stringify({
+          ...taskMetadata(task),
+          files: undefined,
+          messages: [],
+          ...(task.history.turns !== undefined ? { turns: [] } : {}),
+        }),
+        files,
+      }
       this.serializedTasks.set(task, value)
     }
     return value

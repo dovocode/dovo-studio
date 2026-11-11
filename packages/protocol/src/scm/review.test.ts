@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import { createHash } from 'node:crypto'
 import {
   changedFileFingerprint,
   pullFileFingerprint,
@@ -6,6 +7,55 @@ import {
   orderReviewFiles,
 } from './review'
 const file = { path: 'app.ts', before: 'old', after: 'new', viewed: false }
+it('keeps fingerprint bytes compatible and refreshes cached inputs after in-place edits', () => {
+  const current = {
+    ...file,
+    before: 'old\u0000🙂',
+    after: 'new\n漢字',
+    preview: { kind: 'image' as const, after: { hash: 'a', size: 10, mode: '100644' } },
+  }
+  const reference = () => {
+    const hash = createHash('sha256')
+    const preview = JSON.stringify([
+      'image',
+      null,
+      [current.preview.after.hash, current.preview.after.size, current.preview.after.mode],
+    ])
+    for (const field of [current.path, current.before, current.after, preview])
+      hash.update(`${field.length}:`).update(field)
+    return hash.digest('hex')
+  }
+  const original = changedFileFingerprint(current)
+  expect(original).toBe(reference())
+  expect(changedFileFingerprint(current)).toBe(original)
+  current.viewed = true
+  expect(changedFileFingerprint(current)).toBe(original)
+  for (const edit of [
+    () => {
+      current.path = 'other.ts'
+    },
+    () => {
+      current.before += 'old'
+    },
+    () => {
+      current.after += 'new'
+    },
+    () => {
+      current.preview.after.hash = 'b'
+    },
+    () => {
+      current.preview.after.size = 20
+    },
+    () => {
+      current.preview.after.mode = '100755'
+    },
+  ]) {
+    const before = changedFileFingerprint(current)
+    edit()
+    expect(changedFileFingerprint(current)).not.toBe(before)
+    expect(changedFileFingerprint(current)).toBe(reference())
+  }
+})
 it('identifies the visible diff independently of viewed marks and editor disk baselines', () => {
   expect(changedFileFingerprint({ ...file, viewed: true, diskContents: 'disk' })).toBe(
     changedFileFingerprint(file),

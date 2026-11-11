@@ -11,6 +11,7 @@ import {
   applyActivityDelta,
   activityDeltaSchema,
   syncFrameSchema,
+  type SnapshotDelta,
 } from './sync.js'
 const snapshot = () =>
   decode(snapshotSchema, {
@@ -115,6 +116,152 @@ it.each([false, true])(
     expect(JSON.stringify(delta).length).toBeLessThan(JSON.stringify(legacy).length / 100)
   },
 )
+it.each([false, true])(
+  'patches review fields without repeating file bodies (compact %s)',
+  (compact) => {
+    const previous = snapshot()
+    const task = previous.workspace.tasks[0]!
+    task.files = ['a.ts', 'b.ts'].map((path) => ({
+      path,
+      before: 'before\n'.repeat(10000),
+      after: 'after\n'.repeat(10000),
+      diskContents: 'after\n'.repeat(10000),
+      viewed: false,
+    }))
+    const next = {
+      ...previous,
+      revision: 2,
+      workspace: {
+        ...previous.workspace,
+        tasks: [
+          {
+            ...task,
+            files: task.files.map((file, index) =>
+              index === 0 ? { ...file, viewed: true, diskContents: undefined } : file,
+            ),
+          },
+          previous.workspace.tasks[1]!,
+        ],
+      },
+    }
+    const delta = decode(
+      snapshotDeltaSchema,
+      JSON.parse(JSON.stringify(snapshotDelta(previous, next, compact, true, true, true))),
+    )
+    const change = delta.workspace.tasks?.changes[0]
+    expect(change?.fieldDelta).toBeUndefined()
+    expect(change?.files).toEqual({
+      changes: [
+        { path: 'a.ts', fieldDelta: { values: { viewed: true }, removed: ['diskContents'] } },
+      ],
+    })
+    const restored = applySnapshotDelta(previous, delta)
+    expect(restored).toEqual(next)
+    expect(restored.workspace.tasks[0]?.files[1]).toBe(task.files[1])
+    const legacy = snapshotDelta(previous, next, compact, true, true)
+    expect(legacy.workspace.tasks?.changes[0]?.files).toBeUndefined()
+    expect(legacy.workspace.tasks?.changes[0]?.fieldDelta?.values.files).toEqual(
+      next.workspace.tasks[0]?.files,
+    )
+    expect(JSON.stringify(delta).length).toBeLessThan(JSON.stringify(legacy).length / 100)
+  },
+)
+it('keeps file membership, rename, order and content replacement exact after JSON transport', () => {
+  let previous = snapshot()
+  const file = (path: string, after = path) => ({ path, before: '', after, viewed: false })
+  for (const files of [
+    [file('a'), file('b')],
+    [file('b'), file('a', 'edited')],
+    [file('renamed'), file('b')],
+    [],
+    [file('a')],
+  ]) {
+    const next = {
+      ...previous,
+      revision: previous.revision + 1,
+      workspace: {
+        ...previous.workspace,
+        tasks: previous.workspace.tasks.map((task) =>
+          task.id === 'one' ? { ...task, files } : task,
+        ),
+      },
+    }
+    const delta = decode(
+      snapshotDeltaSchema,
+      JSON.parse(JSON.stringify(snapshotDelta(previous, next, true, true, true, true))),
+    )
+    previous = applySnapshotDelta(previous, delta)
+    expect(previous).toEqual(next)
+  }
+})
+it('falls back to atomic files for duplicate paths and sends complete files for new tasks', () => {
+  const previous = snapshot()
+  const task = previous.workspace.tasks[0]!
+  const file = { path: 'same', before: '', after: 'contents', viewed: false }
+  const next = {
+    ...previous,
+    workspace: {
+      ...previous.workspace,
+      tasks: [
+        { ...task, files: [file, file] },
+        { ...task, id: 'new', files: [file] },
+      ],
+    },
+  }
+  const delta = snapshotDelta(previous, next, true, true, true, true)
+  expect(delta.workspace.tasks?.changes[0]?.files).toBeUndefined()
+  expect(delta.workspace.tasks?.changes[0]?.fieldDelta?.values.files).toEqual([file, file])
+  expect(delta.workspace.tasks?.changes[1]?.fields?.files).toEqual([file])
+  expect(applySnapshotDelta(previous, delta)).toEqual(next)
+})
+it('rejects invalid file baselines, identities and orders for full resync', () => {
+  const previous = snapshot()
+  const file = { path: 'a', before: '', after: 'body', viewed: false }
+  previous.workspace.tasks[0]!.files = [file]
+  const invalid: Array<
+    NonNullable<NonNullable<SnapshotDelta['workspace']['tasks']>['changes'][number]['files']>
+  > = [
+    { changes: [{ path: 'missing', fieldDelta: { values: { viewed: true }, removed: [] } }] },
+    { changes: [{ path: 'a', fields: { ...file, path: 'wrong' } }] },
+    { changes: [{ path: 'a', fields: file, fieldDelta: { values: {}, removed: [] } }] },
+    { changes: [{ path: 'new', fields: { ...file, path: 'new' } }] },
+    { changes: [{ path: 'a', fieldDelta: { values: {}, removed: ['after'] } }] },
+    {
+      changes: [
+        { path: 'a', fields: file },
+        { path: 'a', fields: file },
+      ],
+    },
+    { order: ['missing'], changes: [] },
+    { order: ['a', 'a'], changes: [] },
+    { order: [], changes: [{ path: 'a', fields: file }] },
+  ]
+  for (const files of invalid) {
+    expect(() =>
+      applySnapshotDelta(previous, { workspace: { tasks: { changes: [{ id: 'one', files }] } } }),
+    ).toThrow(/Sync file|Schema validation failed/)
+  }
+  expect(() =>
+    applySnapshotDelta(previous, {
+      workspace: {
+        tasks: {
+          changes: [
+            {
+              id: 'one',
+              files: { changes: [] },
+              fieldDelta: { values: { files: [] }, removed: [] },
+            },
+          ],
+        },
+      },
+    }),
+  ).toThrow('ambiguous')
+  expect(() =>
+    applySnapshotDelta(previous, {
+      workspace: { tasks: { changes: [{ id: 'missing', files: { changes: [] } }] } },
+    }),
+  ).toThrow('missing')
+})
 it('retains the whole workspace when only runtime metadata changes', () => {
   const previous = snapshot()
   const next = { ...previous, runtimeHost: 'Renamed computer' }

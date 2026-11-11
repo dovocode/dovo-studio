@@ -1,3 +1,5 @@
+import { nativeTooltipWindow } from './native-tooltip.js'
+import { studioContents, createStudioWindow } from './studio-window.js'
 import { readLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import { randomUUID } from 'node:crypto'
@@ -5,6 +7,7 @@ import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { defaultWindowColors, readWindowColors, titleBarOverlay } from './window-colors.js'
 import { offerLink } from './links.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
+import { registerWindowUnload } from './window-unload.js'
 
 /** Each browser window hosts browser-only controls and its own independent tab workspace. */
 export function registerBrowserWindows(rendererPath: string, preload: string) {
@@ -30,7 +33,7 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
     const colors =
       readWindowColors(app.getPath('userData')) ??
       defaultWindowColors(nativeTheme.shouldUseDarkColors)
-    const window = new BrowserWindow({
+    const window = createStudioWindow({
       width: transient ? 620 : 1180,
       height: transient ? 760 : 800,
       minWidth: pageOnly ? 480 : 840,
@@ -82,7 +85,10 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
       pageWindows.delete(window)
       transientWindows.delete(window)
     })
-    window.webContents.setWindowOpenHandler(({ url }) => {
+    studioContents(window).setWindowOpenHandler((details) => {
+      const tooltip = nativeTooltipWindow(window, details, rendererPath)
+      if (tooltip) return tooltip
+      const { url } = details
       void offerLink(window, url)
       return { action: 'deny' }
     })
@@ -92,16 +98,17 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
         void offerLink(window, url)
       }
     }
-    window.webContents.on('will-navigate', guardNavigation)
-    window.webContents.on('will-redirect', guardNavigation)
-    registerQuitShortcut(window.webContents)
+    studioContents(window).on('will-navigate', guardNavigation)
+    studioContents(window).on('will-redirect', guardNavigation)
+    registerQuitShortcut(studioContents(window))
+    registerWindowUnload(window)
     const hash = `browser-window=${randomUUID()}`
     try {
       if (process.env.VITE_DEV_SERVER_URL) {
         const url = new URL(process.env.VITE_DEV_SERVER_URL)
         url.hash = hash
-        await window.loadURL(url.href)
-      } else await window.loadFile(rendererPath, { hash })
+        await studioContents(window).loadURL(url.href)
+      } else await studioContents(window).loadFile(rendererPath, { hash })
       if (!window.isDestroyed()) {
         window.show()
         window.focus()

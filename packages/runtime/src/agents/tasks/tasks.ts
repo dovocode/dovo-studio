@@ -2034,7 +2034,14 @@ export class Tasks {
               restartRecovery: undefined,
               queuePaused: retryFailed || pauseQueue,
               error: undefined,
-              preparation: undefined,
+              preparation:
+                task.runPhase === 'finalizing' || task.execution === 'worktree'
+                  ? undefined
+                  : {
+                      steps: ['agent'],
+                      current: 'agent',
+                      startedAt: new Date().toISOString(),
+                    },
               activity: 'Starting agent',
             }),
             undefined,
@@ -2053,6 +2060,16 @@ export class Tasks {
             // Selection belongs to the admitted run, so Send can finish and Stop can
             // cancel its utility model before checkout or coding work starts.
             if (preparation === 'accepted') yield* selectModel(run.controller.signal)
+            const modelPreparation = this.store.taskSummary(id).preparation
+            if (modelPreparation?.steps.some((step) => step === 'tune' || step === 'maestro'))
+              this.store.updateTask(id, (current) => ({
+                ...current,
+                preparation: {
+                  ...modelPreparation,
+                  current: 'agent',
+                  startedAt: new Date().toISOString(),
+                },
+              }))
             yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
             // Send already returned. A pause made during model selection must stop
             // preparation without consuming the saved message or creating a checkout.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { decode, taskSchema, type Task } from '@dovo/protocol'
+import { decode, taskSchema, threadStartMessage, type Task } from '@dovo/protocol'
 import { RuntimeContext, useRuntime } from '../../runtime/connection/provider'
 
 const taskPatch = Schema.Struct({
@@ -14,7 +14,8 @@ const taskPatch = Schema.Struct({
 })
 const revision = Schema.Struct({ revision: Schema.Number })
 
-/** Configure a blank composer locally; create its task before the first send or attachment. */
+/** Configure a blank composer locally; create its task before the first send or attachment.
+ * Runtimes with `threadStartSupported` create it with the first message in one request. */
 export function TemporaryTaskRuntime({
   task,
   onCommit,
@@ -35,6 +36,14 @@ export function TemporaryTaskRuntime({
   )
   const committed = useRef(!temporary)
   const notified = useRef(false)
+  const threadStart = useRef(false)
+  threadStart.current = runtime.snapshot?.threadStartSupported === true
+  const hosted = useRef(false)
+  hosted.current = !!runtime.snapshot?.workspace.tasks.some((item) => item.id === task.id)
+  // A retry of the same message must carry the same draft, even after the composer cleared it.
+  const starts = useRef(new Map<string, Task>())
+  // Other thread actions wait for an in-flight start rather than creating the thread twice.
+  const starting = useRef<Promise<unknown> | null>(null)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -67,6 +76,46 @@ export function TemporaryTaskRuntime({
               path !== '/api/tasks/waiting' &&
               path !== '/api/tasks/dictation/cleanup') ||
             path.startsWith('/api/attachments/')
+          if (needsTask && !committed.current && starting.current)
+            await starting.current.catch(() => undefined)
+          if (
+            !committed.current &&
+            !creation.current &&
+            threadStart.current &&
+            path === '/api/tasks/message'
+          ) {
+            const id =
+              input !== null && typeof input === 'object' && 'messageId' in input
+                ? String(input.messageId)
+                : ''
+            const previous = starts.current.get(id)
+            // A thread already on the runtime only starts here when retrying this same message.
+            const start =
+              previous || !hosted.current
+                ? threadStartMessage(input, previous ?? current.current)
+                : undefined
+            if (start) {
+              starts.current.set(id, start.createTask)
+              // A deferred send returns after durable local admission; the outbox then
+              // projects the thread until a snapshot contains it.
+              const sending = runClientEffect(rootCall(path, start, schema, method, options)).then(
+                (result) => {
+                  committed.current = true
+                  current.current = start.createTask
+                  if (mounted.current) {
+                    setDraft(start.createTask)
+                    setTemporary(false)
+                    notified.current = committedCallback.current(current.current) !== false
+                  }
+                  return result
+                },
+              )
+              starting.current = sending
+              return await sending.finally(() => {
+                if (starting.current === sending) starting.current = null
+              })
+            }
+          }
           if (needsTask && !committed.current) {
             if (!creation.current)
               creation.current = runClientEffect(

@@ -1,3 +1,4 @@
+import { studioContents } from './studio-window.js'
 import { dialog, type BrowserWindow } from 'electron'
 
 const studioWindows = new Set<BrowserWindow>()
@@ -7,7 +8,7 @@ export function registerWindowUnload(window: BrowserWindow) {
   if (studioWindows.has(window)) return
   studioWindows.add(window)
   window.once('closed', () => studioWindows.delete(window))
-  window.webContents.on('will-prevent-unload', (event) => {
+  studioContents(window).on('will-prevent-unload', (event) => {
     const response = dialog.showMessageBoxSync(window, {
       type: 'warning',
       message: 'Keep unsaved changes?',
@@ -28,7 +29,7 @@ export function registerWindowUnload(window: BrowserWindow) {
 export async function closeStudioWindows() {
   for (const window of [...studioWindows]) {
     if (window.isDestroyed()) continue
-    const contents = window.webContents
+    const contents = studioContents(window)
     const closed = await new Promise<boolean>((resolve) => {
       const finish = (closed: boolean) => {
         window.removeListener('closed', onClosed)

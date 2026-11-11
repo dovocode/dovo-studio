@@ -4,6 +4,7 @@ import { WorkspaceSynchronization, type WorkspaceOutbox } from './synchronizatio
 import type { WorkspaceOutboxChange } from './synchronization'
 import { workspaceSchema, type RuntimeConnection, type WorkspacePatch } from '@dovo/protocol'
 import { sameWorkspaceValue } from './workspace-conflicts'
+import { runClientEffect } from '@dovo/client-runtime'
 type Persist = (
   target: RuntimeConnection,
   value: WorkspaceOutbox | null,
@@ -23,6 +24,109 @@ const patch: WorkspacePatch = {
     },
   },
 }
+it('releases a thread barrier before unrelated edits finish, retaining their durable queue', async () => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const sent: string[] = []
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async (_, item) => {
+      sent.push(item.id)
+      if (item.id === 'other') await held
+    },
+  )
+  sync.bind(connection)
+  sync.enqueue([
+    { collection: 'tasks', id: 'mine', changes: {} },
+    { collection: 'tasks', id: 'other', changes: {} },
+  ])
+  const all = sync.flush()
+  await runClientEffect(sync.flushTaskEffect('mine'))
+  expect(sync.hasPending()).toBe(true)
+  expect(sent).toEqual(['mine', 'other'])
+  release()
+  await all
+  expect(sync.hasPending()).toBe(false)
+})
+
+it('preserves the shared-edit prefix before prioritizing a thread over later unrelated edits', async () => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const sent: string[] = []
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async (_, item) => {
+      sent.push(item.id)
+      if (item.id === 'first') await held
+    },
+  )
+  sync.bind(connection)
+  sync.enqueue([
+    { collection: 'tasks', id: 'first', changes: {} },
+    { collection: 'tasks', id: 'unrelated', changes: {} },
+    patch,
+    { collection: 'tasks', id: 'later', changes: {} },
+    { collection: 'tasks', id: 'mine', changes: {} },
+  ])
+  const all = sync.flush()
+  await vi.waitFor(() => expect(sent).toEqual(['first']))
+  const mine = runClientEffect(sync.flushTaskEffect('mine'))
+  release()
+  await mine
+  await all
+  expect(sent).toEqual(['first', 'unrelated', 'agent', 'mine', 'later'])
+})
+
+it('retains dependency failures while an unrelated thread can proceed', async () => {
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async () => {
+      throw new Error('Offline')
+    },
+  )
+  sync.bind(connection)
+  sync.enqueue([{ collection: 'tasks', id: 'mine', changes: {} }])
+  await expect(runClientEffect(sync.flushTaskEffect('mine'))).rejects.toThrow('Offline')
+  expect(sync.hasPending()).toBe(true)
+  await runClientEffect(sync.flushTaskEffect('other'))
+})
+
+it('lets reads bypass unrelated settings but waits for the project they read', async () => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const sent: string[] = []
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async (_, item) => {
+      sent.push(item.id)
+      if (item.id === 'project') await held
+    },
+  )
+  sync.bind(connection)
+  sync.enqueue([{ collection: 'repositories', id: 'project', changes: {} }, patch])
+  const all = sync.flush()
+  await vi.waitFor(() => expect(sent).toEqual(['project']))
+  await runClientEffect(sync.flushReadEffect({ repositoryId: 'other' }))
+  let ready = false
+  const read = runClientEffect(sync.flushReadEffect({ repositoryId: 'project' })).then(() => {
+    ready = true
+  })
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    expect(ready).toBe(false)
+  } finally {
+    release()
+  }
+  await read
+  await all
+  expect(ready).toBe(true)
+})
 it('rejects a snapshot that began before an edit, even when the patch has finished', async () => {
   const sync = new WorkspaceSynchronization(
     () => {},

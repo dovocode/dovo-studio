@@ -43,6 +43,180 @@ function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
     recovered: () => recovered,
   }
 }
+it('sends independent threads concurrently but keeps each thread ordered', async () => {
+  const f = fixture()
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const sent: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body')
+      const input = JSON.parse(init.body)
+      sent.push(input.messageId)
+      if (input.messageId === 'first') await held
+      return Response.json({ ok: true })
+    }),
+  )
+  const send = (id: string, messageId: string) =>
+    run(
+      f.queue.requestEffect(
+        connection,
+        '/api/tasks/message',
+        { id, messageId, text: messageId },
+        responses.ok,
+      ),
+    )
+  const first = send('one', 'first')
+  await vi.waitFor(() => expect(sent).toEqual(['first']))
+  const same = send('one', 'same')
+  const other = send('two', 'other')
+  try {
+    expect((await other)._tag).toBe('Success')
+    expect(sent).toEqual(['first', 'other'])
+    expect(f.stored().map((entry) => entry.path)).toEqual(['/api/tasks/message'])
+  } finally {
+    release()
+  }
+  expect((await first)._tag).toBe('Success')
+  expect((await same)._tag).toBe('Success')
+  expect(sent).toEqual(['first', 'other', 'same'])
+  expect(f.stored()).toEqual([])
+})
+
+it('keeps shared settings exclusive with thread senders', async () => {
+  const f = fixture()
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const sent: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      const path = new URL(urlPath(url)).pathname
+      if (path.endsWith('/status')) return Response.json({ version: 1 })
+      sent.push(path)
+      if (path === '/api/runtime/preferences/save') await held
+      return Response.json({ ok: true })
+    }),
+  )
+  const settings = run(
+    f.queue.requestEffect(connection, '/api/runtime/preferences/save', {}, responses.ok),
+  )
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  const message = run(
+    f.queue.requestEffect(
+      connection,
+      '/api/tasks/message',
+      { id: 'one', messageId: 'one', text: 'hello' },
+      responses.ok,
+    ),
+  )
+  await new Promise<void>((resolve) => setTimeout(resolve, 10))
+  expect(sent).toEqual(['/api/runtime/preferences/save'])
+  release()
+  expect((await settings)._tag).toBe('Success')
+  expect((await message)._tag).toBe('Success')
+  expect(sent).toEqual(['/api/runtime/preferences/save', '/api/tasks/message'])
+})
+
+it('waits for an active thread sender before discarding its durable command', async () => {
+  const f = fixture()
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let sending = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      sending = true
+      await held
+      return Response.json({ ok: true })
+    }),
+  )
+  const message = run(
+    f.queue.requestEffect(
+      connection,
+      '/api/tasks/message',
+      {
+        id: 'one',
+        messageId: 'one',
+        text: 'hello',
+      },
+      responses.ok,
+    ),
+  )
+  await vi.waitFor(() => expect(sending).toBe(true))
+  let discarded = false
+  const discard = run(f.queue.discardEffect(connection)).then((result) => {
+    discarded = true
+    return result
+  })
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    expect(discarded).toBe(false)
+    expect(f.stored()).toHaveLength(1)
+  } finally {
+    release()
+  }
+  expect((await message)._tag).toBe('Success')
+  expect((await discard)._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+})
+
+it('does not replay or block another thread’s rejected command when sending', async () => {
+  const f = fixture([
+    {
+      id: 'rejected',
+      path: '/api/tasks/message',
+      method: 'POST',
+      blocked: true,
+      input: { id: 'one', messageId: 'old', text: 'old' },
+    },
+  ])
+  const sent: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body')
+      sent.push(JSON.parse(init.body).id)
+      return Response.json({ ok: true })
+    }),
+  )
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/message',
+          { id: 'two', messageId: 'new', text: 'new' },
+          responses.ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Success')
+  expect(sent).toEqual(['two'])
+  expect(f.stored().map((entry) => entry.id)).toEqual(['rejected'])
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/message',
+          { id: 'one', messageId: 'next', text: 'next' },
+          responses.ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Failure')
+})
 it('saves offline messages without network, deduplicates retries and delivers in order after restart', async () => {
   const f = fixture()
   const network = vi.fn<typeof fetch>()
@@ -229,6 +403,122 @@ it('restores offline thread creation as a presentation overlay without changing 
   await run(crashed.recoverEffect(connection))
   expect((await run(crashed.taskCreationsCachedEffect(connection, [task])))._tag).toBe('Success')
   expect(f.stored()).toEqual([])
+})
+it('retains a combined thread start through restart until its accepted message is cached', async () => {
+  const f = fixture()
+  const task = decode(taskSchema, {
+    id: 'combined',
+    title: 'New thread',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    files: [],
+    example: false,
+    draft: '',
+    messages: [],
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+  })
+  const input = { id: task.id, messageId: 'first', text: 'Hello', createTask: task }
+  expect(
+    (await run(f.queue.enqueueEffect(connection, '/api/tasks/message', input, responses.ok)))._tag,
+  ).toBe('Success')
+  const reopened = f.restart()
+  await run(reopened.restoreEffect(connection))
+  expect(reopened.pendingTasks(connection, [])).toEqual([task])
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      Response.json(urlPath(url).endsWith('/status') ? { version: 1 } : { ok: true }),
+    ),
+  )
+  expect((await run(reopened.recoverEffect(connection)))._tag).toBe('Success')
+  expect(reopened.status(connection).pending).toBe(0)
+  expect(f.stored()).toHaveLength(1)
+  expect(reopened.pendingMessages(connection, task)).toHaveLength(1)
+  expect(reopened.pendingMessages(connection, task)[0]?.state).toBe('sending')
+  await run(reopened.taskCreationsCachedEffect(connection, [task]))
+  expect(f.stored()).toHaveLength(1)
+  const accepted = { ...task, messages: [{ id: 'first', role: 'user' as const, text: 'Hello' }] }
+  await run(reopened.taskCreationsCachedEffect(connection, [accepted]))
+  expect(f.stored()).toEqual([])
+  expect(reopened.pendingTasks(connection, [accepted])).toEqual([accepted])
+})
+it('settles a deleted combined start only from a cached acknowledgement cursor and complete scope', async () => {
+  const f = fixture()
+  const task = decode(taskSchema, {
+    id: 'deleted-combined',
+    title: 'Draft',
+    agentId: '',
+    repositoryId: '',
+    files: [],
+    example: false,
+    draft: '',
+    messages: [],
+    status: 'draft',
+    createdAt: '2026-11-11T00:00:00Z',
+  })
+  const input = { id: task.id, messageId: 'first', text: 'Hello', createTask: task }
+  await run(f.queue.enqueueEffect(connection, '/api/tasks/message', input, responses.ok))
+  let instance = 'before-restart'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      Response.json(
+        urlPath(url).endsWith('/status')
+          ? { version: 1 }
+          : { ok: true, revision: 10, runtimeInstanceId: instance },
+      ),
+    ),
+  )
+  await run(f.queue.recoverEffect(connection))
+  expect(f.queue.pendingTasks(connection, [])).toEqual([task])
+  // Absence before acceptance, on another runtime instance, or outside a complete page
+  // must never discard the only durable copy of the user's first message.
+  for (const snapshot of [
+    { revision: 9, runtimeInstanceId: instance },
+    { revision: 100, runtimeInstanceId: 'another-instance' },
+    { revision: 10, runtimeInstanceId: instance, olderSettled: { limit: 25, omitted: 1 } },
+    {
+      revision: 10,
+      runtimeInstanceId: instance,
+      runtimeId: 'owner',
+      olderSettled: {
+        limit: 25,
+        omitted: 1,
+        threadKeys: [JSON.stringify(['owner', task.id])],
+      },
+    },
+  ]) {
+    await run(f.queue.taskCreationsCachedEffect(connection, [], snapshot))
+    expect(f.stored()).toHaveLength(1)
+  }
+  // A crash retains the command. Receipt replay establishes the new instance's cursor.
+  const reopened = f.restart()
+  await run(reopened.restoreEffect(connection))
+  await run(
+    reopened.taskCreationsCachedEffect(connection, [], {
+      revision: 10,
+      runtimeInstanceId: instance,
+    }),
+  )
+  expect(f.stored()).toHaveLength(1)
+  instance = 'after-restart'
+  await run(reopened.recoverEffect(connection))
+  await run(
+    reopened.taskCreationsCachedEffect(connection, [], {
+      revision: 10,
+      runtimeInstanceId: instance,
+      runtimeId: 'owner',
+      olderSettled: {
+        limit: 25,
+        omitted: 1,
+        threadKeys: [JSON.stringify(['owner', 'other-thread'])],
+      },
+    }),
+  )
+  expect(f.stored()).toEqual([])
+  expect(reopened.pendingTasks(connection, [])).toEqual([])
+  expect(reopened.pendingMessages(connection, task)).toEqual([])
 })
 it('keeps uncertain attachment payloads through reconnect and ordinary journal discard', async () => {
   const f = fixture()

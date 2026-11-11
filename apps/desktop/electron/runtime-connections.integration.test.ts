@@ -29,7 +29,12 @@ it('shares a real HTTP runtime stream, unions thread histories, and keeps the po
       status: 'draft',
       createdAt: '2026-10-12',
       messages: [{ id: id + '-message', role: 'assistant', text: id + ' history' }],
-      files: [],
+      files: ['a.ts', 'b.ts'].map((path) => ({
+        path,
+        before: '',
+        after: 'source\n'.repeat(1000),
+        viewed: false,
+      })),
       draft: '',
       example: false,
     })),
@@ -111,6 +116,25 @@ it('shares a real HTTP runtime stream, unions thread histories, and keeps the po
     ),
   )
   expect(popout.some((event) => event.type === 'delta')).toBe(true)
+  const beforeFiles = popoutSnapshot?.workspace.tasks.find((task) => task.id === 'reviewer')?.files
+  const reviewStart = popout.length
+  runtime.services.store.updateTaskHistory('reviewer', (task) => ({
+    ...task,
+    files: task.files.map((file, index) => (index === 0 ? { ...file, viewed: true } : file)),
+  }))
+  await vi.waitFor(() =>
+    expect(
+      popoutSnapshot?.workspace.tasks.find((task) => task.id === 'reviewer')?.files[0]?.viewed,
+    ).toBe(true),
+  )
+  const review = popout.slice(reviewStart).find((event) => event.type === 'delta')
+  expect(
+    review?.type === 'delta' ? review.delta.workspace.tasks?.changes[0]?.files : undefined,
+  ).toEqual({ changes: [{ path: 'a.ts', fieldDelta: { values: { viewed: true }, removed: [] } }] })
+  expect(JSON.stringify(review).length).toBeLessThan(1000)
+  expect(popoutSnapshot?.workspace.tasks.find((task) => task.id === 'reviewer')?.files[1]).toBe(
+    beforeFiles?.[1],
+  )
   manager.unsubscribe('main')
   runtime.services.store.updateTask('reviewer', (task) => ({
     ...task,

@@ -1,5 +1,222 @@
 # Performance verification
 
+## Working-tree Changes reads, 2026-11-11
+
+Working-tree previews now share one operation-owned `git cat-file --batch` reader. Git status and
+HEAD checks run together. Successful HEAD checks no longer need an extra `ls-files` process. The
+reader returns bounded raw bytes, so binary and UTF-8 checks keep their existing input. Failed batch
+replies retain the individual-blob fallback. Cleanup closes the pipes as well as the process; a
+malformed reply cannot leave an unread stdout pipe blocking cleanup.
+
+On one frozen checkout with 67 changed files and 31 embedded old blobs, 15 warm samples reduced
+median Changes time from 180.5 ms to 41.6 ms. The old path read 31 blobs with separate processes;
+the new path used one batch process. Both versions returned 1,662,959 JSON bytes with the same
+SHA-256 digest, `62c4be154b4db0da56ed89d67fd7ee2a03103837e21735a2aef637117f211b8e`. These figures
+measure the production Git service on this Linux host. They exclude HTTP, sync and UI.
+
+```sh
+node scripts/benchmark-git-changes.mjs /path/to/unchanged-checkout --baseline-ref b6cb40ccd32d8816821c4144bb43f602411d276f --runs 15
+node scripts/benchmark-git-changes.mjs /path/to/unchanged-checkout --runs 15
+pnpm exec vp test packages/runtime/src/scm/git/git.test.ts packages/runtime/src/scm/git/cat-file-batch.test.ts
+```
+
+Compare both versions against the same checkout without edits during the runs. Checks cover binary
+and image classification, UTF-8 bytes, preview limits, file order, symlinks, missing objects, failed
+batches, malformed replies and cleanup.
+
+Thread clients now set `includeFiles: false` when they only need to refresh the saved Changes. The
+endpoint scans and commits the files before returning `{"ok":true}`. Live sync delivers the changes.
+An unchanged scan keeps the file array and review versions. The normal endpoint still returns files.
+The refresh decoder accepts both replies, so older runtimes need no extra probe. The option requires
+a task ID. Repository previews and mobile reads that use the returned files keep full replies.
+
+In the synthetic 50-file review fixture below, this removes a discarded 4,832,201-byte JSON reply
+(60,311 bytes with gzip). The acknowledgement is 11 JSON bytes and does not meet the server's gzip
+threshold. This removes the duplicate response; a changed file still reaches clients through sync.
+The actual checkout response above has different content and compression. Lazy file-body loading
+remains separate work.
+
+## Review hashing and storage writes, 2026-11-11
+
+A viewed edit previously compared SHA-256 fingerprints for every old and new file. Storage now
+compares the exact fingerprint inputs: before/after text and preview identity. Unchanged file
+objects take an identity check. Content changes still clear the mark and advance its version.
+Version checks still reject ABA writes from another client.
+
+Review reads on desktop, mobile and the runtime reuse fingerprints by weak file identity. The cache
+also checks path, text and preview identity before reuse. In-place text or nested preview changes
+cannot return an old digest. Fingerprint bytes remain compatible with saved marks.
+
+Task-row storage caches serialized file arrays separately from the small metadata. Title, draft and
+streaming updates no longer encode unchanged review bodies. Rows retain storage version 3, with
+files and history counts committed in the same transaction. This does not reduce SQLite journal
+bytes or change save timing.
+
+Controlled results on this Linux host, using 50 files and a 4,832,191-byte file array:
+
+| Measured operation                      |   Before |     After |
+| --------------------------------------- | -------: | --------: |
+| Viewed-version bookkeeping              | 22.15 ms |  0.010 ms |
+| Viewed update, in-memory SQLite         | 28.79 ms |   5.59 ms |
+| Repeated review fingerprint list        | 13.02 ms | 0.0046 ms |
+| Metadata update, file-backed SQLite WAL |  4.26 ms |   2.03 ms |
+
+These are warm medians. The in-memory baseline was captured before these changes. The file-backed
+comparison isolates serialized-file reuse; both versions already have the review bookkeeping fix.
+The disk fixture used about 10.16 MB of WAL for 50 title edits before and after. Changed file arrays
+still require serialization. Default-settings projection in the 163-byte default fixture took 0.017
+ms, so this change adds no cache for defaults. Larger settings remain unmeasured.
+
+```sh
+pnpm --filter @dovo/runtime... -r build
+pnpm --filter @dovo/runtime exec tsx ../../scripts/benchmark-review-storage.mjs
+pnpm --filter @dovo/runtime exec tsx ../../scripts/benchmark-review-storage.mjs --disk
+node scripts/benchmark-review-sync.mjs --baseline-ref b6cb40ccd32d8816821c4144bb43f602411d276f
+node scripts/benchmark-review-sync.mjs
+pnpm exec vp test packages/protocol/src/scm/review.test.ts packages/runtime/src/storage/file-review-versions.test.ts packages/runtime/src/storage/conversations.test.ts packages/runtime/src/storage/workspace.test.ts packages/runtime/src/http/file-reviews.test.ts packages/runtime/src/http/scm-mutations.test.ts
+pnpm exec playwright install chromium
+node scripts/check-remote-thread-sync-browser.mjs
+```
+
+SQLite tests cover reload, escaped file content, streaming, changed bodies, removals and failed
+commits. The real HTTP/Git test covers full and acknowledgement replies, stable rescans and changed
+files. The Chromium test checks that the acknowledgement still publishes files through the real
+HTTP/WebSocket client. Timings exclude native UI, physical-device storage and provider startup.
+
+## File-review sync and snapshot tags, 2026-11-11
+
+Format 7 sends file order and changed file fields. A viewed flag no longer sends every file body.
+New clients opt in with `files=1` on the existing scoped sync ticket request. Older clients and
+runtimes keep their format. Desktop window updates use the same patches. Unchanged files keep object
+identity. Deletion, rename, reorder and optional-field removal remain explicit. Invalid baselines
+cause a fresh sync. Duplicate paths retain the full-array fallback.
+
+The controlled fixture has 50 files with 31,779 source characters each and three body fields. The
+raw delta for one viewed flag fell from 4,832,304 bytes to 167 bytes. Median delta creation fell
+from about 10 ms to 0.024 ms. These figures exclude SQLite, compression, transport and rendering.
+The real HTTP/WebSocket runtime check in managed Chromium received a 456-byte decoded review frame,
+including review-version metadata, and kept the unchanged file object. These are application JSON
+bytes. WebSocket compression and headers change actual wire bytes.
+
+Snapshot tags reuse hashes of unchanged task fields and workspace collections. Runtime state still
+gets read on each tag. All caches use weak object keys. The same fixture reduced warm streaming tags
+from about 4 ms to 0.008 ms. Cold tags still read all content: the review fixture stayed near 3.2
+ms, and a 2,500-message fixture took about 0.60 ms versus 0.51 ms before. The `sync tag` diagnostic
+span now records tag work separately from snapshot and delta work.
+
+```sh
+node scripts/benchmark-review-sync.mjs --baseline-ref b6cb40ccd32d8816821c4144bb43f602411d276f
+node scripts/benchmark-review-sync.mjs
+pnpm exec vp test packages/protocol/src/runtime/connection/sync.test.ts packages/protocol/src/runtime/connection/live-sync.test.ts packages/runtime/src/http/support/body.test.ts packages/runtime/src/http/runtime-sync.test.ts packages/runtime/src/http/file-reviews.test.ts apps/desktop/electron/runtime-connections.integration.test.ts
+pnpm --filter @dovo/runtime... -r build
+pnpm exec playwright install chromium
+node scripts/check-remote-thread-sync-browser.mjs
+node scripts/check-mobile-metro-modules.mjs
+```
+
+The real runtime checks cover negotiation, old-client fallback, separate replay views, reconnect and
+selection changes. The desktop integration checks the shared stream through window reconciliation.
+The Metro check validates the iOS transform in a Node VM. It does not run Hermes on a phone.
+Physical-phone latency and lock/unlock behavior remain unmeasured.
+
+## Independent requests and thread Send barriers, 2026-11-11
+
+Known pure reads no longer wait for unrelated workspace writes. Reads of a changed project or thread
+still wait for its saved edits. Unknown endpoints and mutations keep the barrier. Send waits for
+captured edits to its own thread. Shared settings also keep all earlier edits in order: moving
+threads must finish before deleting their project. The sender continues unrelated thread edits after
+the action can proceed. A request already on the wire keeps its place. Failed writes stay in durable
+storage.
+
+The durable command journal allows foreground commands for different threads to overlap. Each thread
+keeps one ordered sender. Shared commands, recovery, credential changes and discard keep an
+exclusive host barrier. Local journal writes remain atomic. A rejected command blocks its own
+thread; credential review and unknown shared commands still block the host. Stop retains its
+existing direct path. This adds no delay to navigation or Send.
+
+Run the focused checks and controlled comparison:
+
+```sh
+pnpm exec vp test packages/protocol/src/runtime/connection/mutations.test.ts packages/protocol/src/runtime/connection/request-ordering.test.ts packages/studio-core/src/runtime/synchronization.test.ts packages/extension-tasks/src/chat/composer/composer-selection.test.ts
+node scripts/benchmark-command-barriers.mjs --baseline-ref b6cb40ccd32d8816821c4144bb43f602411d276f
+pnpm exec playwright install chromium
+node scripts/check-startup-performance-browser.mjs
+```
+
+With ten distinct-thread edits and a simulated 150 ms response per edit, the controlled comparison
+reduced the action wait from about 1,515 ms to 307 ms. It waits for the in-flight request and its
+own edit. Other edits continue in the background. These are JavaScript and mocked transport timings,
+not installed-app or phone latency. The Chromium check uses the real workspace provider with held
+mock HTTP writes. It confirms that both active and explicitly routed PR reads can finish during a
+held workspace write.
+
+The desktop composer subscribes to the agents, projects, connection, questions, defaults and
+capabilities its controls use. Streamed messages and unrelated task metadata do not invalidate that
+subscription. Its own task props and control changes can still cause a render.
+
+## Combined new-thread commands
+
+Runtimes advertise `threadStartSupported`. A first message can carry `createTask`, so the same
+durable command creates the draft and accepts its input. Mobile workspace starts navigate after
+durable local admission, before the network reply. Desktop startup commands also use this path when
+no draft has been saved. Normal desktop typing keeps its existing immediate draft save and then
+sends to that saved thread. This change does not delay draft saving to force a combined request.
+Attachments and older runtimes keep their existing creation path.
+
+The runtime validates creation through the workspace rules. It records a message identity and draft
+fingerprint in the creation transaction. Retries cannot replace an existing draft or revive a
+deleted thread. The client retains its command until a snapshot containing the message is durably
+cached. An acknowledged deletion clears the projection only after a matching runtime cursor is
+cached, with complete paging evidence. A lost reply and a runtime restart keep the same retry
+identity.
+
+```sh
+pnpm exec vp test packages/runtime/src/http/endpoints/thread-start.test.ts
+node scripts/check-desktop-thread-start-browser.mjs
+node scripts/check-mobile-thread-start-browser.mjs
+```
+
+These checks cover the local HTTP/SQLite runtime with a mocked agent, and real client components
+with mocked transport. They do not measure provider startup or physical-phone navigation.
+
+## Mobile Markdown, PR reads and empty-composer Enter
+
+Native Markdown reuses completed top-level fenced blocks during streaming. References, directives
+and other document-wide syntax use a full split. The cache retains at most four anchors and one
+million source characters. No stream delay was added. Run:
+
+```sh
+pnpm exec vp test apps/mobile/src/ui/content/markdown-parts.test.ts
+node scripts/benchmark-mobile-markdown.mjs --baseline-ref b6cb40ccd32d8816821c4144bb43f602411d276f
+node scripts/check-pull-intent-prefetch-browser.mjs
+node scripts/check-desktop-source-readers-browser.mjs
+node scripts/check-composer-send-browser.mjs
+node scripts/check-question-attachments-browser.mjs
+```
+
+The host benchmark matched both versions over 107,096 streaming prefixes. For a 34 KB mixed message
+in 40-character chunks, median preprocessing fell from 25.4 ms to 0.92 ms per update; p95 fell from
+73.6 ms to 1.8 ms. Prose remained about 0.03 ms per update. These figures measure JavaScript
+preprocessing, not phone frame times. The mobile composer reads current controls from context. A
+Chromium model with the real atom store reduced 20 task updates from 40 renders to 20 and removed
+stale action renders. The native composer can still render once per streamed update.
+
+PR and Jira reads reuse live session identity verification. Saved identity data alone never counts
+as verification. Each data read still sends the account and destination guards. A rejected guard
+reports the mismatch. Collection readers also recheck live identity. Forms and PR URLs keep their
+pinned account and destination. PR rows prefetch only the overview after 150 ms of sustained pointer
+or keyboard focus. Clicks proceed immediately. The detail screen joins the same account-scoped read.
+Leaving a row removes its waiter; shared HTTP work can still complete into the bounded cache.
+
+Plain Enter in an empty focused desktop composer answers its single visible permission or question
+request. The request must belong to the same thread and pane. Draft text, rich non-text content,
+modifiers, composition, repeated keys and ambiguous requests do not use this shortcut. Question
+validation still applies. Browser checks cover textarea and rich-editor markers; native mobile
+hardware-keyboard behavior was not measured.
+
+See [the next performance work](performance-research-2026-11-11.md) for measured Git and file-sync
+costs, the recommended order and the remaining phone measurements.
+
 ## Thread Send admission and discovery
 
 Desktop and mobile now use one live runtime discovery cache for model pickers, model mentions and
@@ -108,9 +325,9 @@ controls, selected text and active drafts. Desktop history pages have approximat
 per conversation and 48 MiB across remembered conversations; active readers and protected recent
 messages can exceed them.
 
-Git previews share one operation-owned `cat-file --batch` process and bounded blob cache. Identity
-and icon caches cap at 256 entries. OpenCode clients expire after five idle minutes and cap at 128
-idle entries; active clients retain their shared identity until release. Terminal output uses
+Checkpoint Git previews share one operation-owned `cat-file --batch` process and bounded blob cache.
+Identity and icon caches cap at 256 entries. OpenCode clients expire after five idle minutes and cap
+at 128 idle entries; active clients retain their shared identity until release. Terminal output uses
 bounded chunks, preserving the existing 1,048,576 UTF-16 character replay cap.
 
 CLI usage transcripts retain parser state and read appended bytes, including partial UTF-8 lines.
@@ -964,3 +1181,103 @@ The Metro check builds the Jira reader with the production iOS Hermes transform 
 in a Node VM. It does not run Hermes or a physical iPhone. Live Jira bandwidth, CLI latency and
 physical-device behavior remain unmeasured. This applies the shared-read patterns from the T3 PR
 review; it does not claim a Jira-specific T3 implementation.
+
+## PR and Jira opening latency
+
+PR and Jira list, detail, discussion, board and sprint views start saved-data reads and live reads
+independently on desktop and mobile. Local cache reads previously ran before live reads. A
+collection also waited for every source cache before it could request live data. Slow local storage
+could therefore delay an online source even when its runtime was ready.
+
+Saved data can appear first. A late saved result cannot replace a live result or reset its
+pagination depth. A late cache error cannot replace the live outcome. If the live read fails, saved
+content can still appear with the live error. Board and sprint data stays hidden after an account or
+permission rejection. View cleanup cancels owned cache tasks or ignores their results. Discussion
+cache deletion after a mutation still completes before a new live read can write that cache.
+
+The browser fixtures hold cache reads open. They confirm that PR detail/list and Jira
+collection/discussion live results appear before the cache is released on both clients. They also
+check late saved content, a live failure followed by saved data, pagination, source/account changes
+and explicit retry. This proves that cache latency is no longer on these request paths. It does not
+measure a production navigation time or provider latency.
+
+Reproduce with:
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-pr-read-continuity-browser.mjs
+node scripts/check-pull-network-browser.mjs
+node scripts/check-jira-network-browser.mjs
+node scripts/check-jira-collection-network-browser.mjs
+node scripts/check-desktop-source-readers-browser.mjs
+node scripts/check-desktop-integration-continuity-browser.mjs
+node scripts/check-desktop-destination-guards-browser.mjs
+node scripts/check-mobile-integration-continuity-browser.mjs
+```
+
+## Thread startup feedback
+
+Thread startup uses the existing preparation steps on desktop and mobile. Tune and Maestro show
+model discovery, then model selection. The selected model appears beside the agent startup step.
+Worktree threads retain the completed model steps while fetch, worktree and setup steps run. These
+updates do not add a wait to Send.
+
+Scope shows project inspection and project selection while the thread is still a draft. Scope clears
+its own progress on completion or failure. A failed selection preserves the draft and its timestamp.
+A concurrent draft edit still rejects the old selection and keeps the new text. Runtime tests hold
+discovery and selection open to check these states.
+
+```sh
+pnpm exec vp test packages/protocol/src/tasks/task-preparation.test.ts packages/runtime/src/agents/tasks/model-selection.test.ts packages/runtime/src/agents/tasks/title-generation.test.ts packages/runtime/src/scm/tasks/task-checkout.test.ts packages/runtime/src/agents/tasks/tasks.test.ts --maxWorkers=4
+```
+
+These checks use controlled adapters and browser transport fixtures. Real model discovery, provider
+calls and physical-device startup remain outside these measurements.
+
+## Live native browser overlays
+
+Desktop Studio renders its UI and browser pages in sibling Electron `WebContentsView` layers. Menus
+and dialogs raise the UI above the existing page. Transparent page slots expose the live page below
+it. These controls no longer capture a screenshot, wait for image decoding or subscribe to
+replacement image frames. The page keeps its renderer, visibility, draft and running work. The
+existing link-preview opener backdrop and explicit screenshot tools keep their capture paths.
+
+Passive tooltips use actual React content in one reusable, non-focusable native child window per
+Studio window. That window ignores mouse input. Browser clicks, held presses, text selection, wheel
+events and the text caret stay with the page. Linux and Windows restrict the native window's painted
+shape to the tooltip bounds. This also prevents a black full-window surface on X11 desktops without
+a compositor. Tooltip styles load after the native document is ready. Zoom, theme changes, Escape,
+reload, renderer failure and window close use the same owner window.
+
+Browser layout observation ignores mutations from unrelated thread streams. A Chromium fixture with
+4,000 message nodes and 90 updates inside an open tool result measured 90 scans and 72.4 ms with the
+old observer. The new observer made zero scans during that interval. Overlay insertion, inline
+suggestions, resize, transforms and cleanup still trigger the required layout work. A
+fractional-bounds test checks Chromium's rounding of clip coordinates and stale-clip cleanup.
+
+Thread navigation also stops writing the unused `lastThreadId` preference. The real workbench
+navigation fixture previously made 12 preference writes. It now makes zero. The stored field stays
+compatible with older clients. Per-computer thread selection and composer drafts keep their existing
+behavior.
+
+Reproduce with:
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-native-browser-layout-browser.mjs --baseline
+node scripts/check-native-browser-layout-browser.mjs
+node scripts/check-shared-browser-browser.mjs
+node scripts/check-section-thread-browser.mjs
+pnpm test:browser-overlays:native
+pnpm exec vp test apps/desktop/electron/browser.test.ts apps/desktop/electron/browser-window.test.ts apps/desktop/electron/thread-window.test.ts apps/desktop/electron/links.test.ts apps/desktop/electron/browser-extension-popup.test.ts packages/protocol/src/runtime/previews/previews.test.ts --maxWorkers=2
+pnpm --filter @dovo/desktop --filter @dovo/studio-ui --filter @dovo/studio-shell --filter @dovo/extension-tasks -r typecheck
+pnpm --filter @dovo/desktop build
+pnpm exec vp check
+```
+
+The native fixture needs a desktop session. On Linux, it uses `xdotool` and X11 or XWayland for real
+pointer and keyboard input. It checks live page work, input, menus, dialogs, zoom, tooltip styles,
+reload, Escape and unsaved-change close guards. The browser fixtures use controlled native command
+transports. Their scan and write counts are regression measurements, not production latency claims.
+Native input was checked on Linux X11. macOS, Windows, a real Wayland session, physical iPhone wake
+and real Google sign-in with extensions remain unverified.

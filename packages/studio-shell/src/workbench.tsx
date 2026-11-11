@@ -444,10 +444,6 @@ function WorkbenchContent({
     else if (workspace.tasks.some((task) => task.id === target.entityId))
       threadSelections.current.set(runtimeRegistry.activeId, target.entityId)
   }, [target, runtimeRegistry.activeId, workspace.tasks])
-  useEffect(() => {
-    if (target.viewId === 'tasks' && target.entityId)
-      updateAppPreferences({ lastThreadId: target.entityId })
-  }, [target.viewId, target.entityId])
   const openNotification = useCallback(
     (destination: NotificationTarget | (StudioNavigation & { runtimeId: string })) => {
       const attempt = ++navigationAttempt.current

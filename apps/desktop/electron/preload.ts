@@ -25,6 +25,15 @@ const runtimeSyncError = (id: string, error: unknown) =>
   })
 contextBridge.exposeInMainWorld('dovo', {
   terminalPorts: true,
+  onNativeTooltipDismiss: (listener: () => void) => {
+    const handler = () => listener()
+    ipcRenderer.on('window:tooltip-dismiss', handler)
+    return () => ipcRenderer.off('window:tooltip-dismiss', handler)
+  },
+  nativeTooltip: (
+    visible: boolean,
+    regions: import('@dovo/studio-ui/native-tooltip').NativeTooltipRegion[],
+  ): Promise<void> => ipcRenderer.invoke('window:tooltip-visible', visible, regions),
   browserPageOnly: process.argv.includes('--dovo-browser-page'),
   defaultBrowser: {
     status: (): ReturnType<import('@dovo/protocol').DefaultBrowserBridge['status']> =>

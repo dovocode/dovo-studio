@@ -42,15 +42,27 @@ conversation histories and file contents, which readiness and pairing-recovery c
 ## Remote thread updates
 
 The shared desktop, web and mobile sync client requests
-`/api/sync/ticket?format=4&history=paged&subscriptions=live&incremental=1`. Current runtimes return
-format 6. Older runtimes ignore the extra option and keep their format-4/5 scoped path. Older
+`/api/sync/ticket?format=4&history=paged&subscriptions=live&incremental=1&files=1`. Current runtimes
+return format 7. Older runtimes ignore extra options and keep their format-4/5/6 scoped path. Older
 clients keep their existing format. HTTP remains supported for LAN and VPN connections. Pairing
 tokens and device revocation checks remain required. Accounts and HTTPS remain optional.
 
 Format 6 patches changed runtime fields and individual turn fields. A token count change does not
 send the other turns or their checkpoints again. Removed optional fields and reordered turns have
 explicit updates. Reconciliation retains unchanged objects, and a runtime-only update retains the
-whole workspace object. Desktop window updates use the same incremental format internally.
+whole workspace object.
+
+Format 7 also patches individual files by path. A viewed flag update keeps unchanged file bodies.
+File order carries additions, deletions and renames. Removed optional fields have explicit updates.
+Invalid or ambiguous patches require a fresh baseline. Duplicate paths use the existing complete
+file array. The server keeps format-6 and format-7 replay views separate. Desktop window updates use
+format 7 internally. Web and mobile use the same negotiated client.
+
+`POST /api/scm/changes` accepts `includeFiles: false` with a `taskId` for clients that only need to
+refresh saved Changes. The runtime commits the scan before returning `{"ok":true}`. The client
+receives changed files through normal sync. Omit the option, or set it to true, to read the files in
+the response. Use `responses.changesRefresh` for the acknowledgement path: it also accepts a full
+file reply from older runtimes. This option does not change workspace ordering or authentication.
 
 The client keeps recent departed selections for up to five minutes. The cache holds at most eight
 snapshots and 4 MiB of estimated retained data per open connection. It stays in memory and belongs

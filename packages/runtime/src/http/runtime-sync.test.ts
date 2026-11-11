@@ -604,6 +604,61 @@ it('negotiates field deltas while keeping legacy clients on complete task metada
   expect(restored.workspace.tasks[0]?.error).toBeUndefined()
   expect(restored.workspace.tasks[0]?.files).toBe(baseline.snapshot.workspace.tasks[0]?.files)
 })
+it('negotiates file patches and keeps format-6 views and replay separate', async () => {
+  const { runtime, open, address } = await setup()
+  const negotiation = await fetch(
+    `${address}/api/sync/ticket?format=4&subscriptions=live&incremental=1&files=1&task=task&history=paged`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  )
+  expect(await negotiation.json()).toMatchObject({ format: 7 })
+  runtime.services.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    files: ['a.ts', 'b.ts'].map((path) => ({
+      path,
+      before: '',
+      after: 'source\n'.repeat(10000),
+      viewed: false,
+    })),
+  }))
+  const old = await open(token, 6, ['task'], true)
+  const current = await open(token, 7, ['task'], true)
+  for (const client of [old, current]) client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await current.wait('snapshot')
+  const oldBaseline = await old.wait('snapshot')
+  expect(oldBaseline.epoch).not.toBe(baseline.epoch)
+  runtime.services.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    files: task.files.map((file, index) => (index === 0 ? { ...file, viewed: true } : file)),
+  }))
+  const next = await current.wait('delta')
+  const legacy = await old.wait('delta')
+  expect(next.delta.workspace.tasks?.changes[0]?.files).toEqual({
+    changes: [{ path: 'a.ts', fieldDelta: { values: { viewed: true }, removed: [] } }],
+  })
+  expect(legacy.delta.workspace.tasks?.changes[0]?.files).toBeUndefined()
+  expect(legacy.delta.workspace.tasks?.changes[0]?.fieldDelta?.values.files).toHaveLength(2)
+  expect(JSON.stringify(next).length).toBeLessThan(JSON.stringify(legacy).length / 100)
+  const updated = applySnapshotDelta(baseline.snapshot, next.delta)
+  expect(updated.workspace.tasks[0]?.files[0]?.viewed).toBe(true)
+  expect(updated.workspace.tasks[0]?.files[1]).toBe(baseline.snapshot.workspace.tasks[0]?.files[1])
+  const reconnect = await open(token, 7, ['task'], true)
+  reconnect.socket.send(
+    JSON.stringify({ type: 'resume', epoch: baseline.epoch, sequence: baseline.sequence }),
+  )
+  const replay = await reconnect.wait('delta')
+  expect(replay).toEqual(next)
+  current.frames.length = 0
+  current.socket.send(
+    JSON.stringify({ type: 'watch', tasks: [], scopes: [], selectionDelta: true }),
+  )
+  const selection = await current.wait('selection')
+  const selected = applySnapshotDelta(updated, selection.delta)
+  expect(selected.detailTaskIds).toEqual([])
+  expect(selected.workspace.tasks[0]?.files.map((file) => file.after)).toEqual(['', ''])
+})
 it('sends incremental remote turn updates and selection metadata only to opted-in clients', async () => {
   const { runtime, open, address } = await setup()
   const negotiation = await fetch(

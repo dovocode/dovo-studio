@@ -15,6 +15,7 @@ import { runtimeOperation, errorMessage } from '../../errors.js'
 import { approvalDecisionSchema, linkedCheckoutsSchema } from '@dovo/protocol'
 import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
 import { scopedSettingsRoute } from './scoped-settings-routes.js'
+import { startThreadEffect, threadStartAcknowledgement } from './thread-start.js'
 import { harnessInstructionRoute } from './harness-instruction-routes.js'
 import { decodeResult } from '@dovo/protocol'
 import { codexNetworkDiagnostics } from '../../agents/execution/codex-network-diagnostics.js'
@@ -720,6 +721,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
           throw new HttpError(400, 'Send now cannot be combined with queueing or steering')
         if (path === '/api/tasks/steer') {
+          if (input.createTask) throw new HttpError(400, 'A new thread cannot be steered')
           if (input.queueOnly) throw new HttpError(400, 'A staged message cannot steer the agent')
           if (input.plan)
             throw new HttpError(409, 'Queue this message to plan before the agent changes anything')
@@ -741,6 +743,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.runId,
           )
         }
+        if (input.createTask)
+          yield* startThreadEffect(s, { messageId: input.messageId, createTask: input.createTask })
         const before = s.store.taskSummary(input.id)
         const firstSubmission =
           !taskHistoryCounts(before).messages &&
@@ -788,7 +792,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             ),
           )
         }
-        return result
+        return input.createTask ? threadStartAcknowledgement(s, result) : result
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
         const input = decode(

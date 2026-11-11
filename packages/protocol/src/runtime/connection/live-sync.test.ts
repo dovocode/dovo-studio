@@ -176,62 +176,66 @@ async function routedSocketFixture(id: string, constructorFailure = false) {
   })
   return { connection, Socket, tickets, fetcher, receive, live, frame }
 }
-it('reopens a remote thread from its retained selection cursor and applies only missed updates', async () => {
-  const address = 'http://warm-thread.local'
-  const connection = { address, token: 'stalled-socket-test-token' }
-  const stopA = watchRuntimeTask(connection, 'a')
-  stopped.push(stopA)
-  const { Socket, frame, receive, live } = await stalledSocketFixture(address, 6)
-  const socket = Socket.instances[0]!
-  socket.readyState = 1
-  socket.onopen?.()
-  const a = { ...JSON.parse(frame).snapshot, detailTaskIds: ['a'] }
-  socket.onmessage?.({
-    data: JSON.stringify({ type: 'snapshot', snapshot: a, epoch: 'a', sequence: 1, tag: 'a1' }),
-  })
-  stopA()
-  const stopB = watchRuntimeTask(connection, 'b')
-  stopped.push(stopB)
-  await vi.waitFor(() => expect(JSON.parse(socket.sent.at(-1)!).tasks).toEqual(['b']))
-  const b = { ...a, revision: 2, detailTaskIds: ['b'] }
-  socket.onmessage?.({
-    data: JSON.stringify({
-      type: 'selection',
-      previousEpoch: 'a',
-      base: 1,
-      epoch: 'b',
-      sequence: 1,
-      tag: 'b1',
-      delta: snapshotDelta(a, b, true, true, true),
-    }),
-  })
-  stopB()
-  stopped.push(watchRuntimeTask(connection, 'a'))
-  await vi.waitFor(() =>
-    expect(JSON.parse(socket.sent.at(-1)!).resume).toEqual({ epoch: 'a', sequence: 1 }),
-  )
-  const beforeReplay = receive.mock.calls.length
-  socket.onmessage?.({
-    data: JSON.stringify({ type: 'selection-resume', epoch: 'a', sequence: 1, through: 2 }),
-  })
-  expect(receive).toHaveBeenCalledTimes(beforeReplay)
-  const updatedA = { ...a, revision: 3, runtimeHost: 'Updated remote computer' }
-  socket.onmessage?.({
-    data: JSON.stringify({
-      type: 'delta',
-      epoch: 'a',
-      base: 1,
-      sequence: 2,
-      tag: 'a2',
-      delta: snapshotDelta(a, updatedA, true, true, true),
-    }),
-  })
-  expect(receive.mock.lastCall?.[0]).toEqual(updatedA)
-  expect(live.online()).toBe(true)
-  expect(Socket.instances).toHaveLength(1)
-  expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
-  expect(requestUrl(vi.mocked(fetch).mock.calls[0]![0]).searchParams.get('incremental')).toBe('1')
-})
+it.each([6, 7])(
+  'reopens a remote thread from its retained selection cursor (format %s)',
+  async (format) => {
+    const address = 'http://warm-thread.local'
+    const connection = { address, token: 'stalled-socket-test-token' }
+    const stopA = watchRuntimeTask(connection, 'a')
+    stopped.push(stopA)
+    const { Socket, frame, receive, live } = await stalledSocketFixture(address, format)
+    const socket = Socket.instances[0]!
+    socket.readyState = 1
+    socket.onopen?.()
+    const a = { ...JSON.parse(frame).snapshot, detailTaskIds: ['a'] }
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'snapshot', snapshot: a, epoch: 'a', sequence: 1, tag: 'a1' }),
+    })
+    stopA()
+    const stopB = watchRuntimeTask(connection, 'b')
+    stopped.push(stopB)
+    await vi.waitFor(() => expect(JSON.parse(socket.sent.at(-1)!).tasks).toEqual(['b']))
+    const b = { ...a, revision: 2, detailTaskIds: ['b'] }
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'selection',
+        previousEpoch: 'a',
+        base: 1,
+        epoch: 'b',
+        sequence: 1,
+        tag: 'b1',
+        delta: snapshotDelta(a, b, true, true, true),
+      }),
+    })
+    stopB()
+    stopped.push(watchRuntimeTask(connection, 'a'))
+    await vi.waitFor(() =>
+      expect(JSON.parse(socket.sent.at(-1)!).resume).toEqual({ epoch: 'a', sequence: 1 }),
+    )
+    const beforeReplay = receive.mock.calls.length
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'selection-resume', epoch: 'a', sequence: 1, through: 2 }),
+    })
+    expect(receive).toHaveBeenCalledTimes(beforeReplay)
+    const updatedA = { ...a, revision: 3, runtimeHost: 'Updated remote computer' }
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'delta',
+        epoch: 'a',
+        base: 1,
+        sequence: 2,
+        tag: 'a2',
+        delta: snapshotDelta(a, updatedA, true, true, true),
+      }),
+    })
+    expect(receive.mock.lastCall?.[0]).toEqual(updatedA)
+    expect(live.online()).toBe(true)
+    expect(Socket.instances).toHaveLength(1)
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
+    expect(requestUrl(vi.mocked(fetch).mock.calls[0]![0]).searchParams.get('incremental')).toBe('1')
+    expect(requestUrl(vi.mocked(fetch).mock.calls[0]![0]).searchParams.get('files')).toBe('1')
+  },
+)
 it('pins a requested cursor until its ordered watch acknowledgment, then expires it', async () => {
   const address = 'http://pinned-selection.local'
   const connection = { address, token: 'stalled-socket-test-token' }

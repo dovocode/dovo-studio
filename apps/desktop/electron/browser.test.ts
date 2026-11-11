@@ -150,6 +150,7 @@ const mocks = vi.hoisted(() => {
     clipboard: vi.fn<(value: string) => void>(),
     view,
     window,
+    raiseOverlay: vi.fn<() => boolean>(() => false),
     windowFor: undefined as undefined | typeof window,
     automaticPip: false,
     contents,
@@ -191,6 +192,10 @@ const mocks = vi.hoisted(() => {
     },
   }
 })
+vi.mock('./studio-window.js', () => ({
+  studioContents: (window: Electron.BrowserWindow) => window.webContents,
+  raiseStudioOverlay: mocks.raiseOverlay,
+}))
 vi.mock('./browser-document-pip-controls.js', () => ({
   DOCUMENT_PIP_HEADER_HEIGHT: 36,
   createDocumentPipWindow: mocks.pipWindow,
@@ -263,6 +268,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.linkProfile.mockReturnValue(undefined)
   mocks.windowFor = undefined
+  mocks.raiseOverlay.mockReturnValue(false)
   mocks.automaticPip = false
   mocks.contents.isDestroyed.mockReturnValue(false)
   mocks.contents.isCurrentlyAudible.mockReturnValue(false)
@@ -1047,6 +1053,23 @@ it('reports a background page on tab switching and after its document reloads', 
   mocks.contents.send.mockClear()
   listener('dom-ready')?.()
   expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', false)
+})
+
+it('keeps a covered native page live, tracks its resized bounds and never resurrects a hidden pane', async () => {
+  mocks.raiseOverlay.mockReturnValue(true)
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.contents.focus.mockClear()
+  const bounds = { x: 10, y: 80, width: 500, height: 350 }
+  await call(event, { action: 'hide', key: 'shared', occluded: true, preserveFocus: true, bounds })
+  expect(mocks.view.getVisible()).toBe(true)
+  expect(mocks.view.setBounds).toHaveBeenLastCalledWith(bounds)
+  expect(mocks.window.webContents.focus).not.toHaveBeenCalled()
+  expect(mocks.contents.capturePage).not.toHaveBeenCalled()
+  expect(mocks.contents.beginFrameSubscription).not.toHaveBeenCalled()
+  await call(event, { action: 'hide', key: 'shared' })
+  await call(event, { action: 'hide', key: 'shared', occluded: true })
+  expect(mocks.view.getVisible()).toBe(false)
 })
 
 it('reports visibility for thread previews and gives untracked session popups a native fallback', async () => {

@@ -19,6 +19,11 @@ export type TaskPreparation = {
 }
 
 const labels: Record<string, string> = {
+  models: 'Discover available models',
+  tune: 'Tune is choosing a model',
+  maestro: 'Maestro is choosing a model',
+  'scope-context': 'Scope is inspecting projects',
+  scope: 'Scope is choosing projects',
   fetch: 'Fetch latest from origin',
   pull: 'Fetch the pull request',
   worktree: 'Create worktree',
@@ -35,6 +40,7 @@ function detail(task: Task, id: string) {
   const preparation = task.preparation
   if ((id === 'worktree' || id === 'restore') && preparation?.branch) return preparation.branch
   if (id === 'pull' && task.pullRequest) return `#${task.pullRequest.number}`
+  if (id === 'agent' && task.harness?.model) return task.harness.model
   if (id === 'setup') {
     const command = task.setupCommand?.trim().split('\n')[0]?.trim()
     if (command) return command.length > 80 ? `${command.slice(0, 79)}…` : command
@@ -49,7 +55,12 @@ export function taskPreparation(task: Task): TaskPreparation | undefined {
   const preparation = task.preparation
   if (!preparation?.steps.length) return undefined
   const failed = !!preparation.failed && task.status === 'failed'
-  if (!failed && (task.status !== 'running' || task.runPhase !== 'preparing')) return undefined
+  const selectingProjects =
+    task.status === 'draft' &&
+    task.autoProject &&
+    (preparation.current === 'scope-context' || preparation.current === 'scope')
+  if (!failed && !selectingProjects && (task.status !== 'running' || task.runPhase !== 'preparing'))
+    return undefined
   const active = preparation.steps.indexOf(preparation.current)
   const state = (index: number): PreparationStepState =>
     active < 0 || index > active

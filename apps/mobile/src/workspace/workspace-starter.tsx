@@ -10,6 +10,7 @@ import {
   resolveTaskDefaults,
   runtimeComputerName,
   terminalShellsResponseSchema,
+  threadStartMessage,
   workspacePatchResultSchema,
   workspaceRouteSchema,
   browserProfilesResultSchema,
@@ -460,6 +461,22 @@ export function WorkspaceStarter({
           }
           const id = target?.id ?? submission.task?.id
           if (!id) throw new Error('Choose a thread destination.')
+          const start =
+            submission.task && !submission.created && owner?.snapshot?.threadStartSupported
+              ? threadStartMessage(
+                  { id, messageId: submission.messageId, text: original, attachmentIds: [] },
+                  submission.task,
+                )
+              : undefined
+          if (start) {
+            // Durable local admission returns before the network round trip. The outbox
+            // creates the thread with this message and projects it until a snapshot has it.
+            await readRuntime(profile, '/api/tasks/message', start, responses.ok, undefined, {
+              defer: true,
+            })
+            submission.created = true
+            submission.sent = true
+          }
           if (submission.task && !submission.created) {
             const result = await readRuntime(
               profile,

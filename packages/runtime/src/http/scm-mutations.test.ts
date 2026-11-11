@@ -8,6 +8,7 @@ import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { withFileWrite } from '../scm/repositories/file-writes.js'
 import type { AgentAdapter } from '../agents/execution/types.js'
+import { decode, responses } from '@dovo/protocol'
 
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
@@ -40,6 +41,50 @@ async function setup() {
     post(`/api/scm/${operation}`, input)
   return { ...f, s: runtime.services, cwd: await realpath(f.directory), request, post }
 }
+
+it('acknowledges background Changes refreshes after saving files and retains full replies for other callers', async () => {
+  const f = await setup()
+  const task = f.s.tasks.create({
+    title: 'Changes',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+    execution: 'main',
+  })
+  await writeFile(join(f.cwd, 'hello.txt'), 'updated\n')
+  const refresh = await f.request('changes', { taskId: task.id, includeFiles: false })
+  expect(refresh.status).toBe(200)
+  expect(decode(responses.changesRefresh, await refresh.json())).toEqual({ ok: true })
+  expect(f.s.store.taskSummary(task.id).files[0]).toMatchObject({
+    path: 'hello.txt',
+    after: 'updated\n',
+  })
+  f.s.store.updateTask(task.id, (value) => ({
+    ...value,
+    files: value.files.map((file) => ({ ...file, viewed: true })),
+  }))
+  const before = f.s.store.taskSummary(task.id)
+  await f.request('changes', { taskId: task.id, includeFiles: false })
+  expect(f.s.store.taskSummary(task.id).files).toBe(before.files)
+  expect(f.s.store.taskSummary(task.id).fileReviewVersions).toBe(before.fileReviewVersions)
+  for (const includeFiles of [undefined, true]) {
+    const response = await f.request('changes', { taskId: task.id, includeFiles })
+    expect(response.status).toBe(200)
+    const legacy = await response.json()
+    expect(decode(responses.files, legacy).files).toEqual(before.files)
+    expect(decode(responses.changesRefresh, legacy)).toEqual(legacy)
+  }
+  expect((await f.request('changes', { includeFiles: false })).status).toBe(400)
+  expect((await f.request('changes', { taskId: task.id, includeFiles: 'false' })).status).toBe(400)
+  const revision = f.s.store.version()
+  await writeFile(join(f.cwd, 'hello.txt'), 'new edit\n')
+  await f.request('changes', { taskId: task.id, includeFiles: false })
+  expect(f.s.store.version()).toBeGreaterThan(revision)
+  expect(f.s.store.taskSummary(task.id).files[0]).toMatchObject({
+    after: 'new edit\n',
+    viewed: false,
+  })
+})
 
 it('guards read-only staging previews by repository and task without changing drafts or the index', async () => {
   const f = await setup()

@@ -12,6 +12,7 @@ import {
   appendUniqueRows,
   clientScopeKey,
   RequestScope,
+  clientTaskScope,
   runClientEffect,
   startPolling,
 } from '@dovo/client-runtime'
@@ -311,35 +312,23 @@ function WorkItemContent({
     let stopped = false
     let force = revision > consumedRevision.current
     let savedIssue: ForgeIssueDetail | undefined
-    const load = Effect.suspend(() => {
-      if (
-        pending.current ||
-        refreshInFlight.current ||
-        form ||
-        confirm ||
-        AppState.currentState !== 'active'
-      )
-        return Effect.void
-      return Effect.gen(function* () {
-        const current = requests.current.begin()
-        const valid = () => !stopped && current()
-        refreshInFlight.current = true
-        setRefreshing(true)
-        const showBusy = force || (!issueRef.current && !pipelineRef.current)
-        if (showBusy) setBusy(true)
+    let liveDetail = false
+    let liveFinished = false
+    const hydrationTasks = clientTaskScope()
+    void hydrationTasks.run(
+      Effect.gen(function* () {
         if (!hydrated.current) {
-          hydrated.current = true
           yield* mobileWorkflow(function* () {
             const cachedOptions = yield* (
               readCache?.readEffect(optionsKey, forgeWorkOptionsSchema) ?? Effect.succeed(undefined)
             )
-            if (!valid()) return
+            if (stopped || liveDetail) return
             if (cachedOptions) setOptions(cachedOptions.value)
             if (mode === 'issues') {
               const cached = yield* (
                 readCache?.readEffect(detailKey, cachedIssueSchema) ?? Effect.succeed(undefined)
               )
-              if (!valid()) return
+              if (stopped || liveDetail) return
               if (cached) {
                 assertWorkSource(mode, cached.value.issue.url, expectedURL)
                 setIssue(cached.value)
@@ -350,7 +339,7 @@ function WorkItemContent({
               const cached = yield* (
                 readCache?.readEffect(detailKey, cachedPipelineSchema) ?? Effect.succeed(undefined)
               )
-              if (!valid()) return
+              if (stopped || liveDetail) return
               if (cached) {
                 assertWorkSource(mode, cached.value.run.url, expectedURL)
                 setPipeline(cached.value)
@@ -360,8 +349,8 @@ function WorkItemContent({
             }
           }).pipe(
             Effect.catch((cause) =>
-              nativeEffect(() => {
-                if (valid())
+              Effect.sync(() => {
+                if (!stopped && !liveFinished)
                   setError(
                     cause instanceof Error
                       ? cause.message
@@ -370,7 +359,27 @@ function WorkItemContent({
               }),
             ),
           )
+          hydrated.current = true
         }
+      }),
+    )
+    const load = Effect.suspend(() => {
+      if (
+        pending.current ||
+        refreshInFlight.current ||
+        form ||
+        confirm ||
+        AppState.currentState !== 'active'
+      )
+        return Effect.void
+      let attempted = false
+      return Effect.gen(function* () {
+        const current = requests.current.begin()
+        const valid = () => !stopped && current()
+        refreshInFlight.current = true
+        setRefreshing(true)
+        const showBusy = force || (!issueRef.current && !pipelineRef.current)
+        if (showBusy) setBusy(true)
         if (!connected || !valid()) {
           if (showBusy) setBusy(false)
           return
@@ -379,6 +388,7 @@ function WorkItemContent({
         force = false
         consumedRevision.current = revision
         if (showBusy) setStale(true)
+        attempted = true
         if (mode === 'pipelines') {
           const data = yield* readEffect(
             '/api/scm/work/pipelines/detail',
@@ -387,6 +397,7 @@ function WorkItemContent({
           )
           if (!valid()) return
           assertWorkSource(mode, data.run.url, expectedURL)
+          liveDetail = true
           setPipeline(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
@@ -402,6 +413,7 @@ function WorkItemContent({
           if (!valid()) return
           assertWorkSource(mode, data.issue.url, expectedURL)
           const unchanged = issueRef.current === data
+          liveDetail = true
           if (!unchanged) setIssue(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
@@ -460,6 +472,7 @@ function WorkItemContent({
             pagesLoaded++
           }
           loadedPages.current = pagesLoaded
+          liveDetail = true
           setIssue(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
@@ -492,6 +505,7 @@ function WorkItemContent({
           nativeEffect(() => {
             refreshInFlight.current = false
             setRefreshing(false)
+            if (attempted) liveFinished = true
             if (!stopped) setBusy(false)
           }).pipe(Effect.orDie),
         ),
@@ -516,6 +530,7 @@ function WorkItemContent({
       requests.current.cancel()
       setBusy(false)
       subscription.remove()
+      void hydrationTasks.stop()
       void polling.stop()
     }
   }, [

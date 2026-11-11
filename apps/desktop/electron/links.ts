@@ -1,3 +1,4 @@
+import { studioContents } from './studio-window.js'
 import { BrowserWindow, dialog, shell, type WebContents } from 'electron'
 import { previewUrl } from '@dovo/protocol'
 
@@ -32,8 +33,8 @@ export async function offerLink(
   } catch {
     return false
   }
-  if (receivers.has(parent.webContents)) {
-    parent.webContents.send('links:open', url)
+  if (receivers.has(studioContents(parent))) {
+    studioContents(parent).send('links:open', url)
     parent.show()
     parent.focus()
     return false
@@ -150,7 +151,7 @@ export async function flushExternalLinks(
   if (delivering.has(parent)) return
   delivering.add(parent)
   try {
-    while (externalLinks.length && !parent.isDestroyed() && receivers.has(parent.webContents)) {
+    while (externalLinks.length && !parent.isDestroyed() && receivers.has(studioContents(parent))) {
       const url = externalLinks[0]!
       let routed = false
       try {

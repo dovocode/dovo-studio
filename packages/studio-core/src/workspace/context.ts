@@ -54,7 +54,7 @@ export type WorkspaceContextValue = {
   disconnect: () => Promise<void>
   request: WorkspaceRequest
   requestEffect: WorkspaceRequestEffect
-  flush: () => Promise<void>
+  flush: (taskId?: string) => Promise<void>
   runtimeRegistry: RuntimeRegistry
   activeRuntimeId: string | null
   localRuntimeId: string | null

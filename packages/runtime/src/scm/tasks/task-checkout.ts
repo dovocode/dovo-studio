@@ -523,7 +523,12 @@ export class TaskCheckout {
       this.store.updateTask(id, (value) => ({
         ...value,
         preparation: {
-          steps,
+          steps: [
+            ...(value.preparation?.steps.filter((step) =>
+              ['models', 'tune', 'maestro'].includes(step),
+            ) ?? []),
+            ...steps,
+          ],
           current,
           ...(branch ? { branch } : {}),
           startedAt: new Date().toISOString(),

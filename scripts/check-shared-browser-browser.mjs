@@ -1754,38 +1754,19 @@ try {
     window.renderBrowser()
   })
   await nativeAction('show')
-  // A hung capture must never keep the native view over the real Extensions menu.
-  await page.evaluate(() => {
-    window.holdCapture = true
-  })
+  // Overlay controls use the live native page. They must not request an image.
+  const capturesBefore = await page.evaluate(
+    () => window.calls.filter((c) => c.action === 'screenshot').length,
+  )
   await page.getByRole('button', { name: 'Extensions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Manage extensions', exact: true }).waitFor()
-  await page.waitForFunction(() => typeof window.finishCapture === 'function')
   await nativeAction('hide')
-  await page.keyboard.press('Escape')
-  await page.mouse.move(1190, 790)
-  await url.focus()
-  await page.keyboard.press('Escape')
-  await nativeAction('show')
-  await page.evaluate(() => {
-    window.holdCapture = false
-    window.finishCapture()
-  })
-  await page.evaluate(
-    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-  )
+  assert.equal(await page.locator('img[aria-hidden]').count(), 0)
   assert.equal(
-    await page.locator('img[aria-hidden][src^="data:image/png"]').count(),
-    0,
-    'Late capture cannot freeze a restored page',
+    await page.evaluate(() => window.calls.filter((c) => c.action === 'screenshot').length),
+    capturesBefore,
   )
-  await page.getByRole('button', { name: 'Extensions', exact: true }).click()
-  await nativeAction('hide')
-  assert.equal(
-    await page.evaluate(() => window.lastHideHadFrame),
-    true,
-    'Fallback must be painted before the native page hides',
-  )
+  assert.equal(await page.evaluate(() => window.frameSubscriptions().length), 0)
   await page.getByRole('menuitem', { name: 'Manage extensions', exact: true }).click()
   const extensionsDialog = page.getByRole('dialog', { name: 'Browser extensions' })
   await extensionsDialog.waitFor()
@@ -2398,23 +2379,26 @@ try {
     assert.equal(
       await image.getAttribute('src'),
       liveFrame,
-      'Overlay underlay must update while open',
+      'Link preview backdrop must update while open',
     )
   }
-  // Keep the compositor stream live while native views are hidden beneath the menu.
+  // A menu raises the real UI; it never subscribes to image frames or paints a replacement.
+  const capturesBeforeMenu = await page.evaluate(
+    () => window.calls.filter((c) => c.action === 'screenshot').length,
+  )
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await page.locator('img[aria-hidden][src^="data:image/png"]').waitFor()
+  await nativeAction('hide')
   const liveKey = await page.evaluate(
     () => window.calls.findLast((call) => call.action === 'show').key,
   )
-  await assertLiveFrame(page.locator('img[aria-hidden]'), liveKey)
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await page.locator('img[aria-hidden]').waitFor({ state: 'detached' })
+  assert.equal(await page.locator('img[aria-hidden]').count(), 0)
+  assert.equal(await page.evaluate(() => window.frameSubscriptions().length), 0)
   assert.equal(
-    await page.evaluate(() => window.frameSubscriptions().length),
-    0,
-    'Closing menus stops frame subscriptions',
+    await page.evaluate(() => window.calls.filter((c) => c.action === 'screenshot').length),
+    capturesBeforeMenu,
   )
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await nativeAction('show')
   // Profile replacement must preserve the current committed address, including redirects.
   await page.evaluate(async () => {
     const show = window.calls.findLast((call) => call.action === 'show')

@@ -828,12 +828,17 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* serviceResult(s.git.stagingFilePreview(cwd, name, comparison))
         }
         if (path === '/api/scm/changes') {
+          const includeFiles = decode(Schema.UndefinedOr(Schema.Boolean), input.includeFiles)
+          if (includeFiles === false && typeof input.taskId !== 'string')
+            throw new HttpError(400, 'A thread is required for a Changes refresh')
           let files = yield* serviceResult(s.git.changes(cwd))
           if (typeof input.taskId === 'string') {
             const previous = s.store.taskSummary(input.taskId).files
             files = retainChangedFiles(previous, files)
             if (files !== previous) s.store.updateTask(input.taskId, (t) => ({ ...t, files }))
           }
+          // Live sync already delivers the authoritative files to thread clients.
+          if (includeFiles === false) return yield* serviceResult({ ok: true })
           return yield* serviceResult({
             files,
           })

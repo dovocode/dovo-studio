@@ -2,6 +2,7 @@ import { Schema, Struct } from 'effect'
 import { decode, mutableArray, mutableStruct } from '../../shared/schema.js'
 import {
   messageSchema,
+  fileSchema,
   taskSchema,
   turnSchema,
   workspaceSchema,
@@ -31,6 +32,23 @@ const turnsDeltaSchema = mutableStruct({
     }),
   ),
 })
+const fileUpdatesSchema = fileSchema
+  .mapFields(Struct.omit(['path']))
+  .mapFields(Struct.map(Schema.optional))
+const fileFieldDeltaSchema = mutableStruct({
+  values: fileUpdatesSchema,
+  removed: mutableArray(Schema.Literals(Object.keys(fileUpdatesSchema.fields))),
+})
+const filesDeltaSchema = mutableStruct({
+  order: Schema.optional(order),
+  changes: mutableArray(
+    mutableStruct({
+      path: Schema.String,
+      fields: Schema.optional(fileSchema),
+      fieldDelta: Schema.optional(fileFieldDeltaSchema),
+    }),
+  ),
+})
 const taskFieldsSchema = taskSchema.mapFields(Struct.omit(['messages']))
 const taskUpdatesSchema = taskFieldsSchema
   .mapFields(Struct.omit(['id']))
@@ -48,6 +66,9 @@ const assertTaskFields: (
 const assertTurn: (input: unknown) => asserts input is Schema.Schema.Type<typeof turnSchema> = (
   input,
 ) => Schema.asserts(turnSchema, input)
+const assertFile: (input: unknown) => asserts input is Schema.Schema.Type<typeof fileSchema> = (
+  input,
+) => Schema.asserts(fileSchema, input)
 const assertStateFields: (
   input: unknown,
 ) => asserts input is Schema.Schema.Type<typeof stateFieldsSchema> = (input) =>
@@ -108,6 +129,7 @@ export const snapshotDeltaSchema = mutableStruct({
             fields: Schema.optional(taskSchema.mapFields(Struct.omit(['messages']))),
             fieldDelta: Schema.optional(taskFieldDeltaSchema),
             turns: Schema.optional(turnsDeltaSchema),
+            files: Schema.optional(filesDeltaSchema),
             messages: Schema.optional(messagesSchema),
           }),
         ),
@@ -235,9 +257,12 @@ function taskMetadata(
   { messages: _messages, updatedAt, turns, ...metadata }: Task,
   compact: boolean,
   incremental: boolean,
+  fileUpdates = false,
 ) {
+  const { files, ...rest } = metadata
   return {
-    ...metadata,
+    ...rest,
+    ...(!fileUpdates ? { files } : {}),
     ...(!compact ? { updatedAt } : {}),
     ...(!incremental ? { turns } : {}),
   }
@@ -299,12 +324,36 @@ function turnDelta(
   if (!orderChanged && !changes.length) return undefined
   return { ...(orderChanged ? { order: next.map((turn) => turn.id) } : {}), changes }
 }
+function fileDelta(previous: Task['files'], next: Task['files']) {
+  if (previous === next) return undefined
+  const old = new Map(previous.map((file) => [file.path, file]))
+  const changes: Schema.Schema.Type<typeof filesDeltaSchema>['changes'] = []
+  for (const file of next) {
+    const before = old.get(file.path)
+    if (before && (before === file || equalFields(before, file))) continue
+    const { path: _path, ...fields } = file
+    const { path: _oldPath, ...oldFields } = before ?? { path: file.path }
+    changes.push({
+      path: file.path,
+      ...(before
+        ? { fieldDelta: decode(fileFieldDeltaSchema, changedFields(oldFields, fields)) }
+        : { fields: file }),
+    })
+  }
+  const orderChanged = !equal(
+    previous.map((file) => file.path),
+    next.map((file) => file.path),
+  )
+  if (!orderChanged && !changes.length) return undefined
+  return { ...(orderChanged ? { order: next.map((file) => file.path) } : {}), changes }
+}
 export function snapshotDelta(
   previous: RuntimeSnapshot,
   next: RuntimeSnapshot,
   compact = false,
   fieldUpdates = false,
   incremental = false,
+  fileUpdates = false,
 ): SnapshotDelta {
   const { workspace, ...state } = next
   const { tasks, agents, repositories, automations, ...metadata } = workspace
@@ -315,6 +364,17 @@ export function snapshotDelta(
     if (before === task) continue
     const { messages, ...fields } = task
     const { messages: oldMessages, ...oldFields } = before ?? { messages: [] }
+    // Old snapshots with duplicate paths retain their atomic representation. A path-based
+    // patch must never merge two entries or silently drop their order.
+    const patchFiles = !!(
+      fileUpdates &&
+      fieldUpdates &&
+      before &&
+      (before.files === task.files ||
+        (new Set(before.files.map((file) => file.path)).size === before.files.length &&
+          new Set(task.files.map((file) => file.path)).size === task.files.length))
+    )
+    const files = patchFiles && before ? fileDelta(before.files, task.files) : undefined
     const turns =
       incremental && fieldUpdates && before && task.turns !== undefined
         ? turnDelta(before.turns, task.turns)
@@ -322,10 +382,11 @@ export function snapshotDelta(
     const fieldsChanged =
       !before ||
       !!turns ||
+      !!files ||
       (incremental && before.turns !== undefined && task.turns === undefined) ||
       !equalFields(
-        taskMetadata(task, compact, incremental && fieldUpdates),
-        taskMetadata(before, compact, incremental && fieldUpdates),
+        taskMetadata(task, compact, incremental && fieldUpdates, patchFiles),
+        taskMetadata(before, compact, incremental && fieldUpdates, patchFiles),
       )
     const updatedAtChanged =
       compact && before && !fieldsChanged && task.updatedAt !== before.updatedAt
@@ -361,6 +422,7 @@ export function snapshotDelta(
                 ([key, value]) =>
                   key !== 'id' &&
                   !(key === 'turns' && turns) &&
+                  !(key === 'files' && patchFiles) &&
                   value !== undefined &&
                   !equal(value, Reflect.get(oldFields, key)),
               ),
@@ -385,6 +447,7 @@ export function snapshotDelta(
             ? { fields }
             : {}),
         ...(turns ? { turns } : {}),
+        ...(files ? { files } : {}),
         ...(messagesChanged
           ? {
               messages: {
@@ -466,6 +529,44 @@ export function applySnapshotDelta(
         ? applyTaskFields(before, change.fieldDelta)
         : (change.fields ?? before)
     if (!fields || fields.id !== change.id) throw new Error('Sync task baseline is missing')
+    let files: Task['files'] | undefined
+    if (change.files) {
+      if (
+        !before ||
+        change.fields ||
+        change.fieldDelta?.values.files !== undefined ||
+        change.fieldDelta?.removed.includes('files')
+      )
+        throw new Error('Sync file baseline is missing or ambiguous')
+      const byPath = new Map(before.files.map((file) => [file.path, file]))
+      if (byPath.size !== before.files.length)
+        throw new Error('Sync file baseline has duplicate paths')
+      const changed = new Set<string>()
+      for (const update of change.files.changes) {
+        if (changed.has(update.path)) throw new Error('Sync file changes have duplicate paths')
+        changed.add(update.path)
+        const last = byPath.get(update.path)
+        if (update.fieldDelta && (!last || update.fields))
+          throw new Error('Sync file baseline is missing or ambiguous')
+        if (!last && !change.files.order) throw new Error('Sync file order is missing')
+        const file =
+          update.fieldDelta && last
+            ? patchFields(last, update.fieldDelta, assertFile)
+            : update.fields
+        if (!file || file.path !== update.path) throw new Error('Sync file identity does not match')
+        byPath.set(update.path, file)
+      }
+      const paths = change.files.order ?? before.files.map((file) => file.path)
+      const orderedPaths = new Set(paths)
+      if (orderedPaths.size !== paths.length) throw new Error('Sync file order has duplicate paths')
+      if ([...changed].some((path) => !orderedPaths.has(path)))
+        throw new Error('Sync file change is outside its order')
+      files = paths.map((path) => {
+        const file = byPath.get(path)
+        if (!file) throw new Error('Sync file baseline is missing')
+        return file
+      })
+    }
     let turns: Task['turns']
     if (change.turns) {
       if (
@@ -519,6 +620,7 @@ export function applySnapshotDelta(
     tasks.set(change.id, {
       ...fields,
       ...(turns ? { turns } : {}),
+      ...(files ? { files } : {}),
       ...(change.updatedAt !== undefined ? { updatedAt: change.updatedAt ?? undefined } : {}),
       messages: ordered,
     })

@@ -79,8 +79,8 @@ export function QuestionForm({
         [question.id]: toggleQuestionChoice(question, current[question.id], option.value),
       }))
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [request, connected, busy])
   const submit = async (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => {
     if (submitting.current || !connected || attachmentsBusy) return

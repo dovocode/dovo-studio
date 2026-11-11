@@ -1,3 +1,5 @@
+import { nativeTooltipWindow } from './native-tooltip.js'
+import { studioContents, createStudioWindow } from './studio-window.js'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import { decode, threadWindowTargetSchema } from '@dovo/protocol'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
@@ -28,14 +30,14 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
    * pop-out request keeps focusing. Reload once per minute; afterwards let the person choose. */
   const guardRenderer = (window: BrowserWindow, title: string) => {
     let reloadedAt = 0
-    window.webContents.on('render-process-gone', (_event, details) => {
+    studioContents(window).on('render-process-gone', (_event, details) => {
       if (window.isDestroyed() || details.reason === 'clean-exit') return
       console.error(
         `Thread window renderer gone (${details.reason}, exit code ${details.exitCode}): ${title}`,
       )
       if (Date.now() - reloadedAt > RELOAD_INTERVAL) {
         reloadedAt = Date.now()
-        window.webContents.reload()
+        studioContents(window).reload()
         return
       }
       void dialog
@@ -50,12 +52,12 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
         })
         .then(({ response }) => {
           if (window.isDestroyed()) return
-          if (response === 0) window.webContents.reload()
+          if (response === 0) studioContents(window).reload()
           else window.destroy()
         })
         .catch((error: unknown) => console.error('Thread window recovery prompt failed', error))
     })
-    window.webContents.on('unresponsive', () => {
+    studioContents(window).on('unresponsive', () => {
       if (window.isDestroyed()) return
       void dialog
         .showMessageBox(window, {
@@ -69,7 +71,8 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
           cancelId: 0,
         })
         .then(({ response }) => {
-          if (!window.isDestroyed() && response === 1) window.webContents.forcefullyCrashRenderer()
+          if (!window.isDestroyed() && response === 1)
+            studioContents(window).forcefullyCrashRenderer()
         })
         .catch((error: unknown) => console.error('Thread window recovery prompt failed', error))
     })
@@ -87,7 +90,7 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
     const colors =
       readWindowColors(app.getPath('userData')) ??
       defaultWindowColors(nativeTheme.shouldUseDarkColors)
-    const window = new BrowserWindow({
+    const window = createStudioWindow({
       width: 1000,
       height: 760,
       minWidth: 640,
@@ -105,7 +108,10 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
       if (windows.get(key)?.window === window) windows.delete(key)
     }
     window.once('closed', release)
-    window.webContents.setWindowOpenHandler(({ url }) => {
+    studioContents(window).setWindowOpenHandler((details) => {
+      const tooltip = nativeTooltipWindow(window, details, rendererPath)
+      if (tooltip) return tooltip
+      const { url } = details
       void offerLink(window, url)
       return { action: 'deny' }
     })
@@ -115,9 +121,9 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
         void offerLink(window, url)
       }
     }
-    window.webContents.on('will-navigate', guardNavigation)
-    window.webContents.on('will-redirect', guardNavigation)
-    registerQuitShortcut(window.webContents)
+    studioContents(window).on('will-navigate', guardNavigation)
+    studioContents(window).on('will-redirect', guardNavigation)
+    registerQuitShortcut(studioContents(window))
     registerWindowUnload(window)
     guardRenderer(window, target.title)
     const hash = 'thread=' + encodeURIComponent(JSON.stringify(target))
@@ -125,8 +131,8 @@ export function registerThreadWindows(rendererPath: string, preload: string) {
       if (process.env.VITE_DEV_SERVER_URL) {
         const url = new URL(process.env.VITE_DEV_SERVER_URL)
         url.hash = hash
-        await window.loadURL(url.href)
-      } else await window.loadFile(rendererPath, { hash })
+        await studioContents(window).loadURL(url.href)
+      } else await studioContents(window).loadFile(rendererPath, { hash })
       if (!window.isDestroyed()) {
         window.show()
         window.focus()

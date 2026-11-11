@@ -24,6 +24,7 @@ import {
   authenticateRuntimeOperation,
 } from '../auth/run-authorization.js'
 import { patchWorkspace } from './endpoints/workspace-patch.js'
+import { threadStartReplay } from './endpoints/thread-start.js'
 import { taskListAction } from './endpoints/task-list-action.js'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
@@ -787,7 +788,7 @@ export function route(
           throw new HttpError(400, 'This action does not support mutation recovery.')
         const id = decode(idSchema, request.headers['x-dovo-mutation-id'])
         const input = yield* serviceResult(body(request))
-        return yield* serviceResult(
+        const value = yield* serviceResult(
           s.mutations.execute(
             device.id,
             id,
@@ -818,6 +819,7 @@ export function route(
               (method === 'PATCH' && path === '/api/workspace'),
           ),
         )
+        return path === '/api/tasks/message' ? threadStartReplay(s, value) : value
       }
       if (method === 'POST' && path === '/api/threads/metadata') {
         if (agentDeviceAccess)
@@ -1298,31 +1300,39 @@ export function route(
         const format =
           url.searchParams.get('format') === '4' && url.searchParams.get('subscriptions') === 'live'
             ? url.searchParams.get('incremental') === '1'
-              ? '6'
+              ? url.searchParams.get('files') === '1'
+                ? '7'
+                : '6'
               : '5'
             : url.searchParams.get('format')
         const tasks =
-          format === '4' || format === '5' || format === '6' ? syncTasks(url) : undefined
+          format === '4' || format === '5' || format === '6' || format === '7'
+            ? syncTasks(url)
+            : undefined
         return {
           ticket: s.tickets.issue(
             token,
-            format === '6'
-              ? 'runtime-sync-6'
-              : format === '5'
-                ? 'runtime-sync-5'
-                : format === '4'
-                  ? 'runtime-sync-4'
-                  : format === '3'
-                    ? 'runtime-sync-3'
-                    : format === '2'
-                      ? 'runtime-sync-2'
-                      : 'runtime-sync',
+            format === '7'
+              ? 'runtime-sync-7'
+              : format === '6'
+                ? 'runtime-sync-6'
+                : format === '5'
+                  ? 'runtime-sync-5'
+                  : format === '4'
+                    ? 'runtime-sync-4'
+                    : format === '3'
+                      ? 'runtime-sync-3'
+                      : format === '2'
+                        ? 'runtime-sync-2'
+                        : 'runtime-sync',
             undefined,
             tasks,
             url.searchParams.get('history') === 'paged',
             settledLimit(),
           ),
-          ...(format === '4' || format === '5' || format === '6' ? { format: Number(format) } : {}),
+          ...(format === '4' || format === '5' || format === '6' || format === '7'
+            ? { format: Number(format) }
+            : {}),
         }
       }
       if (method === 'POST' && path === '/api/tasks/history') {

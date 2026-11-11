@@ -32,7 +32,7 @@ import {forgeIssueDetailSchema} from '@dovo/protocol';
 window.reads=[];window.wireBytes=0;window.cacheWrites=0;window.revision=0;
 const issue={id:'TEAM-7',title:'Issue',body:'Description '+'x'.repeat(16000),state:'open',url:'https://team.atlassian.net/browse/TEAM-7',author:'Dominic',assignees:[],labels:[],updatedAt:'2026-11-11',revision:'same'};
 const overview={issue,comments:[]};
-const cache={read:async()=>null,write:async()=>{window.cacheWrites++},remove:async()=>{}};
+const cache={read:async()=>{if(!window.holdCache)return null;await new Promise(resolve=>(window.releaseCache??=[]).push(resolve));window.cacheReturned=(window.cacheReturned??0)+1;return{value:{issue,comments:[{id:'old',body:'Old saved comment',author:'Dominic',createdAt:'2026-11-11'}],loadedPages:99},cachedAt:0}},write:async()=>{window.cacheWrites++},remove:async()=>{}};
 const request=(input,schema)=>Effect.tryPromise({try:async()=>{
  window.reads.push(input);if(input.cursor&&window.failLaterPage)throw Error('Older comments unavailable');
  const value={issue,comments:[{id:input.cursor?'second':'first',body:'Comment '+window.revision,author:'Dominic',createdAt:'2026-11-11'}],next:input.cursor?undefined:'30',stale:!!window.revalidating};
@@ -93,8 +93,20 @@ try {
       (baseline) => (window.baseline = baseline),
       process.argv.includes('--baseline'),
     )
+    await page.addScriptTag({ content: 'window.holdCache=true' })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.waitForFunction(() => window.details?.[0]?.ready && !window.details[0].busy)
+    await page.waitForFunction(() => window.releaseCache?.length > 0)
+    await page.evaluate(() => {
+      window.holdCache = false
+      for (const release of window.releaseCache) release()
+    })
+    await page.waitForFunction(() => window.cacheReturned > 0)
+    assert.equal(
+      await page.evaluate(() => window.details[0].issue.comments[0].id),
+      'first',
+      'Late saved comments cannot replace live comments',
+    )
     await page.evaluate(() => window.details[0].more())
     await page.waitForFunction(
       () => window.details[0].issue?.comments.length === 2 && !window.details[0].busy,

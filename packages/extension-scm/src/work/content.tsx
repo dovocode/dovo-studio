@@ -4,7 +4,8 @@ import { usePipelineSections } from './use-pipeline-sections'
 import { PipelineSectionStatus } from './pipeline-section-status'
 import {
   useDetailReader,
-  verifySourceReader,
+  recheckSourceReader,
+  sourceReadGuard,
   sourceIdentityInput,
 } from '../connections/source-readers'
 import { useIssueSources, workRemoteKey } from './work-sources'
@@ -162,7 +163,7 @@ export function WorkContent({
       refresh: boolean,
       revision: string,
     ) => {
-      const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+      const guard = reader ? await Effect.runPromise(sourceReadGuard(reader)) : undefined
       const value = await (reader?.request ?? request)(
         '/api/scm/work/pipelines/detail',
         {
@@ -175,7 +176,10 @@ export function WorkContent({
           revision,
         },
         forgePipelineDetailSchema,
-      )
+      ).catch((error: unknown) => {
+        if (reader) void Effect.runPromise(recheckSourceReader(reader, error))
+        throw error
+      })
       if (selected === initialSelected && initialSourceURL && value.run.url !== initialSourceURL)
         throw new Error('This pipeline source changed. Open the original source below.')
       return reader && reader.key !== origin?.key
@@ -211,7 +215,7 @@ export function WorkContent({
       refresh: boolean,
       revision: string,
     ) => {
-      const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+      const guard = reader ? await Effect.runPromise(sourceReadGuard(reader)) : undefined
       const value = await jiraPromiseReader(
         reader?.readCache ?? readCache ?? request,
         reader?.scope ?? detailKey,
@@ -228,7 +232,10 @@ export function WorkContent({
           revision,
         },
         forgeIssueDetailSchema,
-      )
+      ).catch((error: unknown) => {
+        if (reader) void Effect.runPromise(recheckSourceReader(reader, error))
+        throw error
+      })
       if (selected === initialSelected && initialSourceURL && value.issue.url !== initialSourceURL)
         throw new Error('This issue source changed. Open the original source below.')
       return reader && reader.key !== origin?.key
@@ -278,7 +285,7 @@ export function WorkContent({
       Effect.tryPromise({
         try: async () => {
           if (document.visibilityState !== 'visible') return
-          const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+          const guard = reader ? await Effect.runPromise(sourceReadGuard(reader)) : undefined
           const value = await jiraPromiseReader(
             reader?.readCache ?? readCache ?? request,
             reader?.scope ?? detailKey,
@@ -308,6 +315,7 @@ export function WorkContent({
       {
         interval: () => (jiraSourceId ? (optionsErrorRef.current ? 60_000 : 300_000) : 30_000),
         onError: (error) => {
+          if (reader) void Effect.runPromise(recheckSourceReader(reader, error))
           if (!stopped) setWorkOptionsError(error.message)
         },
       },
@@ -339,7 +347,8 @@ export function WorkContent({
   const base = '/api/scm/work/'
   useEffect(() => {
     let stopped = false
-    let hydrated = false
+    let liveDetail = false
+    let liveFinished = false
     let force = revision > consumedRevision.current
     pending.current = false
     setStale(true)
@@ -357,6 +366,27 @@ export function WorkContent({
     }
     let lastIssue: ForgeIssueDetail | undefined
     let savedIssue: ForgeIssueDetail | undefined
+    // Saved content can appear first, but it never holds the live request.
+    void (async () => {
+      if (selected && readCache && (revision === 0 || !sameSource)) {
+        try {
+          const saved = await readWorkDetailCache(
+            readCache,
+            { options: optionsKey, detail: detailKey },
+            mode,
+            selected === initialSelected ? initialSourceURL : undefined,
+          )
+          if (stopped || liveDetail) return
+          if (saved.options) setOptions(saved.options)
+          if (saved.issue) setIssue(saved.issue)
+          if (saved.pipeline) setPipeline(saved.pipeline)
+          loadedDetailPages.current = saved.issue?.loadedPages ?? saved.pipeline?.loadedPages ?? 1
+        } catch (error) {
+          if (!stopped && !liveFinished)
+            setError(error instanceof Error ? error.message : 'Saved details could not be read.')
+        }
+      }
+    })()
     const load = async () => {
       if (stopped || pending.current) return
       const valid = requests.current.begin()
@@ -371,28 +401,11 @@ export function WorkContent({
           return false
         }
       }
+      let attempted = false
       try {
-        if (!hydrated && selected && readCache && (revision === 0 || !sameSource)) {
-          hydrated = true
-          try {
-            const saved = await readWorkDetailCache(
-              readCache,
-              { options: optionsKey, detail: detailKey },
-              mode,
-              selected === initialSelected ? initialSourceURL : undefined,
-            )
-            if (!current()) return
-            if (saved.options) setOptions(saved.options)
-            if (saved.issue) setIssue(saved.issue)
-            if (saved.pipeline) setPipeline(saved.pipeline)
-            loadedDetailPages.current = saved.issue?.loadedPages ?? saved.pipeline?.loadedPages ?? 1
-          } catch (error) {
-            if (current())
-              setError(error instanceof Error ? error.message : 'Saved details could not be read.')
-          }
-        }
         if (!current() || !readConnected || document.visibilityState !== 'visible') return
-        const readGuard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+        attempted = true
+        const readGuard = reader ? await Effect.runPromise(sourceReadGuard(reader)) : undefined
         if (!current()) return
         const readRequest = jiraPromiseReader(
           readCache ?? request,
@@ -423,6 +436,7 @@ export function WorkContent({
           }
           if (reader && reader.key !== origin?.key)
             data = { ...data, destination, run: { ...data.run, destination } }
+          liveDetail = true
           setPipeline(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
@@ -448,6 +462,7 @@ export function WorkContent({
           const raw = data
           if (reader && reader.key !== origin?.key)
             data = { ...data, destination, issue: { ...data.issue, destination } }
+          liveDetail = true
           if (!unchanged) setIssue(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
@@ -518,6 +533,7 @@ export function WorkContent({
               loadedDetailPages.current = pages
               if (reader && reader.key !== origin?.key)
                 data = { ...data, destination, issue: { ...data.issue, destination } }
+              liveDetail = true
               setIssue(data)
               setStale(!!data.stale || !!data.refreshError)
               setError(data.refreshError ?? '')
@@ -555,11 +571,13 @@ export function WorkContent({
         }
         if (selected) await save(optionsKey, opts)
       } catch (error) {
+        if (reader) void Effect.runPromise(recheckSourceReader(reader, error))
         if (current()) {
           setStale(true)
           setError(error instanceof Error ? error.message : String(error))
         }
       } finally {
+        if (attempted) liveFinished = true
         if (current()) setBusy(false)
       }
     }
@@ -637,7 +655,7 @@ export function WorkContent({
     pending.current = true
     setBusy(true)
     try {
-      const readGuard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+      const readGuard = reader ? await Effect.runPromise(sourceReadGuard(reader)) : undefined
       if (!current()) return
       const readRequest = jiraPromiseReader(
         reader?.readCache ?? readCache ?? request,
@@ -675,6 +693,7 @@ export function WorkContent({
           await readCache.write(detailKey, { ...merged, loadedPages: loadedDetailPages.current })
       }
     } catch (e) {
+      if (reader) void Effect.runPromise(recheckSourceReader(reader, e))
       if (current()) setError(integrationMutationError(e))
     } finally {
       if (current()) {

@@ -33,6 +33,13 @@ try {
     import {Effect} from 'effect';
     import {jiraReader} from '@dovo/studio-core/jira-reads';
     import {Schema} from 'effect';
+    import {changedFileFingerprint} from '@dovo/protocol';
+    const reviewFile={path:'mobile.ts',before:'old',after:'new',viewed:false};
+    const reviewFingerprint=changedFileFingerprint(reviewFile);
+    reviewFile.viewed=true;
+    globalThis.metroReviewFingerprint={stable:changedFileFingerprint(reviewFile)===reviewFingerprint};
+    reviewFile.after='changed';
+    globalThis.metroReviewFingerprint.changed=changedFileFingerprint(reviewFile)!==reviewFingerprint;
     globalThis.metroJiraRead = Effect.runPromise(jiraReader({}, 'paired/account/jira', () => Effect.succeed({value:{ok:true},readVersion:'b'.repeat(64)}))('/api/scm/work/options', {jiraSourceId:'jira'}, Schema.Struct({ok:Schema.Boolean})));
     import {readPullPage} from '@dovo/studio-core/pull-reads';
     globalThis.metroPullRead = Effect.runPromise(readPullPage({}, 'paired/account/repository', () => Effect.succeed({pulls:[],page:1,hasMore:false,readVersion:'a'.repeat(64)})));
@@ -67,11 +74,13 @@ try {
   runInNewContext(await readFile(output, 'utf8'), context, { timeout: 10000 })
   assert.equal((await context.metroPullRead).page, 1)
   assert.equal((await context.metroJiraRead).ok, true)
+  assert.equal(context.metroReviewFingerprint.stable, true)
+  assert.equal(context.metroReviewFingerprint.changed, true)
   assert.equal(context.metroThemeResult.name, 'Native theme')
   assert.ok(context.metroEditorDocument.includes('Edit image'))
   assert.equal(context.metroEditorCancel.type, 'cancel')
   console.log(
-    'Compiled model catalog, production iOS PR and Jira readers, theme parser and image editor exports load successfully.',
+    'Compiled model catalog, production iOS PR and Jira readers, review fingerprints, theme parser and image editor exports load successfully.',
   )
 } finally {
   process.chdir(previousDirectory)

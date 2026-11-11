@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { expect, it, vi } from 'vite-plus/test'
 import { defaultTaskHarness, decode, taskSchema, type Agent, type Task } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -317,3 +318,60 @@ it.each(['missing', 'unsupported'])(
     }
   },
 )
+
+it.each(['auto', 'smart'] as const)(
+  'publishes discovery and %s selection while the accepted run prepares',
+  async (mode) => {
+    const s = setup(mode)
+    s.setProvider(mode === 'auto' ? 'codex' : 'claude')
+    const discovery = testGate()
+    const choosing = testGate()
+    const originalGet = s.get.getMockImplementation()!
+    s.get.mockImplementation(async (...args) => {
+      const adapter = await originalGet(...args)
+      return {
+        ...adapter,
+        models: async (...input) => {
+          await discovery.promise
+          return adapter.models!(...input)
+        },
+      }
+    })
+    const originalSelect = s.titles.selectModelEffect.bind(s.titles)
+    vi.spyOn(s.titles, 'selectModelEffect').mockImplementation((...args) =>
+      Effect.promise(() => choosing.promise).pipe(Effect.andThen(originalSelect(...args))),
+    )
+    let pending: Promise<unknown> | undefined
+    try {
+      s.store.updateTask('task', (task) => ({ ...task, status: 'running', runPhase: 'preparing' }))
+      pending = runClientEffect(s.selection.resolveEffect('task'))
+      await vi.waitFor(() =>
+        expect(s.store.taskSummary('task').preparation?.current).toBe('models'),
+      )
+      discovery.resolve()
+      const step = mode === 'auto' ? 'tune' : 'maestro'
+      await vi.waitFor(() =>
+        expect(s.store.taskSummary('task').preparation).toMatchObject({
+          steps: ['models', step, 'agent'],
+          current: step,
+        }),
+      )
+      choosing.resolve()
+      await pending
+      expect(s.store.task('task').harness?.model).toMatch(/-large$/)
+    } finally {
+      discovery.resolve()
+      choosing.resolve()
+      await pending?.catch(() => {})
+      await s.close()
+    }
+  },
+)
+
+function testGate() {
+  let complete: () => void
+  const promise = new Promise<void>((resolve) => {
+    complete = resolve
+  })
+  return { promise, resolve: () => complete() }
+}

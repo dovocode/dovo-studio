@@ -274,7 +274,7 @@ export class TitleGeneration {
         const receiptBefore = this.db
           .prepare('SELECT value FROM documents WHERE id=?')
           .get(receiptKey)
-        const before = this.store.taskSummary(id)
+        let before = this.store.taskSummary(id)
         if (
           !before.autoProject ||
           !canChangeTaskCheckout(before) ||
@@ -301,8 +301,31 @@ export class TitleGeneration {
           reason: 'No projects are available. Continue in General.',
         }
         if (projects.length) {
+          let ownedPreparation: typeof before.preparation
+          const setPreparation = (preparation: typeof before.preparation) =>
+            this.store.update((workspace) => ({
+              ...workspace,
+              tasks: workspace.tasks.map((task) => {
+                if (task.id !== id) return task
+                const { preparation: _previous, ...rest } = task
+                return preparation ? { ...rest, preparation } : rest
+              }),
+            }))
+          const progress = (current: string) => {
+            if (!isDeepStrictEqual(this.store.taskSummary(id), before))
+              throw new HttpError(409, 'The thread changed during Scope selection. Try again.')
+            setPreparation({
+              steps: ['scope-context', 'scope'],
+              current,
+              startedAt: new Date().toISOString(),
+            })
+            before = this.store.taskSummary(id)
+            ownedPreparation = before.preparation
+          }
+          progress('scope-context')
           const output = yield* this.trackEffect((controller) =>
             runtimeOperation(() => projectScopeContext(projects, controller.signal, text)).pipe(
+              Effect.tap(() => runtimeOperation(() => progress('scope'))),
               Effect.flatMap((context) =>
                 this.runEffect(
                   JSON.stringify({ request: text, projects: context.projects }),
@@ -313,6 +336,16 @@ export class TitleGeneration {
                   context.directories,
                 ),
               ),
+            ),
+          ).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                const current = this.store.get().tasks.find((task) => task.id === id)
+                if (!current || current.preparation !== ownedPreparation) return
+                const unchanged = isDeepStrictEqual(current, before)
+                setPreparation(undefined)
+                if (unchanged) before = this.store.taskSummary(id)
+              }),
             ),
           )
           try {

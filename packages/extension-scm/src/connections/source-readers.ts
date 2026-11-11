@@ -16,6 +16,17 @@ type Source = Omit<RepositorySource, 'repository'> & {
   readerIdentity?: string
 }
 const identities = new Map<string, ForgeSourceIdentity>()
+// Accounts that discovery verified on each live transport in this session. A saved identity
+// never enters this map. `identity` is undefined for older runtimes without identity discovery.
+const liveIdentities = new Map<string, { identity?: ForgeSourceIdentity }>()
+const rememberLive = (scope: string, identity: ForgeSourceIdentity | undefined) => {
+  liveIdentities.delete(scope)
+  liveIdentities.set(scope, { identity })
+  while (liveIdentities.size > 256) {
+    const oldest = liveIdentities.keys().next().value
+    if (oldest !== undefined) liveIdentities.delete(oldest)
+  }
+}
 // Keep the last verified account/destination for continuity, but do not use a
 // failed discovery as evidence that this transport is available for reading.
 const failedDiscovery = new Set<string>()
@@ -88,7 +99,10 @@ function discoverSourceIdentity(source: Source) {
     .pipe(
       Effect.tap((identity) =>
         Effect.try({
-          try: () => rememberIdentity(source.scope, identity),
+          try: () => {
+            rememberIdentity(source.scope, identity)
+            rememberLive(source.scope, identity)
+          },
           catch: (cause) =>
             cause instanceof RuntimeRequestError
               ? cause
@@ -110,6 +124,7 @@ function discoverSourceIdentity(source: Source) {
           if (error instanceof RuntimeRequestError && [404, 405].includes(error.status ?? 0)) {
             const removed = identities.delete(source.scope)
             const recovered = failedDiscovery.delete(source.scope)
+            rememberLive(source.scope, undefined)
             if (removed || recovered) publish()
             yield* source.readCache
               .removeEffect(identityCacheKey(source))
@@ -120,6 +135,7 @@ function discoverSourceIdentity(source: Source) {
               )
             return undefined
           }
+          liveIdentities.delete(source.scope)
           const changed = !failedDiscovery.has(source.scope)
           failedDiscovery.add(source.scope)
           while (failedDiscovery.size > 256) {
@@ -139,6 +155,7 @@ export function chooseSourceReader(source: Source, namespace: string, remote: st
   // An explicit choice can accept a changed source; automatic discovery cannot.
   return Effect.suspend(() => {
     identities.delete(source.scope)
+    liveIdentities.delete(source.scope)
     return discoverSourceIdentity(source)
   }).pipe(
     Effect.tap((identity) =>
@@ -164,23 +181,66 @@ export function chooseSourceReader(source: Source, namespace: string, remote: st
     Effect.asVoid,
   )
 }
-export function verifySourceReader(source: Source) {
-  return discoverSourceIdentity(source).pipe(
-    Effect.flatMap((identity) => {
-      if (source.readerIdentity && identity?.readerIdentity !== source.readerIdentity)
-        return Effect.fail(
-          new RuntimeRequestError({
-            kind: 'request',
-            status: 409,
-            message:
-              'This source account changed. Saved data remains available; choose the source explicitly to use another account.',
-          }),
-        )
-      return Effect.succeed({
+export type SourceReadGuard = { expectedReaderIdentity?: string; expectedDestination?: string }
+const readGuard = (source: Source, identity: ForgeSourceIdentity | undefined) =>
+  source.readerIdentity && identity?.readerIdentity !== source.readerIdentity
+    ? Effect.fail(
+        new RuntimeRequestError({
+          kind: 'request',
+          status: 409,
+          message:
+            'This source account changed. Saved data remains available; choose the source explicitly to use another account.',
+        }),
+      )
+    : Effect.succeed<SourceReadGuard>({
         expectedReaderIdentity: identity?.readerIdentity,
         expectedDestination: identity?.destination,
       })
-    }),
+
+/** The guard from this session's live discovery, without a request. Undefined means the source
+ * has no live verification yet, or its pinned account no longer matches. */
+export function liveSourceReadGuard(source: Source): SourceReadGuard | undefined {
+  const live = liveIdentities.get(source.scope)
+  if (!live || (source.readerIdentity && live.identity?.readerIdentity !== source.readerIdentity))
+    return undefined
+  return {
+    expectedReaderIdentity: live.identity?.readerIdentity,
+    expectedDestination: live.identity?.destination,
+  }
+}
+
+/** Guard a pure read with the account and destination that live discovery verified. The runtime
+ * checks both on every guarded read, so a known identity needs no extra lookup. Without one, this
+ * discovers it first. Mutations must not use this: they keep their own explicit checks. */
+export function sourceReadGuard(source: Source) {
+  return Effect.suspend(() => {
+    const live = liveIdentities.get(source.scope)
+    return live ? Effect.succeed(live.identity) : discoverSourceIdentity(source)
+  }).pipe(Effect.flatMap((identity) => readGuard(source, identity)))
+}
+
+/** A 409 from a guarded read means the source account or destination may have changed. Forget the
+ * live identity and rediscover it, so the normal account-change flow runs at once. This never
+ * retries the read and never accepts another account. */
+export function recheckSourceReader(source: Source, error: unknown) {
+  if (!(error instanceof RuntimeRequestError && error.status === 409)) return Effect.void
+  return Effect.suspend(() => {
+    // Live discovery already shows another account; the pinned reader has its answer.
+    if (liveIdentities.has(source.scope) && !liveSourceReadGuard(source)) return Effect.void
+    liveIdentities.delete(source.scope)
+    return discoverSourceIdentity(source).pipe(Effect.asVoid)
+  }).pipe(Effect.ignore)
+}
+
+/** Run one pure read with `sourceReadGuard`, and recheck the source when the runtime rejects it. */
+export function guardedSourceRead<A, E>(
+  source: Source,
+  read: (guard: SourceReadGuard) => Effect.Effect<A, E>,
+) {
+  return sourceReadGuard(source).pipe(
+    Effect.flatMap((guard) =>
+      read(guard).pipe(Effect.tapError((error) => recheckSourceReader(source, error))),
+    ),
   )
 }
 

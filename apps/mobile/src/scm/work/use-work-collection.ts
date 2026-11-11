@@ -67,6 +67,7 @@ export function useWorkCollection(
   sourcesRef.current = sources
   const [pages, setPages, pageRef] = useApplicationState<Record<string, WorkPage>>({})
   const generation = useRef(0)
+  const hydrationTasks = useRef<ReturnType<typeof clientTaskScope> | undefined>(undefined)
   const moreRef = useRef<(key: string) => Promise<void>>(async () => {})
   const forceNext = useRef(false)
   const fullSweepAt = useRef(new Map<string, number>())
@@ -118,7 +119,9 @@ export function useWorkCollection(
           items: [],
           stale: true,
         }
-      yield* Effect.gen(function* () {
+      let liveFinished = false
+      let liveLoaded = false
+      const hydration = Effect.gen(function* () {
         if (hydrate && !cursor) {
           const [options, cached] = yield* Effect.all([
             cache.readEffect(optionsKey, forgeWorkOptionsSchema),
@@ -144,7 +147,7 @@ export function useWorkCollection(
                   forgeIssuePageSchema,
                 )
               : undefined)
-          if (generation.current !== current) return
+          if (generation.current !== current || liveLoaded) return
           page = {
             ...page,
             source,
@@ -155,13 +158,14 @@ export function useWorkCollection(
               ? page.searched
               : !!cached && !!query && !!options?.value.issueSearch,
             stale: page.items.length ? page.stale : true,
-            error: undefined,
+            error: page.error,
           }
           if (publish) update(source.key, page)
         }
       }).pipe(
         Effect.catch(() =>
           Effect.sync(() => {
+            if (generation.current !== current || liveFinished) return
             page = {
               ...page,
               error: 'Saved work could not be read from this device.',
@@ -170,6 +174,7 @@ export function useWorkCollection(
           }),
         ),
       )
+      if (hydrate && !cursor) void hydrationTasks.current?.run(hydration)
       if (
         !source.connected ||
         generation.current !== current ||
@@ -203,6 +208,8 @@ export function useWorkCollection(
             items: [],
             stale: false,
           }
+          liveFinished = true
+          liveLoaded = true
           if (publish) update(source.key, empty)
           if (options) yield* cache.writeEffect(optionsKey, options)
           return empty
@@ -220,6 +227,8 @@ export function useWorkCollection(
             items: [],
             stale: false,
           }
+          liveFinished = true
+          liveLoaded = true
           if (publish) update(source.key, empty)
           return empty
         }
@@ -254,6 +263,8 @@ export function useWorkCollection(
                 forgePipelinePageSchema,
               )
         if (generation.current !== current) return
+        liveFinished = true
+        liveLoaded = true
         const unchanged = jira && !cursor && !force && page.liveFirstPage === data && !page.error
         const retaining = !cursor && !force && page.paginated && page.firstPageIds && data.next
         const next: WorkPage = {
@@ -347,7 +358,9 @@ export function useWorkCollection(
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
+            liveFinished = true
             const failed = { ...page, source, stale: true, error: error.message }
+            page = failed
             if (publish && generation.current === current) update(source.key, failed)
             return failed
           }),
@@ -380,6 +393,7 @@ export function useWorkCollection(
     let force = forceNext.current
     forceNext.current = false
     const commands = clientTaskScope()
+    hydrationTasks.current = commands
     const semaphore = Effect.runSync(Semaphore.make(1))
     let hydrate = true
     const done = Effect.sync(() => {
@@ -571,6 +585,7 @@ export function useWorkCollection(
     })
     return () => {
       generation.current++
+      hydrationTasks.current = undefined
       moreRef.current = async () => {}
       subscription.remove()
       void polling.stop()

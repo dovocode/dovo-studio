@@ -263,6 +263,50 @@ it('writes only the changed task row and leaves the workspace shell untouched', 
     db.close()
   }
 })
+it('keeps cached review bodies intact through metadata, streaming, file edits and failed commits', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const files = [
+      {
+        path: 'quote"\\🙂.ts',
+        before: '\u0000\n"before"',
+        after: 'after\n'.repeat(1000),
+        viewed: true,
+      },
+    ]
+    const store = new WorkspaceStore(db)
+    store.update((current) => ({ ...current, tasks: [{ ...task, files }] }))
+    store.updateTask(task.id, (entry) => ({ ...entry, title: 'Renamed', draft: 'Keep my draft' }))
+    store.updateTaskHistory(task.id, (entry) => ({
+      ...entry,
+      messages: entry.messages.map((message, index) =>
+        index === 199 ? { ...message, text: 'Streamed' } : message,
+      ),
+    }))
+    expect(new WorkspaceStore(db).task(task.id)).toEqual(store.task(task.id))
+    expect(new WorkspaceStore(db).taskSummary(task.id).files).toEqual(files)
+    db.exec(
+      "CREATE TRIGGER reject_review BEFORE UPDATE ON workspace_tasks BEGIN SELECT RAISE(ABORT, 'Disk full'); END",
+    )
+    const edit = (entry: typeof task) => ({
+      ...entry,
+      files: entry.files.map((file) => ({ ...file, after: 'new content' })),
+    })
+    expect(() => store.updateTaskHistory(task.id, edit)).toThrow('Disk full')
+    expect(new WorkspaceStore(db).taskSummary(task.id).files).toEqual(files)
+    db.exec('DROP TRIGGER reject_review')
+    store.updateTaskHistory(task.id, edit)
+    expect(new WorkspaceStore(db).task(task.id)).toEqual(store.task(task.id))
+    expect(new WorkspaceStore(db).taskSummary(task.id).files[0]).toMatchObject({
+      after: 'new content',
+      viewed: false,
+    })
+    store.updateTask(task.id, (entry) => ({ ...entry, files: [] }))
+    expect(new WorkspaceStore(db).taskSummary(task.id).files).toEqual([])
+  } finally {
+    db.close()
+  }
+})
 it('fails closed on missing task rows, invalid manifests and newer formats', () => {
   const db = openDatabase(':memory:')
   try {

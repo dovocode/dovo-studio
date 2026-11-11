@@ -1,3 +1,4 @@
+import { studioContents } from './studio-window.js'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { decode, fetchRuntimeReleases, nativeAgentWorking } from '@dovo/protocol'
@@ -45,7 +46,7 @@ export function registerUpdates(
   const publish = (next: DesktopUpdateState) => {
     state = { ...next, channel }
     for (const window of BrowserWindow.getAllWindows())
-      window.webContents.send('updates:state', state)
+      studioContents(window).send('updates:state', state)
   }
   const notesText = (notes: unknown): string | undefined => {
     const text =

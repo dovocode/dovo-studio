@@ -19,7 +19,7 @@ import {usePullDetail} from '${root}/packages/extension-scm/src/pulls/detail/use
 import {usePulls} from '${root}/packages/extension-scm/src/pulls/list/use-pulls';
 const profile={id:'owner',name:'Owner',connection:{address:'http://owner.local',token:'paired-fixture'}};
 window.reads=[];window.releaseReads=[];window.rendered=0;
-const cache={readEffect:()=>Effect.succeed(null),writeEffect:()=>Effect.void,removeEffect:()=>Effect.void};
+const cache={readEffect:(key)=>Effect.tryPromise({try:async()=>{if(!window.holdCache)return null;await new Promise(resolve=>(window.releaseCache??=[]).push(resolve));window.cacheReturned=(window.cacheReturned??0)+1;return window.liveDetail&&key.includes('detail')?{value:{...window.liveDetail,pull:{...window.liveDetail.pull,title:'Old saved PR'}},cachedAt:0}:null},catch:error=>error}),writeEffect:()=>Effect.void,removeEffect:()=>Effect.void};
 const runtimeReadCache=()=>cache;
 const readRuntimeEffect=(_profile,path,input,schema)=>Effect.tryPromise({try:async()=>{
   if(path==='/api/scm/source/identity'){
@@ -32,7 +32,7 @@ const readRuntimeEffect=(_profile,path,input,schema)=>Effect.tryPromise({try:asy
     return decode(schema,{pulls:[{number:input.page,title:'PR '+input.page,url:'https://github.com/team/project/pull/'+input.page,state:'open',draft:false,author:'Dominic',viewerIsAuthor:input.page===1,updatedAt:'2026-10-27',head:'feature',base:'main',labels:[]}],page:input.page,hasMore:input.page===1});
   }
   if(input.section==='overview')await new Promise(resolve=>window.releaseReads.push(resolve));
-  return decode(schema,{destination:'destination',pull:{number:7,title:'Loaded PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-27',head:'feature',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:1,deletions:0,changedFiles:1,mergeable:true,reviewers:[],assignees:[]},files:[],comments:[],checks:[],warnings:[]});
+  const result=decode(schema,{destination:'destination',pull:{number:7,title:'Loaded PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-27',head:'feature',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:1,deletions:0,changedFiles:1,mergeable:true,reviewers:[],assignees:[]},files:[],comments:[],checks:[],warnings:[]});window.liveDetail=result;return result;
 },catch:error=>error});
 const readRuntime=(...args)=>Effect.runPromise(readRuntimeEffect(...args));
 const requestEffect=(...args)=>readRuntimeEffect(profile,...args);
@@ -82,6 +82,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.clock.install()
   await page.setContent('<div id="app"></div>')
+  await page.addScriptTag({ content: 'window.holdCache=true' })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => window.releaseReads.length > 0)
   // First identity discovery may legitimately restart the read to pin its account.
@@ -100,11 +101,23 @@ try {
     for (const release of window.releaseReads) release()
   })
   await page.getByText('Loaded PR', { exact: true }).waitFor()
+  await page.waitForFunction(() => window.releaseCache?.length > 0)
+  await page.evaluate(() => {
+    window.holdCache = false
+    for (const release of window.releaseCache) release()
+  })
+  await page.waitForFunction(() => window.cacheReturned > 0)
+  assert.equal(
+    await page.getByText('Old saved PR', { exact: true }).count(),
+    0,
+    'Late saved data cannot replace the live PR',
+  )
   const readsBeforeFailure = await page.evaluate(() => window.reads.length)
+  // Reads reuse the live-verified account, so the outage reaches the detail through discovery.
   await page.evaluate(() => {
     window.identityFailure = true
-    window.detail.refresh()
   })
+  await page.clock.runFor(30_001)
   await page.waitForFunction(() => window.identityErrors > 0)
   await page.evaluate(() => {
     window.identityFailure = false
@@ -124,9 +137,15 @@ try {
   listPage.on('pageerror', (error) => errors.push(error.message))
   await listPage.clock.install()
   await listPage.setContent('<div id="app"></div>')
-  await listPage.addScriptTag({ content: 'window.listMode=true' })
+  await listPage.addScriptTag({ content: 'window.listMode=true;window.holdCache=true' })
   await listPage.addScriptTag({ content: built.outputFiles[0].text })
   await listPage.getByText('PR 1', { exact: true }).first().waitFor()
+  await listPage.waitForFunction(() => window.releaseCache?.length > 0)
+  await listPage.evaluate(() => {
+    window.holdCache = false
+    for (const release of window.releaseCache) release()
+  })
+  await listPage.waitForFunction(() => window.cacheReturned > 0)
   await listPage.evaluate(() => {
     void window.list.more(window.list.pages[0].source.key)
   })

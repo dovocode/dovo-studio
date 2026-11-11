@@ -33,6 +33,10 @@ function useBrowseResource<T extends { stale?: boolean; refreshError?: string },
     const refresh = force.current
     force.current = false
     setState({ key, busy: connected, error: '' })
+    let liveFinished = false
+    let liveLoaded = false
+    let forbidden = false
+    let savedValue: T | undefined
     void tasks.run(
       Effect.gen(function* () {
         const saved = yield* (
@@ -46,19 +50,32 @@ function useBrowseResource<T extends { stale?: boolean; refreshError?: string },
               ),
             ) ?? Effect.succeed(undefined)
         )
-        if (!stopped && saved)
-          setState({ key, value: { ...saved.value, stale: true }, busy: connected, error: '' })
+        savedValue = saved?.value
+        if (!stopped && !liveLoaded && !forbidden && saved)
+          setState((current) => ({
+            key,
+            value: { ...saved.value, stale: true },
+            busy: connected && !liveFinished,
+            error: current.key === key ? current.error : '',
+          }))
+      }),
+    )
+    void tasks.run(
+      Effect.gen(function* () {
         if (!connected) return
         const value = yield* load(refresh)
         if (stopped) return
+        liveFinished = true
+        liveLoaded = true
         setState({ key, value, busy: false, error: value.refreshError ?? '' })
-        if (JSON.stringify(saved?.value) !== JSON.stringify(value))
+        if (JSON.stringify(savedValue) !== JSON.stringify(value))
           yield* cache?.writeEffect(key, value) ?? Effect.void
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             if (stopped) return
-            const forbidden =
+            liveFinished = true
+            forbidden =
               error instanceof RuntimeRequestError && [401, 403, 409].includes(error.status ?? 0)
             setState((current) => ({
               key,

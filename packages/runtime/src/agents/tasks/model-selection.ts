@@ -121,6 +121,19 @@ export class ModelSelection {
         }
         let harness: TaskHarness = defaults
         if (before.modelSelection !== 'inherit') {
+          const progress = (current: string) => {
+            const task = this.store.taskSummary(id)
+            if (task.status !== 'running' || task.runPhase !== 'preparing') return
+            this.store.updateTask(id, (task) => ({
+              ...task,
+              preparation: {
+                steps: ['models', before.modelSelection === 'auto' ? 'tune' : 'maestro', 'agent'],
+                current,
+                startedAt: new Date().toISOString(),
+              },
+            }))
+          }
+          progress('models')
           const candidates = yield* runtimeOperation(() =>
             this.candidates(before.repositoryId, defaults, before.modelSelection === 'auto'),
           )
@@ -130,6 +143,7 @@ export class ModelSelection {
               409,
               'No available models were found. Configure a harness or choose a model manually.',
             )
+          progress(before.modelSelection === 'auto' ? 'tune' : 'maestro')
           const output = yield* this.titles.selectModelEffect(
             JSON.stringify({
               request:

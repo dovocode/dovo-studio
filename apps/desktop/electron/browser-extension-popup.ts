@@ -1,9 +1,10 @@
+import { studioContents } from './studio-window.js'
 import type { BrowserWindow } from 'electron'
 
 /** Extension actions are transient, including when focus moves outside Studio. */
 export function dismissExtensionPopupOnBlur(popup: BrowserWindow, parent: BrowserWindow) {
   const popupContents = popup.webContents
-  const parentContents = parent.webContents
+  const parentContents = studioContents(parent)
   const dismiss = () => {
     if (!popup.isDestroyed()) popup.destroy()
   }

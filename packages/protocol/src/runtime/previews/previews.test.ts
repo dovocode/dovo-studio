@@ -35,6 +35,22 @@ describe('preview addresses', () => {
       }).success,
     ).toBe(false)
   })
+  it('validates layout updates while an overlay covers a native page', () => {
+    const input = {
+      action: 'hide',
+      key: 'tab',
+      occluded: true,
+      bounds: { x: 0, y: 44, width: 600, height: 400 },
+    }
+    expect(decodeResult(browserCommandSchema, input)).toMatchObject({ success: true, data: input })
+    expect(
+      decodeResult(browserCommandSchema, { ...input, bounds: { ...input.bounds, width: NaN } })
+        .success,
+    ).toBe(false)
+    expect(
+      decodeResult(browserCommandSchema, { ...input, bounds: { ...input.bounds, x: -1 } }).success,
+    ).toBe(false)
+  })
   it('preserves a typed passive-overlay focus request without changing ordinary hide commands', () => {
     const input = { action: 'hide', key: 'task', preserveFocus: true }
     expect(decodeResult(browserCommandSchema, input)).toMatchObject({ success: true, data: input })

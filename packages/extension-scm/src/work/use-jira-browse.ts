@@ -8,7 +8,7 @@ import {
   RuntimeRequestError,
   type RuntimeReadCache,
 } from '@dovo/protocol'
-import { verifySourceReader } from '../connections/source-readers'
+import { guardedSourceRead } from '../connections/source-readers'
 import type { WorkSource } from './work-sources'
 
 function useBrowseResource<T extends { stale?: boolean; refreshError?: string }, I>(
@@ -33,6 +33,10 @@ function useBrowseResource<T extends { stale?: boolean; refreshError?: string },
     const refresh = force.current
     force.current = false
     setState({ key, busy: connected, error: '' })
+    let liveFinished = false
+    let liveLoaded = false
+    let forbidden = false
+    let savedValue: T | undefined
     void tasks.run(
       Effect.gen(function* () {
         const saved = yield* (
@@ -46,19 +50,32 @@ function useBrowseResource<T extends { stale?: boolean; refreshError?: string },
               ),
             ) ?? Effect.succeed(undefined)
         )
-        if (!stopped && saved)
-          setState({ key, value: { ...saved.value, stale: true }, busy: connected, error: '' })
+        savedValue = saved?.value
+        if (!stopped && !liveLoaded && !forbidden && saved)
+          setState((current) => ({
+            key,
+            value: { ...saved.value, stale: true },
+            busy: connected && !liveFinished,
+            error: current.key === key ? current.error : '',
+          }))
+      }),
+    )
+    void tasks.run(
+      Effect.gen(function* () {
         if (!connected) return
         const value = yield* load(refresh)
         if (stopped) return
+        liveFinished = true
+        liveLoaded = true
         setState({ key, value, busy: false, error: value.refreshError ?? '' })
-        if (JSON.stringify(saved?.value) !== JSON.stringify(value))
+        if (JSON.stringify(savedValue) !== JSON.stringify(value))
           yield* cache?.writeEffect(key, value) ?? Effect.void
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             if (stopped) return
-            const forbidden =
+            liveFinished = true
+            forbidden =
               error instanceof RuntimeRequestError && [401, 403, 409].includes(error.status ?? 0)
             setState((current) => ({
               key,
@@ -95,11 +112,12 @@ export function useJiraBrowse(
   const request = <T, I>(operation: string, schema: Schema.Codec<T, I>, refresh: boolean) =>
     Effect.gen(function* () {
       if (!source?.jira) return yield* Effect.fail(new Error('Choose a Jira source.'))
-      const guard = yield* verifySourceReader(source)
-      return yield* jiraReader(source.readCache, source.scope, source.requestEffect)(
-        `/api/scm/work/jira/${operation}`,
-        { ...source.input, ...guard, id: board, state: closed ? 'closed' : 'open', refresh },
-        schema,
+      return yield* guardedSourceRead(source, (guard) =>
+        jiraReader(source.readCache, source.scope, source.requestEffect)(
+          `/api/scm/work/jira/${operation}`,
+          { ...source.input, ...guard, id: board, state: closed ? 'closed' : 'open', refresh },
+          schema,
+        ),
       )
     })
   const boards = useBrowseResource(

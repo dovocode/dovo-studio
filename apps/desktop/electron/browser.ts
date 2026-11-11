@@ -1,3 +1,5 @@
+import { dismissNativeTooltip } from './native-tooltip.js'
+import { studioContents, raiseStudioOverlay } from './studio-window.js'
 import { configureBrowserIdentity } from './browser-user-agent.js'
 import {
   createBrowserSessionCookies,
@@ -64,6 +66,21 @@ import { browserCommandSchema, previewUrl } from '@dovo/protocol'
 const { createBrowserFaviconLoader, observeBrowserFavicons } = loadBrowserFaviconModule(
   app.isPackaged ? process.resourcesPath : undefined,
 )
+
+/** Renderer rectangles are CSS pixels; native sibling views use window DIPs. */
+function browserViewBounds(window: BrowserWindow, requested: Electron.Rectangle) {
+  const zoom = studioContents(window).getZoomFactor()
+  const [width, height] = window.getContentSize()
+  const x = Math.round(requested.x * zoom),
+    y = Math.round(requested.y * zoom)
+  if (x >= width || y >= height) return
+  return {
+    x,
+    y,
+    width: Math.min(Math.max(1, Math.round(requested.width * zoom)), width - x),
+    height: Math.min(Math.max(1, Math.round(requested.height * zoom)), height - y),
+  }
+}
 
 type Entry = {
   windowId: number
@@ -349,7 +366,7 @@ export function registerBrowser(
       return
     focusedTabs.set(entry.windowId, entry.key)
     if (entry.window.isMinimized()) entry.window.restore()
-    entry.window.webContents.send('browser:focus-workspace')
+    studioContents(entry.window).send('browser:focus-workspace')
     entry.window.show()
     entry.window.focus()
   }
@@ -431,9 +448,9 @@ export function registerBrowser(
     if (
       !entry.contents.isDestroyed() &&
       entry.contents.isFocused() &&
-      !entry.window.webContents.isDestroyed()
+      !studioContents(entry.window).isDestroyed()
     )
-      entry.window.webContents.focus()
+      studioContents(entry.window).focus()
   }
   const fitFullscreen = (entry: Entry) => {
     if (!entry.fullscreenBounds || entry.window.isDestroyed()) return
@@ -515,8 +532,8 @@ export function registerBrowser(
       queueMicrotask(() => {
         mediaUpdates.delete(windowId)
         const window = [...workspaces].find((entry) => entry.id === windowId)
-        if (window && !window.isDestroyed() && !window.webContents.isDestroyed())
-          window.webContents.send('browser:media-changed')
+        if (window && !window.isDestroyed() && !studioContents(window).isDestroyed())
+          studioContents(window).send('browser:media-changed')
       })
     },
     activityChanged: (contents) => {
@@ -730,18 +747,18 @@ export function registerBrowser(
       window.contentView.on('bounds-changed', resizeFullscreen)
       window.once('closed', () => releaseWindow(window, false))
       // A renderer reload loses its tab IDs. Release their main-process owners too.
-      window.webContents.on('did-start-navigation', (event) => {
+      studioContents(window).on('did-start-navigation', (event) => {
         if (event.isMainFrame && !event.isSameDocument) releaseWindow(window, true)
       })
-      window.webContents.on('render-process-gone', () => releaseWindow(window, true))
+      studioContents(window).on('render-process-gone', () => releaseWindow(window, true))
       const cancelFocusRestore = () => {
         for (const entry of views.values())
           if (entry.windowId === window.id) entry.restoreFocus = false
       }
-      window.webContents.on('before-mouse-event', (_event, input) => {
+      studioContents(window).on('before-mouse-event', (_event, input) => {
         if (input.type === 'mouseDown') cancelFocusRestore()
       })
-      window.webContents.on('before-input-event', (_event, input) => {
+      studioContents(window).on('before-input-event', (_event, input) => {
         if (input.type === 'keyDown' && input.key !== 'Escape') cancelFocusRestore()
       })
     }
@@ -883,9 +900,9 @@ export function registerBrowser(
       if (views.get(currentKey) !== created) return
       if (
         activeViews.get(created.windowId)?.key === currentKey &&
-        !created.window.webContents.isDestroyed()
+        !studioContents(created.window).isDestroyed()
       )
-        created.window.webContents.focus()
+        studioContents(created.window).focus()
       releaseView(currentKey)
       if (created.workspace) {
         const events = tabEvents(created.windowId)
@@ -1185,7 +1202,7 @@ export function registerBrowser(
           {
             label: 'Add selection to thread…',
             click: () =>
-              created.window.webContents.send('browser:context-action', {
+              studioContents(created.window).send('browser:context-action', {
                 key,
                 action: 'selection',
                 text,
@@ -1202,7 +1219,7 @@ export function registerBrowser(
         {
           label: 'Add page to thread…',
           click: () =>
-            created.window.webContents.send('browser:context-action', {
+            studioContents(created.window).send('browser:context-action', {
               key,
               action: 'page',
               text: '',
@@ -1419,7 +1436,7 @@ export function registerBrowser(
                 }
                 tabEvents(target.id).moved.push(movedTab(key, tab, child))
                 workspaceStates.set(target.id, { tabs: [{ key, tab }], activeId: id })
-                target.webContents.send('browser:focus-workspace')
+                studioContents(target).send('browser:focus-workspace')
               })
               .catch((error: unknown) => {
                 releaseView(JSON.stringify([child.windowId, key]))
@@ -1523,11 +1540,12 @@ export function registerBrowser(
         view.webContents.focus()
     })
     view.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'Escape') dismissNativeTooltip(created.window)
       if (input.type === 'keyDown' && input.key === 'Escape' && created.findOpen) {
         event.preventDefault()
         created.findOpen = false
         created.find?.clear()
-        created.window.webContents.send('browser:context-action', {
+        studioContents(created.window).send('browser:context-action', {
           key: created.key,
           action: 'close-find',
           text: '',
@@ -1562,7 +1580,7 @@ export function registerBrowser(
       if (!key) return
       // Native views take keyboard focus from the Studio DOM; replay tab shortcuts there.
       event.preventDefault()
-      const main = created.window.webContents
+      const main = studioContents(created.window)
       if (input.isAutoRepeat || main.isDestroyed()) return
       if (key === 'f') {
         created.findOpen = true
@@ -1680,7 +1698,7 @@ export function registerBrowser(
     !tab.url && !tab.pinned && !tab.previewOf && !tab.thread
   const waitForWorkspace = async (window: BrowserWindow) => {
     if (workspaceStates.has(window.id)) return
-    window.webContents.send('browser:focus-workspace')
+    studioContents(window).send('browser:focus-workspace')
     let done = () => {}
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
@@ -1859,7 +1877,7 @@ export function registerBrowser(
       pending.created = pending.created.filter(({ key }) => !movedKeys.has(key))
     }
     tabEvents(source.id).closed.push(...movedKeys)
-    target.webContents.send('browser:focus-workspace')
+    studioContents(target).send('browser:focus-workspace')
     if (target.isMinimized()) target.restore()
     target.show()
     target.focus()
@@ -2024,7 +2042,7 @@ export function registerBrowser(
       }
       if (detachedPin?.source === window) {
         focusedTabs.set(target.id, command.key)
-        target.webContents.send('browser:focus-workspace')
+        studioContents(target).send('browser:focus-workspace')
       }
       if (target.isMinimized()) target.restore()
       target.show()
@@ -2099,7 +2117,7 @@ export function registerBrowser(
       const sourceState = workspaceStates.get(window.id)
       if (sourceState) sourceState.tabs = sourceState.tabs.filter(({ key }) => key !== command.key)
       if (target.isMinimized()) target.restore()
-      target.webContents.send('browser:focus-workspace')
+      studioContents(target).send('browser:focus-workspace')
       target.show()
       target.focus()
       return { url: '', back: false, forward: false, detachedTabs: detachedTabKeys(window.id) }
@@ -2124,8 +2142,15 @@ export function registerBrowser(
         )
         // Studio must receive Escape while the native page is hidden. Remember page
         // focus and return it only if the user has not interacted with Studio meanwhile.
-        focusStudio(entry)
-        setVisible(entry, false, command.occluded)
+        // Raise the real Studio controls over the still-running page. Plain auxiliary
+        // windows retain the old hide behavior; Studio windows have sibling UI views.
+        const overlay = command.occluded && entry.view.getVisible() && raiseStudioOverlay(window)
+        if (!overlay || !command.preserveFocus) focusStudio(entry)
+        if (overlay && command.bounds) {
+          const bounds = browserViewBounds(window, command.bounds)
+          if (bounds) entry.view.setBounds(bounds)
+        }
+        setVisible(entry, !!overlay, command.occluded)
         if (!entry.foreground) entry.inactiveAt ??= Date.now()
         prune()
       }
@@ -2215,25 +2240,11 @@ export function registerBrowser(
         entry.cdp = undefined
       }
       if (activeViews.get(window.id) !== showing) return
-      const [width, height] = window.getContentSize()
-      // DOM rectangles use CSS pixels; native views and popup anchors use window DIPs.
-      const zoom = window.webContents.getZoomFactor()
-      const requested = {
-        x: Math.round(command.bounds.x * zoom),
-        y: Math.round(command.bounds.y * zoom),
-        width: Math.max(1, Math.round(command.bounds.width * zoom)),
-        height: Math.max(1, Math.round(command.bounds.height * zoom)),
-      }
-      const { x, y } = requested
-      if (x >= width || y >= height) {
+      const bounds = browserViewBounds(window, command.bounds)
+      if (!bounds) {
         entry.inactiveAt ??= Date.now()
         setVisible(entry, false)
         return
-      }
-      const bounds = {
-        ...requested,
-        width: Math.min(requested.width, width - x),
-        height: Math.min(requested.height, height - y),
       }
       if (entry.fullscreenBounds) entry.fullscreenBounds = bounds
       else {
@@ -2448,7 +2459,7 @@ export function registerBrowser(
           const now = performance.now()
           if (now - last < 1000 / 30 || image.isEmpty()) return
           last = now
-          window.webContents.send('browser:frame', {
+          studioContents(window).send('browser:frame', {
             key: source.key,
             url: contents.getURL() || source.url,
             image: `data:image/jpeg;base64,${image.toJPEG(80).toString('base64')}`,
@@ -2685,7 +2696,7 @@ export function registerBrowser(
         profileId,
         visitedAt: Date.now(),
       })
-      window.webContents.send('browser:focus-workspace')
+      studioContents(window).send('browser:focus-workspace')
       window.show()
       window.focus()
       return true

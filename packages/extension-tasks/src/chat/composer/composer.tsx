@@ -71,7 +71,14 @@ import {
   Info,
   ListChecks,
 } from 'lucide-react'
-import { useWorkspace, useStudioHost, updateTask, responses, type Task } from '@dovo/studio-core'
+import {
+  useWorkspaceSelector,
+  useStudioHost,
+  updateTask,
+  responses,
+  type Task,
+} from '@dovo/studio-core'
+import { selectComposerWorkspace, sameComposerWorkspace } from './composer-selection'
 import {
   Button,
   IconButton,
@@ -136,7 +143,7 @@ export function Composer({
     activeRuntimeId,
     runtimeRegistry,
     refreshRuntime,
-  } = useWorkspace()
+  } = useWorkspaceSelector(selectComposerWorkspace, sameComposerWorkspace)
   const loadComposerHistory = useCommittedCallback((before: string, signal: AbortSignal) => {
     if (!connected) return Promise.reject(new Error('Reconnect to recall earlier messages.'))
     return Effect.runPromise(
@@ -931,7 +938,7 @@ export function Composer({
     try {
       await attachments.waitForUploads()
       composerDraft.flush()
-      await flush()
+      await flush(task.id)
       if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
         const selected = await request(
           '/api/tasks/projects/select',

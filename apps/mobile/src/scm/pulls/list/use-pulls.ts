@@ -263,6 +263,7 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
               ),
             ),
           )
+    const liveSources = new Set<string>()
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.forEach(
@@ -274,17 +275,22 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
                 cacheKey(entry, remoteState),
                 cachedPullPageSchema,
               )
-              if (cached && !pagesRef.current[entry.key])
+              if (
+                cached &&
+                !liveSources.has(entry.key) &&
+                !pagesRef.current[entry.key]?.pulls.length
+              )
                 update(entry.key, {
                   ...cached.value,
                   ...metadata(entry),
                   stale: true,
+                  error: pagesRef.current[entry.key]?.error,
                   cachedAt: cached.value.cachedAt ?? cached.cachedAt,
                 })
             }).pipe(
               Effect.catch(() =>
                 Effect.sync(() => {
-                  if (!pagesRef.current[entry.key])
+                  if (!liveSources.has(entry.key) && !pagesRef.current[entry.key])
                     update(entry.key, {
                       ...metadata(entry),
                       pulls: [],
@@ -299,12 +305,12 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
         ),
       ),
     )
+    void commands.run(hydrated)
     setBusy(connected && enabled)
     const firstPages = new Map<string, PullPage>()
     const prefixChecked = new Map<string, number>()
     const savedPages = new Map<string, Page>()
     const load = Effect.gen(function* () {
-      yield* hydrated
       if (!connected || !enabled || AppState.currentState !== 'active') return
       yield* Effect.forEach(
         repositories.filter((entry) => entry.reader.connected),
@@ -381,6 +387,7 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
             firstPages.set(entry.key, response)
             if (!unchanged && !page.stale && !page.refreshError && !page.error)
               prefixChecked.set(entry.key, Date.now())
+            liveSources.add(entry.key)
             update(entry.key, page)
             if (!page.stale && !page.error && current === generation.current) {
               forcedRemotes.current.delete(remote)

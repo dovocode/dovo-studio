@@ -7,7 +7,7 @@ import {
   retainNewerPullSnapshot,
 } from '@dovo/protocol'
 import { useEffect, useRef, useMemo } from 'react'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import {
   startPolling,
   useWorkspace,
@@ -15,19 +15,111 @@ import {
   type RepositorySource,
 } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useDetailReader, verifySourceReader } from '../../connections/source-readers'
+import {
+  guardedSourceRead,
+  liveSourceReadGuard,
+  useDetailReader,
+  type SourceReadGuard,
+} from '../../connections/source-readers'
 import {
   pullDetailSchema,
   type PullDetailSection,
   forgeSourceIdentitySchema,
   RuntimeRequestError,
+  type ForgeSourceIdentity,
   type PullDetail as Detail,
+  type Workspace,
 } from '@dovo/protocol'
 
 type ReadTarget = {
   origin?: RepositorySource
   reader?: RepositorySource & { readerIdentity?: string }
   destination?: string
+}
+type WorkspaceRead = Pick<ReturnType<typeof useWorkspace>, 'requestEffect' | 'readCache'>
+type SectionInput = {
+  repositoryId: string
+  number: number
+  connectionId: string | undefined
+  section: PullDetailSection
+  revision?: string
+}
+
+/** Saved and in-memory keys for one section. Intent prefetch must use these exact keys. */
+function pullSectionKeys(
+  workspace: Workspace,
+  { repositoryId, number, connectionId, section, revision }: SectionInput,
+) {
+  const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
+  const connection = connectionId ? ['connection', connectionId] : []
+  return {
+    cacheKey: JSON.stringify([
+      'pulls',
+      'detail-section',
+      section,
+      revision,
+      repositoryId,
+      repository?.path ?? '',
+      number,
+      repository?.forge,
+      ...connection,
+    ]),
+    legacyCacheKey: JSON.stringify([
+      'pulls',
+      'detail',
+      repositoryId,
+      repository?.path ?? '',
+      number,
+      repository?.forge,
+      ...connection,
+    ]),
+  }
+}
+
+/** One shared, conditional section read. A source reader reuses its live-verified account and
+ * destination; the runtime rejects the read if either changed. Readers of the same section,
+ * including intent prefetch, share the in-flight request and its live baseline. */
+function readPullSection(
+  { origin, reader, destination }: ReadTarget,
+  { requestEffect: request, readCache }: WorkspaceRead,
+  input: SectionInput & { cacheKey: string; refresh: boolean },
+  urlGuard: SourceReadGuard = {},
+) {
+  const read = (readGuard: SourceReadGuard) =>
+    readPullDetail(
+      reader?.readCache ?? readCache ?? request,
+      JSON.stringify([
+        input.cacheKey,
+        reader?.scope,
+        reader?.readerIdentity,
+        destination,
+        readGuard,
+      ]),
+      (knownVersion) =>
+        (reader?.requestEffect ?? request)(
+          '/api/scm/pulls/detail',
+          {
+            repositoryId: reader?.repository.id ?? input.repositoryId,
+            number: input.number,
+            connectionId: input.connectionId,
+            refresh: input.refresh,
+            section: input.section,
+            revision: input.revision,
+            ...readGuard,
+            conditional: true,
+            knownVersion,
+          },
+          pullDetailReadSchema,
+        ).pipe(
+          Effect.map((value) =>
+            !('unchanged' in value) && reader && reader.key !== origin?.key
+              ? { ...value, destination, pull: { ...value.pull, destination } }
+              : value,
+          ),
+        ),
+      input.refresh,
+    )
+  return reader ? guardedSourceRead(reader, read) : read(urlGuard)
 }
 
 function usePullSection(
@@ -46,27 +138,13 @@ function usePullSection(
     reader && origin && reader.key === origin.key
       ? origin.connected
       : (reader?.connected ?? (!origin && connected))
-  const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
-  const cacheKey = JSON.stringify([
-    'pulls',
-    'detail-section',
+  const { cacheKey, legacyCacheKey } = pullSectionKeys(workspace, {
+    repositoryId,
+    number,
+    connectionId,
     section,
     revision,
-    repositoryId,
-    repository?.path ?? '',
-    number,
-    repository?.forge,
-    ...(connectionId ? ['connection', connectionId] : []),
-  ])
-  const legacyCacheKey = JSON.stringify([
-    'pulls',
-    'detail',
-    repositoryId,
-    repository?.path ?? '',
-    number,
-    repository?.forge,
-    ...(connectionId ? ['connection', connectionId] : []),
-  ])
+  })
   const [state, setState, stateRef] = useApplicationState({
     scope: cacheKey,
     detail: null as Detail | null,
@@ -75,7 +153,8 @@ function usePullSection(
     refreshing: false,
     revision: 0,
   })
-  const urlIdentity = useRef<string | undefined>(undefined)
+  // A PR URL without a project pins the first verified account and destination for this detail.
+  const urlIdentity = useRef<ForgeSourceIdentity | undefined>(undefined)
   const requestedRefresh = useRef(false)
   const savedDetail = useRef<{ key: string; value: Detail } | null>(null)
   const wasConnected = useRef(readConnected)
@@ -92,6 +171,8 @@ function usePullSection(
     // Keep loaded sections available, but defer disk reads and owned polling workers
     // until their tab needs them. Enabling the section performs the initial read.
     if (!enabled) return
+    let liveLoaded = false
+    let liveFinished = false
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.gen(function* () {
@@ -99,7 +180,7 @@ function usePullSection(
           const cached =
             (yield* readCache.readEffect(cacheKey, pullDetailSchema)) ??
             (yield* readCache.readEffect(legacyCacheKey, pullDetailSchema))
-          if (cached && !stopped)
+          if (cached && !stopped && !liveLoaded)
             setState((current) => ({
               ...current,
               detail: current.detail ?? {
@@ -111,7 +192,8 @@ function usePullSection(
         }).pipe(
           Effect.catch(() =>
             Effect.sync(() => {
-              if (!stopped) setError('Saved details could not be read from this device.')
+              if (!stopped && !liveFinished)
+                setError('Saved details could not be read from this device.')
             }),
           ),
         ),
@@ -119,10 +201,8 @@ function usePullSection(
     )
     let changesLoaded = false
     let force = reconnected
-    let cacheLoaded = false
+    const hydration = Effect.runFork(hydrated)
     const load = Effect.gen(function* () {
-      yield* hydrated
-      cacheLoaded = true
       if (!enabled || !readConnected || document.visibilityState !== 'visible') return
       const showRefresh = requestedRefresh.current
       const refresh = force || showRefresh
@@ -138,8 +218,10 @@ function usePullSection(
           ? current
           : { ...current, busy, refreshing }
       })
+      // Only the first read of a PR URL needs a lookup. Later reads send the pinned account, and
+      // the runtime rejects them if it changed; the pin itself never moves to another account.
       const identity =
-        !origin && repositoryId.startsWith('http')
+        !reader && !origin && repositoryId.startsWith('http') && !urlIdentity.current
           ? yield* request(
               '/api/scm/source/identity',
               { repositoryId, connectionId },
@@ -152,54 +234,37 @@ function usePullSection(
               ),
             )
           : undefined
-      if (urlIdentity.current && identity?.readerIdentity !== urlIdentity.current)
-        return yield* Effect.fail(
-          new RuntimeRequestError({
-            kind: 'request',
-            status: 409,
-            message: 'The PR account changed. Choose its account explicitly before refreshing.',
-          }),
-        )
-      if (identity && !stopped) urlIdentity.current = identity.readerIdentity
-      const readGuard = reader
-        ? yield* verifySourceReader(reader)
-        : {
-            expectedReaderIdentity: identity?.readerIdentity,
-            expectedDestination: identity?.destination,
-          }
-      yield* readPullDetail(
-        reader?.readCache ?? readCache ?? request,
-        JSON.stringify([cacheKey, reader?.scope, reader?.readerIdentity, destination, readGuard]),
-        (knownVersion) =>
-          (reader?.requestEffect ?? request)(
-            '/api/scm/pulls/detail',
-            {
-              repositoryId: reader?.repository.id ?? repositoryId,
-              number,
-              connectionId,
-              refresh,
-              section,
-              revision,
-              ...readGuard,
-              conditional: true,
-              knownVersion,
-            },
-            pullDetailReadSchema,
-          ).pipe(
-            Effect.map((value) =>
-              !('unchanged' in value) && reader && reader.key !== origin?.key
-                ? { ...value, destination, pull: { ...value.pull, destination } }
-                : value,
-            ),
-          ),
-        refresh,
+      if (identity && !stopped && !urlIdentity.current) urlIdentity.current = identity
+      const pinned = urlIdentity.current ?? identity
+      yield* readPullSection(
+        { origin, reader, destination },
+        { requestEffect: request, readCache },
+        { repositoryId, number, connectionId, section, revision, cacheKey, refresh },
+        pinned
+          ? {
+              expectedReaderIdentity: pinned.readerIdentity,
+              expectedDestination: pinned.destination,
+            }
+          : {},
       ).pipe(
+        Effect.mapError((error) =>
+          !reader && pinned && error instanceof RuntimeRequestError && error.status === 409
+            ? new RuntimeRequestError({
+                kind: 'request',
+                status: 409,
+                message:
+                  'The PR account or destination changed. Choose its source explicitly before refreshing.',
+                cause: error,
+              })
+            : error,
+        ),
         Effect.map((value) =>
           retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value, refresh),
         ),
         Effect.tap((value) =>
           Effect.sync(() => {
             if (!stopped) {
+              liveLoaded = true
               changesLoaded = !!(
                 section === 'changes' &&
                 revision &&
@@ -241,6 +306,7 @@ function usePullSection(
     }).pipe(
       Effect.ensuring(
         Effect.sync(() => {
+          liveFinished = true
           if (!stopped)
             setState((current) =>
               current.busy || current.refreshing
@@ -254,7 +320,7 @@ function usePullSection(
       interval: () =>
         stateRef.current.error ? 60_000 : pullSectionInterval(section, stateRef.current.detail),
       backoff: 120_000,
-      enabled: () => !cacheLoaded || (readConnected && document.visibilityState === 'visible'),
+      enabled: () => readConnected && document.visibilityState === 'visible',
       onError: (error) => {
         if (!stopped)
           setState((current) => ({
@@ -275,6 +341,7 @@ function usePullSection(
       stopped = true
       document.removeEventListener('visibilitychange', resume)
       window.removeEventListener('focus', resume)
+      Effect.runFork(Fiber.interrupt(hydration))
       void polling.stop()
     }
   }, [
@@ -330,12 +397,14 @@ function usePullSection(
   }
 }
 
-export function usePullDetail(
+/** The origin, reader and destination for one PR. Detail and intent prefetch both use this, so
+ * they agree on the owning computer, account and destination. */
+function usePullReadTarget(
   repositoryId: string,
   number: number,
-  connectionId?: string,
-  options: { tab?: string; discussionInOverview?: boolean } = {},
-) {
+  connectionId: string | undefined,
+  discover: boolean,
+): ReadTarget {
   const { activeRuntimeId } = useWorkspace()
   const sources = useRepositorySources()
   const origin = sources.find(
@@ -347,8 +416,53 @@ export function usePullDetail(
     JSON.stringify([repositoryId, number, connectionId]),
     undefined,
     false,
+    discover,
   )
-  const target = { origin, ...selected }
+  return { origin, ...selected }
+}
+
+/** Warm the overview that the detail reads first, so a later click can join or reuse it. This uses
+ * the detail's exact owner, cache key, account and destination. It reads only when live discovery
+ * has already verified the account, sends at most one request, never polls and writes nothing to
+ * disk. Unmounting stops only this waiter: the request is shared with any detail that joined it, so
+ * it is not cancelled and finishes once into the bounded in-memory cache. Discussion, diffs and
+ * other sections stay with the opened detail. */
+export function usePullOverviewPrefetch(repositoryId: string, number: number) {
+  const { requestEffect, readCache, workspace } = useWorkspace()
+  // The list already discovers these sources; prefetch must not add identity lookups.
+  const { origin, reader, destination } = usePullReadTarget(repositoryId, number, undefined, false)
+  const input: SectionInput = { repositoryId, number, connectionId: undefined, section: 'overview' }
+  const { cacheKey } = pullSectionKeys(workspace, input)
+  useEffect(() => {
+    if (
+      !origin ||
+      !reader?.connected ||
+      reader.key !== origin.key ||
+      !liveSourceReadGuard(reader) ||
+      document.visibilityState !== 'visible'
+    )
+      return
+    const fiber = Effect.runFork(
+      readPullSection(
+        { origin, reader, destination },
+        { requestEffect, readCache },
+        { ...input, cacheKey, refresh: false },
+      ).pipe(Effect.ignore),
+    )
+    return () => {
+      // Stop waiting only. The shared HTTP read is not cancelled; a joined detail may still need it.
+      Effect.runFork(Fiber.interrupt(fiber))
+    }
+  }, [cacheKey, origin?.key, reader, destination, requestEffect, readCache])
+}
+
+export function usePullDetail(
+  repositoryId: string,
+  number: number,
+  connectionId?: string,
+  options: { tab?: string; discussionInOverview?: boolean } = {},
+) {
+  const target = usePullReadTarget(repositoryId, number, connectionId, true)
   const tab = options.tab ?? 'overview'
   const overview = usePullSection(target, repositoryId, number, connectionId, 'overview', true)
   const revision = overview.detail ? pullRevision(overview.detail) : undefined

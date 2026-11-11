@@ -1,3 +1,5 @@
+import { nativeTooltipWindow, setNativeTooltipVisible } from './native-tooltip.js'
+import { studioContents, createStudioWindow } from './studio-window.js'
 import { useLinuxXWayland } from './linux-window-backend.js'
 import { registerTerminalPorts } from './terminal-ports.js'
 import { registerRepositoryOpeners } from './repository-openers.js'
@@ -258,6 +260,12 @@ ipcMain.handle('clipboard:write-text', async (event, text: unknown) => {
   if (typeof text !== 'string') throw new Error('Expected clipboard text')
   await clipboard.writeText(text)
 })
+ipcMain.handle('window:tooltip-visible', (event, visible: unknown, regions: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (typeof visible !== 'boolean') throw new Error('Expected tooltip visibility')
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  if (owner && !owner.isDestroyed()) return setNativeTooltipVisible(owner, visible, regions)
+})
 ipcMain.handle('clipboard:read-text', (event) => {
   requireTrustedRenderer(event, rendererPath)
   return clipboard.readText()
@@ -285,7 +293,7 @@ function createWindow(): void {
   const colors =
     readWindowColors(app.getPath('userData')) ??
     defaultWindowColors(nativeTheme.shouldUseDarkColors)
-  const window = new BrowserWindow({
+  const window = createStudioWindow({
     width: 1180,
     height: 760,
     minWidth: 840,
@@ -308,10 +316,13 @@ function createWindow(): void {
   })
   if (startupProfile && startupWindowPending) {
     startupWindowPending = false
-    window.webContents.once('did-finish-load', () => startupProfile('window loaded'))
+    studioContents(window).once('did-finish-load', () => startupProfile('window loaded'))
   }
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  studioContents(window).setWindowOpenHandler((details) => {
+    const tooltip = nativeTooltipWindow(window, details, rendererPath)
+    if (tooltip) return tooltip
+    const { url } = details
     void offerLink(window, url)
     return { action: 'deny' }
   })
@@ -325,19 +336,19 @@ function createWindow(): void {
   window.once('closed', () => {
     if (mainWindow === window) mainWindow = undefined
   })
-  registerQuitShortcut(window.webContents)
+  registerQuitShortcut(studioContents(window))
   registerWindowUnload(window)
-  window.webContents.on('will-navigate', guardNavigation)
-  window.webContents.on('will-redirect', guardNavigation)
+  studioContents(window).on('will-navigate', guardNavigation)
+  studioContents(window).on('will-redirect', guardNavigation)
   // A crashed or hung renderer must not leave a blank or frozen window. Reload once per
   // minute automatically; after that, let the person choose rather than loop.
   let reloadedAt = 0
-  window.webContents.on('render-process-gone', (_event, details) => {
+  studioContents(window).on('render-process-gone', (_event, details) => {
     if (window.isDestroyed() || details.reason === 'clean-exit') return
     console.error(`Renderer process gone (${details.reason}, exit code ${details.exitCode})`)
     if (Date.now() - reloadedAt > 60_000) {
       reloadedAt = Date.now()
-      window.webContents.reload()
+      studioContents(window).reload()
       return
     }
     void dialog
@@ -352,11 +363,11 @@ function createWindow(): void {
       })
       .then(({ response }) => {
         if (window.isDestroyed()) return
-        if (response === 0) window.webContents.reload()
+        if (response === 0) studioContents(window).reload()
         else app.quit()
       })
   })
-  window.webContents.on('unresponsive', () => {
+  studioContents(window).on('unresponsive', () => {
     if (window.isDestroyed()) return
     void dialog
       .showMessageBox(window, {
@@ -370,14 +381,15 @@ function createWindow(): void {
         cancelId: 0,
       })
       .then(({ response }) => {
-        if (!window.isDestroyed() && response === 1) window.webContents.forcefullyCrashRenderer()
+        if (!window.isDestroyed() && response === 1)
+          studioContents(window).forcefullyCrashRenderer()
       })
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindowReady = window.loadURL(process.env.VITE_DEV_SERVER_URL)
+    mainWindowReady = studioContents(window).loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    mainWindowReady = window.loadFile(join(__dirname, '../dist/index.html'))
+    mainWindowReady = studioContents(window).loadFile(join(__dirname, '../dist/index.html'))
   }
   void mainWindowReady.catch((error: unknown) =>
     console.error('Could not load the main window.', error),
@@ -396,7 +408,8 @@ ipcMain.handle('links:ready', (event, ready: unknown) => {
   requireTrustedRenderer(event, rendererPath)
   if (typeof ready !== 'boolean') throw new Error('Expected link receiver readiness')
   setLinkReceiver(event.sender, ready)
-  if (ready && mainWindow?.webContents === event.sender) deliverExternalLinks()
+  if (ready && (mainWindow ? studioContents(mainWindow) : undefined) === event.sender)
+    deliverExternalLinks()
 })
 ipcMain.handle('links:browser', async (event, url: unknown) => {
   requireTrustedRenderer(event, rendererPath)
@@ -608,6 +621,7 @@ const startup = Effect.gen(function* () {
       }
       try {
         await browserWindows.returnAll()
+        browserWindows.setQuitting(true)
         if (!(await closeStudioWindows()))
           throw new Error('Update cancelled. Save your edits before updating.')
         await beforeStop()
@@ -629,6 +643,7 @@ const startup = Effect.gen(function* () {
           }
         }
       } catch (error) {
+        browserWindows.setQuitting(false)
         reopen()
         throw error
       } finally {
@@ -710,11 +725,14 @@ app.on('before-quit', (event) => {
     try {
       // Return and persist detached workspaces before any window/runtime is torn down.
       await browserWindows.returnAll()
+      browserWindows.setQuitting(true)
       if (!(await closeStudioWindows())) {
+        browserWindows.setQuitting(false)
         shuttingDown = false
         return
       }
     } catch (error) {
+      browserWindows.setQuitting(false)
       shuttingDown = false
       await dialog.showMessageBox({
         type: 'error',

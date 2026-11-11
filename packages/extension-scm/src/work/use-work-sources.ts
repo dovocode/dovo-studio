@@ -13,7 +13,7 @@ import {
 import { useIssueSources, matchesWorkSource, workRemoteKey } from './work-sources'
 import {
   useSourceReaders,
-  verifySourceReader,
+  guardedSourceRead,
   chooseSourceReader,
 } from '../connections/source-readers'
 import {
@@ -101,6 +101,7 @@ export function useWorkSources(
       ),
     )
     lastCollection.current = collection
+    const liveSources = new Set<string>()
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.forEach(
@@ -123,11 +124,15 @@ export function useWorkSources(
                       cachedWorkPipelinePageSchema,
                     ),
               ])
-              if (!pagesRef.current[source.key] && (options || page))
+              if (
+                !liveSources.has(source.key) &&
+                !pagesRef.current[source.key]?.items.length &&
+                (options || page)
+              )
                 update(source, {
                   ...page?.value,
                   items: page?.value.items ?? [],
-                  error: page?.value.refreshError,
+                  error: pagesRef.current[source.key]?.error ?? page?.value.refreshError,
                   options: options?.value,
                   optionsMode: mode,
                   // Disk entries have no in-memory fetch time and must refresh on the next poll.
@@ -136,11 +141,14 @@ export function useWorkSources(
                 })
             }).pipe(
               Effect.catch(() =>
-                Effect.sync(() =>
-                  update(source, {
-                    items: [],
-                    error: 'Saved results could not be read from this device.',
-                  }),
+                Effect.sync(
+                  () =>
+                    !liveSources.has(source.key) &&
+                    !pagesRef.current[source.key] &&
+                    update(source, {
+                      items: [],
+                      error: 'Saved results could not be read from this device.',
+                    }),
                 ),
               ),
             ),
@@ -151,8 +159,8 @@ export function useWorkSources(
     setBusy(sources.some((source) => source.reader.connected))
     let force = forceNext.current
     forceNext.current = false
+    void commands.run(hydrated)
     const load = Effect.gen(function* () {
-      yield* hydrated
       if (document.visibilityState !== 'visible') return
       const refresh = force
       force = false
@@ -170,8 +178,12 @@ export function useWorkSources(
               refresh,
               previous,
               jiraFilters,
-              (page) => update(source, page),
+              (page) => {
+                liveSources.add(source.key)
+                update(source, page)
+              },
             )
+            liveSources.add(source.key)
             update(source, page)
             yield* Effect.gen(function* () {
               if (
@@ -244,10 +256,13 @@ export function useWorkSources(
         setBusy(true)
         yield* Effect.gen(function* () {
           const reader = source.reader
-          const readGuard = yield* verifySourceReader(reader)
-          const response =
+          const read = jiraReader(reader.readCache, reader.scope, reader.requestEffect)
+          const response = yield* guardedSourceRead<
+            typeof forgeIssuePageSchema.Type | typeof forgePipelinePageSchema.Type,
+            Error
+          >(reader, (readGuard) =>
             mode === 'issues'
-              ? yield* jiraReader(reader.readCache, reader.scope, reader.requestEffect)(
+              ? read(
                   '/api/scm/work/issues/list',
                   {
                     ...reader.input,
@@ -259,7 +274,7 @@ export function useWorkSources(
                   },
                   forgeIssuePageSchema,
                 )
-              : yield* jiraReader(reader.readCache, reader.scope, reader.requestEffect)(
+              : read(
                   '/api/scm/work/pipelines/list',
                   {
                     ...reader.input,
@@ -267,7 +282,8 @@ export function useWorkSources(
                     ...readGuard,
                   },
                   forgePipelinePageSchema,
-                )
+                ),
+          )
           if (current !== generation.current) return
           const page = {
             ...previous,

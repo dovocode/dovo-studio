@@ -10,6 +10,7 @@ const f = vi.hoisted(() => ({
   enabled: false,
   unifiedEnabled: false,
   error: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
+  unload: vi.fn<(window: MockWindow) => void>(),
 }))
 class MockWindow {
   destroyed = false
@@ -50,6 +51,16 @@ class MockWindow {
     this.callbacks.get('closed')?.()
   }
 }
+// Window lifecycle policy is tested here; native view composition has its own Electron check.
+vi.mock('./studio-window.js', () => ({
+  createStudioWindow: (options: Electron.BrowserWindowConstructorOptions) =>
+    new MockWindow(options),
+  studioContents: (window: MockWindow) => ({
+    ...window.webContents,
+    loadFile: window.loadFile,
+    loadURL: window.loadURL,
+  }),
+}))
 vi.mock('electron', () => ({
   app: {
     getPath: () => '/unused',
@@ -78,6 +89,7 @@ vi.mock('./window-colors', () => ({
 }))
 vi.mock('./links', () => ({ offerLink: vi.fn<() => Promise<void>>() }))
 vi.mock('./quit-shortcut', () => ({ registerQuitShortcut: () => {} }))
+vi.mock('./window-unload.js', () => ({ registerWindowUnload: f.unload }))
 import { registerBrowserWindows } from './browser-window'
 vi.mock('@dovo/protocol/local-settings', () => ({
   readLocalSettingsSection: () => ({
@@ -116,6 +128,7 @@ it('opens independent tab-workspace identities in hardened Studio windows', asyn
   const hashes = f.windows.map((window) => window.loadFile.mock.calls[0]?.[1].hash)
   expect(new Set(hashes).size).toBe(2)
   for (const window of f.windows) {
+    expect(f.unload).toHaveBeenCalledWith(window)
     expect(window.options.webPreferences).toEqual({
       contextIsolation: true,
       nodeIntegration: false,

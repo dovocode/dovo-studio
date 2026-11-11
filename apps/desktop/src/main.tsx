@@ -1,3 +1,4 @@
+import { configureNativeTooltips } from '@dovo/studio-ui/native-tooltip'
 import { decode, threadWindowTargetSchema } from '@dovo/protocol'
 import { StrictMode } from 'react'
 import { useAccount, useAppPreferences } from '@dovo/studio-core'
@@ -12,6 +13,11 @@ import { scmExtension } from '@dovo/extension-scm'
 import { agentsExtension } from '@dovo/extension-agents'
 import { jobsExtension } from '@dovo/extension-jobs'
 import { runtimeExtension, WindowsRuntimeGate } from '@dovo/extension-runtime'
+if (
+  !['#input-preview', '#task-launcher'].includes(window.location.hash) &&
+  window.dovo?.nativeTooltip
+)
+  configureNativeTooltips(window.dovo.nativeTooltip, window.dovo.onNativeTooltipDismiss)
 const extensions = [tasksExtension, scmExtension, agentsExtension, jobsExtension, runtimeExtension]
 function SharingDeviceSync() {
   useAccount(window.dovo.accountStorage, window.dovo.openExternalLink, useAppPreferences())

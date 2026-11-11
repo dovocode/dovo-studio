@@ -42,7 +42,7 @@ import IssuesView,{PipelinesView} from '${root}packages/extension-scm/src/work/w
 import {usePulls} from '${root}packages/extension-scm/src/pulls/list/use-pulls.ts';import {usePullDetail} from '${root}packages/extension-scm/src/pulls/detail/use-pull-detail.ts';
 window.reads=[];window.writes=[];window.discoveryFailures={};window.cacheReads=[];window.cacheWrites=[];window.accounts={a:'same-account',b:window.alternateAccount??'same-account'};window.destinations={a:'dest-a',b:'dest-b'};window.active='a';window.legacy=false;
 const saved=new Map();
-const source=id=>{const profile={id,name:id,connection:{address:'http://'+id,token:'paired-'+id}};const repository={id:'repo-'+id,name:'Project',path:'/repo',gitIdentity:'github.com/team/project',pullIdentity:'github.com/team/project',forge:{connectionId:'local-'+id,repository:'team/project'}};const cache={readEffect:(key,schema)=>Effect.sync(()=>{window.cacheReads.push({id,key});if(window.savedOriginIdentity&&id==='a'&&JSON.parse(key)[0]==='forge')return {value:decode(schema,{readerIdentity:'same-account',destination:'dest-a'}),cachedAt:'2026-10-14'};return saved.has(id+key)?{value:decode(schema,saved.get(id+key)),cachedAt:'2026-10-14'}:null}),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({id,key,value});saved.set(id+key,value)}),removeEffect:key=>Effect.sync(()=>{saved.delete(id+key)})};return {serverId:window.persistentServers?'persistent-'+id:undefined,key:JSON.stringify([id,repository.id]),scope:JSON.stringify([id,profile.connection,repository.forge]),runtimeId:id,runtimeName:id,profile,repository,connected:!(window.offlineOrigin&&id==='a'),readCache:cache,requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{if(path==='/api/scm/source/identity'){window.identityCalls=(window.identityCalls??0)+1;if(window.discoveryFailures[id])throw new RuntimeRequestError({kind:'response',status:503,message:'Discovery unavailable'});if(window.legacy)throw new RuntimeRequestError({kind:'response',status:404,message:'Old runtime'});return decode(schema,{readerIdentity:window.accounts[id],destination:window.destinations[id]})}window.reads.push({id,path,input});if(window.dispatchRace?.id===id){const field=window.dispatchRace.field;const expected=field==='destination'?input.expectedDestination:input.expectedReaderIdentity;const actual=(field==='destination'?window.destinations[id]:window.accounts[id])+'-changed';if(expected!==undefined&&expected!==actual)throw new RuntimeRequestError({kind:'response',status:409,message:'Source changed during dispatch'});}if(input.expectedDestination!==window.destinations[id])throw Error('Missing or wrong destination guard');if(input.expectedReaderIdentity&&input.expectedReaderIdentity!==window.accounts[id])throw new RuntimeRequestError({kind:'response',status:409,message:'Account changed'});if(input.jiraSourceId && (path==='/api/scm/work/options'||path==='/api/scm/work/issues/detail')){
+const source=id=>{const profile={id,name:id,connection:{address:'http://'+id,token:'paired-'+id}};const repository={id:'repo-'+id,name:'Project',path:'/repo',gitIdentity:'github.com/team/project',pullIdentity:'github.com/team/project',forge:{connectionId:'local-'+id,repository:'team/project'}};const cache={readEffect:(key,schema)=>Effect.sync(()=>{window.cacheReads.push({id,key});if(window.savedOriginIdentity&&id==='a'&&JSON.parse(key)[0]==='forge')return {value:decode(schema,{readerIdentity:'same-account',destination:'dest-a'}),cachedAt:'2026-10-14'};return saved.has(id+key)?{value:decode(schema,saved.get(id+key)),cachedAt:'2026-10-14'}:null}),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({id,key,value});saved.set(id+key,value)}),removeEffect:key=>Effect.sync(()=>{saved.delete(id+key)})};return {serverId:window.persistentServers?'persistent-'+id:undefined,key:JSON.stringify([id,repository.id]),scope:JSON.stringify([id,profile.connection,repository.forge]),runtimeId:id,runtimeName:id,profile,repository,connected:!(window.offlineOrigin&&id==='a'),readCache:cache,requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{if(path==='/api/scm/source/identity'){window.identityCalls=(window.identityCalls??0)+1;if(window.discoveryFailures[id])throw new RuntimeRequestError({kind:'response',status:503,message:'Discovery unavailable'});if(window.legacy)throw new RuntimeRequestError({kind:'response',status:404,message:'Old runtime'});return decode(schema,{readerIdentity:window.accounts[id],destination:window.destinations[id]})}window.reads.push({id,path,input});if(window.dispatchRace?.id===id){const field=window.dispatchRace.field;const expected=field==='destination'?input.expectedDestination:input.expectedReaderIdentity;const actual=(field==='destination'?window.destinations[id]:window.accounts[id])+'-changed';if(expected!==undefined&&expected!==actual)throw new RuntimeRequestError({kind:'response',status:409,message:'Source changed during dispatch'});}if(input.expectedDestination===undefined&&window.destinations[id]!==undefined)throw Error('Missing destination guard');if(input.expectedDestination!==window.destinations[id])throw new RuntimeRequestError({kind:'response',status:409,message:'Destination changed'});if(input.expectedReaderIdentity&&input.expectedReaderIdentity!==window.accounts[id])throw new RuntimeRequestError({kind:'response',status:409,message:'Account changed'});if(input.jiraSourceId && (path==='/api/scm/work/options'||path==='/api/scm/work/issues/detail')){
 const section=input.section??'issue-options';
 if(window.blockedJira?.includes(section))await new Promise(resolve=>(window.jiraReleases[section]??=[]).push(resolve));
 if(window.failedJira?.includes(section))throw Error(section+' unavailable');
@@ -282,15 +282,36 @@ try {
   await changed.waitForFunction(() => window.detailResult?.detail && !window.detailResult.busy)
   await changed.evaluate(() => {
     window.reads = []
+    window.identityCalls = 0
     window.accounts.a = 'replacement-account'
     window.destinations.a = 'replacement-destination'
     window.detailResult.refresh()
   })
-  // Online owners may retry immediately after discovery failures. A changed account or
-  // destination still fails verification before dispatching any PR request.
+  // Reads skip a separate identity lookup, but still carry the verified account and destination.
+  // The runtime rejects the changed source, no data from it is applied, and the rejection
+  // rediscovers the source at once so the account change reaches the source assignment.
   await changed.waitForFunction(() => !window.detailResult.busy && !!window.detailResult.error)
   assert.equal(await changed.evaluate(() => window.detailResult.detail.destination), 'dest-a')
-  assert.deepEqual(await changed.evaluate(() => window.reads), [])
+  const rejected = await changed.evaluate(() => window.reads)
+  assert.ok(rejected.length > 0, 'The refresh sends its guarded read without a lookup first')
+  assert.ok(
+    rejected.every(
+      (read) =>
+        read.input.expectedReaderIdentity === 'same-account' &&
+        read.input.expectedDestination === 'dest-a',
+    ),
+    'Every read pins the previously verified account and destination',
+  )
+  await changed.waitForFunction(() => window.identityCalls > 0)
+  await changed.evaluate(() => window.detailResult.refresh())
+  await changed.waitForFunction(() => !window.detailResult.busy && !!window.detailResult.error)
+  assert.equal(await changed.evaluate(() => window.detailResult.detail.destination), 'dest-a')
+  assert.ok(
+    (await changed.evaluate(() => window.reads.slice(0))).every(
+      (read) => read.input.expectedDestination !== 'replacement-destination',
+    ),
+    'Rediscovery never moves the open detail to the replacement destination',
+  )
   await changed.close()
   for (const mode of ['issues', 'pipelines']) {
     const rows = await browser.newPage()
@@ -500,9 +521,12 @@ try {
     await rebound.waitForFunction(
       () => !window.workResult.busy && window.workResult.pages[0]?.reader.connected === false,
     )
-    assert.deepEqual(
-      await rebound.evaluate(() => window.reads),
-      [],
+    // The read carries the previously verified destination, so the runtime guard rejects it
+    // before provider access. It never adopts the rebound destination.
+    assert.ok(
+      (await rebound.evaluate(() => window.reads)).every(
+        (read) => read.input.expectedDestination === 'dest-b',
+      ),
       'Work refresh rejects a reader rebind before provider access',
     )
     assert.deepEqual(

@@ -75,24 +75,36 @@ const sections = [
   '<div>\n\n```mermaid\ngraph TD\n```\n\n![image](image.png)\n</div>',
   '```mermaid\ngraph TD\n```\n![a](a.png)\n~~~ts\nx\n~~~\n![b](b.png)',
 ]
-if (ref) {
-  let comparisons = 0
-  for (const first of sections)
-    for (const second of sections) {
-      const fixture = `${first}\n\n${second}\n\nAfter 👋`
-      for (let end = 0; end <= fixture.length; end++)
-        for (const localFiles of [true, false]) {
-          const text = fixture.slice(0, end)
+// Stream every prefix through the checkout's incremental path in order, as a growing message
+// would, and compare it with the checkout's full split and, with a baseline, the baseline split.
+const checkout = implementations.at(-1)[1]
+let comparisons = 0
+for (const first of sections)
+  for (const second of sections) {
+    const fixture = `${first}\n\n${second}\n\nAfter 👋`
+    for (let end = 0; end <= fixture.length; end++)
+      for (const localFiles of [true, false]) {
+        const text = fixture.slice(0, end)
+        const expected = checkout.splitMarkdownParts(text, localFiles)
+        const message = `${JSON.stringify(text)}, localFiles=${localFiles}`
+        assert.deepEqual(checkout.markdownParts(text, localFiles, true), expected, message)
+        if (ref)
           assert.deepEqual(
-            implementations[1][1].splitMarkdownParts(text, localFiles),
+            expected,
             implementations[0][1].splitMarkdownParts(text, localFiles),
-            `${JSON.stringify(text)}, localFiles=${localFiles}`,
+            message,
           )
-          comparisons++
-        }
-    }
-  console.log(`Native Markdown exact-output comparisons: ${comparisons} passed.`)
-}
+        comparisons++
+      }
+    for (const localFiles of [true, false])
+      assert.deepEqual(
+        checkout.markdownParts(fixture, localFiles),
+        checkout.splitMarkdownParts(fixture, localFiles),
+      )
+  }
+console.log(
+  `Native Markdown exact-output comparisons: ${comparisons} streaming prefixes passed${ref ? ' against both versions' : ''}.`,
+)
 
 const prose = 'Read [the documentation](https://example.com) for more details.\n\n'
 const mixed = `${prose.repeat(20)}\n${sections[1]}\n\n${sections[7]}\n\n${sections[9]}\n\n`
@@ -109,11 +121,25 @@ for (const [workload, text] of [
     const samples = []
     for (let index = 0; index < 16; index++) {
       const start = performance.now()
-      // Streaming bypasses the completed-message cache.
-      impl.markdownParts(text + index, true, true)
+      // Re-render a large streaming message whose last characters change.
+      const streamed = impl.markdownParts(text + index, true, true)
       if (index >= 3) samples.push(performance.now() - start)
+      if (index === 15) assert.deepEqual(streamed, impl.splitMarkdownParts(text + index, true))
     }
     samples.sort((a, b) => a - b)
+    // Grow the message in 40-character chunks, as streamed deltas arrive.
+    const updates = []
+    for (let end = 40; end <= text.length + 39; end += 40) {
+      const prefix = text.slice(0, end)
+      const start = performance.now()
+      const streamed = impl.markdownParts(prefix, true, true)
+      updates.push(performance.now() - start)
+      if (updates.length % 50 === 0 || end >= text.length)
+        assert.deepEqual(streamed, impl.splitMarkdownParts(prefix, true))
+    }
+    const total = updates.reduce((sum, value) => sum + value, 0)
+    updates.sort((a, b) => a - b)
+    const at = (quantile) => Number(updates[Math.floor((updates.length - 1) * quantile)].toFixed(2))
     console.log(
       JSON.stringify({
         version,
@@ -121,6 +147,10 @@ for (const [workload, text] of [
         characters: text.length,
         parts: parts.length,
         medianMs: Number(samples[Math.floor(samples.length / 2)].toFixed(2)),
+        growingUpdates: updates.length,
+        growingTotalMs: Math.round(total),
+        growingMedianMs: at(0.5),
+        growingP95Ms: at(0.95),
       }),
     )
   }

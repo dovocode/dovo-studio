@@ -426,6 +426,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         yield* mutations.taskCreationsCachedEffect(
           entry.profile.connection,
           entry.snapshot.workspace.tasks,
+          entry.snapshot,
         )
         const latest = entryRef.current[id]
         if (latest?.snapshot === entry.snapshot && latest.pulls === entry.pulls)

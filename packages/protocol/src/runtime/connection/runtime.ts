@@ -264,6 +264,8 @@ export const snapshotSchema = mutableStruct({
   directMessageSupported: Schema.optional(Schema.Literal(true)),
   /** First title and automatic project selection travel with the durable send. */
   messageSetupSupported: Schema.optional(Schema.Literal(true)),
+  /** The first `/api/tasks/message` can carry its unsent draft as `createTask`. */
+  threadStartSupported: Schema.optional(Schema.Literal(true)),
   /** Queued model/reasoning choices become thread defaults when their turn starts. */
   persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
@@ -468,6 +470,7 @@ export type TerminalInfo = Schema.Schema.Type<typeof terminalSchema>
 export type JobRun = Schema.Schema.Type<typeof jobRunSchema>
 export type JobRunStep = Schema.Schema.Type<typeof jobRunStepSchema>
 export type ProviderStatus = Schema.Schema.Type<typeof providerStatusSchema>
+const filesResponseSchema = mutableStruct({ files: taskSchema.fields.files })
 export const responses = {
   relaySettings: relaySettingsSchema,
   internetStatus: internetStatusSchema,
@@ -509,9 +512,9 @@ export const responses = {
   terminal: terminalSchema,
   terminalPaths: mutableStruct({ text: Schema.String }),
   provider: providerStatusSchema,
-  files: mutableStruct({
-    files: taskSchema.fields.files,
-  }),
+  files: filesResponseSchema,
+  // Older runtimes ignore includeFiles and still return the full file list.
+  changesRefresh: Schema.Union([mutableStruct({ ok: Schema.Literal(true) }), filesResponseSchema]),
   localCommits: localCommitsSchema,
   branchDiff: mutableStruct({
     files: taskSchema.fields.files,
