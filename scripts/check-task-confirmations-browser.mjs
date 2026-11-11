@@ -63,6 +63,7 @@ export {Button} from './src/components/ui/button';export {IconButton} from './sr
 export {Input} from './src/components/ui/input';export {Textarea} from './src/components/ui/textarea';
 export {Checkbox} from './src/components/ui/checkbox';export {FormField} from './src/components/form-field';
 export * from './src/components/ui/dialog';
+export {permissionPolicyUIIssue} from './src/permission-policy-fields';
 export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
     },
     { path: '@dovo/extension-scm/projects', contents: 'export const ProjectSettings=()=>null;' },

@@ -21,6 +21,7 @@ export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
 export const Platform={OS:'android'};
+export const StyleSheet={hairlineWidth:1};
 export const AppState={currentState:'active',addEventListener(){return {remove(){}}}};
 export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
 export const BackHandler={addEventListener(_event,listener){(window.backHandlers??=new Set()).add(listener);return {remove:()=>window.backHandlers.delete(listener)}}};export const ActivityIndicator=()=>null;
