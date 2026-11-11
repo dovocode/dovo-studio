@@ -27,6 +27,8 @@ return <Context.Provider value={value}>CHOOSER_DIALOG CONTENT</Context.Provider>
 `
 async function bundle(mobile) {
   const mocks = {
+    // The real mobile pipeline preview is covered by check-mobile-integration-continuity-browser.
+    '../../scm/work/pipeline-preview': `export default function PipelinePreview(){throw new Error('Unexpected pipeline preview in the thread PR link fixture')}`,
     '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
     // Native syntax rendering is covered by check-mobile-review-browser.
     './code-block': 'export const CodeBlock=({content})=><pre>{content}</pre>;',

@@ -144,7 +144,11 @@ try {
   await mode('Workspace').click()
   await view(page.getByRole('region', { name: 'Unified workspace', exact: true }))
   await page.setViewportSize({ width: 1280, height: 900 })
-  await page.locator('[data-browser-tab-id="saved-page"] [data-browser-tab-select]').click()
+  // Unified and the embedded Browser sidebar use the same native tab row. Select its owner.
+  const unifiedPage = page
+    .getByRole('region', { name: 'Pinned workspace items', exact: true })
+    .locator('[data-browser-tab-id="saved-page"] [data-browser-tab-select]')
+  await unifiedPage.click()
   await view(page.getByRole('region', { name: 'Browser previews', exact: true }))
   await page.evaluate(() => {
     window.nativePage = {
@@ -161,11 +165,12 @@ try {
     'page',
     'Native browser focus keeps Unified selected',
   )
-  await page.getByRole('button', { name: /^Redirect destination ·/ }).waitFor()
+  await page
+    .getByRole('region', { name: 'Pinned workspace items', exact: true })
+    .getByRole('button', { name: /^Redirect destination / })
+    .waitFor()
   assert.equal(
-    await page
-      .locator('[data-browser-tab-id="saved-page"] [data-browser-tab-select]')
-      .getAttribute('aria-current'),
+    await unifiedPage.getAttribute('aria-current'),
     'page',
     'The redirected page keeps its selected identity in Unified',
   )

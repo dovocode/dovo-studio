@@ -9,6 +9,8 @@ const setup = `const pull=number=>({number,title:'PR '+number,url:'https://githu
 const browser = await chromium.launch()
 async function bundle(contents, mobile = false) {
   const mocks = {
+    // The real mobile pipeline preview is covered by check-mobile-integration-continuity-browser.
+    '../../scm/work/pipeline-preview': `export default function PipelinePreview(){throw new Error('Unexpected pipeline preview in the PR link fixture')}`,
     '@dovo/studio-core': `export const useAppPreferences=()=>({pullProjectVisibility:{}});export const updateAppPreferences=()=>{};export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({goBack:()=>window.goBack?.()??false,navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);export const formatDateTime=x=>x;`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
