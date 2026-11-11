@@ -155,6 +155,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
 import { registerBrowserWindows } from ${JSON.stringify(join(desktop, 'electron', 'browser-window.ts'))}
+import { studioContents } from ${JSON.stringify(join(desktop, 'electron', 'studio-window.ts'))}
 import { workspacePartition } from ${JSON.stringify(join(desktop, 'electron', 'browser-extensions.ts'))}
 
 const work = process.env.SMOKE_DIR!
@@ -168,7 +169,7 @@ const prompts: { message: string; detail?: string }[] = []
 const loads: string[] = []
 const report: Record<string, unknown> = { run }
 const stage = (name: string) => { report.stage=name; writeFileSync(join(work,'progress-'+run+'.json'),JSON.stringify(report)) }
-process.on('uncaughtException',(error)=>{report.error=error.stack??error.message;report.liveWindows=BrowserWindow.getAllWindows().map(w=>({id:w.id,title:w.getTitle(),url:w.webContents.getURL()}));writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)})
+process.on('uncaughtException',(error)=>{report.error=error.stack??error.message;report.liveWindows=BrowserWindow.getAllWindows().map(w=>({id:w.id,title:w.getTitle(),url:studioContents(w).getURL()}));writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)})
 const watchdog = setTimeout(()=>{report.error='Native browser smoke timed out at '+report.stage;writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)},90_000)
 watchdog.unref()
 const submissions: {method?:string,body:string}[] = []
@@ -337,7 +338,7 @@ app.whenReady().then(async () => {
       await call('browser', {action:'move-tab',key:tab,tab:moving})
       const destination = browserWindows.list()[0]!
       assert.ok(destination, 'Moving to a new window must create a browser window.')
-      const destinationCall = (command: object) => destination.webContents.executeJavaScript(\`window.bridge.browser(\${JSON.stringify(command)})\`)
+      const destinationCall = (command: object) => studioContents(destination).executeJavaScript(\`window.bridge.browser(\${JSON.stringify(command)})\`)
       const moved = await destinationCall({action:'status',key:'blank',tabCount:0})
       assert.equal(moved.movedTabs[0].tab.pinned, true)
       await destinationCall({action:'show',key:tab,url:page,profileId:'work',workspaceBrowser:true,bounds})
@@ -614,7 +615,7 @@ app.whenReady().then(async () => {
       }
       assert.ok(authWindow&&authPage,'Website sign-in must open.')
       assert.equal(authPage.session,work_,'Sign-in must keep the Work profile.')
-      assert.equal(await authWindow.webContents.executeJavaScript('window.bridge.pageOnly'),true,'Auth must use the control-less shell.')
+      assert.equal(await studioContents(authWindow).executeJavaScript('window.bridge.pageOnly'),true,'Auth must use the control-less shell.')
       assert.ok(authPage.getTitle().startsWith('CS:'),'Extensions must load in sign-in windows.')
       assert.equal(await authPage.executeJavaScript('window.opener!==null'),true,'Auth must keep the real opener.')
       const authTabs=await api('chrome.tabs.query({url:'+JSON.stringify(page+'sign-in')+'})')
