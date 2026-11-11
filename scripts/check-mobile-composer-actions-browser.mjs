@@ -156,7 +156,8 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);if(
   {
     path: '../conversation/state/provider',
     importer: mobile,
-    contents: 'export const useTaskConversation=()=>window.conversation;',
+    contents:
+      'export const useConversationControls=()=>window.conversation;export const useTaskConversation=useConversationControls;',
   },
   {
     path: '../../runtime/connection/provider',
