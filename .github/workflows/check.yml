@@ -54,7 +54,7 @@ jobs:
           # Chromium discovers shareable X11 windows through the window manager's client list.
           # Xvfb alone provides screens but no managed window sources.
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends openbox x11-utils
+          sudo apt-get install -y --no-install-recommends openbox x11-utils xdotool
           xvfb-run -a -s '-screen 0 1280x900x24' bash -euc '
             openbox >/tmp/dovo-openbox.log 2>&1 &
             wm_pid=$!

@@ -495,8 +495,9 @@ not verify physical macOS or Windows windows.
 
 The native link-preview check uses real Electron views. It checks `_blank` opener identity,
 animation, drafts, menus, resize, hide, close and promotion. On Linux with X11, it also checks mouse
-presses, typing and background return with `xdotool`. It does not verify physical iPhone navigation
-or native macOS and Windows input.
+presses, typing and background return with `xdotool`. Install `xdotool` before running this check
+locally; CI installs it with the window manager. It does not verify physical iPhone navigation or
+native macOS and Windows input.
 
 Browser sharing requests and source results send native change events to the requesting Studio
 window. The picker refreshes at once, while the one-second status poll remains as a recovery path.
