@@ -37,6 +37,7 @@ const mocks = {
     export * from './src/components/ui/dialog';
     export {Input} from './src/components/ui/input';
     export {Checkbox} from './src/components/ui/checkbox';
+    export {permissionPolicyUIIssue} from './src/permission-policy-fields';
     export {FormField} from './src/components/form-field';
     export {cn} from './src/lib/utils';
     export * as ContextMenu from '@radix-ui/react-context-menu';

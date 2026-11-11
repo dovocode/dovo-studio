@@ -574,6 +574,8 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
                 'task-pull-link-dialog': 'TaskPullLinkDialog',
                 // Pipeline progress has a separate cross-client watcher suite.
                 'task-pipeline-progress': 'TaskPipelineProgress',
+                // Machine handoff controls have a separate desktop/mobile suite.
+                'machine-handoff-notice': 'MachineHandoffNotice',
               }
               const name = names[args.path.split('/').at(-1)]
               if (!name) throw new Error(`Missing production fixture module ${args.path}`)

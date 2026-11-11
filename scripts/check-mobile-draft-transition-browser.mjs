@@ -8,6 +8,8 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise the real route, startup controller, creation runtime and TaskDetail. Native
 // controls/conversation content are boundaries; their mount counts expose page replacement.
 const mocks = {
+  // Native handoff controls have their own desktop/mobile browser suite.
+  './continue-elsewhere': 'export const ContinueElsewhere=()=>null;',
   './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
 
   '../../runtime/connection/account-context': `import {useSyncExternalStore} from 'react';window.sharingAccount={directory:{},deletionPending:false};window.setSharingAccount=account=>{window.sharingAccount=account;window.dispatchEvent(new Event('sharing-account'))};const subscribe=notify=>{window.addEventListener('sharing-account',notify);return()=>window.removeEventListener('sharing-account',notify)};export const useOptionalMobileAccount=()=>useSyncExternalStore(subscribe,()=>window.sharingAccount);`,
@@ -40,6 +42,7 @@ const mocks = {
     'export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;',
   '../../ui/controls/icon': 'export const Icon=()=>null;',
   'react-native': `
+    export const StyleSheet={hairlineWidth:1};
     export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{ListFooterComponent}</div>;
     export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityLabel})=><button role={accessibilityRole} aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;
     export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</div>;
