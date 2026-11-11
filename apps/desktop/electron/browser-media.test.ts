@@ -25,6 +25,7 @@ import { browserPermissions } from './browser-permissions'
 type Listener = (...args: unknown[]) => void
 function page(id: number, url: string) {
   const ipc = new Map<string, Listener>()
+  const handlers = new Map<string, (event: { senderFrame: unknown }) => unknown>()
   const events = new Map<string, Listener>()
   const mainFrame: { url: string; parent: unknown; processId: number; routingId: number } = {
     url,
@@ -44,13 +45,16 @@ function page(id: number, url: string) {
     getURL: () => mainFrame.url,
     send: vi.fn<(channel: string, ...args: unknown[]) => void>(),
     ipc: {
-      handle: vi.fn<(...args: unknown[]) => void>(),
+      handle: (name: string, handler: (event: { senderFrame: unknown }) => unknown) =>
+        void handlers.set(name, handler),
       on: (name: string, listener: Listener) => void ipc.set(name, listener),
     },
     on: (name: string, listener: Listener) => void events.set(name, listener),
     once: (name: string, listener: Listener) => void events.set(name, listener),
     report: (raw: unknown, frame: unknown = mainFrame) =>
       ipc.get('browser-media:track')?.({ senderFrame: frame }, raw),
+    invoke: (channel: string, frame: unknown = mainFrame) =>
+      handlers.get(channel)?.({ senderFrame: frame }),
     emit: (name: string, ...args: unknown[]) => events.get(name)?.(...args),
   }
   f.frames.set(mainFrame, contents)
@@ -91,11 +95,13 @@ const host = {
   tabFor: (contents: { id: number }) => tabs.find((item) => item.contents.id === contents.id),
   canFullscreen: vi.fn<() => boolean>(() => true),
   prepareFullscreen: vi.fn<() => void>(),
+  notificationInView: vi.fn<() => boolean>(() => false),
   tabs: () => tabs,
 }
 beforeEach(async () => {
   vi.clearAllMocks()
   host.canFullscreen.mockReturnValue(true)
+  host.notificationInView.mockReturnValue(false)
   root = await mkdtemp(join(tmpdir(), 'dovo-browser-media-'))
   f.userData = root
   f.frames.clear()
@@ -778,6 +784,43 @@ it('requires website approval for notifications and retains it only for that ori
     requestingUrl: denied.mainFrame.url,
   })
   expect(media.snapshot(1).mediaRequests).toBeUndefined()
+})
+
+it('suppresses in-view toasts without changing notification permission or blocking later delivery', async () => {
+  const { media, session, call } = setup()
+  host.notificationInView.mockReturnValue(true)
+  const approval = call.invoke('browser-permission:notifications')
+  const [request] = media.snapshot(1).mediaRequests!
+  await media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow' })
+  await expect(approval).resolves.toBe('granted')
+  const answer = vi.fn<(allowed: boolean) => void>()
+  const display = () =>
+    session.request?.(call, 'notifications', answer, {
+      isMainFrame: true,
+      requestingUrl: call.mainFrame.url,
+    })
+  display()
+  expect(answer).toHaveBeenLastCalledWith(false)
+  expect(session.check?.(call, 'notifications', 'https://meet.example', {})).toBe(true)
+  await expect(call.invoke('browser-permission:notifications')).resolves.toBe('granted')
+  expect(media.snapshot(1).mediaRequests).toBeUndefined()
+  host.notificationInView.mockReturnValue(false)
+  display()
+  expect(answer).toHaveBeenLastCalledWith(true)
+  browserPermissions('work').setNotification('https://meet.example', false)
+  display()
+  expect(answer).toHaveBeenLastCalledWith(false)
+  await expect(call.invoke('browser-permission:notifications')).resolves.toBe('denied')
+})
+
+it('keeps notification permission requests tied to their main frame and live document', async () => {
+  const { media, call } = setup()
+  expect(call.invoke('browser-permission:notifications', {})).toBe('denied')
+  expect(media.snapshot(1).mediaRequests).toBeUndefined()
+  const approval = call.invoke('browser-permission:notifications')
+  call.emit('did-start-navigation', {}, 'https://other.example', false, true)
+  await expect(approval).resolves.toBe('default')
+  expect(browserPermissions('work').notification('https://meet.example')).toBeUndefined()
 })
 
 it('offers desktop windows and screens only after enumeration and stops their real tracks', async () => {

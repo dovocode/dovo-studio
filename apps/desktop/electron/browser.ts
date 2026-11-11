@@ -523,6 +523,11 @@ export function registerBrowser(
       const entry = [...views.values()].find((item) => item.contents.id === contents.id)
       if (entry) syncBackgroundThrottling(entry)
     },
+    notificationInView: (contents) => {
+      const entry = [...views.values()].find((item) => item.contents.id === contents.id)
+      // Toolbar focus still counts as viewing the page. A background Studio window does not.
+      return !!entry && pageVisible(entry) === true && entry.window.isFocused()
+    },
     openThread: preload ? (target) => openThreadMedia(target, indexPath, preload) : undefined,
     tabFor: (contents) => {
       for (const entry of views.values())

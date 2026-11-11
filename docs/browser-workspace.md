@@ -150,9 +150,13 @@ after updating. Explicit `--ozone-platform`, `--ozone-platform-hint` and
 their native backend; their compositor controls stacking. The backend selection has unit coverage.
 The current local verification host uses X11; a real Wayland desktop still needs a check.
 
-Website notification clicks select the original tab in its owning Studio window and profile;
-service-worker notifications that call `clients.focus()` follow the same path. This does not enable
-notifications without the existing per-profile permission approval.
+Live pages can send desktop notifications after the website's per-profile permission approval.
+Studio suppresses new alerts while the source page is selected in the visible, focused window. The
+address bar can hold keyboard focus without enabling alerts. Background tabs and unfocused, hidden
+or minimized windows can notify. Suppression does not change website permission. Notification clicks
+select the original tab in its owning Studio window and profile. This supports page-created
+notifications while Studio runs; it does not add service-worker Web Push or notifications after
+Studio exits. See [Shared-browser APIs](browser-apis.md#website-notifications) for verification.
 
 Right-click a local HTTP/HTTPS tab and enable **Keep awake** to keep its page running in the
 background and exclude it from inactive-page eviction and automatic settle/close rules. The setting

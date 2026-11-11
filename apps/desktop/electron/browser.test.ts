@@ -120,6 +120,7 @@ const mocks = vi.hoisted(() => {
     getTitle: () => 'Studio',
     isMinimized: () => false,
     isVisible: () => true,
+    isFocused: vi.fn<() => boolean>(() => true),
     isFullScreen: vi.fn<() => boolean>(() => false),
     setFullScreen: vi.fn<(value: boolean) => void>(),
     restore: vi.fn<() => void>(),
@@ -283,6 +284,7 @@ beforeEach(() => {
   mocks.media.snapshot.mockReturnValue({})
   mocks.media.keepAlive.mockReturnValue(false)
   mocks.window.isFullScreen.mockReturnValue(false)
+  mocks.window.isFocused.mockReturnValue(true)
   mocks.window.contentView.getBounds.mockReturnValue({ x: 0, y: 0, width: 900, height: 700 })
   vi.stubEnv('VITE_DEV_SERVER_URL', '')
 })
@@ -1335,6 +1337,29 @@ it('routes website notification clicks by the source tab and ignores foreign fra
     'focusedTabKey',
     'shared',
   )
+})
+it('only treats the selected page in a focused, visible owning window as in view', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const inView = () => mocks.media.host?.notificationInView?.(mocks.contents as never)
+  expect(inView()).toBe(true)
+  // The page need not hold keyboard focus: the address bar is part of the same view.
+  expect(mocks.contents.isFocused()).toBe(false)
+  mocks.window.isFocused.mockReturnValue(false)
+  expect(inView()).toBe(false)
+  mocks.window.isFocused.mockReturnValue(true)
+  const minimized = vi.spyOn(mocks.window, 'isMinimized').mockReturnValue(true)
+  expect(inView()).toBe(false)
+  minimized.mockReturnValue(false)
+  const visible = vi.spyOn(mocks.window, 'isVisible').mockReturnValue(false)
+  expect(inView()).toBe(false)
+  visible.mockReturnValue(true)
+  await call(event, { action: 'hide', key: 'shared' })
+  expect(inView()).toBe(false)
+  await call(event, workspaceShow)
+  expect(inView()).toBe(true)
+  await call(event, { action: 'close', key: 'shared' })
+  expect(inView()).toBe(false)
 })
 it('keeps an explicitly awake page loaded and unthrottled until the setting is disabled', async () => {
   vi.useFakeTimers()

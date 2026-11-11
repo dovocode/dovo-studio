@@ -36,6 +36,8 @@ export type MediaHost = {
   tabFor(contents: Electron.WebContents): MediaTab | undefined
   canFullscreen(contents: Electron.WebContents): boolean
   prepareFullscreen(contents: Electron.WebContents): void
+  /** Display policy only. Website permission must remain independent of window focus. */
+  notificationInView?(contents: Electron.WebContents): boolean
   /** All local shared-browser tabs, including other profiles and windows. */
   tabs(): MediaTab[]
   openThread?(
@@ -88,12 +90,27 @@ const PRELOAD = `const { contextBridge, ipcRenderer } = require('electron')
 if (process.isMainFrame) {
   // Keep the native Notification API and the website's own click handlers intact.
   contextBridge.executeInMainWorld({
-    func: (clicked) => {
+    func: (request, clicked) => {
       const NativeNotification = globalThis.Notification
       if (typeof NativeNotification !== 'function') return
       const construct = Reflect.construct
       const apply = Reflect.apply
       const add = EventTarget.prototype.addEventListener
+      const nativeRequest = NativeNotification.requestPermission
+      // Electron uses the same permission handler for requestPermission and toast display.
+      // Ask through a separate bridge so suppressing a toast never revokes website permission.
+      Object.defineProperty(NativeNotification, 'requestPermission', {
+        configurable: true, writable: true,
+        value: async function(callback) {
+          if (callback != null && typeof callback !== 'function')
+            throw new TypeError('The notification permission callback must be a function.')
+          if (!isSecureContext) return apply(nativeRequest, this, arguments)
+          const state = await request()
+          if (state === null) return apply(nativeRequest, this, arguments)
+          if (callback) callback(state)
+          return state
+        },
+      })
       Object.defineProperty(globalThis, 'Notification', {
         configurable: true, writable: true,
         value: new Proxy(NativeNotification, {
@@ -107,7 +124,17 @@ if (process.isMainFrame) {
         }),
       })
     },
-    args: [() => ipcRenderer.send('browser:notification-click')],
+    args: [
+      async () => {
+        try { return await ipcRenderer.invoke('browser-permission:notifications') }
+        catch (error) {
+          // Unmanaged popups keep their native API and permission policy.
+          if (error.message.includes("No handler registered for 'browser-permission:notifications'")) return null
+          throw error
+        }
+      },
+      () => ipcRenderer.send('browser:notification-click'),
+    ],
   })
   const controller = contextBridge.executeInMainWorld({
     func: (report) => {
@@ -288,6 +315,27 @@ export function createBrowserMedia(host: MediaHost) {
     pending.set(id, entry)
     host.activityChanged?.(entry.contents)
     host.changed?.(entry.windowId)
+  }
+  const requestNotifications = (
+    tab: MediaTab,
+    origin: string,
+    answer: (allowed: boolean) => void,
+  ) => {
+    const permissions = browserPermissions(tab.profileId)
+    permissions.recordRequest(origin, 'notifications')
+    const saved = permissions.notification(origin)
+    if (saved !== undefined) return answer(saved)
+    add({
+      kind: 'notifications',
+      key: tab.key,
+      profileId: tab.profileId,
+      origin,
+      video: false,
+      audio: false,
+      windowId: tab.windowId,
+      contents: tab.contents,
+      answer: (allow) => answer(allow === true),
+    })
   }
   /** The requesting page must still be the same document origin it was when it asked. */
   const unchanged = (request: Pending) => {
@@ -507,20 +555,11 @@ export function createBrowserMedia(host: MediaHost) {
           return
         }
         if (permission === 'notifications') {
-          browserPermissions(profileId).recordRequest(origin, 'notifications')
-          const saved = browserPermissions(profileId).notification(origin)
-          if (saved !== undefined) return callback(saved)
-          add({
-            kind: 'notifications',
-            key: tab.key,
-            profileId,
-            origin,
-            video: false,
-            audio: false,
-            windowId: tab.windowId,
-            contents,
-            answer: (allow) => callback(allow === true),
-          })
+          // requestPermission uses the explicit bridge below. This native path also runs
+          // immediately before Electron displays a toast, so apply the current view policy.
+          requestNotifications(tab, origin, (allowed) =>
+            callback(allowed && !host.notificationInView?.(contents)),
+          )
           return
         }
         // getDisplayMedia still waits for the display handler above before anything is shared.
@@ -614,6 +653,22 @@ export function createBrowserMedia(host: MediaHost) {
       if (tabsAttached.has(contents)) return
       tabsAttached.add(contents)
       devices.attachTab(contents)
+      contents.ipc.handle('browser-permission:notifications', (event) => {
+        const tab = host.tabFor(contents)
+        const origin = !contents.isDestroyed() && webOrigin(contents.mainFrame.url)
+        if (!tab || !origin || event.senderFrame !== contents.mainFrame) return 'denied'
+        return new Promise<NotificationPermission>((resolve) => {
+          requestNotifications(tab, origin, (allowed) =>
+            resolve(
+              allowed
+                ? 'granted'
+                : browserPermissions(tab.profileId).notification(origin) === false
+                  ? 'denied'
+                  : 'default',
+            ),
+          )
+        })
+      })
       contents.ipc.handle('browser-permission:idle-state', (event) => {
         const tab = host.tabFor(contents)
         const origin = !contents.isDestroyed() && webOrigin(contents.mainFrame.url)

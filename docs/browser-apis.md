@@ -23,6 +23,46 @@ visibility/occlusion changes that emit no window event.
 plain HTTP, cross-origin frames, initial hidden loads, hidden reloads/frame creation, overlays and
 window hiding/restoring while background throttling is disabled. It also runs the PiP checks below.
 
+## Website notifications
+
+Live shared-browser pages use the native `Notification` constructor and notification events. Website
+approval is saved by origin and browser profile. Studio separates `requestPermission()` from
+Electron's toast display check so an in-view alert can stay quiet without reporting permission as
+denied. Both the Promise and legacy callback forms of `requestPermission()` remain available.
+
+A page is in view when it is selected in its visible, unminimized, focused owning window. Focus in
+the address bar still counts. New alerts from that page are suppressed. Other tabs and background
+windows can notify. Clicking an alert keeps the website's click handler and selects the source tab
+in the correct Studio window and profile. **Keep awake** retains a page and its timers in the
+background; closing or settling the tab still ends its page activity. OS notification settings and
+Do Not Disturb can also prevent delivery.
+
+This covers page-created notifications while Studio runs. Electron 45 does not supply persistent
+service-worker notifications. This change does not add Web Push subscriptions or app-closed push.
+
+For a manual check, open <https://www.bennish.net/web-notifications.html> in a Studio Browser tab.
+Select **Authorize** and approve the site. Enable **Keep awake** in the tab menu. Select **Show in
+5s** and switch to another tab: an alert should appear. Click it to return to the source tab. Select
+**Show** while that tab is in view: no new alert should appear. Repeat the delayed check with Studio
+minimized. Website permission should remain granted throughout.
+
+For a Linux integration check, use a graphical session with `dbus-run-session`, `dbus-send` and
+`/usr/bin/python3` with `dbus` and `gi` (PyGObject):
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-browser-notifications-native.mjs
+pnpm exec vp test apps/desktop/electron/browser.test.ts apps/desktop/electron/browser-media.test.ts
+pnpm --filter @dovo/desktop typecheck
+```
+
+The native fixture uses the production media preload and permission handlers in real Electron. An
+isolated D-Bus notification service records background delivery and confirms in-view suppression. It
+also checks unchanged permission, native instances, trusted clicks and the website's click handler.
+Only the fixture disables the local Chromium sandbox. Unit tests cover owning-window focus,
+minimization, visibility, tab selection and source-tab routing. These checks do not prove macOS,
+Windows or a real Wayland compositor's notification delivery.
+
 ## Picture-in-picture
 
 Studio supplies Document Picture-in-Picture in shared-browser website tabs. Electron's broken native
