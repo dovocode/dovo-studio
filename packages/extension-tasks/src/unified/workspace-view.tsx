@@ -21,7 +21,8 @@ import {
 } from 'lucide-react'
 import {
   browserTabCategory,
-  type BrowserTabState,
+  templateTaskFields,
+  workspacePatchResultSchema,
   isPrivateBrowserProfile,
   isSnoozed,
   randomUUID,
@@ -38,6 +39,8 @@ import {
 } from '@dovo/protocol'
 import {
   responses,
+  createTask,
+  resolveTaskDefaults,
   StudioHostProvider,
   useAppPreferences,
   useStudioHost,
@@ -62,6 +65,7 @@ import {
   restoredSharedBrowserTabs,
   sharedBrowserWindowId,
   type BrowserLifecycleRequest,
+  type BrowserTabTarget,
 } from '../browser/browser-pane'
 import type { BrowserTab } from '../browser/shared-browser-tabs'
 import { taskActionClient, useTaskActionStore } from '../list/task-row-actions'
@@ -80,9 +84,10 @@ import {
   terminalContext,
   useWorkspaceComputers,
 } from '../terminal/terminal-workspace'
+import type { TerminalPaneCommand } from '../terminal/terminal-pane'
 import { terminalStatus, type TerminalStatusTone } from '../terminal/terminal-status'
 import { WorkspaceInput } from './workspace-input'
-import { WorkspaceResourceMenu } from './workspace-resource-menu'
+import { type WorkspaceResourceMenuProps } from './workspace-resource-menu'
 import { workspaceIdentity } from './workspace-identity'
 import {
   WorkspacePageRow,
@@ -118,9 +123,11 @@ type WorkspaceResource = {
   /** Presentation facts for the kind's own row design. */
   row:
     | { kind: 'thread'; task: Task; owner: TaskOwner; needsInput: boolean; terminals: number }
-    | { kind: 'browser'; page: BrowserTab; computer: string; runtimeIcon?: RuntimeIcon }
+    | { kind: 'browser'; page: BrowserTab }
     | {
         kind: 'terminal'
+        owner: ReturnType<typeof useWorkspaceComputers>[number]
+        session: TerminalInfo
         project: string
         checkout: string
         /** True only for a known branch; folders and unknown checkouts are not branches. */
@@ -177,7 +184,20 @@ function WorkspaceContent() {
     restoredSharedBrowserTabs(browserWindowId),
   )
   const [browserLifecycleRequest, setBrowserLifecycleRequest] = useState<BrowserLifecycleRequest>()
-  const [browserActivity, setBrowserActivity] = useState<Record<string, BrowserTabState>>({})
+  const [browserTabTargets, setBrowserTabTargets] = useState<readonly BrowserTabTarget[]>([])
+  const registerTabTarget = useCallback(
+    (target: BrowserTabTarget | null, element: HTMLDivElement) => {
+      setBrowserTabTargets((previous) => {
+        const remaining = previous.filter((entry) => entry.element !== element)
+        return target
+          ? [...remaining, target]
+          : remaining.length === previous.length
+            ? previous
+            : remaining
+      })
+    },
+    [],
+  )
   const setControlledBrowserTabs = useCallback<Dispatch<SetStateAction<BrowserTab[]>>>(
     (action) =>
       setBrowserTabs((previous) =>
@@ -206,6 +226,11 @@ function WorkspaceContent() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | WorkspaceTab['kind']>('all')
   const [computer, setComputer] = useState('')
+  const [projectFilter, setProjectFilter] = useState<{
+    runtimeId: string
+    repositoryId: string
+    name: string
+  }>()
   const preferredThreads = useMemo(
     () =>
       preferredThreadCopies(
@@ -280,6 +305,10 @@ function WorkspaceContent() {
   const threadRoots = new Map(threadTree.roots.map((entry) => [entry.key, entry]))
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [creatingTerminal, setCreatingTerminal] = useState(false)
+  const [terminalCommand, setTerminalCommand] = useState<{
+    key: string
+    command: TerminalPaneCommand
+  }>()
   const [terminalStarterVersion, setTerminalStarterVersion] = useState(0)
   const [error, setError] = useState(restored.error ?? '')
   const [lifecycleError, setLifecycleError] = useState('')
@@ -299,6 +328,10 @@ function WorkspaceContent() {
   const threadNavigation = useRef(new Map<string, StudioNavigation>())
   const active = state.tabs.find((tab) => workspaceTabKey(tab) === state.active)
   const current = useRef(state)
+  useEffect(() => {
+    if (terminalCommand && (state.active !== terminalCommand.key || creatingTerminal))
+      setTerminalCommand(undefined)
+  }, [terminalCommand, state.active, creatingTerminal])
   current.current = state
   const mounted = useRef(true)
   useEffect(() => {
@@ -504,6 +537,43 @@ function WorkspaceContent() {
       }
     })()
   }
+  const createThread = (task: Task, owner: TaskOwner, templateId?: string) => {
+    const tab: WorkspaceTab = { kind: 'thread', runtimeId: owner.runtimeId ?? '', id: task.id }
+    runLifecycle(tab, async () => {
+      const computer = computers.find((entry) => entry.profile.id === owner.runtimeId)
+      if (!computer?.connected) throw new Error(`${owner.name} is offline.`)
+      const repository = computer.snapshot?.workspace.repositories.find(
+        (entry) => entry.id === task.repositoryId,
+      )
+      if (!repository) throw new Error('This project is no longer available.')
+      const template = repository.templates?.find((entry) => entry.id === templateId)
+      if (templateId && !template) throw new Error('This template is no longer available.')
+      const created = {
+        ...createTask({
+          title: template?.name ?? 'New thread',
+          objective: '',
+          agentId: '',
+          ...resolveTaskDefaults(computer.snapshot?.defaults, repository),
+          repositoryId: repository.id,
+        }),
+        ...(template ? templateTaskFields(template) : {}),
+      }
+      const result = await store.readRuntime(
+        computer.profile,
+        '/api/workspace',
+        { collection: 'tasks', id: created.id, create: created, changes: {} },
+        workspacePatchResultSchema,
+        'PATCH',
+      )
+      if (result.outcome === 'rejected')
+        throw new Error(result.reason ?? 'The new thread could not be saved.')
+      await store.refreshRuntime(computer.profile).catch((cause: unknown) => {
+        if (mounted.current)
+          setLifecycleError(`Thread created, but its status could not refresh: ${String(cause)}`)
+      })
+      if (mounted.current) open({ kind: 'thread', runtimeId: computer.profile.id, id: created.id })
+    })
+  }
   const resources: WorkspaceResource[] = [
     ...computers.flatMap((owner) => {
       const source = {
@@ -619,6 +689,8 @@ function WorkspaceContent() {
             snooze: (until) => update({ snoozedUntil: until }),
             row: {
               kind: 'terminal',
+              owner,
+              session,
               project: repository?.name ?? 'Home folder',
               checkout:
                 branch ??
@@ -639,7 +711,6 @@ function WorkspaceContent() {
     }),
     ...pages.map((page): WorkspaceResource => {
       const status = browserTabCategory(page, now)
-      const pageOwner = computers.find((entry) => entry.profile.id === page.runtimeId)
       return {
         tab: { kind: 'browser' as const, runtimeId: '', id: page.id },
         title: page.title || page.url || 'New browser tab',
@@ -677,13 +748,6 @@ function WorkspaceContent() {
         row: {
           kind: 'browser',
           page,
-          computer:
-            page.kind === 'web'
-              ? 'This computer'
-              : pageOwner
-                ? runtimeComputerName(pageOwner)
-                : 'Unavailable computer',
-          runtimeIcon: pageOwner?.snapshot?.runtimeIcon,
         },
       }
     }),
@@ -715,6 +779,10 @@ function WorkspaceContent() {
     .filter(
       (resource) =>
         (filter === 'all' || resource.tab.kind === filter) &&
+        (!projectFilter ||
+          (resource.row.kind === 'thread' &&
+            resource.tab.runtimeId === projectFilter.runtimeId &&
+            resource.row.task.repositoryId === projectFilter.repositoryId)) &&
         (!computer ||
           resource.tab.runtimeId === computer ||
           (resource.tab.kind === 'thread' && threadTree.contextKeys.has(threadKey(resource))) ||
@@ -745,23 +813,22 @@ function WorkspaceContent() {
       disabled: switching,
       status,
       onSelect: () => open(resource.tab),
-      actions: (
-        <WorkspaceResourceMenu
-          title={resource.title}
-          pinned={resource.pinned}
-          settled={resource.status === 'settled'}
-          snoozedUntil={resource.snoozedUntil}
-          disabled={
-            pendingActions.has(key) ||
-            resource.offline ||
-            (resource.row.kind === 'browser' && !!resource.row.page.detached)
-          }
-          settleDisabled={resource.settleDisabled}
-          onPin={() => runLifecycle(resource.tab, resource.pin)}
-          onSettle={() => runLifecycle(resource.tab, resource.settle)}
-          onSnooze={(until) => runLifecycle(resource.tab, () => resource.snooze(until))}
-        />
-      ),
+      actions: {
+        title: resource.title,
+        pinned: resource.pinned,
+        settled: resource.status === 'settled',
+        snoozedUntil: resource.snoozedUntil,
+        disabled:
+          switching ||
+          pendingActions.has(key) ||
+          resource.offline ||
+          (resource.row.kind === 'browser' && !!resource.row.page.detached),
+        settleDisabled: resource.settleDisabled,
+        onPin: () => runLifecycle(resource.tab, resource.pin),
+        onSettle: () => runLifecycle(resource.tab, resource.settle),
+        onSnooze: (until: string | null) =>
+          runLifecycle(resource.tab, () => resource.snooze(until)),
+      } satisfies WorkspaceResourceMenuProps,
     }
     const row = resource.row
     return row.kind === 'thread' ? (
@@ -774,6 +841,25 @@ function WorkspaceContent() {
         searching={searching}
         search={threadSearch}
         revealSearch={revealSearch}
+        menu={{
+          onCreate: () => createThread(row.task, row.owner),
+          onTemplate: (templateId) => createThread(row.task, row.owner, templateId),
+          onFilter: () => {
+            const repository = row.owner.repositories.find(
+              (entry) => entry.id === row.task.repositoryId,
+            )
+            setProjectFilter({
+              runtimeId: resource.tab.runtimeId,
+              repositoryId: row.task.repositoryId,
+              name: repository?.name ?? 'No Project',
+            })
+            setSearch('')
+            setComputer('')
+            setFilter('all')
+          },
+          onDeselect: () => setState((previous) => ({ ...previous, active: '' })),
+          onError: setLifecycleError,
+        }}
       />
     ) : row.kind === 'browser' ? (
       <WorkspacePageRow
@@ -781,17 +867,7 @@ function WorkspaceContent() {
         {...shell}
         {...row}
         pinnedPage={pinnedPage}
-        activity={browserActivity[row.page.id]}
-        onMute={
-          row.page.kind === 'web'
-            ? () =>
-                setBrowserLifecycleRequest({
-                  requestId: randomUUID(),
-                  tabId: row.page.id,
-                  action: 'toggle-mute',
-                })
-            : undefined
-        }
+        registerTabTarget={registerTabTarget}
       />
     ) : (
       <WorkspaceTerminalRow
@@ -800,6 +876,16 @@ function WorkspaceContent() {
         {...row}
         pinned={resource.pinned}
         offline={resource.offline}
+        menu={{
+          owner: row.owner,
+          session: row.session,
+          onError: setLifecycleError,
+          onNew: () => setCreatingTerminal(true),
+          onCommand: (action) => {
+            open(resource.tab)
+            setTerminalCommand({ key, command: { requestId: randomUUID(), action } })
+          },
+        }}
       />
     )
   }
@@ -979,6 +1065,18 @@ function WorkspaceContent() {
                     <Terminal className="size-3.5" />
                   </IconButton>
                 </div>
+                {projectFilter && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 max-w-full gap-1 text-xs"
+                    aria-label="Clear workspace project filter"
+                    onClick={() => setProjectFilter(undefined)}
+                  >
+                    <span className="truncate">{projectFilter.name}</span>
+                    <X className="size-3" />
+                  </Button>
+                )}
                 {filtersOpen && (
                   <div className="space-y-2 pb-1">
                     <ChoicePicker
@@ -1259,6 +1357,14 @@ function WorkspaceContent() {
                         <WorkspaceTerminalSurface
                           embedded
                           target={tab}
+                          command={
+                            terminalCommand?.key === key ? terminalCommand.command : undefined
+                          }
+                          onCommandHandled={(id) =>
+                            setTerminalCommand((previous) =>
+                              previous?.command.requestId === id ? undefined : previous,
+                            )
+                          }
                           onHide={() => setState((previous) => closeWorkspaceTab(previous, key))}
                           onNew={() => setCreatingTerminal(true)}
                           onLifecycleError={setLifecycleError}
@@ -1292,7 +1398,7 @@ function WorkspaceContent() {
                 openLink={browserLink}
                 onLinkOpened={() => setBrowserLink(null)}
                 workspaceControl={{
-                  onActivityChange: setBrowserActivity,
+                  tabTargets: browserTabTargets,
                   visible: active?.kind === 'browser' && !creatingTerminal,
                   lifecycleRequest: browserLifecycleRequest,
                   onLifecycleHandled: (requestId) =>

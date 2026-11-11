@@ -2,6 +2,18 @@
 
 Open a thread menu and select **Continue elsewhere…** on desktop or mobile.
 
+To switch harnesses in place, select another harness from the thread's existing model picker. Dovo
+saves a checkpoint and switches the same thread. The next message starts the new provider session
+with the saved conversation. While a turn runs, use the composer model controls and select **Stop
+and switch harness**. Dovo does not stop a turn from the picker alone. Model changes within the
+current harness keep their existing behavior.
+
+Inline switches preserve the draft and earlier turns. Send or remove queued messages first. Clear
+draft turn overrides with **Use thread defaults** before switching. Runtime restrictions, such as
+active terminals and imported or child threads, still apply. Older runtimes keep the provider
+locked. If a reply is lost, select **Retry harness switch** to reuse the same request and saved
+receipt.
+
 - **Another harness on this computer** starts a fresh provider session in the same thread. Select
   the harness, model and access settings. The conversation, checklist, draft, attachments and
   checkout stay in place. Earlier turns keep their original provider.
@@ -84,6 +96,7 @@ pnpm exec playwright install chromium
 pnpm --filter @dovo/protocol build
 node scripts/check-project-transfer-browser.mjs
 node scripts/check-thread-handoff-browser.mjs
+node scripts/check-inline-harness-handoff-browser.mjs
 ```
 
 The runtime tests use two real local HTTP runtimes, SQLite, Git and attachment storage. Provider

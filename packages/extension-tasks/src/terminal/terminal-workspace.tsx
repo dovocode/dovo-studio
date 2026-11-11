@@ -1,9 +1,10 @@
-import { Activity, useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, ChevronDown, Monitor, Pencil, Plus, Search, Terminal } from 'lucide-react'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   decodeResult,
+  randomUUID,
   runtimeComputerName,
   STUDIO_TERMINAL_SCOPE,
   type TerminalInfo,
@@ -18,10 +19,6 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
   HeaderContent,
   IconButton,
   Input,
@@ -30,9 +27,13 @@ import {
   cn,
 } from '@dovo/studio-ui'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
-import { TerminalPane } from './terminal-pane'
+import { TerminalPane, type TerminalPaneCommand } from './terminal-pane'
+import { TerminalRename } from './terminal-rename'
 import { TerminalStarter } from './terminal-starter'
-import { WorkspaceResourceMenu } from '../unified/workspace-resource-menu'
+import {
+  WorkspaceResourceMenu,
+  type WorkspaceResourceMenuProps,
+} from '../unified/workspace-resource-menu'
 import { WorkspaceTerminalRow } from '../unified/workspace-rows'
 import { terminalStatus, type TerminalStatusTone } from './terminal-status'
 
@@ -83,10 +84,12 @@ function TerminalResourceActions({
   owner,
   session,
   onError,
+  children,
 }: {
   owner: ReturnType<typeof useWorkspaceComputers>[number]
   session: TerminalInfo
   onError: (message: string) => void
+  children?: (actions: WorkspaceResourceMenuProps) => ReactNode
 }) {
   const store = useWorkspace()
   const pendingRef = useRef(false)
@@ -114,129 +117,21 @@ function TerminalResourceActions({
       setPending(false)
     }
   }
+  const actions: WorkspaceResourceMenuProps = {
+    title: session.title,
+    pinned: session.pinned ?? false,
+    settled: Boolean(session.settledAt),
+    snoozedUntil: session.snoozedUntil,
+    disabled: !owner.connected || pending,
+    onPin: () => void change({ pinned: !session.pinned }),
+    onSettle: () => void change({ settled: !session.settledAt }),
+    onSnooze: (until) => void change({ snoozedUntil: until }),
+  }
+  if (children) return children(actions)
   return (
     <div className="flex shrink-0 flex-col items-end">
-      <WorkspaceResourceMenu
-        title={session.title}
-        pinned={session.pinned ?? false}
-        settled={Boolean(session.settledAt)}
-        snoozedUntil={session.snoozedUntil}
-        disabled={!owner.connected || pending}
-        onPin={() => void change({ pinned: !session.pinned })}
-        onSettle={() => void change({ settled: !session.settledAt })}
-        onSnooze={(until) => void change({ snoozedUntil: until })}
-      />
+      <WorkspaceResourceMenu {...actions} />
     </div>
-  )
-}
-
-function TerminalTitle({
-  owner,
-  session,
-  onError,
-}: {
-  owner: ReturnType<typeof useWorkspaceComputers>[number]
-  session: TerminalInfo
-  onError: (message: string) => void
-}) {
-  const store = useWorkspace()
-  const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [pending, setPending] = useState(false)
-  const pendingRef = useRef(false)
-  const [error, setError] = useState('')
-  const save = async (next: string | null) => {
-    if (pendingRef.current || !owner.connected) return
-    pendingRef.current = true
-    setPending(true)
-    setError('')
-    onError('')
-    try {
-      await store.readRuntime(
-        owner.profile,
-        '/api/terminals/update',
-        { id: session.id, title: next },
-        responses.terminal,
-        'POST',
-      )
-      await store.refreshRuntime(owner.profile)
-      setOpen(false)
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      pendingRef.current = false
-      setPending(false)
-    }
-  }
-  return (
-    <>
-      <h1 className="min-w-0 text-sm font-medium">
-        <button
-          type="button"
-          aria-label="Rename terminal"
-          disabled={!owner.connected}
-          className="group/title inline-flex max-w-full items-center gap-1.5 text-left"
-          onClick={() => {
-            setTitle(session.title)
-            setError('')
-            setOpen(true)
-          }}
-        >
-          <span className="truncate">{session.title}</span>
-          <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 group-focus-visible/title:opacity-100" />
-        </button>
-      </h1>
-      <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
-        <DialogContent className="max-w-md">
-          <DialogTitle>Rename terminal</DialogTitle>
-          <DialogDescription>
-            Choose a name, or let the shell and its programs update it automatically.
-          </DialogDescription>
-          <form
-            className="grid gap-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (title.trim()) void save(title.trim())
-            }}
-          >
-            <Input
-              aria-label="Terminal title"
-              autoFocus
-              maxLength={256}
-              value={title}
-              disabled={pending}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-            {error && (
-              <p role="alert" className="text-xs text-destructive">
-                {error}
-              </p>
-            )}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending || !owner.connected}
-                onClick={() => void save(null)}
-              >
-                Use automatic title
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending}
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={pending || !owner.connected || !title.trim()}>
-                Save
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </>
   )
 }
 
@@ -246,12 +141,16 @@ export function WorkspaceTerminalSurface({
   onNew,
   embedded = false,
   onLifecycleError,
+  command,
+  onCommandHandled,
 }: {
   target: TerminalTarget
   onHide: () => void
   onNew?: () => void
   embedded?: boolean
   onLifecycleError?: (message: string) => void
+  command?: TerminalPaneCommand
+  onCommandHandled?: (id: string) => void
 }) {
   const computers = useWorkspaceComputers()
   const host = useStudioHost()
@@ -329,7 +228,22 @@ export function WorkspaceTerminalSurface({
         >
           <Terminal className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <TerminalTitle key={targetKey} owner={owner} session={session} onError={reportError} />
+            <TerminalRename key={targetKey} owner={owner} session={session} onError={reportError}>
+              {(rename) => (
+                <h1 className="min-w-0 text-sm font-medium">
+                  <button
+                    type="button"
+                    aria-label="Rename terminal"
+                    disabled={!owner.connected}
+                    className="group/title inline-flex max-w-full items-center gap-1.5 text-left"
+                    onClick={rename}
+                  >
+                    <span className="truncate">{session.title}</span>
+                    <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 group-focus-visible/title:opacity-100" />
+                  </button>
+                </h1>
+              )}
+            </TerminalRename>
             <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
               <span className="truncate" title={session.directory}>
                 {terminalContext(session, owner.snapshot?.workspace)}
@@ -374,6 +288,8 @@ export function WorkspaceTerminalSurface({
         <TerminalPane
           key={targetKey}
           taskId={session.taskId}
+          command={command}
+          onCommandHandled={onCommandHandled}
           focusId={session.id}
           sessionScopeId={target.id}
           repositoryId={session.repositoryId}
@@ -407,6 +323,19 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
   )
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  const [terminalCommand, setTerminalCommand] = useState<{
+    target: TerminalTarget
+    command: TerminalPaneCommand
+  }>()
+  useEffect(() => {
+    if (
+      terminalCommand &&
+      (creating ||
+        selected?.runtimeId !== terminalCommand.target.runtimeId ||
+        selected?.id !== terminalCommand.target.id)
+    )
+      setTerminalCommand(undefined)
+  }, [terminalCommand, creating, selected])
   const [starterVersion, setStarterVersion] = useState(0)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     Pinned: true,
@@ -538,45 +467,62 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                             session.checkoutBranch ??
                             (session.execution === 'worktree' ? undefined : repository?.branch)
                           return (
-                            <WorkspaceTerminalRow
+                            <TerminalResourceActions
                               key={`${owner.profile.id}:${session.id}`}
-                              title={session.title}
-                              selected={active}
-                              disabled={false}
-                              status={
-                                session.settledAt
-                                  ? 'settled'
-                                  : session.snoozedUntil && Date.parse(session.snoozedUntil) > now
-                                    ? 'snoozed'
-                                    : 'active'
-                              }
-                              onSelect={() => {
-                                setSelected({ runtimeId: owner.profile.id, id: session.id })
-                                setCreating(false)
-                              }}
-                              project={repository?.name ?? 'Home folder'}
-                              checkout={
-                                branch ??
-                                (repository
-                                  ? (session.directory ?? 'Local checkout')
-                                  : 'Home folder')
-                              }
-                              checkoutIsBranch={branch !== undefined}
-                              state={activity.label}
-                              stateTone={activity.tone}
-                              stateDetail={activity.detail}
-                              computer={runtimeComputerName(owner)}
-                              runtimeIcon={owner.snapshot?.runtimeIcon}
-                              pinned={session.pinned ?? false}
-                              offline={!owner.connected}
-                              actions={
-                                <TerminalResourceActions
-                                  owner={owner}
-                                  session={session}
-                                  onError={setLifecycleError}
+                              owner={owner}
+                              session={session}
+                              onError={setLifecycleError}
+                            >
+                              {(actions) => (
+                                <WorkspaceTerminalRow
+                                  title={session.title}
+                                  selected={active}
+                                  disabled={false}
+                                  status={
+                                    session.settledAt
+                                      ? 'settled'
+                                      : session.snoozedUntil &&
+                                          Date.parse(session.snoozedUntil) > now
+                                        ? 'snoozed'
+                                        : 'active'
+                                  }
+                                  onSelect={() => {
+                                    setSelected({ runtimeId: owner.profile.id, id: session.id })
+                                    setCreating(false)
+                                  }}
+                                  project={repository?.name ?? 'Home folder'}
+                                  checkout={
+                                    branch ??
+                                    (repository
+                                      ? (session.directory ?? 'Local checkout')
+                                      : 'Home folder')
+                                  }
+                                  checkoutIsBranch={branch !== undefined}
+                                  state={activity.label}
+                                  stateTone={activity.tone}
+                                  stateDetail={activity.detail}
+                                  computer={runtimeComputerName(owner)}
+                                  runtimeIcon={owner.snapshot?.runtimeIcon}
+                                  pinned={session.pinned ?? false}
+                                  offline={!owner.connected}
+                                  actions={actions}
+                                  menu={{
+                                    owner,
+                                    session,
+                                    onError: setLifecycleError,
+                                    onNew: () => setCreating(true),
+                                    onCommand: (action) => {
+                                      setSelected({ runtimeId: owner.profile.id, id: session.id })
+                                      setCreating(false)
+                                      setTerminalCommand({
+                                        target: { runtimeId: owner.profile.id, id: session.id },
+                                        command: { requestId: randomUUID(), action },
+                                      })
+                                    },
+                                  }}
                                 />
-                              }
-                            />
+                              )}
+                            </TerminalResourceActions>
                           )
                         })}
                     </details>
@@ -602,6 +548,14 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
           {selected && (
             <WorkspaceTerminalSurface
               target={selected}
+              command={
+                !creating &&
+                terminalCommand?.target.runtimeId === selected.runtimeId &&
+                terminalCommand.target.id === selected.id
+                  ? terminalCommand.command
+                  : undefined
+              }
+              onCommandHandled={() => setTerminalCommand(undefined)}
               onHide={() => setSelected(undefined)}
               onNew={() => setCreating(true)}
               onLifecycleError={setLifecycleError}

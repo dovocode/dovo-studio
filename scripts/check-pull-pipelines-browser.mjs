@@ -20,9 +20,11 @@ import {usePipelineSections} from '${mobile}/scm/work/use-pipeline-sections.ts';
 import {usePipelineSections as useDesktopPipelineSections} from '${root}/packages/extension-scm/src/work/use-pipeline-sections.ts';
 import {PipelineRunInfo,PipelineJobs} from '${mobile}/scm/pulls/detail/pipeline-details.tsx';
 import {PipelineSectionStatus} from '${mobile}/scm/work/pipeline-section-status.tsx';
-import {PullPipelineRuns} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';
+import {PipelineLinkDialog} from '${root}/packages/studio-shell/src/pipeline-link-dialog.tsx';
+import {WorkContent} from '${root}/packages/extension-scm/src/work/content.tsx';
+import {usePullPipelineRuns,PullPipelineRunsContent} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';
 const run={id:'run-1',number:'1',title:'PR build',url:'https://github.com/team/project/actions/runs/1',status:'failure',attempt:1,sha:'a'.repeat(40),ref:'feature',workflow:'Build',updatedAt:'2026-10-14',createdAt:'2026-10-14',actor:'Dominic'};
-const job={id:'job-1',name:'Build job',status:'success',startedAt:'2026-10-14T10:00:00Z',completedAt:'2026-10-14T10:02:14Z',url:run.url+'/job/1',steps:[{id:'step-1',number:1,name:'Compile source',status:'success'}]};
+const job={id:'job-1',name:'Build job',status:'success',startedAt:'2026-10-14T10:00:00Z',completedAt:'2026-10-14T10:02:14Z',url:run.url+'/job/1',steps:[{id:'step-1',number:1,name:'Compile source',status:'success'},{id:'step-skip',number:2,name:'Optional upload',status:'skipped'},{id:'step-running',number:3,name:'Run tests',status:'in_progress'},{id:'step-queued',number:4,name:'Await publish',status:'queued'},{id:'step-unknown',number:5,name:'Provider step',status:'custom'}]};
 window.blocked=[];window.failed=[];window.releases={};window.run=run;window.release=section=>{window.blocked=window.blocked.filter(s=>s!==section);for(const done of window.releases[section]??[])done();window.releases[section]=[]};
 window.reads=[];window.store={connected:true,activeRuntimeId:'owner',runtimes:[],connection:{address:'http://owner.local'},workspace:{repositories:[{id:'repo',name:'Project',forge:{connectionId:'account-1',repository:'team/project'}}]},request:async(path,input)=>{
 window.reads.push({path,input});
@@ -43,7 +45,10 @@ window.store.readRuntime=async(_profile,path,input,schema)=>decode(schema,await 
 window.store.readRuntimeEffect=(...args)=>Effect.tryPromise({try:()=>window.store.readRuntime(...args),catch:error=>error});
 window.store.runtimeReadCache=()=>cache;
 function Mobile(){const[overview,setOverview]=useState(window.mobileOverview),[revision,setRevision]=useState(0);const load=useCallback(async(section,cursor,refresh,revision)=>decode(forgePipelineDetailSchema,await window.store.request('/api/scm/work/pipelines/detail',{section,cursor,refresh,revision})),[]);const useSections=window.desktopHook?useDesktopPipelineSections:usePipelineSections;const sections=useSections({overview,enabled:window.active&&window.store.connected,readCache:window.store.readCache,cacheKey:'mobile-run',refreshToken:revision,load,refreshOverview:()=>setOverview({run:{...run},jobs:[]})});window.invalidateSections=()=>setRevision(value=>value+1);window.mobileSections=sections;return <div aria-label="Mobile pipeline" style={{display:'flex',flexDirection:'column',gap:20,padding:16,maxWidth:600,margin:'auto'}}><PipelineRunInfo run={overview.run}/><PipelineSectionStatus label="Jobs" state={sections.jobs} connected={window.store.connected}/><PipelineSectionStatus label="Workflow" state={sections.graph} connected={window.store.connected}/><PipelineJobs jobs={sections.detail.jobs} graph={sections.detail.graph} hasMore={!!sections.detail.next} ready={sections.jobs.ready} onOpen={()=>{}}/>{sections.detail.next&&<button onClick={sections.jobs.more}>More jobs</button>}</div>}
-const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>flushSync(()=>app.render(window.empty?<p>Unmounted</p>:window.mobile?<Mobile key={window.mobileKey??0}/>:<div hidden={!window.active}><PullPipelineRuns repositoryId="repo" sha={'a'.repeat(40)} active={window.active}/></div>));window.mount();`,
+function Pulls(){const state=usePullPipelineRuns({repositoryId:"repo",sha:"a".repeat(40),active:window.active});window.pullRuns=state;return <PullPipelineRunsContent state={state} sha={"a".repeat(40)} active={window.active}/>};
+function Preview(){return <WorkContent mode="pipelines" repositoryId="repo" repositoryName="Project" preview collectionHeader={null} initialSelected={run.id} connected={window.store.connected} request={window.store.request}/>};
+function Dialog(){return <PipelineLinkDialog target={{kind:'pipeline',runtimeId:'owner',repositoryId:'repo',itemId:run.id,label:run.title,url:run.url}} View={Preview} onClose={()=>{window.dialog=false;window.mount()}} onDetails={()=>{window.details=true;window.dialog=false;window.mount()}} onExternal={async url=>{window.external=url}}/>};
+const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>flushSync(()=>app.render(window.empty?<p>Unmounted</p>:window.dialog?<Dialog/>:window.mobile?<Mobile key={window.mobileKey??0}/>:<div hidden={!window.active}><Pulls/></div>));window.mount();`,
     },
     bundle: true,
     write: false,
@@ -114,7 +119,7 @@ const app=createRoot(document.getElementById('app'));window.active=true;window.m
         ['button', 'input', 'dialog']
           .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
           .join('') +
-        `export {PageHeader} from '${ui}/page-header.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
+        `export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {PageHeader} from '${ui}/page-header.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
     },
     {
       path: './work-form',
@@ -154,6 +159,11 @@ try {
     window.blocked = ['jobs', 'graph', 'options']
   })
   await page.getByRole('button').filter({ hasText: 'PR build' }).click()
+  assert.equal(
+    await page.evaluate(() => window.pullRuns.fresh),
+    true,
+    'Live pipeline data is current',
+  )
   await page.getByRole('heading', { name: 'PR build', exact: true }).waitFor()
   await page.getByText('Loading jobs…', { exact: true }).waitFor()
   assert.equal(await page.locator('[aria-label="Pipeline jobs"]').count(), 0)
@@ -172,6 +182,19 @@ try {
   const job = page.getByRole('button').filter({ hasText: 'Build job' }).last()
   await job.click()
   await page.getByText('Compile source', { exact: true }).waitFor()
+  const desktopProgress = page
+    .getByRole('group', { name: 'Build job step progress', exact: true })
+    .first()
+  assert.equal(await desktopProgress.getByRole('img').count(), 5)
+  await desktopProgress.getByText('2/5 steps complete', { exact: true }).waitFor()
+  for (const name of [
+    'Compile source: Passed',
+    'Optional upload: Skipped',
+    'Run tests: Running',
+    'Await publish: Queued',
+    'Provider step: Custom',
+  ])
+    await desktopProgress.getByRole('img', { name, exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Back to pipelines' }).count(), 0)
   await page.getByRole('button', { name: 'Back to runs', exact: true }).waitFor()
   assert.equal(await page.locator('.studio-page-header[data-embedded=true]').count(), 1)
@@ -245,6 +268,11 @@ try {
     window.mount()
   })
   await page.getByText('Upload artifact', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.pullRuns.fresh),
+    false,
+    'Cached runs cannot establish current CI status',
+  )
   assert.equal(await page.getByRole('heading', { name: 'PR build', exact: true }).count(), 1)
   assert.equal(
     await page.evaluate(
@@ -284,6 +312,16 @@ try {
   })
   await page.getByRole('button', { name: 'Job Build job', exact: true }).click()
   await page.getByText('1. Compile source', { exact: true }).waitFor()
+  const mobileProgress = page.getByLabel('Build job step progress', { exact: true }).first()
+  await mobileProgress.getByText('2/5 steps complete', { exact: true }).waitFor()
+  for (const name of [
+    'Compile source: Passed',
+    'Optional upload: Skipped',
+    'Run tests: Running',
+    'Await publish: Queued',
+    'Provider step: Custom',
+  ])
+    await mobileProgress.getByLabel(name, { exact: true }).waitFor()
   await page.getByText('Loading workflow…', { exact: true }).waitFor()
   await page.evaluate(() => window.release('graph'))
   await page.getByRole('button', { name: 'More jobs', exact: true }).click()
@@ -475,6 +513,33 @@ try {
     'Commit filters are only sent to pipeline lists',
   )
   await paged.close()
+  await page.evaluate(() => {
+    window.dialog = true
+    window.mobile = false
+    window.mount()
+  })
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  const dialog = page.getByRole('dialog', { name: 'Pipeline preview', exact: true })
+  await dialog.getByRole('heading', { name: 'PR build', exact: true }).waitFor()
+  await dialog
+    .getByRole('group', { name: 'Build job step progress', exact: true })
+    .first()
+    .waitFor()
+  await page.screenshot({ path: screenshots + '/dialog-dark.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(
+    await dialog.evaluate((element) => element.getBoundingClientRect().right <= innerWidth),
+    true,
+    'Dialog exceeds narrow viewport',
+  )
+  await page.screenshot({ path: screenshots + '/dialog-narrow.png', fullPage: true })
+  await dialog.getByRole('link', { name: 'Open URL', exact: true }).click()
+  assert.equal(
+    await page.evaluate(() => window.external),
+    'https://github.com/team/project/actions/runs/1',
+  )
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
   assert.deepEqual(errors, [])
   console.log(
     'Pipelines: independent overview/jobs/graph/options, retry, rerun isolation, pagination/offline cache, active-only desktop/native polling, retained context, graph selection and narrow layouts passed. Screenshots: /tmp/dovo-pipelines (native primitives mocked).',

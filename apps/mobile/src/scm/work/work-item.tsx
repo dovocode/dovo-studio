@@ -54,6 +54,7 @@ type WorkItemProps = {
   itemId: string
   expectedURL?: string
   onBack: () => void
+  preview?: boolean
 }
 type RunAction = 'rerun' | 'cancel' | 'enable' | 'disable'
 const cachedIssueSchema = mutableStruct({
@@ -102,6 +103,7 @@ function WorkItemContent({
   itemId: selected,
   expectedURL,
   onBack,
+  preview = false,
 }: WorkItemProps) {
   const { colors, styles } = useTheme()
 
@@ -643,7 +645,7 @@ function WorkItemContent({
   }
   const open = (url: string) => {
     void runClientEffect(
-      nativeEffect(() => openAppLink(url, false, origin)).pipe(
+      nativeEffect(() => openAppLink(url, mode === 'pipelines', origin)).pipe(
         Effect.catch((cause) => nativeEffect(() => setError(String(cause)))),
       ),
     )
@@ -728,28 +730,30 @@ function WorkItemContent({
   ]
   return (
     <View style={styles.screen}>
-      <ScreenHeader
-        title={
-          mode === 'issues'
-            ? `Issue ${issueLabel(selected)}`
-            : `Run #${pipeline?.run.number ?? selected}`
-        }
-        subtitle={[
-          jiraSource?.name || jiraSource?.project || repository?.name,
-          runtimeComputerName({ profile, snapshot }),
-        ]
-          .filter(Boolean)
-          .join(' · ')}
-        leading={
-          <IconButton
-            icon="back"
-            variant="glass"
-            label={mode === 'issues' ? 'Back to issues' : 'Back to PR runs'}
-            onPress={onBack}
-          />
-        }
-        actions={<WorkMenu actions={actions} />}
-      />
+      {!preview && (
+        <ScreenHeader
+          title={
+            mode === 'issues'
+              ? `Issue ${issueLabel(selected)}`
+              : `Run #${pipeline?.run.number ?? selected}`
+          }
+          subtitle={[
+            jiraSource?.name || jiraSource?.project || repository?.name,
+            runtimeComputerName({ profile, snapshot }),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+          leading={
+            <IconButton
+              icon="back"
+              variant="glass"
+              label={mode === 'issues' ? 'Back to issues' : 'Back to PR runs'}
+              onPress={onBack}
+            />
+          }
+          actions={<WorkMenu actions={actions} />}
+        />
+      )}
       <ScrollView
         testID="Work detail content"
         style={{

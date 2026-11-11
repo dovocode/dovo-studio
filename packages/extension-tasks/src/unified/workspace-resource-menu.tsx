@@ -1,6 +1,6 @@
 import { taskSnoozeMenuChoices } from '@dovo/protocol'
 import { useAppPreferences } from '@dovo/studio-core'
-import { Button, DropdownMenu, IconButton } from '@dovo/studio-ui'
+import { Button, ContextMenu, DropdownMenu, IconButton } from '@dovo/studio-ui'
 import { AlarmClock, Check, Pin, PinOff, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 import { SnoozeDialog } from '../dialogs/snooze-dialog'
@@ -21,7 +21,7 @@ const menuClass = 'z-50 min-w-44 rounded-md border bg-popover p-1 text-popover-f
 const itemClass =
   'flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-accent/55 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0'
 
-export function WorkspaceResourceMenu({
+export function useWorkspaceResourceActions({
   title,
   pinned,
   settled,
@@ -34,23 +34,25 @@ export function WorkspaceResourceMenu({
 }: WorkspaceResourceMenuProps) {
   const { taskSnoozeMinutes, taskSnoozeSchedule } = useAppPreferences()
   const [choosingSnooze, setChoosingSnooze] = useState(false)
-  return (
+  const dialog = choosingSnooze ? (
+    <SnoozeDialog
+      name={title}
+      until={snoozedUntil ? Date.parse(snoozedUntil) : undefined}
+      onClose={() => setChoosingSnooze(false)}
+      onSnooze={(until) => {
+        if (disabled) throw new Error('This item cannot be snoozed now.')
+        onSnooze(new Date(until).toISOString())
+      }}
+    />
+  ) : null
+  const options = taskSnoozeMenuChoices(taskSnoozeMinutes, taskSnoozeSchedule)
+  const snoozed = !!snoozedUntil && Date.parse(snoozedUntil) > Date.now()
+  const inline = (
     <div
       role="group"
       aria-label={`Actions for ${title}`}
       className="studio-thread-actions flex h-6 items-center gap-1"
     >
-      {choosingSnooze && (
-        <SnoozeDialog
-          name={title}
-          until={snoozedUntil ? Date.parse(snoozedUntil) : undefined}
-          onClose={() => setChoosingSnooze(false)}
-          onSnooze={(until) => {
-            if (disabled) throw new Error('This item cannot be snoozed now.')
-            onSnooze(new Date(until).toISOString())
-          }}
-        />
-      )}
       <IconButton
         type="button"
         label={`${pinned ? 'Unpin' : 'Pin'} ${title}`}
@@ -80,23 +82,30 @@ export function WorkspaceResourceMenu({
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content className={menuClass} sideOffset={4} collisionPadding={8}>
-              {taskSnoozeMenuChoices(taskSnoozeMinutes, taskSnoozeSchedule).map(
-                ({ id, label, until }) => (
-                  <DropdownMenu.Item
-                    key={id}
-                    className={itemClass}
-                    onSelect={() => onSnooze(until())}
-                  >
-                    {label}
-                  </DropdownMenu.Item>
-                ),
-              )}
-              {snoozedUntil && Date.parse(snoozedUntil) > Date.now() && (
-                <DropdownMenu.Item className={itemClass} onSelect={() => onSnooze(null)}>
+              {options.map(({ id, label, until }) => (
+                <DropdownMenu.Item
+                  key={id}
+                  disabled={disabled}
+                  className={itemClass}
+                  onSelect={() => onSnooze(until())}
+                >
+                  {label}
+                </DropdownMenu.Item>
+              ))}
+              {snoozed && (
+                <DropdownMenu.Item
+                  disabled={disabled}
+                  className={itemClass}
+                  onSelect={() => onSnooze(null)}
+                >
                   Unsnooze
                 </DropdownMenu.Item>
               )}
-              <DropdownMenu.Item className={itemClass} onSelect={() => setChoosingSnooze(true)}>
+              <DropdownMenu.Item
+                disabled={disabled}
+                className={itemClass}
+                onSelect={() => setChoosingSnooze(true)}
+              >
                 Choose date and time…
               </DropdownMenu.Item>
             </DropdownMenu.Content>
@@ -119,5 +128,69 @@ export function WorkspaceResourceMenu({
         {settled ? 'Reopen' : 'Settle'}
       </Button>
     </div>
+  )
+  const context = (
+    <>
+      <ContextMenu.Item className={itemClass} disabled={disabled} onSelect={onPin}>
+        {pinned ? <PinOff /> : <Pin />}
+        {pinned ? 'Unpin' : 'Pin'}
+      </ContextMenu.Item>
+      {!settled && (
+        <ContextMenu.Sub>
+          <ContextMenu.SubTrigger className={itemClass} disabled={disabled}>
+            <AlarmClock /> Snooze
+          </ContextMenu.SubTrigger>
+          <ContextMenu.Portal>
+            <ContextMenu.SubContent className={menuClass} collisionPadding={8}>
+              {options.map(({ id, label, until }) => (
+                <ContextMenu.Item
+                  key={id}
+                  disabled={disabled}
+                  className={itemClass}
+                  onSelect={() => onSnooze(until())}
+                >
+                  {label}
+                </ContextMenu.Item>
+              ))}
+              {snoozed && (
+                <ContextMenu.Item
+                  className={itemClass}
+                  disabled={disabled}
+                  onSelect={() => onSnooze(null)}
+                >
+                  Unsnooze
+                </ContextMenu.Item>
+              )}
+              <ContextMenu.Item
+                className={itemClass}
+                disabled={disabled}
+                onSelect={() => setChoosingSnooze(true)}
+              >
+                Choose date and time…
+              </ContextMenu.Item>
+            </ContextMenu.SubContent>
+          </ContextMenu.Portal>
+        </ContextMenu.Sub>
+      )}
+      <ContextMenu.Item
+        className={itemClass}
+        disabled={disabled || settleDisabled}
+        onSelect={onSettle}
+      >
+        {settled ? <Undo2 /> : <Check />}
+        {settled ? 'Reopen' : 'Settle'}
+      </ContextMenu.Item>
+    </>
+  )
+  return { inline, context, dialog }
+}
+
+export function WorkspaceResourceMenu(props: WorkspaceResourceMenuProps) {
+  const { inline, dialog } = useWorkspaceResourceActions(props)
+  return (
+    <>
+      {inline}
+      {dialog}
+    </>
   )
 }

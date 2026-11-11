@@ -29,10 +29,10 @@ export function nativeBrowserOcclusion(slot: HTMLElement, rect: DOMRect) {
   // Backdrops can cover the browser even when their dialog sits elsewhere.
   const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
   if (hit && hit !== document.body && hit !== document.documentElement && !slot.contains(hit))
-    occlusion = hit.closest('[role="tooltip"]') ? 'tooltip' : 'overlay'
+    occlusion = hit.closest('[role="tooltip"], .studio-tooltip') ? 'tooltip' : 'overlay'
   if (occlusion === 'overlay') return occlusion
   for (const element of document.querySelectorAll<HTMLElement>(
-    'details[open], dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"]',
+    'details[open], dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .studio-tooltip, [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"]',
   )) {
     if (
       (element.contains(slot) && !element.matches('[data-preview-dragging="true"]')) ||
@@ -50,6 +50,15 @@ export function nativeBrowserOcclusion(slot: HTMLElement, rect: DOMRect) {
     if (element.matches('[data-preview-dragging="true"]') && element.contains(slot))
       return 'overlay'
     // Open disclosures and persistent panels underneath floating previews are not overlays.
+    // Text-only tips deliberately ignore pointer events. Hit testing cannot see them,
+    // but their painted bounds still cover the native page.
+    if (
+      element.matches('.studio-tooltip, [role="tooltip"]') &&
+      getComputedStyle(element).pointerEvents === 'none'
+    ) {
+      occlusion = 'tooltip'
+      continue
+    }
     const above = [
       [(left + right) / 2, (top + bottom) / 2],
       [left + 0.5, top + 0.5],
@@ -61,7 +70,7 @@ export function nativeBrowserOcclusion(slot: HTMLElement, rect: DOMRect) {
       return hit !== null && element.contains(hit)
     })
     if (!above) continue
-    if (!element.matches('[role="tooltip"]')) return 'overlay'
+    if (!element.matches('[role="tooltip"], .studio-tooltip')) return 'overlay'
     occlusion = 'tooltip'
   }
   return occlusion

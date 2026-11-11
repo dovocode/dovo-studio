@@ -87,6 +87,7 @@ const tab = (key: string, contents: Page, profileId = 'work', windowId = 1): Med
   contents: contents as never,
 })
 const host = {
+  changed: vi.fn<(windowId: number) => void>(),
   tabFor: (contents: { id: number }) => tabs.find((item) => item.contents.id === contents.id),
   canFullscreen: vi.fn<() => boolean>(() => true),
   prepareFullscreen: vi.fn<() => void>(),
@@ -973,4 +974,36 @@ it.each([
     isMainFrame: true,
   })
   expect(callback).toHaveBeenCalledWith(false)
+})
+
+it('notifies the owning window before desktop discovery finishes and again when sources arrive', async () => {
+  let finish: (sources: unknown[]) => void = () => {
+    throw new Error('Discovery did not start')
+  }
+  f.desktop.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  const { media, session, call } = setup()
+  share(session, call.mainFrame)
+  expect(host.changed).toHaveBeenCalledWith(1)
+  const [request] = media.snapshot(1).mediaRequests!
+  expect(request!.sources!.every((source) => source.kind === 'tab')).toBe(true)
+  await vi.waitFor(() => expect(f.desktop).toHaveBeenCalled())
+  host.changed.mockClear()
+  finish([
+    {
+      id: 'window:12:0',
+      name: 'Editor',
+      thumbnail: { toDataURL: () => 'data:image/png;base64,AA==' },
+    },
+  ])
+  await vi.waitFor(() => expect(host.changed).toHaveBeenCalledExactlyOnceWith(1))
+  expect(media.snapshot(1).mediaRequests![0]!.sources).toEqual(
+    expect.arrayContaining([expect.objectContaining({ key: 'window:12:0' })]),
+  )
+  await media.decide(1, { key: 'call', requestId: request!.id, decision: 'deny' })
+  expect(host.changed).toHaveBeenCalledTimes(2)
 })

@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('dovo', {
       ipcRenderer.invoke('repositories:local-open', input),
   },
   openBrowserWindow: (): Promise<void> => ipcRenderer.invoke('browser:new-window'),
+  onBrowserMediaChange: (listener: () => void) => {
+    const handler = () => listener()
+    ipcRenderer.on('browser:media-changed', handler)
+    return () => ipcRenderer.removeListener('browser:media-changed', handler)
+  },
   onBrowserWorkspaceFocus: (listener: () => void) => {
     const handler = () => listener()
     ipcRenderer.on('browser:focus-workspace', handler)

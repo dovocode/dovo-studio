@@ -1,4 +1,5 @@
 import { Disclosure } from '@dovo/studio-ui'
+import { pullChecksPending } from '@dovo/protocol'
 import type { ReactNode } from 'react'
 import { CircleCheck, CircleAlert, Clock3, CircleDashed } from 'lucide-react'
 import { checkSignal, latestPullReviews, type PullDetail, type PullSignal } from '@dovo/studio-core'
@@ -78,7 +79,9 @@ export function PullStatus({
             </h3>
             {!checks.length && (
               <p className="p-4 text-xs text-muted-foreground">
-                No check reports returned. See any loading warnings above.
+                {pullChecksPending(detail.pull)
+                  ? 'CI is pending. Waiting for the pipeline to report its checks for this commit.'
+                  : 'No check reports returned. See any loading warnings above.'}
               </p>
             )}
             <div className="divide-y">

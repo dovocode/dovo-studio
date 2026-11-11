@@ -24,6 +24,7 @@ import {
   type ComposerControlSlots,
 } from '@dovo/studio-ui'
 import { HarnessDialog } from '../../dialogs/harness-dialog'
+import { useInlineHarnessHandoff } from './inline-harness-handoff'
 import { changeTaskHarness, chooseTaskAgent } from './task-harness-selection'
 export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   task,
@@ -45,6 +46,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
     [snapshot?.defaults, workspace.repositories, workspace.agents, task.repositoryId],
   )
   const providerLock = lockedTaskProvider(task, agents)
+  const handoff = useInlineHarnessHandoff(task, !disabled)
   const installationLock = lockedAcpInstallationId(task, agents)
   const value = useMemo(() => {
     const resolved = resolveTaskAgent(task, agents)
@@ -89,10 +91,24 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
       setSaving(false)
     }
   }
-  const apply = (harness: TaskHarness) =>
-    save((current, agents) => changeTaskHarness(current, agents, harness))
+  const apply = async (harness: TaskHarness, standalone = false) => {
+    if (disabled || handoff.busy) return false
+    const issue = permissionPolicyUIIssue(harness, snapshot?.permissionPolicySupported === true)
+    if (issue) {
+      setError(issue)
+      return false
+    }
+    if (
+      handoff.available &&
+      (harness.provider !== value.provider ||
+        (harness.provider === 'acp' &&
+          (harness.acpInstallationId ?? '') !== (value.acpInstallationId ?? '')))
+    )
+      return handoff.choose(harness)
+    return save((current, agents) => changeTaskHarness(current, agents, harness, standalone))
+  }
   const customAgent = task.agentId ? agents.find((agent) => agent.id === task.agentId) : undefined
-  const locked = disabled || saving || task.status === 'running'
+  const locked = disabled || saving || handoff.busy || task.status === 'running'
   return (
     <>
       <ComposerSettingsControls
@@ -123,18 +139,24 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
         agents={agents}
         selectedAgent={customAgent}
         value={value}
-        lockedProvider={providerLock}
-        lockedInstallationId={installationLock}
+        lockedProvider={handoff.available ? undefined : providerLock}
+        lockedInstallationId={handoff.available ? undefined : installationLock}
         disabled={locked}
         onChange={apply}
-        onSelectAgent={(agentId) =>
-          save((current, agents) => chooseTaskAgent(current, agents, agentId))
-        }
-        onUseHarness={(harness) =>
-          save((current, agents) => changeTaskHarness(current, agents, harness, true))
-        }
+        onSelectAgent={(agentId) => {
+          const agent = agents.find((entry) => entry.id === agentId)
+          return agent &&
+            handoff.available &&
+            (agent.provider !== value.provider ||
+              (agent.provider === 'acp' &&
+                (agent.acpInstallationId ?? '') !== (value.acpInstallationId ?? '')))
+            ? apply(decode(taskHarnessSchema, agent), true)
+            : save((current, agents) => chooseTaskAgent(current, agents, agentId))
+        }}
+        onUseHarness={(harness) => apply(harness, true)}
         onConfigure={() => setConnection(true)}
       />
+      {handoff.notice}
       {error && (
         <p role="alert" className="w-full text-xs text-destructive">
           {error}

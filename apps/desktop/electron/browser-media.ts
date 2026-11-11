@@ -31,6 +31,7 @@ export type MediaTab = {
   contents: Electron.WebContents
 }
 export type MediaHost = {
+  changed?(windowId: number): void
   activityChanged?(contents: Electron.WebContents): void
   tabFor(contents: Electron.WebContents): MediaTab | undefined
   canFullscreen(contents: Electron.WebContents): boolean
@@ -225,6 +226,7 @@ export function createBrowserMedia(host: MediaHost) {
     captures.delete(id)
     capture?.closeSource?.()
     if (capture) {
+      host.changed?.(capture.windowId)
       host.activityChanged?.(capture.contents)
       if (capture.source) host.activityChanged?.(capture.source)
     }
@@ -264,6 +266,7 @@ export function createBrowserMedia(host: MediaHost) {
     clearTimeout(request.timer)
     request.answer(allow)
     host.activityChanged?.(request.contents)
+    host.changed?.(request.windowId)
   }
   const add = (request: Omit<Pending, 'id' | 'expiresAt' | 'timer'>): void => {
     // One open request of each kind per tab; a newer one replaces (and denies) the older.
@@ -284,6 +287,7 @@ export function createBrowserMedia(host: MediaHost) {
     }
     pending.set(id, entry)
     host.activityChanged?.(entry.contents)
+    host.changed?.(entry.windowId)
   }
   /** The requesting page must still be the same document origin it was when it asked. */
   const unchanged = (request: Pending) => {
@@ -423,6 +427,7 @@ export function createBrowserMedia(host: MediaHost) {
               if (!allowed) {
                 entry.sourceError =
                   'macOS Screen Recording permission is needed for windows and screens. Start sharing again after enabling Dovo in System Settings → Privacy & Security → Screen & System Audio Recording. Tabs and threads remain available.'
+                host.changed?.(entry.windowId)
                 return []
               }
               return desktopCapturer.getSources({
@@ -432,12 +437,17 @@ export function createBrowserMedia(host: MediaHost) {
             })
             .then(
               (sources) => {
-                if (pending.has(entry.id)) entry.desktopSources = sources
+                if (pending.has(entry.id)) {
+                  entry.desktopSources = sources
+                  host.changed?.(entry.windowId)
+                }
               },
               (error: unknown) => {
-                if (pending.has(entry.id))
+                if (pending.has(entry.id)) {
                   entry.sourceError =
                     error instanceof Error ? error.message : 'Desktop sources are unavailable.'
+                  host.changed?.(entry.windowId)
+                }
               },
             )
       })
@@ -824,6 +834,7 @@ export function createBrowserMedia(host: MediaHost) {
         approvedAt: Date.now(),
         seen: false,
       })
+      host.changed?.(windowId)
       host.activityChanged?.(request.contents)
       if (contents) host.activityChanged?.(contents)
     },
@@ -846,6 +857,7 @@ export function createBrowserMedia(host: MediaHost) {
       if (capture.state !== 'stopping') {
         capture.state = 'stopping'
         capture.stopAt = Date.now()
+        host.changed?.(windowId)
       }
       capture.contents.send('browser-media:stop', capture.pageId)
     },

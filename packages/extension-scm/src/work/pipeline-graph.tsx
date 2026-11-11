@@ -7,6 +7,7 @@ import {
   type ForgePipelineDetail,
 } from '@dovo/protocol'
 import { PipelineState } from './pipeline-state'
+import { PipelineStepProgress } from './pipeline-step-progress'
 
 export function PipelineGraph({
   detail,
@@ -131,7 +132,7 @@ export function PipelineGraph({
                           onClick={() => onSelect(id)}
                           aria-label={`View job ${job.name}`}
                           aria-pressed={selectedJob === id}
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg border p-2 text-left transition-colors hover:bg-muted ${selectedJob === id ? 'border-primary/50 bg-primary/5' : pipelineSignal(job.status).tone === 'danger' ? 'border-transparent bg-status-error/10' : pipelineSignal(job.status).tone === 'success' ? 'border-transparent bg-transparent' : 'border-transparent bg-muted/30'}`}
+                          className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border p-2 text-left transition-colors hover:bg-muted ${selectedJob === id ? 'border-primary/50 bg-primary/5' : pipelineSignal(job.status).tone === 'danger' ? 'border-transparent bg-status-error/10' : pipelineSignal(job.status).tone === 'success' ? 'border-transparent bg-transparent' : 'border-transparent bg-muted/30'}`}
                         >
                           <span className="min-w-0 space-y-2 text-xs">
                             {job.name !== node.name && (
@@ -142,6 +143,7 @@ export function PipelineGraph({
                           <span className="text-xs text-muted-foreground tabular-nums">
                             {pipelineDuration(job, now)}
                           </span>
+                          <PipelineStepProgress job={job} />
                         </button>
                       )
                     )

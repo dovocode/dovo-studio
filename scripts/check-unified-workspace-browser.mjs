@@ -42,6 +42,9 @@ window.root=createRoot(document.getElementById('app'));window.render=()=>window.
       path: '@dovo/studio-core',
       contents: `
 import React,{createContext,useContext,useState,useEffect,useCallback} from 'react';
+export * from '@dovo/protocol';
+export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope';
+export const useConfirmation=()=>async()=>true;
 export {responses} from '${root}/packages/protocol/src/runtime/connection/runtime';
 export {createTask,updateTask} from '${root}/packages/studio-core/src/workspace/actions';
 export {acpHarnessName,resolveTaskAgent,hasUnviewedTaskCompletion,isSnoozed,compareTaskActivity} from '@dovo/protocol';
@@ -85,8 +88,10 @@ return <Host.Provider value={{navigate:target=>window.navigation.push(target)}}>
       contents: `import React from 'react';
 import {Button} from '${root}/packages/studio-ui/src/components/ui/button';
 export {Button};
-export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as ContextMenu from '@radix-ui/react-context-menu';
 export {Input} from '${root}/packages/studio-ui/src/components/ui/input';
+export {Checkbox} from '${root}/packages/studio-ui/src/components/ui/checkbox';
+export {FormField} from '${root}/packages/studio-ui/src/components/form-field';
 export {ComposerSurface,ComposerTextarea,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
 export {ProjectIcon} from '${root}/packages/studio-ui/src/project-icon';
 export {AgentAvatar} from '${root}/packages/studio-ui/src/agent-avatar';
@@ -100,6 +105,16 @@ export const useNavigationSidebar=()=>({collapsed:!!window.sidebarCollapsed});
 export const SidebarHeader=()=> <div className="flex h-[52px] shrink-0 items-center gap-2 px-5 text-sm font-semibold"><span className="flex size-5 items-center justify-center rounded-md bg-primary text-[10px] text-primary-foreground">D</span>Dovo <span className="ml-auto text-[10px] font-normal text-muted-foreground">Workspace</span></div>;
 export const IconButton=({label,...props})=><Button variant="ghost" size="icon" aria-label={label} {...props}/>;
 export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}/>;`,
+    },
+    {
+      path: '@dovo/extension-scm/project-transfer',
+      contents: 'export const ProjectTransferDialog=()=>null;',
+    },
+    { path: '@dovo/extension-scm/projects', contents: 'export const ProjectSettings=()=>null;' },
+    {
+      path: '../dialogs/continue-elsewhere-dialog',
+      importer: root + '/packages/extension-tasks/src/detail/',
+      contents: 'export const ContinueElsewhereDialog=()=>null;',
     },
     {
       path: '../detail/resizable-sidebar',
@@ -119,21 +134,23 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
     {
       path: '../browser/browser-pane',
       importer: root + '/packages/extension-tasks/src/unified/',
-      contents: `import {useEffect,useRef,useState} from 'react';
+      contents: `import {useEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
+import {BrowserTabRow} from '${root}/packages/extension-tasks/src/browser/browser-tab-row';
+import {SnoozeDialog} from '${root}/packages/extension-tasks/src/dialogs/snooze-dialog';
 import {readSharedBrowserTabs,saveSharedBrowserTabs} from '${root}/packages/extension-tasks/src/browser/shared-browser-tabs';
 import {isPrivateBrowserProfile,wakeBrowserTab,settleBrowserTab,snoozeBrowserTab} from '@dovo/protocol';
 export const sharedBrowserWindowId=host=>host.browserWindowId;
 export const restoredSharedBrowserTabs=windowId=>readSharedBrowserTabs(windowId).state?.tabs;
 export function saveSharedBrowserWorkspaceTabs(tabs,windowId){const saved=readSharedBrowserTabs(windowId).state;const restorable=tabs.filter(tab=>!tab.previewOf&&!isPrivateBrowserProfile(tab.profileId));if(restorable.length)saveSharedBrowserTabs({tabs:restorable,active:restorable.some(tab=>tab.id===saved?.active)?saved.active:restorable[0].id,closed:saved?.closed??[]},windowId)}
 export function BrowserPane({workspaceControl:control,openLink,onLinkOpened}){
-useEffect(()=>{window.setBrowserActivity=states=>control.onActivityChange?.(states)},[control.onActivityChange]);
+const [snoozing,setSnoozing]=useState(null);window.openBrowserSnooze=setSnoozing;const [activity,setActivity]=useState({});window.setBrowserActivity=states=>{window.browserActivity=states;setActivity(states)};
 const [ownTabs,setOwnTabs]=useState(()=>restoredSharedBrowserTabs()??[]);const tabs=control.tabs??ownTabs;const setTabs=control.onSetTabs??setOwnTabs;const opened=useRef('');
 useEffect(()=>{if(!control.tabs)control.onSetTabs?.(ownTabs)},[control.tabs,ownTabs]);
 useEffect(()=>{control.onTabsChange(tabs,tabs.at(-1)?.id);saveSharedBrowserWorkspaceTabs(tabs)},[tabs]);
 useEffect(()=>{const req=control.lifecycleRequest;if(!req)return;setTabs(previous=>previous.map(tab=>tab.id!==req.tabId?tab:req.action==='pin'||req.action==='unpin'?{...wakeBrowserTab(tab),pinned:req.action==='pin'}:req.action==='settle'?settleBrowserTab(tab):req.action==='snooze'?snoozeBrowserTab(tab,req.until):wakeBrowserTab(tab)));control.onLifecycleHandled?.(req.requestId)},[control.lifecycleRequest?.requestId]);
 useEffect(()=>{if(!control.newTabRequest||opened.current===control.newTabRequest)return;opened.current=control.newTabRequest;const id='page-'+control.newTabRequest;setTabs(previous=>[...previous,{id,url:'',title:'New page',kind:'remote',profileId:'default'}]);control.onSelect(id)},[control.newTabRequest]);
 useEffect(()=>{if(!openLink)return;const id='link-'+openLink.id;setTabs(previous=>[...previous,{id,url:openLink.url,title:openLink.url,kind:'remote',profileId:'default'}]);window.openedUrls.push(openLink.url);control.onSelect(id);onLinkOpened()},[openLink?.id]);
-return <div data-browser={control.focusTabId}>Browser surface</div>}`,
+return <>{snoozing&&<SnoozeDialog name={snoozing.title} onClose={()=>setSnoozing(null)} onSnooze={until=>setTabs(previous=>previous.map(item=>item.id===snoozing.id?snoozeBrowserTab(item,until):item))}/>}<div data-browser={control.focusTabId}>Browser surface</div>{control.tabTargets?.map(target=>{const tab=tabs.find(tab=>tab.id===target.tabId);if(!tab)return null;return createPortal(<BrowserTabRow tab={tab} pinnedTile={target.pinnedTile} active={target.active} disabled={target.disabled} busy={target.disabled||!!tab.detached} state={activity[tab.id]} onMute={tab.kind==='web'?()=>{}:undefined} onError={()=>{}} onMenuOpen={()=>{}} onSelect={()=>{setTabs(previous=>previous.map(item=>item.id===tab.id?wakeBrowserTab(item):item));control.onSelect(tab.id)}} onPin={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?{...wakeBrowserTab(item),pinned:!item.pinned}:item))} onSettle={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?settleBrowserTab(item):item))} onSnooze={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?snoozeBrowserTab(item,Date.now()+3600000):item))} onCustomSnooze={()=>window.openBrowserSnooze(tab)} onClose={()=>setTabs(previous=>previous.filter(item=>item.id!==tab.id))} onHome={tab.pinned?()=>{}:undefined} onEditHome={tab.pinned?()=>{}:undefined} onKeepAwake={()=>{}} onMove={()=>{}} windows={[{id:2,title:'Other window'}]} studioId={'studio:local:browser:workspace:'+tab.id} />,target.element,target.key)})}</>}`,
     },
   ],
 )
@@ -512,13 +529,13 @@ try {
   )
   assert.equal(
     await pinnedSection.locator('[data-workspace-kind="thread"] .lucide-message-square').count(),
-    2,
+    0,
   )
   assert.equal(
     await pinnedSection.locator('[data-workspace-kind="terminal"] .lucide-square-terminal').count(),
     1,
   )
-  for (const title of ['Docs', 'Pinned local work', 'Pinned shell']) {
+  for (const title of ['Pinned local work', 'Pinned shell']) {
     for (const action of ['Unpin', 'Snooze', 'Settle']) {
       assert.equal(
         await pinnedSection
@@ -590,12 +607,18 @@ try {
           return {
             x: icon.x + icon.width / 2 - card.x - card.width / 2,
             y: icon.y + icon.height / 2 - card.y - card.height / 2,
+            width: icon.width,
+            height: icon.height,
           }
         }),
       )
       assert.ok(
         offsets.every(({ x, y }) => Math.abs(x) < 1 && Math.abs(y) < 1),
         JSON.stringify(offsets),
+      )
+      assert.ok(
+        offsets.every(({ width, height }) => width === 24 && height === 24),
+        'Pinned icons use the Browser workspace’s 24px size',
       )
     }
     await assertCenteredFavicons()
@@ -828,48 +851,62 @@ try {
       'Threads follow the entire pinned grid',
     )
     await tile.hover()
-    const actions = tile.locator('[data-workspace-actions]')
-    await page.waitForFunction(
-      () =>
-        getComputedStyle(document.querySelector('[data-pinned-page] [data-workspace-actions]'))
-          .opacity === '1',
+    assert.equal(
+      await tile.locator('.studio-browser-tab-actions,[data-workspace-actions]').count(),
+      0,
+      'Pinned pages have no hover toolbar',
     )
-    const buttons = await actions.getByRole('button').all()
-    for (const button of buttons) {
-      const bounds = await button.boundingBox()
-      assert.ok(
-        bounds.x >= tileBounds.x && bounds.x + bounds.width <= tileBounds.x + tileBounds.width + 1,
-        'Direct pinned actions fit inside the tile',
-      )
+    await tile.locator('[data-browser-tab-select]').focus()
+    assert.equal(
+      await tile.locator('.studio-browser-tab-actions,[data-workspace-actions]').count(),
+      0,
+      'Pinned pages keep actions in the context menu on keyboard focus too',
+    )
+    await page.screenshot({
+      path: '/tmp/dovo-unified-pinned-browser-hover.png',
+      animations: 'disabled',
+    })
+    const runtimeBeforeMenu = await page.evaluate(() => window.activeRuntimeId)
+    await tile.locator('[data-browser-tab-select]').click({ button: 'right' })
+    for (const action of [
+      'Unpin tab',
+      'Return to home',
+      'Edit home URL',
+      'Detach to new window',
+      'Detach without sidebars',
+      'Copy Studio ID (for agents)',
+    ]) {
       assert.equal(
-        await button.evaluate((element) => {
-          const bounds = element.getBoundingClientRect()
-          const hit = document.elementFromPoint(
-            bounds.x + bounds.width / 2,
-            bounds.y + bounds.height / 2,
-          )
-          return hit === element || element.contains(hit)
-        }),
+        await page.getByRole('menuitem', { name: action, exact: true }).isEnabled(),
         true,
-        'Every pinned action has a usable pointer target',
       )
     }
     await page.screenshot({
-      path: '/tmp/dovo-unified-pinned-browser-actions.png',
+      path: '/tmp/dovo-unified-pinned-browser-context.png',
       animations: 'disabled',
     })
-    await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
-    const snooze = tile.getByRole('button', { name: 'Snooze Docs', exact: true })
-    await snooze.focus()
-    await page.waitForFunction(
-      () =>
-        getComputedStyle(document.querySelector('[data-pinned-page] [data-workspace-actions]'))
-          .opacity === '1',
+    assert.equal(
+      await page.getByRole('menuitemcheckbox', { name: 'Keep awake', exact: true }).isEnabled(),
+      true,
     )
-    await page.keyboard.press('Enter')
-    await page.getByRole('menuitem', { name: 'For 1 hour', exact: true }).waitFor()
+    for (const action of ['Settle tab', 'Snooze until tomorrow', 'Close tab']) {
+      assert.equal(
+        await page.getByRole('menuitem', { name: action, exact: true }).isDisabled(),
+        true,
+        'Pinned tabs keep the Browser workspace’s lifecycle guards',
+      )
+    }
+    await page.getByRole('menuitem', { name: 'Move to another window', exact: true }).hover()
+    await page.getByRole('menuitem', { name: 'Other window', exact: true }).waitFor()
     await page.keyboard.press('Escape')
-    await snooze.evaluate((button) => button.blur())
+    await page.keyboard.press('Escape')
+    assert.equal(
+      await page.evaluate(() => window.activeRuntimeId),
+      runtimeBeforeMenu,
+      'Opening and dismissing the pinned menu preserves the active computer',
+    )
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
+    await tile.locator('[data-browser-tab-select]').evaluate((button) => button.blur())
     await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
   }
   // Replication copies share one logical row, with the same preference as Threads.
@@ -1307,7 +1344,10 @@ try {
     window.refresh()
   })
   const pinnedSelect = pinnedPages.first().locator('[data-browser-tab-select]')
-  assert.equal(await pinnedSelect.getAttribute('aria-label'), 'Docs · remote · Remote Default')
+  assert.equal(
+    await pinnedSelect.getAttribute('aria-label'),
+    'Docs Remote · remote · Remote Default',
+  )
   await pinnedSelect.focus()
   await page.keyboard.press('Enter')
   await page.waitForSelector('[data-browser="pinned-0"]:visible')
@@ -1487,7 +1527,7 @@ try {
   )
   assert.equal(await page.getByLabel('Workspace request').inputValue(), 'Keep the shared draft')
   assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'thread')
-  await workspaceRows.getByRole('button', { name: /^LAN browser ·/ }).click()
+  await workspaceRows.getByRole('button', { name: /^LAN browser Remote ·/ }).click()
   await page.waitForSelector('[data-browser="page"]:visible')
   await assertComposerHidden('browser')
   await returnHome()
@@ -1510,29 +1550,110 @@ try {
     if (!(await disclosure.evaluate((element) => element.open)))
       await disclosure.locator('summary').click()
   }
-  const hoverRow = async (title) => {
+  const openRowMenu = async (title) => {
     const sidebar = page.getByRole('complementary')
-    const button = page.getByRole('group', { name: `Actions for ${title}`, exact: true })
-    await sidebar
-      .locator('.studio-workspace-row,.studio-thread-row')
-      .filter({ has: button })
-      .last()
-      .hover()
+    const row = sidebar
+      .getByRole('group', { name: `Page: ${title}`, exact: true })
+      .or(sidebar.getByRole('group', { name: `Thread: ${title}`, exact: true }))
+      .or(sidebar.getByRole('group', { name: `Terminal: ${title}`, exact: true }))
+    await row.locator('[data-browser-tab-select],.studio-thread-card').click({ button: 'right' })
   }
-  const rowAction = async (title, action) => {
-    await hoverRow(title)
+  await openRowMenu('local thread')
+  for (const name of [
+    'Rename…',
+    'Copy',
+    'Project',
+    'Advanced',
+    'New thread',
+    'Archive thread',
+    'Delete thread…',
+  ])
+    assert.equal(await page.getByRole('menuitem', { name, exact: true }).isVisible(), true, name)
+  await page.screenshot({ path: '/tmp/dovo-unified-thread-context.png', animations: 'disabled' })
+  await page.keyboard.press('Escape')
+  await openRowMenu('remote shell')
+  for (const name of [
+    'Rename…',
+    'Split left/right',
+    'Split top/bottom',
+    'New terminal',
+    'Copy terminal ID',
+    'Close terminal…',
+  ])
+    assert.equal(await page.getByRole('menuitem', { name, exact: true }).isVisible(), true, name)
+  await page.screenshot({ path: '/tmp/dovo-unified-terminal-context.png', animations: 'disabled' })
+  await page.keyboard.press('Escape')
+  const menuRuntime = await page.evaluate(() => window.activeRuntimeId)
+  for (const [title, next] of [
+    ['remote thread', 'Renamed remote thread'],
+    ['Renamed remote thread', 'remote thread'],
+  ]) {
+    await openRowMenu(title)
+    await page.getByRole('menuitem', { name: 'Rename…', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Rename thread', exact: true })
+    await dialog.getByRole('textbox', { name: 'Title', exact: true }).fill(next)
+    await dialog.getByRole('button', { name: 'Save title', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' })
+    const call = await page.evaluate(() =>
+      window.calls.filter((call) => call.path === '/api/workspace').at(-1),
+    )
+    assert.equal(call.owner, 'remote', 'Thread rename uses its own computer')
+    assert.equal(call.input.changes.title.after, next)
+    assert.equal(await page.evaluate(() => window.activeRuntimeId), menuRuntime)
+    assert.equal(
+      await page
+        .getByLabel('Thread draft')
+        .evaluate((input, original) => input === original, threadDraft),
+      true,
+    )
+  }
+  await openRowMenu('local thread')
+  await page.getByRole('menuitem', { name: 'Project', exact: true }).hover()
+  await page.getByRole('menuitem', { name: 'Filter by project', exact: true }).click()
+  const clearProject = page.getByRole('button', {
+    name: 'Clear workspace project filter',
+    exact: true,
+  })
+  await clearProject.waitFor()
+  assert.equal(
     await page
       .getByRole('complementary')
-      .getByRole('button', { name: `${action} ${title}`, exact: true })
-      .click()
+      .getByRole('group', { name: 'Terminal: remote shell', exact: true })
+      .count(),
+    0,
+  )
+  await clearProject.click()
+  await page
+    .getByRole('complementary')
+    .getByRole('group', { name: 'Terminal: remote shell', exact: true })
+    .waitFor()
+  const rowAction = async (title, action) => {
+    await openRowMenu(title)
+    const browser = await page
+      .getByRole('menuitem', { name: 'Copy Studio ID (for agents)', exact: true })
+      .count()
+    const label = browser
+      ? ({ Pin: 'Pin tab', Unpin: 'Unpin tab', Settle: 'Settle tab', Reopen: 'Wake tab' }[action] ??
+        action)
+      : action
+    await page.getByRole('menuitem', { name: label, exact: true }).click()
   }
   const snoozeRow = async (title, duration = 'For 1 hour') => {
-    await hoverRow(title)
-    await page
-      .getByRole('complementary')
-      .getByRole('button', { name: `Snooze ${title}`, exact: true })
-      .click()
-    await page.getByRole('menuitem', { name: duration, exact: true }).click()
+    await openRowMenu(title)
+    if (
+      await page.getByRole('menuitem', { name: 'Copy Studio ID (for agents)', exact: true }).count()
+    ) {
+      const label =
+        duration === 'Unsnooze'
+          ? 'Wake tab'
+          : duration === 'Choose date and time…'
+            ? duration
+            : 'Snooze until tomorrow'
+      await page.getByRole('menuitem', { name: label, exact: true }).click()
+    } else {
+      await page.getByRole('menuitem', { name: 'Snooze', exact: true }).hover()
+      await page.getByRole('menuitem', { name: duration, exact: true }).click()
+    }
   }
   await page.evaluate(() => {
     const snapshot = window.computers[1].snapshot
@@ -1650,6 +1771,15 @@ try {
     0,
     'Offline overrides stale program work',
   )
+  await openRowMenu('Program build')
+  for (const action of ['Pin', 'Snooze', 'Settle']) {
+    assert.equal(
+      await page.getByRole('menuitem', { name: action, exact: true }).isDisabled(),
+      true,
+      'Offline terminal actions stay disabled in the context menu',
+    )
+  }
+  await page.keyboard.press('Escape')
   await page.evaluate(() => {
     window.computers[1].connected = true
     window.refresh()
@@ -1751,21 +1881,6 @@ try {
     window.computers[1].snapshot = { ...snapshot }
     window.refresh()
   })
-  await snoozeRow('Docs')
-  assert.equal(
-    await pinnedGrid.getByRole('group', { name: 'Page: Docs', exact: true }).count(),
-    1,
-    'Snoozed pinned pages remain in the compact grid',
-  )
-  await pinnedGrid.getByLabel('Snoozed', { exact: true }).waitFor()
-  await snoozeRow('Docs', 'Unsnooze')
-  await rowAction('Docs', 'Settle')
-  await pinnedGrid.getByLabel('Settled', { exact: true }).waitFor()
-  assert.equal(
-    await pinnedGrid.getByRole('button', { name: 'Reopen Docs', exact: true }).count(),
-    1,
-  )
-  await rowAction('Docs', 'Reopen')
   await rowAction('Docs', 'Unpin')
   assert.equal(await pinnedGrid.getByRole('group', { name: 'Page: Docs', exact: true }).count(), 0)
   await rowAction('Docs', 'Pin')
@@ -1847,15 +1962,13 @@ try {
     window.refresh()
   })
   await expandSection('Working')
-  await hoverRow('local thread')
+  await openRowMenu('local thread')
   assert.equal(
-    await page
-      .getByRole('complementary')
-      .getByRole('button', { name: 'Settle local thread', exact: true })
-      .isDisabled(),
+    await page.getByRole('menuitem', { name: 'Settle', exact: true }).isDisabled(),
     true,
     'Working threads cannot be settled',
   )
+  await page.keyboard.press('Escape')
   await page.evaluate(() => {
     window.computers[0].snapshot.workspace.tasks[0].status = 'draft'
     window.refresh()

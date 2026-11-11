@@ -34,6 +34,11 @@ function scopedTerminalLayout(scope: string, previousScope: string, anchor?: str
       }
     : saved
 }
+export type TerminalPaneCommand = {
+  requestId: string
+  action: 'split-columns' | 'split-rows' | 'close'
+}
+
 export function TerminalPane({
   taskId,
   onClose,
@@ -47,8 +52,12 @@ export function TerminalPane({
   onNewSession,
   sessionScopeId,
   onSessionsClosed,
+  command,
+  onCommandHandled,
 }: {
   taskId: string
+  command?: TerminalPaneCommand
+  onCommandHandled?: (id: string) => void
   onClose: () => void
   /** Select this session, for example after a chat command ran in it. */
   focusId?: string
@@ -316,7 +325,10 @@ export function TerminalPane({
       onNewSession?.()
       return
     }
-    if (split && splitLimit) return
+    if (split && splitLimit) {
+      setError(`A terminal can have at most ${MAX_TERMINAL_PANES} panes.`)
+      return
+    }
     const generation = currentScope.current.generation
     act(() =>
       request(
@@ -353,6 +365,24 @@ export function TerminalPane({
       }),
     )
   }
+  const handledCommand = useRef('')
+  useEffect(() => {
+    if (
+      !command ||
+      handledCommand.current === command.requestId ||
+      !visible ||
+      !connected ||
+      !shellReady ||
+      busy ||
+      closing ||
+      !active
+    )
+      return
+    handledCommand.current = command.requestId
+    if (command.action === 'close') askClose(group?.sessions ?? [active.id])
+    else create(command.action === 'split-columns' ? 'columns' : 'rows')
+    onCommandHandled?.(command.requestId)
+  }, [command?.requestId, visible, connected, shellReady, busy, closing, active?.id])
   useEffect(() => {
     if (!autoCreate || taskId === STUDIO_TERMINAL_SCOPE) return
     if (!visible) {

@@ -1449,32 +1449,6 @@ textarea {
   border-radius: 8px;
   background: color-mix(in srgb, var(--foreground) 5%, var(--sidebar));
 }
-/* Mixed rows keep the type beside the title and identity on the context line. */
-.studio-workspace-page.studio-browser-tab:not([data-pinned]) {
-  display: block;
-  padding: 0;
-  border-left-width: 2px;
-}
-.studio-workspace-page.studio-browser-tab:not([data-pinned]) .studio-browser-tab-select {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  padding: 6px 10px;
-}
-.studio-workspace-page .studio-browser-tab-favicon > :is(img, svg) {
-  width: 16px;
-  height: 16px;
-}
-.studio-workspace-page .studio-thread-card-title {
-  font-size: var(--dovo-type-row-size);
-  line-height: var(--dovo-type-row-line);
-  font-weight: var(--dovo-type-row-weight);
-}
-.studio-workspace-page.studio-browser-tab:not([data-pinned]) .studio-browser-tab-activity {
-  width: fit-content;
-  margin: 0 10px 6px auto;
-}
 /* Compact browser pins show the page first. Identity stays in the tooltip and accessible name. */
 .studio-browser-tab[data-pinned] {
   height: 56px;

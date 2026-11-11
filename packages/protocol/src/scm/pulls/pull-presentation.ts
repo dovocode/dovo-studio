@@ -31,6 +31,42 @@ export function pullState(pull: Pick<PullSummary, 'state' | 'draft'>): PullSigna
   if (pull.state === 'closed') return { label: 'Closed', tone: 'neutral' }
   return pull.draft ? { label: 'Draft', tone: 'neutral' } : { label: 'Open', tone: 'positive' }
 }
+export function pullChecksPending(pull: Pick<PullSummary, 'checksState'>) {
+  return [
+    'PENDING',
+    'EXPECTED',
+    'QUEUED',
+    'REQUESTED',
+    'RUNNING',
+    'IN_PROGRESS',
+    'WAITING',
+  ].includes(pull.checksState?.toUpperCase() ?? '')
+}
+
+export function pullCheckProgress(checks: PullDetail['checks']) {
+  let running = 0,
+    queued = 0,
+    pending = 0
+  for (const check of checks) {
+    const status = check.status.toUpperCase()
+    if (['RUNNING', 'IN_PROGRESS'].includes(status)) running++
+    else if (['QUEUED', 'REQUESTED'].includes(status)) queued++
+    else if (checkSignal(status).tone === 'warning') pending++
+  }
+  return {
+    running,
+    queued,
+    pending,
+    label: [
+      running ? `${running} running` : '',
+      queued ? `${queued} queued` : '',
+      pending ? `${pending} pending` : '',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  }
+}
+
 export function pullChecks(pull: PullSummary): PullSignal {
   if (pull.statusError) return { label: 'CI status unavailable', tone: 'warning' }
   if (pull.checksState === undefined) return { label: 'CI status not loaded', tone: 'neutral' }
@@ -41,7 +77,7 @@ export function pullChecks(pull: PullSummary): PullSignal {
     return { label: 'CI status: failed', tone: 'danger' }
   if (['PENDING', 'EXPECTED'].includes(status))
     return { label: 'CI status: pending', tone: 'warning' }
-  if (['RUNNING', 'IN_PROGRESS', 'QUEUED', 'WAITING'].includes(status))
+  if (['RUNNING', 'IN_PROGRESS', 'QUEUED', 'WAITING', 'REQUESTED'].includes(status))
     return { label: `CI status: ${checkSignal(status).label.toLowerCase()}`, tone: 'warning' }
   return {
     label: `CI status: ${pull.checksState.toLowerCase().replaceAll('_', ' ')}`,
@@ -85,8 +121,7 @@ export function pullNextStep(pull: PullSummary): PullSignal {
       label: pull.viewerIsAuthor ? 'Fix failing CI' : 'Inspect failing CI',
       tone: 'danger',
     }
-  if (['PENDING', 'EXPECTED'].includes(pull.checksState ?? ''))
-    return { label: 'Waiting for CI', tone: 'neutral' }
+  if (pullChecksPending(pull)) return { label: 'Waiting for CI', tone: 'neutral' }
   if (pull.reviewDecision === 'REVIEW_REQUIRED')
     return { label: 'Waiting for review', tone: 'neutral' }
   if (
@@ -205,8 +240,7 @@ export function pullMergeability(pull: PullDetail['pull']): PullSignal {
     return { label: 'Changes requested', tone: 'danger' }
   if (['FAILURE', 'ERROR'].includes(pull.checksState ?? ''))
     return { label: 'CI failed', tone: 'danger' }
-  if (['PENDING', 'EXPECTED'].includes(pull.checksState ?? ''))
-    return { label: 'Waiting for CI', tone: 'warning' }
+  if (pullChecksPending(pull)) return { label: 'Waiting for CI', tone: 'warning' }
   if (pull.reviewDecision === 'REVIEW_REQUIRED')
     return { label: 'Waiting for required reviews', tone: 'warning' }
   switch (pull.mergeStateStatus) {
@@ -229,13 +263,11 @@ export function pullMergeability(pull: PullDetail['pull']): PullSignal {
 }
 export function pullDetailChecks(detail: Pick<PullDetail, 'checks'>): PullSignal {
   const failed = detail.checks.filter((check) => checkSignal(check.status).tone === 'danger').length
-  const pending = detail.checks.filter(
-    (check) => checkSignal(check.status).tone === 'warning',
-  ).length
+  const progress = pullCheckProgress(detail.checks)
+  const pending = progress.running + progress.queued + progress.pending
   if (failed)
-    return { label: `${failed} failed${pending ? ` · ${pending} pending` : ''}`, tone: 'danger' }
-  if (pending)
-    return { label: `${pending} check${pending === 1 ? '' : 's'} pending`, tone: 'warning' }
+    return { label: `${failed} failed${pending ? ` · ${progress.label}` : ''}`, tone: 'danger' }
+  if (pending) return { label: progress.label, tone: 'warning' }
   const passed = detail.checks.filter(
     (check) => checkSignal(check.status).tone === 'positive',
   ).length

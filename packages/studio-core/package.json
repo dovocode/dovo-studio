@@ -11,6 +11,7 @@
     "./code-themes": "./src/code-themes.ts",
     "./theme-catalog": "./src/theme-catalog.ts",
     "./links": "./src/links/index.ts",
+    "./harness-handoff": "./src/use-harness-handoff.ts",
     "./state": "./src/runtime/application-state.ts",
     "./testing": "./src/testing.ts",
     "./pierre-theme": "./src/pierre-theme.ts",

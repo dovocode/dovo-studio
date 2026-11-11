@@ -892,6 +892,7 @@ export function WorkContent({
           )}
           {error && selected === initialSelected && initialSourceURL && (
             <a
+              data-dovo-external
               href={initialSourceURL}
               target="_blank"
               rel="noreferrer"

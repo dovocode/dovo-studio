@@ -29,7 +29,7 @@ export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/s
       const [defaults,setDefaults]=useState(null);
       window.configureDefaults=value=>setDefaults(value===null?null:decode(runtimeDefaultsSchema,value));
       window.defaultHarness=defaultTaskHarness('codex');
-      const [spaces,setSpaces]=useState({mac:{tasks:[{id:'mac-a',draft:''},{id:'mac-b',draft:''}]},remote:{tasks:[{id:'remote-a',draft:''}]}});
+      const repositories=[{id:'repo',name:'Project',path:'/project',gitIdentity:'github.com/team/project'}];const [spaces,setSpaces]=useState({mac:{repositories,tasks:[{id:'mac-a',draft:''},{id:'mac-b',draft:''}]},remote:{repositories,tasks:[{id:'remote-a',draft:''}]}});
       const switchRuntime=async id=>{if(window.holdSwitch){window.holdSwitch=false;await new Promise(resolve=>window.finishSwitch=resolve)}setRuntimeId(id);window.finishedSwitchId=id};
       window.switchRuntime=switchRuntime;window.spaces=spaces;
       const workspace=spaces[runtimeId];
@@ -73,12 +73,14 @@ const built = await build({
       import {useComposerDraft} from '../extension-tasks/src/chat/composer/use-composer-draft';
       window.allowSettings=true;
       function Composer({task}){const {controller,update}=useComposerDraft(task);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={text} onChange={e=>update(e.target.value)}/>;}
-      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const [closing,setClosing]=useState(false);const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output><button onClick={()=>setClosing(true)}>Close terminal tab</button>{closing&&<TerminalCloseDialog labels={['Terminal 1']} onCancel={()=>setClosing(false)} onConfirm={()=>setClosing(false)} onRestoreFocus={()=>document.querySelector('[aria-label="Message"]')?.focus()}/ >}{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
-      function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
+      function PipelineAnchor(){return <a href="https://github.com/team/project/actions/runs/42" onClick={()=>{window.innerPipelineClicks=(window.innerPipelineClicks||0)+1}}>Open pipeline link</a>}
+      function Pipelines({entityId,preview}){window.previewTarget=entityId;const host=useStudioHost();return <><p>{preview?'Embedded pipeline contents':'Full pipeline contents'}</p><button onClick={()=>host.goBack()}>Back from pipeline</button></>}
+      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const [closing,setClosing]=useState(false);const task=store.workspace.tasks.find(t=>t.id===entityId);return <><PipelineAnchor/><output id="selected">{task?.id||'fresh'}</output><button onClick={()=>setClosing(true)}>Close terminal tab</button>{closing&&<TerminalCloseDialog labels={['Terminal 1']} onCancel={()=>setClosing(false)} onConfirm={()=>setClosing(false)} onRestoreFocus={()=>document.querySelector('[aria-label="Message"]')?.focus()}/ >}{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
+      function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><PipelineAnchor/><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
       function Browser(){const {registerCommand,navigate}=useStudioHost();useEffect(()=>registerCommand({id:'browser.detach',title:'Detach browser',run:()=>{window.detachCalls=(window.detachCalls||0)+1;navigate({viewId:'tasks'})}}),[registerCommand,navigate]);return <p>Embedded browser</p>;}
       function Settings(){return <p>Settings section</p>;}
-      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
-      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} openBrowserWindow={async()=>{}} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
+      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'pipelines',title:'Pipelines',navigationGroup:'hidden',order:10,load:async()=>({default:Pipelines})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
+      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} openExternalLink={async url=>{window.externalURL=url}} openBrowserWindow={async()=>{}} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
     `,
   },
   bundle: true,
@@ -365,6 +367,42 @@ try {
     1,
     'Cancelled navigation must not detach later',
   )
+  await section('Threads')
+  await page.getByRole('button', { name: 'Select mac-a', exact: true }).click()
+  await selected('mac-a')
+  await page.getByRole('textbox', { name: 'Message' }).fill('Draft kept behind pipeline preview')
+  await page.getByRole('link', { name: 'Open pipeline link', exact: true }).click()
+  const pipelineDialog = page.getByRole('dialog', { name: 'Pipeline preview', exact: true })
+  await pipelineDialog.getByText('Embedded pipeline contents', { exact: true }).waitFor()
+  assert.equal(await page.locator('#selected').textContent(), 'mac-a')
+  assert.equal(await page.getByRole('dialog', { name: 'Open link', exact: true }).count(), 0)
+  assert.equal(await page.evaluate(() => window.innerPipelineClicks ?? 0), 0)
+  await pipelineDialog.getByRole('link', { name: 'Open URL', exact: true }).click()
+  assert.equal(
+    await page.evaluate(() => window.externalURL),
+    'https://github.com/team/project/actions/runs/42',
+  )
+  await page.keyboard.press('Escape')
+  await pipelineDialog.waitFor({ state: 'hidden' })
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message' }).inputValue(),
+    'Draft kept behind pipeline preview',
+  )
+  await page.getByRole('link', { name: 'Open pipeline link', exact: true }).click()
+  await pipelineDialog.getByRole('button', { name: 'Open details', exact: true }).click()
+  await page.getByText('Full pipeline contents', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back from pipeline', exact: true }).click()
+  await selected('mac-a')
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message' }).inputValue(),
+    'Draft kept behind pipeline preview',
+  )
+  await section('PRs')
+  await page.getByRole('link', { name: 'Open pipeline link', exact: true }).click()
+  await pipelineDialog.getByText('Embedded pipeline contents', { exact: true }).waitFor()
+  assert.equal(await page.getByText('PR section', { exact: true }).count(), 1)
+  await page.keyboard.press('Escape')
+  await pipelineDialog.waitFor({ state: 'hidden' })
   assert.deepEqual(errors, [])
   console.log(
     'Actual workbench navigation restores thread and real composer drafts across sections, keeps computer selections separate, respects settings cancellation and preserves fresh startup/New thread.',

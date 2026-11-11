@@ -1,13 +1,11 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { taskWaitingSchema, pipelineSignal, type taskWaitingRequestSchema } from '@dovo/protocol'
-import { useTaskWaiting, useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useTaskWaiting, useWorkspace } from '@dovo/studio-core'
 import { Card } from '@dovo/studio-ui'
 
 /** Read the watcher's saved snapshot. The client never polls the forge. */
 export function TaskPipelineProgress({ taskId, active }: { taskId: string; active: boolean }) {
   const { request, connected, activeRuntimeId, connection } = useWorkspace()
-  const { openExternalLink } = useStudioHost()
-  const [linkError, setLinkError] = useState('')
   const read = useCallback(
     (input: typeof taskWaitingRequestSchema.Type) =>
       request('/api/tasks/waiting', input, taskWaitingSchema),
@@ -40,17 +38,6 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
                 target="_blank"
                 rel="noreferrer"
                 title={`${item.project} · ${item.label}`}
-                onClick={
-                  openExternalLink
-                    ? (event) => {
-                        event.preventDefault()
-                        setLinkError('')
-                        void Promise.resolve(openExternalLink(item.url)).catch((cause) =>
-                          setLinkError(String(cause)),
-                        )
-                      }
-                    : undefined
-                }
               >
                 {item.project} · {item.label}
               </a>
@@ -75,11 +62,6 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
           </div>
         )
       })}
-      {!!linkError && (
-        <p role="alert" className="text-destructive">
-          {linkError}
-        </p>
-      )}
     </Card>
   )
 }

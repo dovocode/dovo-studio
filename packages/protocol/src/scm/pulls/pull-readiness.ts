@@ -1,10 +1,14 @@
 import type { PullDetail } from './pulls.js'
+import type { ForgePipeline } from '../forges/forge-work.js'
+import { pipelineSignal } from '../work/work-presentation.js'
 import {
   checkSignal,
   latestPullReviews,
   pullChecks,
   pullDetailReviews,
   pullMergeability,
+  pullChecksPending,
+  pullCheckProgress,
   type PullSignal,
   type PullTone,
 } from './pull-presentation.js'
@@ -44,9 +48,18 @@ function plural(count: number, word: string) {
 }
 
 /** Bars describe known reports, threads and reviewers; they are not repository rule percentages. */
-export function pullReadiness(detail: PullDetail, resources: PullReadinessResources) {
+export function pullReadiness(
+  detail: PullDetail,
+  resources: PullReadinessResources,
+  pipelines: readonly ForgePipeline[] = [],
+) {
   const { status, checks, discussion } = resources
   const provider = pullMergeability(detail.pull)
+  const activePipelines = pipelines.filter(
+    (run) =>
+      run.sha.toLowerCase() === detail.pull.headSha.toLowerCase() &&
+      pipelineSignal(run.status).phase === 'active',
+  ).length
   let headline = provider
   if (detail.pull.state === 'open' && !detail.pull.draft) {
     const missing = unavailable(status)
@@ -58,6 +71,16 @@ export function pullReadiness(detail: PullDetail, resources: PullReadinessResour
       }
     else if (saved(status) || detail.stale || detail.refreshError)
       headline = { label: 'Saved merge status', tone: 'warning' }
+  }
+  if (headline.tone === 'positive' && detail.pull.state === 'open' && !detail.pull.draft) {
+    const freshChecks = !saved(checks) && !unavailable(checks)
+    if (freshChecks && detail.checks.some((check) => checkSignal(check.status).tone === 'danger'))
+      headline = { label: 'CI failed', tone: 'danger' }
+    else if (
+      activePipelines ||
+      (freshChecks && detail.checks.some((check) => checkSignal(check.status).tone === 'warning'))
+    )
+      headline = { label: 'Waiting for CI', tone: 'warning' }
   }
   const description =
     headline.label === 'Saved merge status'
@@ -77,7 +100,7 @@ export function pullReadiness(detail: PullDetail, resources: PullReadinessResour
                   : headline.label === 'No merge conflicts'
                     ? 'No conflicts reported. Check the repository requirements before merging.'
                     : headline.label === 'Waiting for CI'
-                      ? 'Checks are still running for this commit.'
+                      ? 'Checks are queued or still running for this commit.'
                       : headline.label === 'Waiting for required reviews'
                         ? 'Waiting for the repository’s required reviews.'
                         : headline.label === 'Changes requested'
@@ -102,9 +125,10 @@ export function pullReadiness(detail: PullDetail, resources: PullReadinessResour
     ? detail.checks.filter((check) => check.status.toUpperCase() === 'SKIPPED').length
     : 0
   const other = (checkCounts.get('neutral') ?? 0) - skipped
+  const progress = pullCheckProgress(checks.ready ? detail.checks : [])
   const checkLabel = [
     checkCounts.get('danger') ? `${checkCounts.get('danger')} failed` : '',
-    checkCounts.get('warning') ? `${checkCounts.get('warning')} pending` : '',
+    progress.label,
     checkCounts.get('positive') ? `${checkCounts.get('positive')} passed` : '',
     skipped ? `${skipped} skipped` : '',
     other ? `${other} other` : '',
@@ -112,6 +136,28 @@ export function pullReadiness(detail: PullDetail, resources: PullReadinessResour
     .filter(Boolean)
     .join(' · ')
   let checkStatus = unavailable(checks)
+  const awaitingReports =
+    status.ready &&
+    !unavailable(status) &&
+    !saved(status) &&
+    !saved(checks) &&
+    !detail.stale &&
+    !detail.refreshError &&
+    pullChecksPending(detail.pull) &&
+    !checkCounts.has('warning')
+  if (checks.ready && !checkStatus && (awaitingReports || activePipelines)) {
+    checkStatus = {
+      label: [
+        checkLabel,
+        activePipelines
+          ? `${plural(activePipelines, 'pipeline')} pending`
+          : 'CI pending · waiting for check reports',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      tone: checkCounts.has('danger') ? 'danger' : 'warning',
+    }
+  }
   if (
     !checks.ready &&
     !checks.error &&
@@ -120,7 +166,9 @@ export function pullReadiness(detail: PullDetail, resources: PullReadinessResour
     !unavailable(status) &&
     !saved(status)
   ) {
-    const aggregate = pullChecks(detail.pull)
+    const aggregate: PullSignal = activePipelines
+      ? { label: `${plural(activePipelines, 'pipeline')} pending`, tone: 'warning' }
+      : pullChecks(detail.pull)
     checkStatus = { ...aggregate, label: `${aggregate.label} · details not loaded` }
   }
 

@@ -29,6 +29,25 @@ export const harnessNames: Record<Agent['provider'], string> = {
   cursor: 'Cursor',
   acp: 'ACP',
 }
+/** Picker-only view for an explicit handoff. Never save this task to the workspace. */
+export function harnessHandoffSelectionTask(task: Task, agent: Agent): Task {
+  return {
+    ...task,
+    status: 'draft',
+    agentId: '',
+    agentOverrides: undefined,
+    harness: decode(taskHarnessSchema, agent),
+    modelSelection: undefined,
+    providerLock: undefined,
+    harnessHandoff: undefined,
+    checkoutLocked: undefined,
+    messages: [],
+    turns: undefined,
+    queue: undefined,
+    consumedMessageIds: undefined,
+    sessionId: undefined,
+  }
+}
 export function taskHarnessChoices(
   task: Task,
   agents: Agent[],

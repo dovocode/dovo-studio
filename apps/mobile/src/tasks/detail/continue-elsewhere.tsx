@@ -29,7 +29,11 @@ import { Choice } from '../../ui/controls/choice'
 import { Switch } from '../../ui/controls/switch'
 import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
-import { harnessNames, taskHarnessChoices } from '../creation/harness-choices'
+import {
+  harnessNames,
+  taskHarnessChoices,
+  harnessHandoffSelectionTask,
+} from '../creation/harness-choices'
 
 /** Shared wording, so both choices describe the same handoff rules. */
 const keptHere = 'Provider sessions and credentials stay on this computer.'
@@ -58,22 +62,6 @@ const harnessSelection = (agent: Agent) =>
  * A draft-shaped view of the thread with the chosen harness. It lists every harness for an
  * explicit handoff only; ordinary harness settings keep the thread's provider lock.
  */
-const handoffChoiceTask = (task: Task, agent: Agent): Task => ({
-  ...task,
-  status: 'draft',
-  agentId: '',
-  agentOverrides: undefined,
-  harness: decode(taskHarnessSchema, agent),
-  modelSelection: undefined,
-  providerLock: undefined,
-  harnessHandoff: undefined,
-  checkoutLocked: undefined,
-  messages: [],
-  turns: undefined,
-  queue: undefined,
-  consumedMessageIds: undefined,
-  sessionId: undefined,
-})
 
 /** Continue a started thread with another harness, or on another computer. */
 export function ContinueElsewhere({
@@ -112,7 +100,7 @@ export function ContinueElsewhere({
   // Only a changed choice starts a new request.
   const attempt = useRef<{ key: string; payload: typeof continueHarnessSchema.Type } | null>(null)
   const availability = useHarnessAvailability(task.repositoryId, agents)
-  const view = handoffChoiceTask(task, agent)
+  const view = harnessHandoffSelectionTask(task, agent)
   const selection = harnessSelection(agent)
   const choices = taskHarnessChoices(
     view,

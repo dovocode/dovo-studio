@@ -1,3 +1,4 @@
+import { useLinuxXWayland } from './linux-window-backend.js'
 import { registerTerminalPorts } from './terminal-ports.js'
 import { registerRepositoryOpeners } from './repository-openers.js'
 import { registerBrowserWindows } from './browser-window.js'
@@ -77,6 +78,14 @@ import {
 
 // Electron uses BCP 47 language tags (en_US is en-US). Set before app readiness.
 app.commandLine.appendSwitch('lang', 'en-US')
+if (
+  useLinuxXWayland(
+    process.platform,
+    process.env,
+    app.commandLine.hasSwitch('ozone-platform') || app.commandLine.hasSwitch('ozone-platform-hint'),
+  )
+)
+  app.commandLine.appendSwitch('ozone-platform', 'x11')
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const startupProfile =

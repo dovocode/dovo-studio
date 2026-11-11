@@ -26,7 +26,7 @@ const built = await bundleBrowser(
       return {url:'',back:false,forward:false,mediaRequests:structuredClone(window.requests),captures:structuredClone(window.captures),callTabs:structuredClone(window.callTabs)};
     };
     window.requestCapture=async(kind='display')=>{
-      window.requests=[{id:crypto.randomUUID(),kind,key:'call-tab',profileId:'work',origin:'https://meet.example',video:kind==='display',audio:true,expiresAt:Date.now()+60000,sources:kind==='display'?[{key:'source-tab',title:'Development page',url:'http://localhost:3000',requester:false}]:undefined}];await window.pollMedia();
+      window.requests=[{id:crypto.randomUUID(),kind,key:'call-tab',profileId:'work',origin:'https://meet.example',video:kind==='display',audio:true,expiresAt:Date.now()+60000,sources:kind==='display'?[{key:'source-tab',title:'Development page',url:'http://localhost:3000',requester:false}]:undefined}];window.emitMediaChanged();
     };
     createRoot(document.getElementById('app')).render(<BrowserMediaControls/>);
   `,
@@ -41,8 +41,7 @@ const built = await bundleBrowser(
   [
     {
       path: '@dovo/studio-core',
-      contents:
-        'export const useStudioHost=()=>({browser:window.bridge}); export const useWorkspace=()=>({runtimes:window.runtimes});',
+      contents: `const listeners=new Set();const subscribe=listener=>{listeners.add(listener);return ()=>listeners.delete(listener)};window.emitMediaChanged=()=>{for(const listener of listeners)listener()};export const useStudioHost=()=>({browser:window.bridge,onBrowserMediaChange:subscribe}); export const useWorkspace=()=>({runtimes:window.runtimes});`,
     },
     {
       path: '@dovo/client-runtime',
@@ -80,9 +79,16 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => typeof window.pollMedia === 'function')
   assert.equal(await page.getByRole('dialog').count(), 0)
-  await page.evaluate(() => window.requestCapture())
+  await page.evaluate(() => {
+    window.shareRequestAt = performance.now()
+    window.requestCapture()
+  })
   const dialog = page.getByRole('dialog')
   await dialog.waitFor()
+  const initialPickerMs = await page.evaluate(() => performance.now() - window.shareRequestAt)
+  console.log(
+    `Sharing picker native event → visible dialog: ${initialPickerMs.toFixed(1)} ms (local fixture).`,
+  )
   assert.deepEqual(await dialog.getByRole('tab').allTextContents(), [
     'Tabs',
     'Threads',

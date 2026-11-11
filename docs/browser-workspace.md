@@ -4,7 +4,9 @@ Enable **Browser workspace** in **Settings → General → Experimental** (off b
 **Browser** in the activity bar to browse independently of a thread. The vertical recent-tab list
 puts the most recently visited tab first. Add a tab on this computer or a paired runtime, enter an
 address or search terms, and choose a browser profile in **Browser options** for a separate session.
-Tabs retain their computer and profile when you switch the active runtime.
+Tabs retain their computer and profile when you switch the active runtime. New blank tabs focus the
+starter address input in Browser and Unified. This also applies when a profile or private tab opens
+from the new-tab menu.
 
 The **Snoozed** and **Settled** tab sections use the thread section headers, counts and disclosure
 controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On
@@ -141,8 +143,12 @@ Call pages and PiP windows keep background rendering enabled. Opening another pa
 call previews as regular tabs. Moving a call to another Studio window reparents its existing native
 view, preserving media tracks and sharing controls. On Linux, document PiP requests a floating
 window on every workspace and reasserts its floating state after show/restore. X11 window-manager
-flags are verified by the native fixture; native Wayland stacking remains controlled by the
-compositor.
+flags are checked by the native fixture. On Wayland desktops with an available X display, Studio
+uses XWayland by default so the window manager can apply always-on-top controls. Restart Studio
+after updating. Explicit `--ozone-platform`, `--ozone-platform-hint` and
+`ELECTRON_OZONE_PLATFORM_HINT` settings take precedence. Pure Wayland systems without XWayland keep
+their native backend; their compositor controls stacking. The backend selection has unit coverage.
+The current local verification host uses X11; a real Wayland desktop still needs a check.
 
 Website notification clicks select the original tab in its owning Studio window and profile;
 service-worker notifications that call `clients.focus()` follow the same path. This does not enable
@@ -451,9 +457,9 @@ the desktop app is required; they never silently launch an application on the se
 ### Pinned windows without sidebars
 
 Right-click a pinned tab and choose **Detach without sidebars**. The window shows the address bar,
-page controls and page. The existing **Detach to new window** option keeps the tab sidebar. Both
-options keep the same page and browser profile. Closing a detached pinned window returns its page to
-the source window.
+page controls and page. It hides the new-tab button and dropdown. The existing **Detach to new
+window** option keeps the tab sidebar. Both options keep the same page and browser profile. Closing
+a detached pinned window returns its page to the source window.
 
 In a window without sidebars, new-page links (`target="_blank"` and `window.open`) open a floating
 link preview. This also applies when the normal browser link preference is **Open in new tab**.
@@ -476,3 +482,15 @@ pnpm exec vp test apps/desktop/electron/browser-window.test.ts apps/desktop/elec
 The shared browser renderer check covers local and remote preview adoption, nested links, window
 choices, cancellation, retries and remounts. Its native and remote boundaries use fixtures; it does
 not verify physical macOS or Windows windows.
+
+Browser sharing requests and source results send native change events to the requesting Studio
+window. The picker refreshes at once, while the one-second status poll remains as a recovery path.
+Tabs can appear before desktop source discovery completes. Source selection and approval remain
+manual. Verify with `node scripts/check-browser-media-browser.mjs` and
+`pnpm exec vp test apps/desktop/electron/browser-media.test.ts --maxWorkers=4`. The browser fixture
+measures event-to-dialog time; it does not measure OS source discovery.
+
+Browser tooltip detection includes text-only tooltips that ignore pointer events. When a visible
+tooltip overlaps a native page, Studio hides the native view behind its preview until the tooltip
+closes. This keeps the tooltip above website content without changing page focus. Verify with
+`node scripts/check-shared-browser-browser.mjs`.

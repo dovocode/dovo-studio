@@ -114,6 +114,19 @@ The panel adds no requests or polling. Desktop uses its existing check-report re
 check and discussion reads lazy and shows provider summaries until those sections load. Account,
 destination and commit matching still control which section data can appear together.
 
+Checks show separate running, queued and pending counts. If the provider reports pending CI before
+reports arrive, the panel shows **CI pending · waiting for check reports**. Completed reports alone
+do not clear this state. Desktop also uses already loaded, fresh pipeline runs for the exact PR head
+commit. A pending run keeps the panel waiting even when the provider's aggregate status says passed.
+Failed reports take priority. Saved runs do not establish current pipeline status.
+
+Pipeline links in threads and PRs open the built-in viewer in a dialog on desktop, web and mobile.
+The current page and draft stay in place. Select **Open details** to go to the full viewer, or
+**Open URL** to open the provider page. Each reported job shows one progress block per step in the
+workflow graph and job header. Colors show step status; the count includes finished and skipped
+steps. Unknown steps stay neutral. Jobs without step data show **Steps not reported**. This view
+uses existing pipeline reads.
+
 Verify with:
 
 ```sh
@@ -124,6 +137,9 @@ node scripts/check-pull-readiness-browser.mjs
 node scripts/check-pull-workspace-browser.mjs
 node scripts/check-pull-stability-browser.mjs
 node scripts/check-mobile-pull-handoff-browser.mjs
+node scripts/check-pull-pipelines-browser.mjs
+node scripts/check-section-thread-browser.mjs
+node scripts/check-mobile-integration-continuity-browser.mjs
 ```
 
 The panel check saves desktop and mobile screenshots under `work/pr-readiness`. Browser checks use

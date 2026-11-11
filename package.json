@@ -13,7 +13,7 @@
     "test:file-drafts:native": "node scripts/check-file-drafts-native.mjs",
     "test:clipboard:browser": "node scripts/check-clipboard-browser.mjs",
     "test:mobile-clipboard:browser": "node scripts/check-mobile-clipboard-browser.mjs",
-    "test:project-transfer:browser": "node scripts/check-project-transfer-browser.mjs && node scripts/check-thread-handoff-browser.mjs",
+    "test:project-transfer:browser": "node scripts/check-project-transfer-browser.mjs && node scripts/check-thread-handoff-browser.mjs && node scripts/check-inline-harness-handoff-browser.mjs",
     "test:directory-picker:browser": "node scripts/check-directory-picker-browser.mjs",
     "test:project-deletion:browser": "node scripts/check-project-deletion-browser.mjs && node scripts/check-mobile-project-deletion-browser.mjs",
     "dev": "pnpm --filter @dovo/design --filter @dovo/client-runtime... -r build && vp run --parallel dev",

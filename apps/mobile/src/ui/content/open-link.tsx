@@ -4,6 +4,7 @@ import {
   linkActions,
   useLinkController,
   type LinkAction as RouterAction,
+  type LinkTarget,
 } from '@dovo/studio-core/links'
 import * as Clipboard from 'expo-clipboard'
 import { previewUrl } from '@dovo/protocol'
@@ -12,7 +13,7 @@ import { router, usePathname } from 'expo-router'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Sheet, useSheetNavigation, type SheetHandle } from '../layout/sheet'
 import { SafeModal } from '../layout/safe-modal'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Linking, View } from 'react-native'
 import { Action } from '../controls/action'
 import WebView from 'react-native-webview'
@@ -20,6 +21,7 @@ import { Text } from './text'
 import { useTheme } from '../theme'
 
 export type LinkAction = Omit<RouterAction, 'id' | 'kind'>
+const PipelinePreview = lazy(() => import('../../scm/work/pipeline-preview'))
 let showLink: ((url: string, origin?: LinkOrigin, actions?: LinkAction[]) => void) | undefined
 
 export async function openAppLink(
@@ -59,8 +61,10 @@ export function LinkBrowser() {
   const { overviews, activeId } = useRuntime()
   const pathname = usePathname()
   const { controller, pending } = useLinkController()
+  const [pipeline, setPipeline] = useState<LinkTarget | null>(null)
   useEffect(() => {
     controller.cancel()
+    setPipeline(null)
   }, [controller, activeId, pathname])
   const picker = useRef<SheetHandle>(null)
   const [url, setUrl] = useState<string | null>(null)
@@ -68,15 +72,24 @@ export function LinkBrowser() {
   owner.current = overviews
   useEffect(() => {
     const show = (url: string, origin?: LinkOrigin, actions?: LinkAction[]) => {
+      if (pipeline || controller.getSnapshot()) return
+      const targets = resolveLinkTargets(url, owner.current, origin)
+      if (targets.length === 1 && targets[0].kind === 'pipeline' && !actions?.length) {
+        setPipeline(targets[0])
+        return
+      }
       controller.open({
         url,
         origin,
         onError: (cause) => Alert.alert('Could not open link', String(cause)),
         actions: linkActions(
           url,
-          resolveLinkTargets(url, owner.current, origin),
+          targets,
           {
-            details: (target) => router.push(linkTargetHref(target)),
+            details: (target) =>
+              target.kind === 'pipeline'
+                ? setPipeline(target)
+                : router.push(linkTargetHref(target)),
             browser: setUrl,
             external: (target) => Linking.openURL(target),
             copy: (target) => Clipboard.setStringAsync(target),
@@ -94,12 +107,21 @@ export function LinkBrowser() {
     return () => {
       if (showLink === show) showLink = undefined
     }
-  }, [controller])
+  }, [controller, pipeline])
   useEffect(() => {
     if (pending?.closing) picker.current?.dismiss()
   }, [pending])
   return (
     <>
+      {pipeline && (
+        <Suspense fallback={<Text>Loading pipeline…</Text>}>
+          <PipelinePreview
+            key={JSON.stringify(pipeline)}
+            target={pipeline}
+            onClose={() => setPipeline(null)}
+          />
+        </Suspense>
+      )}
       {pending && (
         <Sheet
           ref={picker}

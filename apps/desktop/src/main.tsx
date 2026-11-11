@@ -50,6 +50,7 @@ createRoot(root).render(
           browserWindowId={browserWindowId}
           browserPageOnly={!!browserWindowId && window.dovo?.browserPageOnly}
           openBrowserWindow={window.dovo?.openBrowserWindow}
+          onBrowserMediaChange={window.dovo?.onBrowserMediaChange}
           onBrowserWorkspaceFocus={window.dovo?.onBrowserWorkspaceFocus}
           popOutThread={window.dovo?.popOutThread}
           appInfo={window.dovo?.appInfo}

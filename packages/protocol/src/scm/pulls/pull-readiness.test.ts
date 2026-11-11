@@ -49,6 +49,86 @@ function comment(id: string, fields: Partial<PullComment> = {}): PullComment {
   }
 }
 
+it('keeps CI pending while check reports are empty or only completed jobs have arrived', () => {
+  for (const checksState of [
+    'PENDING',
+    'EXPECTED',
+    'queued',
+    'IN_PROGRESS',
+    'running',
+    'WAITING',
+  ]) {
+    const detail = fixture()
+    detail.pull.checksState = checksState
+    const empty = pullReadiness(detail, loaded)
+    expect(empty.headline.label).toBe('Waiting for CI')
+    expect(empty.metrics[0]?.signal).toEqual({
+      label: 'CI pending · waiting for check reports',
+      tone: 'warning',
+    })
+    expect(empty.metrics[0]?.segments).toEqual([])
+    detail.checks = [{ name: 'Build', status: 'SUCCESS' }]
+    const partial = pullReadiness(detail, loaded).metrics[0]!
+    expect(partial.signal.label).toContain('1 passed · CI pending')
+    expect(partial.signal.tone).toBe('warning')
+    expect(partial.segments).toEqual([])
+  }
+})
+
+it('distinguishes queued, running and expected reports without hiding failures', () => {
+  const detail = fixture()
+  detail.checks = ['QUEUED', 'IN_PROGRESS', 'EXPECTED', 'FAILURE'].map((status) => ({
+    name: status,
+    status,
+  }))
+  const summary = pullReadiness(detail, loaded)
+  expect(summary.headline.label).toBe('CI failed')
+  expect(summary.metrics[0]?.signal).toEqual({
+    label: '1 failed · 1 running · 1 queued · 1 pending',
+    tone: 'danger',
+  })
+})
+
+it('uses known pending pipelines only for the current commit without inventing check counts', () => {
+  const detail = fixture()
+  const run = {
+    id: '42',
+    title: 'CI',
+    url: 'https://github.com/team/repo/actions/runs/42',
+    ref: 'feature',
+    sha: detail.pull.headSha,
+    actor: 'dominic',
+    status: 'queued',
+    createdAt: '',
+    updatedAt: '',
+  }
+  const summary = pullReadiness(detail, loaded, [run])
+  expect(summary.headline.label).toBe('Waiting for CI')
+  expect(summary.metrics[0]?.signal).toEqual({ label: '1 pipeline pending', tone: 'warning' })
+  expect(summary.metrics[0]?.segments).toEqual([])
+  const unloaded = pullReadiness(detail, { ...loaded, checks: { ready: false } }, [run])
+  expect(unloaded.headline.label).toBe('Waiting for CI')
+  expect(unloaded.metrics[0]?.signal).toEqual({
+    label: '1 pipeline pending · details not loaded',
+    tone: 'warning',
+  })
+  expect(pullReadiness(detail, loaded, [{ ...run, sha: 'c'.repeat(40) }]).headline.label).toBe(
+    'Ready to merge',
+  )
+  detail.pull.mergeable = false
+  expect(pullReadiness(detail, loaded, [run]).headline.label).toBe('Merge conflicts')
+})
+
+it('keeps cached pending states distinct from current pending reports', () => {
+  const detail = fixture()
+  detail.pull.checksState = 'PENDING'
+  const offline = { ready: true, readConnected: false }
+  const summary = pullReadiness(detail, { status: offline, checks: offline, discussion: offline })
+  expect(summary.headline.label).toBe('Saved merge status')
+  expect(summary.metrics[0]?.signal.tone).toBe('neutral')
+  expect(summary.metrics[0]?.signal.label).toContain('saved')
+})
+
 it('uses provider merge readiness and keeps conflict-free distinct from ready to merge', () => {
   const detail = fixture()
   expect(pullReadiness(detail, loaded).headline.label).toBe('Ready to merge')
@@ -67,7 +147,7 @@ it('counts mixed checks without treating skipped or unknown reports as passed', 
   )
   const metric = pullReadiness(detail, loaded).metrics[0]!
   expect(metric.signal).toEqual({
-    label: '1 failed · 1 pending · 1 passed · 1 skipped · 1 other',
+    label: '1 failed · 1 running · 1 passed · 1 skipped · 1 other',
     tone: 'danger',
   })
   expect(metric.segments).toEqual([

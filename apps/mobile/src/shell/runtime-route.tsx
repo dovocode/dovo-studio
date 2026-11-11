@@ -19,6 +19,7 @@ type RuntimeRouteProps = {
   title: string
   backTo: '/issues' | '/pulls' | '/settings/automations'
   children: ReactNode
+  onBack?: () => void
 }
 export function RuntimeRoute(props: RuntimeRouteProps) {
   const { overviews } = useRuntime()
@@ -37,6 +38,7 @@ function RuntimeRouteContent({
   title,
   backTo,
   children,
+  onBack,
 }: RuntimeRouteProps) {
   const { colors, styles } = useTheme()
 
@@ -73,7 +75,9 @@ function RuntimeRouteContent({
       <ScreenHeader
         title={title}
         subtitle={owner?.name}
-        leading={<Action secondary label="Back" onPress={() => backToCollection(backTo)} />}
+        leading={
+          <Action secondary label="Back" onPress={onBack ?? (() => backToCollection(backTo))} />
+        }
       />
       <View style={styles.content}>
         {!ready ? (

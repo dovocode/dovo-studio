@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { PipelineStepProgress } from './pipeline-step-progress'
 import { useForegroundInterval } from '../../../runtime/state/app-active'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { Pressable, View } from 'react-native'
@@ -294,6 +295,7 @@ function PipelineJob({
             <WorkSignal status={job.status} />
             {duration && <Text style={styles.muted}>· {duration}</Text>}
           </View>
+          <PipelineStepProgress job={job} />
         </View>
         <Icon name={expanded ? 'down' : 'next'} size={13} color={colors.muted} />
       </Pressable>
@@ -469,6 +471,7 @@ export function PipelineJobs({
                               <WorkSignal status={job.status} />
                               <Text style={styles.muted}>{pipelineDuration(job, now)}</Text>
                             </View>
+                            <PipelineStepProgress job={job} />
                           </Pressable>
                         )
                       )

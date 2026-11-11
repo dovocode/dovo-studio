@@ -137,7 +137,7 @@ const section=input.section??'options';
 if(window.blockedPipeline.includes(section))await new Promise(resolve=>(window.pipelineReleases[section]??=[]).push(resolve));
 if(window.failedPipeline.includes(section))throw Error(section+' temporarily unavailable');
 if(section==='options')return decode(schema,{...pipelineOptions,destination:window.remote});
-return decode(schema,{destination:window.remote,run:{...pipelineRun,destination:window.remote},jobs:section==='jobs'?[{id:'job',name:'Mobile compile',status:'success',url:pipelineRun.url,steps:[]}]:[],graph:section==='graph'?[{id:'compile',name:'Mobile compile',jobIds:[],needs:[]}]:undefined});
+const displayedRun=input.id==='7'?{...pipelineRun,id:'7',url:'https://github.com/team/project/actions/runs/7'}:pipelineRun;return decode(schema,{destination:window.remote,run:{...displayedRun,destination:window.remote},jobs:section==='jobs'?[{id:'job',name:'Mobile compile',status:'success',url:pipelineRun.url,steps:[]}]:[],graph:section==='graph'?[{id:'compile',name:'Mobile compile',jobIds:[],needs:[]}]:undefined});
 }
 if(path.endsWith('/detail'))return decode(schema,pull);
 throw Error('Unexpected request '+path);
@@ -254,6 +254,25 @@ try {
         : label === 'Pipeline'
           ? 'Open pipeline details'
           : 'Open issue details'
+    if (label === 'Pipeline') {
+      const preview = page.getByRole('region', { name: 'Pipeline preview', exact: true })
+      await preview.waitFor()
+      await preview.getByText('Mobile pipeline build', { exact: true }).waitFor()
+      assert.equal(await preview.getByRole('alert').count(), 0)
+      assert.equal(await page.getByRole('region', { name: 'Open link', exact: true }).count(), 0)
+      assert.equal(await page.evaluate(() => window.nav.length), navigationCount)
+      await preview.getByRole('button', { name: 'Open URL', exact: true }).click()
+      assert.equal(
+        await page.evaluate(() => window.external.at(-1)),
+        'https://github.com/team/project/actions/runs/7',
+      )
+      await preview.getByRole('button', { name: 'Open details', exact: true }).click()
+      await page.waitForFunction((count) => window.nav.length > count, navigationCount)
+      const target = await page.evaluate(() => window.nav.at(-1))
+      assert.equal(target.params.runtimeId, 'one', 'Pipeline preview keeps the Markdown owner')
+      assert.ok(target.pathname.startsWith(pathname))
+      continue
+    }
     await page.getByRole('region', { name: 'Open link', exact: true }).waitFor()
     assert.equal(await page.getByRole('region', { name: 'Open link', exact: true }).count(), 1)
     await page.getByRole('button', { name: detailLabel, exact: true }).click()

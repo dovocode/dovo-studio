@@ -53,6 +53,7 @@ export function usePullPipelineRuns({
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [notice, setNotice] = useApplicationState('')
+  const [fresh, setFresh] = useApplicationState(false)
   const generation = useRef(0)
   const pending = useRef(false)
   const stored = useRef<ForgePipeline[]>([])
@@ -139,6 +140,7 @@ export function usePullPipelineRuns({
         depth.current = cursor ? Math.min(500, depth.current + 1) : pages
         setRuns(items)
         setNext(page.next)
+        setFresh(!page.stale && !page.refreshError)
         setError(page.refreshError ?? '')
         try {
           await readCache?.write(cacheKey, {
@@ -152,6 +154,7 @@ export function usePullPipelineRuns({
         }
       } catch (cause) {
         if (current === generation.current) {
+          setFresh(false)
           setError(cause instanceof Error ? cause.message : String(cause))
         }
       } finally {
@@ -175,6 +178,7 @@ export function usePullPipelineRuns({
     setNext(undefined)
     setError('')
     setNotice('')
+    setFresh(false)
     hydrated.current = (async () => {
       try {
         const cached = await readCache?.read(cacheKey, savedRunsSchema)
@@ -222,6 +226,7 @@ export function usePullPipelineRuns({
     connected,
     request,
     runs,
+    fresh,
     next,
     busy,
     error,

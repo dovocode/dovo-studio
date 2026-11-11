@@ -5,6 +5,7 @@ import {
   latestPullReviews,
   pullCommentSignal,
   pullMergeability,
+  pullChecksPending,
   type PullComment,
   type PullDetail,
   type PullSignal,
@@ -96,7 +97,11 @@ export function PullStatus({
           Checks · {checks.length}
         </Text>
         {!checks.length && (
-          <Text style={styles.muted}>No checks returned. See any loading warnings above.</Text>
+          <Text style={styles.muted}>
+            {pullChecksPending(detail.pull)
+              ? 'CI is pending. Waiting for the pipeline to report its checks for this commit.'
+              : 'No checks returned. See any loading warnings above.'}
+          </Text>
         )}
         {checks.map((check, index) => (
           <View key={`${check.name}-${index}`} style={{ gap: 8 }}>

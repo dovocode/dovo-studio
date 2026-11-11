@@ -42,6 +42,9 @@ export interface StudioPullTarget {
   connectionId?: string
 }
 export interface StudioViewProps {
+  /** Render a linked item inside a dialog without changing shell navigation. */
+  preview?: boolean
+  onClose?: () => void
   nativeAgentKey?: string
   threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
@@ -98,6 +101,8 @@ export interface StudioHostApi {
   browserWindowId?: string
   browserPageOnly?: boolean
   openBrowserWindow?: () => Promise<void>
+  /** Refresh native sharing prompts and source discovery without waiting for a poll. */
+  onBrowserMediaChange?: (listener: () => void) => () => void
   /** Wake tab adoption immediately after a native browser-window handoff. */
   onBrowserWorkspaceFocus?: (listener: () => void) => () => void
   defaultBrowser?: import('@dovo/protocol').DefaultBrowserBridge

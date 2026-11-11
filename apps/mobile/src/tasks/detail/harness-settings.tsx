@@ -1,4 +1,6 @@
 import { HarnessModelPicker } from '../../agents/harness-model-picker'
+import { useHarnessHandoff } from '@dovo/studio-core/harness-handoff'
+import { runClientEffect } from '@dovo/client-runtime'
 import {
   taskModelSelectionDifficultySchema,
   automaticDifficultyChoices,
@@ -10,6 +12,8 @@ import {
   agentTurnSettings,
   queuedModelAgent,
   type TurnSettings,
+  taskHarnessSchema,
+  responses,
 } from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
@@ -46,6 +50,7 @@ import {
   taskHarnessChanges,
   taskHarnessChoices,
   taskHarnessSelection,
+  harnessHandoffSelectionTask,
 } from '../creation/harness-choices'
 export function HarnessSettings({
   task,
@@ -70,11 +75,19 @@ export function HarnessSettings({
 
   const { snapshot, connected, profile, callEffect, previewTaskEffect } = useRuntime(),
     { act, busy, error } = useAction()
+  const handoff = useHarnessHandoff({
+    task: turn?.value ? { ...task, draftTurnSettings: task.draftTurnSettings ?? turn.value } : task,
+    scope: JSON.stringify([profile?.id, profile?.connection]),
+    supported: snapshot?.threadHandoffsSupported === true && !turn?.beforeMessageId,
+    connected,
+    request: (input) =>
+      runClientEffect(callEffect('/api/tasks/continue-harness', input, responses.ok)),
+  })
   useEffect(() => {
     // An inline editor must keep its enclosing sheet mounted until saving finishes.
-    onBusyChange?.(busy)
+    onBusyChange?.(busy || handoff.busy)
     return () => onBusyChange?.(false)
-  }, [busy, onBusyChange])
+  }, [busy, handoff.busy, onBusyChange])
   const agents = resolveScopedAgents(
     snapshot?.defaults,
     snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
@@ -94,11 +107,14 @@ export function HarnessSettings({
     ? { ...task, agentId: '', agentOverrides: undefined, harness: agent, modelSelection: undefined }
     : task
   const selection = taskHarnessSelection(selectionTask)
+  const pickerTask = handoff.available
+    ? harnessHandoffSelectionTask(selectionTask, agent)
+    : selectionTask
   const custom = selection.startsWith('agent:')
   const installations = snapshot?.acpInstallations ?? []
   const availability = useHarnessAvailability(task.repositoryId, agents)
   const choices = taskHarnessChoices(
-    task,
+    pickerTask,
     agents,
     installations,
     snapshot?.defaults?.modelPreferences,
@@ -111,9 +127,28 @@ export function HarnessSettings({
     (choice) => choice.id === selection && choice.provider === agent.provider,
   )
   const controlsDisabled =
-    busy || (!turn && task.status === 'running') || !!task.archivedAt || !connected
+    busy || handoff.busy || (!turn && task.status === 'running') || !!task.archivedAt || !connected
   const save = (next: Agent, nextSelection = selection) => {
     if (controlsDisabled) return
+    if (
+      handoff.available &&
+      (next.provider !== defaultAgent.provider ||
+        (next.provider === 'acp' &&
+          (next.acpInstallationId ?? '') !== (defaultAgent.acpInstallationId ?? '')))
+    ) {
+      const issue = permissionPolicyUIIssue(next, snapshot?.permissionPolicySupported === true)
+      if (issue) {
+        setTurnError(issue)
+        return
+      }
+      if (!supportsAccess(next.provider, next.permission)) {
+        setTurnError('This access mode is unavailable for this harness.')
+        return
+      }
+      setTurnError('')
+      void handoff.choose(decode(taskHarnessSchema, next))
+      return
+    }
     if (turn) {
       const issue = permissionPolicyUIIssue(next, snapshot?.permissionPolicySupported === true)
       if (issue) {
@@ -295,12 +330,49 @@ export function HarnessSettings({
           {error || turnError}
         </Text>
       )}
+      {handoff.pending && (
+        <View style={{ gap: 8 }}>
+          <Text style={styles.muted}>
+            Continue with {harnessNames[handoff.pending.provider]}. Your saved conversation stays in
+            this thread.
+          </Text>
+          <Action
+            label={
+              handoff.busy
+                ? 'Switching…'
+                : task.status === 'running'
+                  ? 'Stop and switch harness'
+                  : 'Retry harness switch'
+            }
+            disabled={!connected || handoff.busy}
+            onPress={() => {
+              void handoff.confirm()
+            }}
+          />
+          <Action
+            label="Cancel harness switch"
+            secondary
+            disabled={handoff.busy}
+            onPress={handoff.cancel}
+          />
+        </View>
+      )}
+      {!!handoff.error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {handoff.error}
+        </Text>
+      )}
+      {!!handoff.notice && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          {handoff.notice}
+        </Text>
+      )}
       {(turn || (task.modelSelection !== 'auto' && task.modelSelection !== 'smart')) && (
         <>
           {!advanced && (
             <>
               <HarnessModelPicker
-                task={selectionTask}
+                task={pickerTask}
                 agents={agents}
                 choices={choices}
                 selection={selection}
@@ -350,7 +422,7 @@ export function HarnessSettings({
                   ? `${agent.name} uses its saved instructions, skills and MCP servers. Model and access changes apply only to this task.`
                   : 'Choose a built-in provider, installed ACP agent or saved custom agent.'}
               </Text>
-              {providerLocked && (
+              {providerLocked && !handoff.available && (
                 <Text style={styles.muted}>
                   {lockedProvider
                     ? `This thread uses ${harnessNames[lockedProvider]}. Choose any ${harnessNames[lockedProvider]} agent or model; start a new task to change provider.`

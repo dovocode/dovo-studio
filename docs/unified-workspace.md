@@ -51,10 +51,12 @@ navigation above the normal Threads, Browser and Terminals modes. These remain i
 An additional **Hide normal modes** preference can hide those choices while Unified is enabled; it
 is off by default. Disabling Unified restores the normal modes. Its sidebar mixes browser pages,
 threads and standalone terminals, with search, computer and type filters under **Filter workspace**.
-Threads keep their project icon and familiar project/title/branch layout, with a small message
-bubble underneath. Pages retain their favicon and profile initials, with a small browser mark
-underneath. Standalone terminals use the thread layout with a terminal icon. Pinned browser pages
-keep the Browser workspace's compact tiles, above pinned thread and terminal rows. The overview
+Threads render the same `TaskRow` component as Threads, with its project icon, title, branch and
+status. Pages render the Browser workspace's `BrowserTabRow`, including its favicon, title,
+computer/profile label, unread badge and media indicators. Unified adds no extra thread or browser
+type icon. Standalone terminals share their row with Terminals. Pinned pages use the same browser
+tile component, icon size and selection styling as Browser, above pinned thread and terminal rows.
+The overview uses the same row components; pinned pages use a normal tab row there. The overview
 centers the routing input, with compact creation actions. The shared input appears only on
 **Workspace home**, which shows a mixed **Continue working** list and retains open views and drafts.
 Select items in the sidebar to work inside one workspace, without a horizontal tab strip. Hidden
@@ -65,18 +67,24 @@ sidebar. Opening a thread selects its owning computer; remote terminal and brows
 remain scoped to their owners. Remote terminals use existing pairing, rather than direct SSH
 connections.
 
-**Pin**, **Snooze** and **Settle/Reopen** appear as direct row actions, revealed on hover or
-keyboard focus and kept accessible on touch screens. Status sections keep all resource types mixed.
-Pinned items appear first, and settled or snoozed items remain available to reopen or unsnooze.
-Settling a thread follows the existing thread rules. Settling or snoozing a terminal keeps working,
-blocked and unreported jobs running. A remembered agent with an exact recovery target may release
-its PTY once the program explicitly reports **Idle** or **Done** through a supported lifecycle hook
-or OSC 7501. Restoring it resumes that exact conversation; concurrent restores open one process.
-Multiplexers stay live. Automatic sleep checks for background jobs and helper processes; unknown or
-wrapped process trees stay live. Windows terminals currently stay live until runtime shutdown. Tools
-without those activity reports stay running until runtime shutdown. Foreground-process detection
-alone never authorizes sleeping. Terminal metadata is shared through its owning runtime for paired
-clients, and remembered metadata survives restarts.
+Unified uses the full Browser and Thread right-click menus. BrowserPane renders its own tab rows
+into Unified, so native window actions, home URL controls and dialogs use the same handlers. Pinned
+browser tabs have no hover toolbar. Their menu keeps Browser’s existing guards: unpin a tab before
+settling, snoozing or closing it. Threads keep their rename, project, copy, handoff, archive and
+delete actions. Terminals and Unified share a terminal menu with rename, split, new terminal, copy
+working directory, copy terminal ID and close actions. Close asks for confirmation. Split and close
+use the session’s owning computer, without changing the active thread’s computer. Other rows also
+show direct lifecycle actions on hover or keyboard focus and on touch screens. Status sections keep
+all resource types mixed. Pinned items appear first, and settled or snoozed items remain available
+to reopen or unsnooze. Settling a thread follows the existing thread rules. Settling or snoozing a
+terminal keeps working, blocked and unreported jobs running. A remembered agent with an exact
+recovery target may release its PTY once the program explicitly reports **Idle** or **Done** through
+a supported lifecycle hook or OSC 7501. Restoring it resumes that exact conversation; concurrent
+restores open one process. Multiplexers stay live. Automatic sleep checks for background jobs and
+helper processes; unknown or wrapped process trees stay live. Windows terminals currently stay live
+until runtime shutdown. Tools without those activity reports stay running until runtime shutdown.
+Foreground-process detection alone never authorizes sleeping. Terminal metadata is shared through
+its owning runtime for paired clients, and remembered metadata survives restarts.
 
 Terminal activity follows the program-reported approach used by
 [Herdr Core](https://github.com/herdrdev/herdr-core#status-comes-from-the-program). Dovo observes

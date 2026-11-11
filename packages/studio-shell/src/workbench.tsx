@@ -14,6 +14,7 @@ import {
 } from '@dovo/studio-core/links'
 import { configuredTaskHarness, decodeWorkTarget, encodeWorkTarget } from '@dovo/protocol'
 import { useLinkChooser } from './link-chooser'
+import { PipelineLinkDialog } from './pipeline-link-dialog'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import {
   lazy,
@@ -73,6 +74,7 @@ type WorkbenchProps = {
   browserWindowId?: string
   browserPageOnly?: boolean
   openBrowserWindow?: StudioHostApi['openBrowserWindow']
+  onBrowserMediaChange?: StudioHostApi['onBrowserMediaChange']
   onBrowserWorkspaceFocus?: (listener: () => void) => () => void
   defaultBrowser?: StudioHostApi['defaultBrowser']
   browser?: StudioHostApi['browser']
@@ -211,6 +213,7 @@ function WorkbenchContent({
   browserPageOnly,
   openBrowserWindow,
   onBrowserWorkspaceFocus,
+  onBrowserMediaChange,
   openBrowserLink,
   accountStorage,
   openExternalLink,
@@ -545,7 +548,8 @@ function WorkbenchContent({
     },
     [canLeave, switchRuntime, commitNavigation, setSwitchError, browserWindowId, popOutThread],
   )
-  const openLinkTarget = (destination: LinkTarget) => {
+  const [pipelinePreview, setPipelinePreview] = useState<LinkTarget | null>(null)
+  const navigateLinkTarget = (destination: LinkTarget) => {
     if (destination.kind === 'pull') {
       void navigate({
         viewId: 'pulls',
@@ -575,6 +579,10 @@ function WorkbenchContent({
           url: destination.url,
         }),
       })
+  }
+  const openLinkTarget = (destination: LinkTarget) => {
+    if (destination.kind === 'pipeline') setPipelinePreview(destination)
+    else navigateLinkTarget(destination)
   }
   const linkOrigin = (): LinkOrigin => {
     const integration = target.pullTarget ?? decodeWorkTarget(target.entityId)
@@ -630,11 +638,38 @@ function WorkbenchContent({
       openExternalLink ? openExternalLink(url) : window.open(url, '_blank', 'noopener,noreferrer'),
     onError: (cause) => setSwitchError(cause instanceof Error ? cause.message : String(cause)),
   })
-  const linkRouting = useRef({ browser, browserWorkspaceEnabled, browserProfiles, chooseLink })
-  linkRouting.current = { browser, browserWorkspaceEnabled, browserProfiles, chooseLink }
+  const linkRouting = useRef({
+    browser,
+    browserWorkspaceEnabled,
+    browserProfiles,
+    chooseLink,
+    linkOrigin,
+    linkTargets,
+  })
+  linkRouting.current = {
+    browser,
+    browserWorkspaceEnabled,
+    browserProfiles,
+    chooseLink,
+    linkOrigin,
+    linkTargets,
+  }
   const openLink = useCallback(
     (url: string, options?: LinkOptions) => {
-      const { browser, browserWorkspaceEnabled, browserProfiles, chooseLink } = linkRouting.current
+      const {
+        browser,
+        browserWorkspaceEnabled,
+        browserProfiles,
+        chooseLink,
+        linkOrigin,
+        linkTargets,
+      } = linkRouting.current
+      const origin = { ...linkOrigin(), ...options?.origin }
+      const pipelines = linkTargets(url, origin).filter((target) => target.kind === 'pipeline')
+      if (!options?.actions?.length && !options?.signal?.aborted && pipelines.length === 1) {
+        setPipelinePreview(pipelines[0])
+        return
+      }
       if (
         browser &&
         browserWorkspaceEnabled &&
@@ -650,6 +685,7 @@ function WorkbenchContent({
   )
   useEffect(() => {
     cancelLink()
+    setPipelinePreview(null)
   }, [navigationKey, runtimeRegistry.activeId, cancelLink])
   useEffect(() => (!browser ? onOpenLink?.(openLink) : undefined), [onOpenLink, openLink, browser])
   useEffect(
@@ -752,6 +788,7 @@ function WorkbenchContent({
       browserExtensions,
       onBrowserContextAction,
       onBrowserWorkspaceFocus,
+      onBrowserMediaChange,
       browserWindowId,
       browserPageOnly,
       openBrowserWindow,
@@ -782,6 +819,7 @@ function WorkbenchContent({
       browserExtensions,
       onBrowserContextAction,
       onBrowserWorkspaceFocus,
+      onBrowserMediaChange,
       browserWindowId,
       browserPageOnly,
       openBrowserWindow,
@@ -1020,6 +1058,31 @@ function WorkbenchContent({
             <main
               className="studio-main"
               tabIndex={-1}
+              onClickCapture={(event) => {
+                if (
+                  event.defaultPrevented ||
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return
+                const anchor =
+                  event.target instanceof Element ? event.target.closest('a[href]') : null
+                if (
+                  !(anchor instanceof HTMLAnchorElement) ||
+                  anchor.hasAttribute('data-dovo-external') ||
+                  !/^https?:\/\//i.test(anchor.href) ||
+                  !linkTargets(anchor.href, linkOrigin()).some(
+                    (target) => target.kind === 'pipeline',
+                  )
+                )
+                  return
+                event.preventDefault()
+                event.stopPropagation()
+                openLink(anchor.href)
+              }}
               onClick={(event) => {
                 if (
                   event.defaultPrevented ||
@@ -1032,7 +1095,11 @@ function WorkbenchContent({
                   return
                 const anchor =
                   event.target instanceof Element ? event.target.closest('a[href]') : null
-                if (!(anchor instanceof HTMLAnchorElement) || anchor.dataset.dovoExternal) return
+                if (
+                  !(anchor instanceof HTMLAnchorElement) ||
+                  anchor.hasAttribute('data-dovo-external')
+                )
+                  return
                 if (!/^https?:\/\//i.test(anchor.href)) return
                 event.preventDefault()
                 const url = anchor.href
@@ -1040,6 +1107,23 @@ function WorkbenchContent({
               }}
             >
               {linkDialog}
+              {pipelinePreview?.kind === 'pipeline' && (
+                <PipelineLinkDialog
+                  key={JSON.stringify([
+                    pipelinePreview.runtimeId,
+                    pipelinePreview.repositoryId,
+                    pipelinePreview.itemId,
+                  ])}
+                  target={pipelinePreview}
+                  View={views.get('pipelines')}
+                  onClose={() => setPipelinePreview(null)}
+                  onDetails={() => {
+                    setPipelinePreview(null)
+                    navigateLinkTarget(pipelinePreview)
+                  }}
+                  onExternal={openExternalLink}
+                />
+              )}
               {browser && onOpenLink && (
                 <ExternalBrowserLinkChooser
                   subscribe={onOpenLink}

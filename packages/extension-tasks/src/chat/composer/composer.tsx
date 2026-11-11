@@ -1422,6 +1422,7 @@ export function Composer({
             </span>
           ) : usesTurnSettings && agent ? (
             <TurnModelControls
+              allowHandoff={!editing}
               task={task}
               agent={agent}
               value={turnSettings}

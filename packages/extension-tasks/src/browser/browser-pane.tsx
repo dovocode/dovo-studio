@@ -5,7 +5,7 @@ import { BrowserElementFeedback } from './browser-element-feedback'
 import { browserElementCaptureSchema, browserElementResultSchema } from '@dovo/protocol'
 import { BrowserDownloadsPanel } from './browser-downloads-panel'
 import { browserPageFavicon } from '@dovo/protocol'
-import { flushSync } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
 import { BrowserTabRow } from './browser-tab-row'
 import { SnoozeDialog } from '../dialogs/snooze-dialog'
@@ -148,7 +148,17 @@ import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 // A popped-out thread has its own renderer and must never share main-window tabs.
 const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
+/** The owning pane renders its real row here, including menus and owner-scoped actions. */
+export type BrowserTabTarget = {
+  key: string
+  tabId: string
+  element: HTMLDivElement
+  pinnedTile: boolean
+  active: boolean
+  disabled: boolean
+}
 export type BrowserWorkspaceControl = {
+  tabTargets?: readonly BrowserTabTarget[]
   focusTabId?: string
   onSelect: (id: string) => void
   onTabsChange: (tabs: BrowserTab[], activeId: string) => void
@@ -851,9 +861,10 @@ function BrowserContent({
   const addressField = useRef<HTMLInputElement>(null)
   const openerAddressField = useRef<HTMLInputElement>(null)
   const starterAddressField = useRef<HTMLInputElement>(null)
+  const newTabMenuSource = useRef('')
   useEffect(() => {
     if (paneVisible && !url && initialMode !== 'devices') starterAddressField.current?.focus()
-  }, [activeTab, paneVisible, url, initialMode])
+  }, [activeTab, paneVisible, url, initialMode, remoteConnected])
   const mode =
     initialMode === 'devices'
       ? 'devices'
@@ -2142,7 +2153,7 @@ function BrowserContent({
   tabSections.forEach((section, index) => {
     if (section.open) bottomTabSectionIndex = index + 1
   })
-  const renderTab = (tab: BrowserTab) => (
+  const renderTab = (tab: BrowserTab, target?: BrowserTabTarget) => (
     <BrowserTabRow
       key={tab.id}
       onError={setError}
@@ -2166,8 +2177,10 @@ function BrowserContent({
             }
           : undefined
       }
-      active={!tab.detached && activeTab === tab.id}
-      busy={busy || !!tab.detached}
+      active={target ? target.active : !tab.detached && activeTab === tab.id}
+      pinnedTile={target?.pinnedTile ?? !!tab.pinned}
+      disabled={target?.disabled}
+      busy={busy || !!tab.detached || !!target?.disabled}
       reorder={
         !busy && tabDragGroup(tab)
           ? {
@@ -2249,12 +2262,22 @@ function BrowserContent({
               )
           : undefined
       }
-      onSelect={() => selectTab(tab)}
+      onSelect={() => {
+        selectTab(tab)
+        if (target && !tab.detached && !paneVisible) workspaceControl?.onSelect(tab.id)
+      }}
       onPin={() => togglePin(tab)}
-      onHome={tab.pinned && tab.homeUrl ? () => returnHome(tab) : undefined}
+      onHome={
+        tab.pinned && tab.homeUrl
+          ? () => {
+              returnHome(tab)
+              if (target && !tab.detached && !paneVisible) workspaceControl?.onSelect(tab.id)
+            }
+          : undefined
+      }
       onEditHome={tab.pinned ? () => editHome(tab) : undefined}
-      onSettle={() => moveTab(tab)}
-      onSnooze={() => moveTab(tab, tomorrowBrowserTabWake())}
+      onSettle={() => moveTab(tab, undefined, target ? paneVisible : true)}
+      onSnooze={() => moveTab(tab, tomorrowBrowserTabWake(), target ? paneVisible : true)}
       onCustomSnooze={() => setSnoozingTab(tab)}
       onClose={() => closeTab(tab)}
       onMove={
@@ -2297,7 +2320,7 @@ function BrowserContent({
       }
     />
   )
-  const newTabMenu = (
+  const newTabMenu = !browserPageOnly && (
     <div className="ml-auto flex shrink-0 items-center gap-0.5">
       <IconButton
         type="button"
@@ -2308,7 +2331,11 @@ function BrowserContent({
       >
         <Plus size={14} />
       </IconButton>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root
+        onOpenChange={(open) => {
+          if (open) newTabMenuSource.current = activeTabRef.current
+        }}
+      >
         <DropdownMenu.Trigger asChild>
           <IconButton
             type="button"
@@ -2323,6 +2350,15 @@ function BrowserContent({
           <DropdownMenu.Content
             align="end"
             collisionPadding={8}
+            onCloseAutoFocus={(event) => {
+              if (
+                activeTabRef.current !== newTabMenuSource.current &&
+                starterAddressField.current
+              ) {
+                event.preventDefault()
+                starterAddressField.current.focus()
+              }
+            }}
             className="studio-menu-surface studio-row-menu studio-browser-tab-menu z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-sm"
           >
             <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
@@ -3522,7 +3558,7 @@ function BrowserContent({
                                 </span>
                               </div>
                               <div className="studio-browser-pin-grid">
-                                {pinnedTabs.map(renderTab)}
+                                {pinnedTabs.map((tab) => renderTab(tab))}
                               </div>
                             </section>
                           )}
@@ -3534,7 +3570,7 @@ function BrowserContent({
                           )}
                         </>
                       )}
-                      {groupTabs.map(renderTab)}
+                      {groupTabs.map((tab) => renderTab(tab))}
                     </BrowserTabGroup>
                   )
                 })}
@@ -3544,6 +3580,10 @@ function BrowserContent({
         ) : null
       }
     >
+      {workspaceControl?.tabTargets?.map((target) => {
+        const tab = tabs.find((tab) => tab.id === target.tabId)
+        return tab ? createPortal(renderTab(tab, target), target.element, target.key) : null
+      })}
       {snoozingTab && (
         <SnoozeDialog
           key={snoozingTab.id}
@@ -3554,7 +3594,7 @@ function BrowserContent({
             const tab = currentTabs.current.find((item) => item.id === snoozingTab.id)
             if (!tab) throw new Error('This tab is no longer open.')
             if (tab.pinned) throw new Error('Unpin this tab before snoozing it.')
-            moveTab(tab, until)
+            moveTab(tab, until, !workspaceControl || paneVisible)
           }}
         />
       )}

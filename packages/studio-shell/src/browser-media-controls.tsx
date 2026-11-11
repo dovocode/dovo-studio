@@ -32,7 +32,7 @@ export function BrowserMediaControls({
 }: {
   onIndicatorChange?: (indicator: 'unread' | 'attention' | undefined) => void
 }) {
-  const { browser } = useStudioHost()
+  const { browser, onBrowserMediaChange } = useStudioHost()
   const { runtimes } = useWorkspace()
   const threads = useMemo(
     () =>
@@ -85,6 +85,18 @@ export function BrowserMediaControls({
       void polling.stop()
     }
   }, [browser, refresh])
+  useEffect(() => {
+    let alive = true
+    const stop = onBrowserMediaChange?.(() => {
+      void refresh().catch((cause: unknown) => {
+        if (alive) setPollError(`Browser sharing status unavailable: ${message(cause)}`)
+      })
+    })
+    return () => {
+      alive = false
+      stop?.()
+    }
+  }, [onBrowserMediaChange, refresh])
   const act = async (command: BrowserCommand, prepare?: () => Promise<unknown>) => {
     if (!browser || locked.current) return
     locked.current = true

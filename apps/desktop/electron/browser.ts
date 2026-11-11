@@ -507,7 +507,18 @@ export function registerBrowser(
     profileId: entry.profileId,
     contents: entry.view.webContents,
   })
+  const mediaUpdates = new Set<number>()
   const media = createBrowserMedia({
+    changed: (windowId) => {
+      if (mediaUpdates.has(windowId)) return
+      mediaUpdates.add(windowId)
+      queueMicrotask(() => {
+        mediaUpdates.delete(windowId)
+        const window = [...workspaces].find((entry) => entry.id === windowId)
+        if (window && !window.isDestroyed() && !window.webContents.isDestroyed())
+          window.webContents.send('browser:media-changed')
+      })
+    },
     activityChanged: (contents) => {
       const entry = [...views.values()].find((item) => item.contents.id === contents.id)
       if (entry) syncBackgroundThrottling(entry)

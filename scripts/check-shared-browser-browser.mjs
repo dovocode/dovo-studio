@@ -17,7 +17,7 @@ if(m.type==='visibility')window.parent.postMessage({channel:'fixture',visibility
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane,restoredSharedBrowserTabs,sharedBrowserWindowId} from './src/browser/browser-pane.tsx';window.browserWorkspaceTabs={restored:restoredSharedBrowserTabs,windowId:sharedBrowserWindowId};import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useCallback,useState} from 'react';
+    contents: `import {createRoot} from 'react-dom/client';import {nativeBrowserOcclusion} from './src/browser/native-browser-layout';window.nativeBrowserOcclusion=nativeBrowserOcclusion;import {BrowserPane,restoredSharedBrowserTabs,sharedBrowserWindowId} from './src/browser/browser-pane.tsx';window.browserWorkspaceTabs={restored:restoredSharedBrowserTabs,windowId:sharedBrowserWindowId};import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useCallback,useState} from 'react';
 // Mirrors the unified workspace: an owner holds the authoritative tab list for a pane that may be hidden.
 import UnifiedWorkspace from './src/unified/workspace-view';
 function ControlledBrowser(){
@@ -601,6 +601,27 @@ async function checkRealUnifiedBrowserIntegration() {
     })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.evaluate(() => window.setCleanup({ unifiedWorkspaceEnabled: true }))
+    assert.deepEqual(
+      await page.evaluate(() => {
+        const slot = document.createElement('div')
+        slot.style.cssText =
+          'position:fixed;left:100px;top:100px;width:300px;height:200px;z-index:99990;'
+        const tip = document.createElement('div')
+        tip.className = 'studio-tooltip studio-icon-tooltip'
+        tip.style.cssText =
+          'position:fixed;left:120px;top:110px;width:160px;height:30px;z-index:99999;pointer-events:none;'
+        tip.textContent = 'Reload page'
+        document.body.append(slot, tip)
+        const visible = window.nativeBrowserOcclusion(slot, slot.getBoundingClientRect())
+        tip.hidden = true
+        const hidden = window.nativeBrowserOcclusion(slot, slot.getBoundingClientRect())
+        tip.remove()
+        slot.remove()
+        return { visible, hidden: hidden ?? null }
+      }),
+      { visible: 'tooltip', hidden: null },
+      'Noninteractive tooltips must still cover the native webview',
+    )
     const workspace = page.getByRole('region', { name: 'Unified workspace' })
     await workspace.waitFor()
     await page.waitForFunction(
@@ -615,6 +636,16 @@ async function checkRealUnifiedBrowserIntegration() {
     await workspace.getByRole('button', { name: 'New browser', exact: true }).first().click()
     await page.waitForFunction(
       () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 2,
+    )
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    assert.equal(
+      await workspace
+        .getByRole('combobox', { name: 'New browser address', exact: true })
+        .evaluate((input) => input === document.activeElement),
+      true,
+      'New browser tabs in Unified focus the starter input',
     )
     await workspace.getByRole('button', { name: 'Workspace home', exact: true }).click()
     await workspace.getByRole('button', { name: 'Existing page', exact: true }).first().click()
@@ -2954,6 +2985,16 @@ try {
   const beforePrivate = (await persisted()).tabs.length
   await recent.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New private tab', exact: true }).click()
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'New browser address', exact: true })
+      .evaluate((input) => input === document.activeElement),
+    true,
+    'Creating a private tab keeps focus in the starter after the menu closes',
+  )
   await page.getByLabel('Preview URL', { exact: true }).fill('http://localhost:3000/private-secret')
   await page.getByRole('button', { name: 'Go to address', exact: true }).click()
   await page.waitForFunction(() =>
@@ -4388,6 +4429,12 @@ try {
   })
   await controlsPage.getByLabel('Preview URL', { exact: true }).waitFor()
   assert.equal(await controlsPage.getByLabel('Recent browser tabs', { exact: true }).count(), 0)
+  for (const name of ['New browser tab', 'New browser tab options'])
+    assert.equal(
+      await controlsPage.getByRole('button', { name, exact: true }).count(),
+      0,
+      'Page-only windows have no new-tab controls',
+    )
   assert.equal(
     await controlsPage.getByRole('button', { name: 'Thread for this tab', exact: true }).count(),
     0,

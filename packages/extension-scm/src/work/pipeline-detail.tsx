@@ -1,5 +1,6 @@
 import { PipelineState } from './pipeline-state'
 import { PipelineGraph } from './pipeline-graph'
+import { PipelineStepProgress } from './pipeline-step-progress'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, type ReactNode } from 'react'
 import { ChevronDown, Clock3, ExternalLink, GitBranch } from 'lucide-react'
@@ -76,6 +77,7 @@ export function PipelineDetail({
             {run.attempt ? ` · Attempt ${run.attempt}` : ''}
           </span>
           <a
+            data-dovo-external
             href={run.url}
             target="_blank"
             rel="noreferrer"
@@ -232,6 +234,7 @@ function PipelineJob({
           )}
           <PipelineState status={job.status} />
         </span>
+        <PipelineStepProgress job={job} />
       </button>
       {expanded && (
         <div className="space-y-4 border-t bg-muted/10 p-3 sm:p-4 sm:pl-11">
@@ -240,6 +243,7 @@ function PipelineJob({
             {job.startedAt && <span>Started {formatPipelineDate(job.startedAt)}</span>}
             {job.completedAt && <span>Finished {formatPipelineDate(job.completedAt)}</span>}
             <a
+              data-dovo-external
               href={job.url}
               target="_blank"
               rel="noreferrer"
@@ -270,6 +274,7 @@ function PipelineJob({
                   <PipelineErrors errors={step.errors} />
                   {step.url && (
                     <a
+                      data-dovo-external
                       href={step.url}
                       target="_blank"
                       rel="noreferrer"

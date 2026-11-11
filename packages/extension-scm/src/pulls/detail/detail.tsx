@@ -586,7 +586,14 @@ function PullDetailContent({
             className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
             aria-label="Pull request content"
           >
-            <PullReadinessPanel summary={pullReadiness(detail, sections)} onOpen={openReadiness}>
+            <PullReadinessPanel
+              summary={pullReadiness(
+                detail,
+                sections,
+                connected && pipelineRuns.fresh ? pipelineRuns.runs : [],
+              )}
+              onOpen={openReadiness}
+            >
               <PullActions
                 repositoryId={repositoryId}
                 detail={detail}

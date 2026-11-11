@@ -58,7 +58,7 @@ function App(){
   if(path==='/api/tasks/message'){if(window.messageError)throw Error(window.messageError);updateWorkspace(owner.id,workspace=>({...workspace,tasks:workspace.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:input.messageId,role:'user',text:input.text}]}:task)}));return {ok:true}}
   if(path==='/api/terminals/shells')return {shells:[{id:'default',label:'Default shell',path:'/bin/bash',args:['-l']}]};
   if(path==='/api/terminals/ticket')return {ticket:'fixture-terminal-ticket'};
-  if(path==='/api/terminals/workspace'){const session={id:'created-terminal',taskId:STUDIO_TERMINAL_SCOPE,title:'Submitted terminal',exited:false,directory:'/tmp',shellId:'default'};updateSnapshot(owner.id,current=>({...current,terminals:[...current.terminals,session]}));return session}
+  if(path==='/api/terminals/workspace'){const session={id:input.sourceTerminalId?'split-terminal-'+snapshotsRef.current[owner.id].terminals.length:'created-terminal',taskId:STUDIO_TERMINAL_SCOPE,title:input.sourceTerminalId?'Split terminal':'Submitted terminal',exited:false,directory:'/tmp',shellId:'default'};updateSnapshot(owner.id,current=>({...current,terminals:[...current.terminals,session]}));return session}
   if(path==='/api/terminals/update'){
    const session=snapshotsRef.current[owner.id].terminals.find(session=>session.id===input.id);
    if(!session)throw Error('Unknown terminal '+input.id);
@@ -468,7 +468,7 @@ try {
       await assertCommands(4)
 
       phase += ' → browser'
-      await browserRow.locator('.studio-browser-tab').click()
+      await browserRow.locator('[data-browser-tab-select]').click()
       await page.locator('[data-browser-viewport]').waitFor({ state: 'visible' })
       await assertCommands(0)
       assert.equal(await page.evaluate(() => window.activeRuntimeId), runtimeId)
@@ -551,6 +551,55 @@ try {
       36,
     'The actual remote viewer resumes its browser stream on every selection',
   )
+  // Real sidebar commands run through the owner's retained TerminalPane, even on a remote thread.
+  await selectThread('Remote retained thread')
+  await page.waitForFunction(() => window.activeRuntimeId === 'remote')
+  await terminalRow.locator('.studio-thread-card').click({ button: 'right' })
+  for (const name of [
+    'Rename…',
+    'Split left/right',
+    'Split top/bottom',
+    'New terminal',
+    'Copy working directory',
+    'Copy terminal ID',
+    'Close terminal…',
+  ])
+    assert.equal(await page.getByRole('menuitem', { name, exact: true }).isEnabled(), true)
+  await page.getByRole('menuitem', { name: 'Close terminal…', exact: true }).click()
+  const closeDialog = page.getByRole('dialog', { name: 'Close terminal?', exact: true })
+  await closeDialog.waitFor()
+  await closeDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/terminals/close').length,
+    ),
+    0,
+  )
+  assert.equal(await page.evaluate(() => window.activeRuntimeId), 'remote')
+  for (const action of ['Split left/right', 'Split top/bottom']) {
+    const before = await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/terminals/workspace').length,
+    )
+    await home()
+    await terminalRow.locator('.studio-thread-card').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: action, exact: true }).click()
+    await page.waitForFunction(
+      (before) =>
+        window.calls.filter((call) => call.path === '/api/terminals/workspace').length ===
+        before + 1,
+      before,
+    )
+    await settle()
+    await page.evaluate(() => window.refreshSnapshot())
+    await settle()
+    const calls = await page.evaluate(() =>
+      window.runtimeCalls.filter((call) => call.path === '/api/terminals/workspace'),
+    )
+    assert.equal(calls.length, before + 1, 'A sidebar split executes exactly once')
+    assert.equal(calls.at(-1).owner, 'local', 'A split uses the terminal owner')
+    assert.ok(calls.at(-1).input.sourceTerminalId)
+    assert.equal(await page.evaluate(() => window.activeRuntimeId), 'remote')
+  }
   assert.deepEqual(await page.evaluate(() => window.unexpectedRequests), [])
   assert.deepEqual(errors, [])
   console.log(

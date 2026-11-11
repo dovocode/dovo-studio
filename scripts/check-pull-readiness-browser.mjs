@@ -32,6 +32,8 @@ const detail={pull:{number:7,title:'Improve the review workflow',url:'https://gi
 const ready={ready:true,readConnected:true};let resources={status:ready,checks:ready,discussion:ready};
 if(window.scenario==='empty'){detail.checks=[];detail.comments=[];detail.pull.checksState=null;detail.pull.reviewDecision=null;detail.pull.reviewers=[];delete detail.pull.mergeStateStatus;detail.pull.mergeable=null;}
 if(window.scenario==='pending'){resources={status:{ready:false},checks:{ready:false},discussion:{ready:false}};}
+if(window.scenario==='pending-reports'){detail.checks=[];detail.pull.reviewDecision='APPROVED';}
+if(window.scenario==='queued'){detail.checks=['SUCCESS','QUEUED','IN_PROGRESS','EXPECTED'].map((status,index)=>({name:'Check '+index,status}));}
 if(window.scenario==='failed'){detail.pull.checksState='FAILURE';detail.checks[0].status='FAILURE';}
 if(window.scenario==='behind'){detail.pull.mergeStateStatus='BEHIND';detail.pull.checksState='SUCCESS';detail.pull.reviewDecision='APPROVED';}
 if(window.scenario==='offline'){const saved={...ready,readConnected:false};resources={status:saved,checks:saved,discussion:saved};}
@@ -127,6 +129,8 @@ try {
         'mixed',
         'empty',
         'pending',
+        'pending-reports',
+        'queued',
         'failed',
         'behind',
         'offline',
@@ -157,7 +161,15 @@ try {
           await panel.getByRole('heading', { name: 'Saved merge status', exact: true }).waitFor()
         if (scenario === 'success')
           await panel.getByRole('heading', { name: 'Ready to merge', exact: true }).waitFor()
-        if (['mixed', 'success', 'pending'].includes(scenario))
+        if (scenario === 'pending-reports') {
+          await panel.getByRole('heading', { name: 'Waiting for CI', exact: true }).waitFor()
+          await panel.getByText('CI pending · waiting for check reports', { exact: true }).waitFor()
+        }
+        if (scenario === 'queued')
+          await panel
+            .getByText('1 running · 1 queued · 1 pending · 1 passed', { exact: true })
+            .waitFor()
+        if (['mixed', 'success', 'pending', 'pending-reports', 'queued'].includes(scenario))
           await panel.screenshot({
             path: output + `${native ? 'mobile' : 'desktop'}-${width}-${scenario}.png`,
           })

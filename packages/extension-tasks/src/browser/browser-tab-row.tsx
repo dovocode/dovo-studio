@@ -11,6 +11,7 @@ import {
   ExternalLink,
   ArrowUpRight,
   Copy,
+  Check,
 } from 'lucide-react'
 import { cn, ContextMenu, IconButton } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
@@ -48,6 +49,8 @@ export function BrowserTabRow({
   reorder,
   studioId,
   onError,
+  disabled = false,
+  pinnedTile = !!tab.pinned,
 }: {
   tab: BrowserTab
   active: boolean
@@ -69,6 +72,10 @@ export function BrowserTabRow({
   /** Unified Studio reference an agent can be handed for this exact tab. */
   studioId?: string
   onError: (message: string) => void
+  /** An owner can block selection while changing computers. */
+  disabled?: boolean
+  /** Pinned tabs use normal rows in a mixed overview and tiles in the pinned grid. */
+  pinnedTile?: boolean
   reorder?: {
     dragging: boolean
     edge?: 'before' | 'after'
@@ -108,7 +115,7 @@ export function BrowserTabRow({
     <span
       className={cn(
         'studio-browser-tab-profile flex min-w-0 items-center text-muted-foreground',
-        tab.pinned
+        pinnedTile
           ? 'absolute inset-x-0 bottom-0 justify-center gap-0.5 text-[8px] leading-none'
           : 'gap-1 text-xs leading-4',
       )}
@@ -121,7 +128,7 @@ export function BrowserTabRow({
           aria-hidden="true"
         />
       </span>
-      {(emoji || (tab.pinned && showProfile)) && (
+      {(emoji || (pinnedTile && showProfile)) && (
         <span
           className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
           title={`${profile} · ${computer}`}
@@ -129,7 +136,7 @@ export function BrowserTabRow({
           {emoji ?? initials}
         </span>
       )}
-      {!tab.pinned && (
+      {!pinnedTile && (
         <span className="min-w-0 truncate" title={`${computer} · ${profile}`}>
           {computer}
           {showProfile && ` · ${profile}`}
@@ -147,7 +154,7 @@ export function BrowserTabRow({
         <div
           data-browser-tab-id={tab.id}
           data-active={active || undefined}
-          data-pinned={tab.pinned || undefined}
+          data-pinned={pinnedTile || undefined}
           data-detached={!!tab.detached || undefined}
           draggable={!!reorder}
           onDragStart={reorder?.onDragStart}
@@ -155,16 +162,22 @@ export function BrowserTabRow({
           onDrop={reorder?.onDrop}
           onDragEnd={reorder?.onDragEnd}
           onClick={(event) => {
-            // Action buttons own their clicks; the rest of the tile selects the page.
-            if (event.target instanceof Element && event.target.closest('button')) return
-            onSelect()
+            // Portaled menus still bubble through React. Their actions must not select or wake a tab.
+            if (
+              event.defaultPrevented ||
+              (event.target instanceof Element &&
+                (!event.currentTarget.contains(event.target) ||
+                  event.target.closest('button, .studio-browser-tab-actions')))
+            )
+              return
+            if (!disabled) onSelect()
           }}
           className={cn(
             'studio-browser-tab group relative flex cursor-pointer min-w-0 items-center rounded-lg transition-colors',
-            tab.pinned && 'flex-col',
+            pinnedTile && 'flex-col',
             reorder?.dragging && 'opacity-40',
             reorder?.edge &&
-              (tab.pinned
+              (pinnedTile
                 ? reorder.edge === 'before'
                   ? 'before:pointer-events-none before:absolute before:inset-y-1 before:left-0 before:border-l-2 before:border-primary'
                   : 'after:pointer-events-none after:absolute after:inset-y-1 after:right-0 after:border-r-2 after:border-primary'
@@ -172,7 +185,7 @@ export function BrowserTabRow({
                   ? 'before:pointer-events-none before:absolute before:inset-x-1 before:top-0 before:border-t-2 before:border-primary'
                   : 'after:pointer-events-none after:absolute after:inset-x-1 after:bottom-0 after:border-b-2 after:border-primary'),
 
-            tab.pinned
+            pinnedTile
               ? cn(
                   'overflow-hidden rounded-xl border',
                   active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
@@ -184,6 +197,7 @@ export function BrowserTabRow({
         >
           <button
             type="button"
+            disabled={disabled}
             data-browser-tab-select
             aria-keyshortcuts={
               reorder ? 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight' : undefined
@@ -206,9 +220,9 @@ export function BrowserTabRow({
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}${tab.detached ? ' · Open in detached window' : ''}`}
             onClick={onSelect}
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.detached ? '\nOpen in detached window' : ''}${studioId ? `\nStudio ID: ${studioId}` : ''}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
-            className={`studio-browser-tab-select min-w-0 text-left text-xs ${tab.pinned ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
+            className={`studio-browser-tab-select min-w-0 text-left text-xs ${pinnedTile ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
           >
-            {tab.pinned && (
+            {pinnedTile && (
               <span
                 className="studio-browser-pin-status"
                 data-awake={
@@ -228,13 +242,13 @@ export function BrowserTabRow({
             <span
               className={cn(
                 'studio-browser-tab-source relative inline-flex shrink-0 justify-center',
-                tab.pinned ? 'h-10 w-8 items-start' : 'size-6 items-center',
+                pinnedTile ? 'h-10 w-8 items-start' : 'size-6 items-center',
               )}
             >
               <span
                 className={cn(
                   'studio-browser-tab-favicon relative inline-flex items-center justify-center',
-                  tab.pinned ? 'size-8' : 'size-6',
+                  pinnedTile ? 'size-8' : 'size-6',
                 )}
               >
                 <BrowserFavicon tab={tab} />
@@ -251,7 +265,16 @@ export function BrowserTabRow({
                     {badge === 'unread' ? null : badge > 99 ? '99+' : badge}
                   </span>
                 )}
-                {keepsAwake && !tab.pinned && (
+                {category !== 'active' && (
+                  <span className="absolute -right-1 -top-0.5 rounded-full bg-sidebar">
+                    {category === 'settled' ? (
+                      <Check className="size-3.5 text-muted-foreground" aria-label="Settled" />
+                    ) : (
+                      <AlarmClock className="size-3.5 text-muted-foreground" aria-label="Snoozed" />
+                    )}
+                  </span>
+                )}
+                {keepsAwake && !pinnedTile && (
                   <span
                     aria-label="Kept awake"
                     title="Keep awake is on"
@@ -260,7 +283,7 @@ export function BrowserTabRow({
                 )}
               </span>
             </span>
-            {!tab.pinned && (
+            {!pinnedTile && (
               <>
                 <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
                 {identity}
@@ -274,8 +297,8 @@ export function BrowserTabRow({
               className="pointer-events-none absolute bottom-1 right-1 text-muted-foreground"
             />
           )}
-          <BrowserTabActivity state={state} title={title} pinned={tab.pinned} onMute={onMute} />
-          {!tab.pinned && (
+          <BrowserTabActivity state={state} title={title} pinned={pinnedTile} onMute={onMute} />
+          {!tab.pinned && !pinnedTile && (
             <div className="studio-browser-tab-actions flex shrink-0 items-center gap-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
               {category === 'active' && (
                 <IconButton
