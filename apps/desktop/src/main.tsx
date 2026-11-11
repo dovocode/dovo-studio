@@ -15,9 +15,12 @@ import { jobsExtension } from '@dovo/extension-jobs'
 import { runtimeExtension, WindowsRuntimeGate } from '@dovo/extension-runtime'
 if (
   !['#input-preview', '#task-launcher'].includes(window.location.hash) &&
-  window.dovo?.nativeTooltip
-)
-  configureNativeTooltips(window.dovo.nativeTooltip, window.dovo.onNativeTooltipDismiss)
+  typeof window.dovo?.browser === 'function'
+) {
+  document.documentElement.dataset.nativeBrowserOverlay = 'true'
+  if (typeof window.dovo.nativeTooltip === 'function')
+    configureNativeTooltips(window.dovo.nativeTooltip, window.dovo.onNativeTooltipDismiss)
+}
 const extensions = [tasksExtension, scmExtension, agentsExtension, jobsExtension, runtimeExtension]
 function SharingDeviceSync() {
   useAccount(window.dovo.accountStorage, window.dovo.openExternalLink, useAppPreferences())

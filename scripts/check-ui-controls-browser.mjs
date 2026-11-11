@@ -109,6 +109,25 @@ try {
     for (const file of readdirSync(assets).filter((file) => file.endsWith('.css'))) {
       await page.addStyleTag({ content: readFileSync(assets + file, 'utf8') })
     }
+    const backgrounds = () =>
+      page.evaluate(() =>
+        [document.documentElement, document.body].map(
+          (node) => getComputedStyle(node).backgroundColor,
+        ),
+      )
+    const themedBackgrounds = await backgrounds()
+    assert.ok(
+      themedBackgrounds.every((color) => color !== 'rgba(0, 0, 0, 0)'),
+      'Pages without native browser layers retain their themed canvas',
+    )
+    await page.evaluate(() => (document.documentElement.dataset.nativeBrowserOverlay = 'true'))
+    assert.deepEqual(
+      await backgrounds(),
+      ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'],
+      'Native browser layers can expose live pages through the canvas',
+    )
+    await page.evaluate(() => delete document.documentElement.dataset.nativeBrowserOverlay)
+    assert.deepEqual(await backgrounds(), themedBackgrounds)
     await page.addScriptTag({ content: built.outputFiles[0].text })
     const card = page.locator('[data-setting-label="Settings spacing"] [data-slot="card"]')
     const cardBounds = await card.boundingBox()

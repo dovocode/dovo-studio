@@ -8,9 +8,9 @@
   -webkit-app-region: no-drag;
 }
 
-/* Studio renders in a transparent native view. The app root paints its normal
-   background; browser slots can stay live below portalled menus and dialogs. */
-html,
-body {
+/* Only native browser windows need a transparent view. Keep themed backgrounds
+   elsewhere; the app root paints around live page slots below menus and dialogs. */
+html[data-native-browser-overlay='true'],
+html[data-native-browser-overlay='true'] body {
   background: transparent;
 }

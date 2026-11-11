@@ -1238,9 +1238,11 @@ calls and physical-device startup remain outside these measurements.
 
 Desktop Studio renders its UI and browser pages in sibling Electron `WebContentsView` layers. Menus
 and dialogs raise the UI above the existing page. Transparent page slots expose the live page below
-it. These controls no longer capture a screenshot, wait for image decoding or subscribe to
-replacement image frames. The page keeps its renderer, visibility, draft and running work. The
-existing link-preview opener backdrop and explicit screenshot tools keep their capture paths.
+it. Only windows with native browser layers enable the transparent document canvas. Other pages and
+auxiliary windows retain their themed background. These controls no longer capture a screenshot,
+wait for image decoding or subscribe to replacement image frames. The page keeps its renderer,
+visibility, draft and running work. The existing link-preview opener backdrop and explicit
+screenshot tools keep their capture paths.
 
 Passive tooltips use actual React content in one reusable, non-focusable native child window per
 Studio window. That window ignores mouse input. Browser clicks, held presses, text selection, wheel
