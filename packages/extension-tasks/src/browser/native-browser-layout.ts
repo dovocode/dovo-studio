@@ -1,6 +1,29 @@
 const floatingOverlays =
-  'dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .studio-tooltip, [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"]'
+  'dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .studio-tooltip, [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"], [data-browser-viewport] > [data-preview-overlay="true"]'
 const overlays = `details[open], ${floatingOverlays}`
+
+/** A transparent Studio surface still receives clicks over native sibling views.
+ * Keep the backdrop's return action reachable when its DOM is clipped for live painting. */
+export function onNativeBrowserBackgroundClick(slot: HTMLElement, onReturn: () => void) {
+  const clicked = (event: MouseEvent) => {
+    if (
+      event.button !== 0 ||
+      (event.target !== document.body && event.target !== document.documentElement)
+    )
+      return
+    const bounds = nativeBrowserBounds(slot)
+    if (
+      bounds &&
+      event.clientX >= bounds.left &&
+      event.clientX < bounds.right &&
+      event.clientY >= bounds.top &&
+      event.clientY < bounds.bottom
+    )
+      onReturn()
+  }
+  document.addEventListener('click', clicked)
+  return () => document.removeEventListener('click', clicked)
+}
 
 /** Streaming in another pane cannot move this browser. Portalled overlays can. */
 export function observeNativeBrowserLayout(slot: HTMLElement, schedule: () => void) {

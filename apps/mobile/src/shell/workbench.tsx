@@ -1,4 +1,5 @@
 import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
+import { LinkBrowser } from '../ui/content/open-link'
 import { iconAssets } from '../ui/controls/icon-assets'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -707,6 +708,10 @@ export function Workbench() {
                 <Stack.Screen name="(more)" />
                 <Stack.Screen name="jobs" />
               </Stack>
+              {/* Link previews can open from any tab and need its navigation host. */}
+              <NavigationContext.Provider value={navigations[active]}>
+                <LinkBrowser />
+              </NavigationContext.Provider>
             </SceneContext.Provider>
           </TaskListViewProvider>
         </KeyboardAvoidingView>

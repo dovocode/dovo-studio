@@ -9,6 +9,7 @@ import { createPortal, flushSync } from 'react-dom'
 import {
   nativeBrowserBounds,
   observeNativeBrowserLayout,
+  onNativeBrowserBackgroundClick,
   nativeBrowserHole,
 } from './native-browser-layout'
 import { BrowserTabRow } from './browser-tab-row'
@@ -343,7 +344,6 @@ function BrowserContent({
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
     {
       browser,
-      browserFrames,
       browserWindowId,
       browserPageOnly,
       openBrowserWindow,
@@ -504,7 +504,7 @@ function BrowserContent({
   const [previewPlacement, setPreviewPlacement] = useApplicationState<PreviewPlacement>('floating')
   const [previewBackground, setPreviewBackground] =
     useApplicationState<BrowserPreviewBackground | null>(null)
-  const previewImage = useRef<HTMLImageElement>(null)
+  const previewSlot = useRef<HTMLButtonElement>(null)
   const previewRequest = useRef(0)
   const [pendingPreview, setPendingPreview] = useApplicationState<string | undefined>(undefined)
   useEffect(() => {
@@ -623,16 +623,6 @@ function BrowserContent({
       ? previewBackground.input
       : previewSource?.url
   const previewSourceKey = previewSource?.kind === 'web' ? nativeKey(previewSource.id) : undefined
-  useEffect(() => {
-    if (!selectedTab.previewOf || !previewSourceKey || !browserFrames) return
-    return browserFrames(previewSourceKey, (frame) => {
-      if (previewImage.current) previewImage.current.src = frame.image
-      else
-        setPreviewBackground((previous) =>
-          previous ? { ...previous, image: frame.image } : previous,
-        )
-    })
-  }, [browserFrames, selectedTab.previewOf, previewSourceKey])
   const remote = useRef<RemoteBrowserControls>(null)
   const adoptedRemoteTabs = useRef(new Set<string>())
   const [remoteOnline, setRemoteOnline] = useApplicationState(false)
@@ -788,29 +778,28 @@ function BrowserContent({
     setPendingPreview(tab.id)
     // Nested previews retain the original page, rather than replacing it with the last overlay.
     if (!source.previewOf || !previewBackground) {
-      let timeout: ReturnType<typeof setTimeout> | undefined
       let image: string | undefined
-      try {
-        image = await Promise.race([
-          source.kind === 'web' && browser
-            ? browser({ action: 'screenshot', key: nativeKey(source.id) }).then(
-                (result) => result?.image,
-              )
-            : (remote.current?.capture() ?? Promise.resolve(undefined)),
-          new Promise<undefined>((resolve) => {
-            timeout = setTimeout(() => resolve(undefined), 500)
-          }),
-        ])
-        if (image) {
-          const decoded = new Image()
-          decoded.src = image
-          await decoded.decode()
+      // Local previews keep the native opener alive. Only remote sessions need an image fallback.
+      if (source.kind === 'remote') {
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        try {
+          image = await Promise.race([
+            remote.current?.capture() ?? Promise.resolve(undefined),
+            new Promise<undefined>((resolve) => {
+              timeout = setTimeout(() => resolve(undefined), 500)
+            }),
+          ])
+          if (image) {
+            const decoded = new Image()
+            decoded.src = image
+            await decoded.decode()
+          }
+        } catch {
+          // A loading or unavailable page must not block opening its link.
+          image = undefined
+        } finally {
+          clearTimeout(timeout)
         }
-      } catch {
-        // A loading or unavailable page must not block opening its link.
-        image = undefined
-      } finally {
-        clearTimeout(timeout)
       }
       if (attempt !== previewRequest.current) return
       setPreviewBackground({
@@ -1561,6 +1550,7 @@ function BrowserContent({
     let frame: number | undefined
     let previousCommand = ''
     const hole = nativeBrowserHole(slot.current)
+    const backgroundHole = nativeBrowserHole(previewSlot.current)
     const update = () => {
       frame = undefined
       if (!alive) return
@@ -1568,6 +1558,23 @@ function BrowserContent({
       const occlusion = slot.current && rect && hole.occlusion(rect)
       const obscured = !!occlusion
       hole.update(obscured ? rect : undefined)
+      const backgroundRect =
+        paneVisible && previewSourceKey && previewSlot.current
+          ? nativeBrowserBounds(previewSlot.current)
+          : undefined
+      backgroundHole.update(backgroundRect)
+      const background =
+        backgroundRect && previewSourceKey
+          ? {
+              key: previewSourceKey,
+              bounds: {
+                x: Math.max(0, Math.round(backgroundRect.x)),
+                y: Math.max(0, Math.round(backgroundRect.y)),
+                width: Math.round(backgroundRect.width),
+                height: Math.round(backgroundRect.height),
+              },
+            }
+          : undefined
       const command =
         rect && !obscured
           ? {
@@ -1595,10 +1602,12 @@ function BrowserContent({
                 width: Math.round(rect.width),
                 height: Math.round(rect.height),
               },
+              background,
             }
           : {
               action: 'hide' as const,
               key: browserKey,
+              background,
               ...(obscured
                 ? {
                     occluded: true,
@@ -1626,12 +1635,17 @@ function BrowserContent({
       frame ??= requestAnimationFrame(update)
     }
     const stopLayout = slot.current ? observeNativeBrowserLayout(slot.current, schedule) : undefined
+    const stopBackgroundLayout = previewSlot.current
+      ? observeNativeBrowserLayout(previewSlot.current, schedule)
+      : undefined
     update()
     return () => {
       alive = false
       hole.dispose()
+      backgroundHole.dispose()
       if (frame !== undefined) cancelAnimationFrame(frame)
       stopLayout?.()
+      stopBackgroundLayout?.()
       void browser({
         action: 'hide',
         key: browserKey,
@@ -1655,6 +1669,7 @@ function BrowserContent({
     selectedTab.detached,
     selectedTab.keepAwake,
     paneVisible,
+    previewSourceKey,
   ])
   const deviceAction = (
     device: PreviewDevice,
@@ -3412,7 +3427,7 @@ function BrowserContent({
               title: selectedTab.url.replace(/^https?:\/\//, '').split('/')[0] || 'Link',
               placement: previewPlacement,
               background: previewBackground,
-              imageRef: previewImage,
+              backgroundRef: previewSlot,
               onPlacementChange: (placement) =>
                 placement === 'inline' ? closeTab(selectedTab) : setPreviewPlacement(placement),
               onClose: () => closeTab(selectedTab),
@@ -4179,7 +4194,7 @@ function BrowserLayout({
     title: string
     placement: PreviewPlacement
     background: BrowserPreviewBackground | null
-    imageRef: RefObject<HTMLImageElement | null>
+    backgroundRef: RefObject<HTMLButtonElement | null>
     onPlacementChange: (placement: PreviewPlacement) => void
     onClose: () => void
     onReturnToOpener: () => void
@@ -4188,6 +4203,10 @@ function BrowserLayout({
   }
 }) {
   const sidebarState = useNavigationSidebar()
+  useEffect(() => {
+    const slot = preview?.backgroundRef.current
+    if (slot && preview) return onNativeBrowserBackgroundClick(slot, preview.onReturnToOpener)
+  }, [preview])
   return (
     <section
       className="@container/browser relative flex h-full min-h-0 min-w-0"
@@ -4205,6 +4224,7 @@ function BrowserLayout({
         >
           {preview && (
             <button
+              ref={preview.backgroundRef}
               type="button"
               data-browser-preview-background
               aria-label="Return to opener"
@@ -4215,7 +4235,6 @@ function BrowserLayout({
               {preview.background?.image && (
                 <img
                   alt=""
-                  ref={preview.imageRef}
                   src={preview.background.image}
                   className="min-h-0 w-full flex-1 object-fill"
                 />

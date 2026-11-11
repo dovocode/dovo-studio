@@ -2365,32 +2365,12 @@ try {
   )
   await page.keyboard.press('Control+r')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
-  const liveFrame =
-    'data:image/svg+xml,' +
-    encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="blue"/></svg>',
-    )
-  const assertLiveFrame = async (image, key) => {
-    await page.waitForFunction((key) => window.frameSubscriptions().includes(key), key)
-    await page.evaluate(({ key, image }) => window.emitBrowserFrame(key, image), {
-      key,
-      image: liveFrame,
-    })
-    assert.equal(
-      await image.getAttribute('src'),
-      liveFrame,
-      'Link preview backdrop must update while open',
-    )
-  }
   // A menu raises the real UI; it never subscribes to image frames or paints a replacement.
   const capturesBeforeMenu = await page.evaluate(
     () => window.calls.filter((c) => c.action === 'screenshot').length,
   )
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   await nativeAction('hide')
-  const liveKey = await page.evaluate(
-    () => window.calls.findLast((call) => call.action === 'show').key,
-  )
   assert.equal(await page.locator('img[aria-hidden]').count(), 0)
   assert.equal(await page.evaluate(() => window.frameSubscriptions().length), 0)
   assert.equal(
@@ -2437,8 +2417,16 @@ try {
   })
   await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   const background = page.locator('[data-browser-preview-background]')
-  await background.locator('img').waitFor()
-  await assertLiveFrame(background.locator('img'), liveKey)
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'show' && call.background),
+  )
+  assert.equal(await background.locator('img').count(), 0, 'The opener uses its native view')
+  assert.equal(await page.evaluate(() => window.frameSubscriptions().length), 0)
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((call) => call.action === 'screenshot').length),
+    capturesBeforeMenu,
+    'Opening a link preview never captures the native opener',
+  )
   assert.equal(await background.getAttribute('title'), sourceBeforeOpen.url)
   assert.equal(await page.getByRole('form', { name: 'Browser navigation', exact: true }).count(), 1)
   const previewUrl = preview.getByLabel('Link preview URL', { exact: true })

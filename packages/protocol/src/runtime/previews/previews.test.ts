@@ -51,6 +51,22 @@ describe('preview addresses', () => {
       decodeResult(browserCommandSchema, { ...input, bounds: { ...input.bounds, x: -1 } }).success,
     ).toBe(false)
   })
+  it('validates a retained live opener with bounded coordinates', () => {
+    const input = {
+      action: 'show',
+      key: 'child',
+      url: 'https://example.com',
+      bounds: { x: 20, y: 80, width: 500, height: 300 },
+      background: { key: 'opener', bounds: { x: 0, y: 40, width: 600, height: 400 } },
+    }
+    expect(decodeResult(browserCommandSchema, input)).toMatchObject({ success: true, data: input })
+    expect(
+      decodeResult(browserCommandSchema, {
+        ...input,
+        background: { ...input.background, bounds: { ...input.background.bounds, width: NaN } },
+      }).success,
+    ).toBe(false)
+  })
   it('preserves a typed passive-overlay focus request without changing ordinary hide commands', () => {
     const input = { action: 'hide', key: 'task', preserveFocus: true }
     expect(decodeResult(browserCommandSchema, input)).toMatchObject({ success: true, data: input })

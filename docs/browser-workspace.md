@@ -183,6 +183,11 @@ has its own address bar. Select the normal toolbar to return to the opener befor
 controls. Each toolbar controls its own page. Closing a preview also restores the opener's address
 draft.
 
+On desktop, the opener stays in its original native browser view beneath the link preview. Opening
+the preview does not capture a screenshot or start a frame-image stream. The opener keeps its
+animation and draft. Clicking its background returns to the opener after the click finishes. The
+preview keeps normal browser input. Remote sessions retain their image fallback.
+
 ## Link routing
 
 In **Settings → Browser → Local browser profiles**, set **Open links in this profile** to a
@@ -480,12 +485,18 @@ pnpm exec playwright install chromium
 pnpm --filter @dovo/protocol build
 pnpm --filter @dovo/desktop build
 node scripts/check-shared-browser-browser.mjs
+node scripts/check-browser-link-preview-native.mjs
 pnpm exec vp test apps/desktop/electron/browser-window.test.ts apps/desktop/electron/browser.test.ts
 ```
 
 The shared browser renderer check covers local and remote preview adoption, nested links, window
 choices, cancellation, retries and remounts. Its native and remote boundaries use fixtures; it does
 not verify physical macOS or Windows windows.
+
+The native link-preview check uses real Electron views. It checks `_blank` opener identity,
+animation, drafts, menus, resize, hide, close and promotion. On Linux with X11, it also checks mouse
+presses, typing and background return with `xdotool`. It does not verify physical iPhone navigation
+or native macOS and Windows input.
 
 Browser sharing requests and source results send native change events to the requesting Studio
 window. The picker refreshes at once, while the one-second status poll remains as a recovery path.

@@ -248,6 +248,11 @@ const browserBoundsSchema = mutableStruct({
   ),
 })
 
+const browserPreviewBackgroundSchema = mutableStruct({
+  key: maxValue(minValue(Schema.String, 1), 500),
+  bounds: browserBoundsSchema,
+})
+
 export const browserCommandSchema = Schema.Union([
   mutableStruct({
     action: Schema.Literal('element-snapshot'),
@@ -407,6 +412,8 @@ export const browserCommandSchema = Schema.Union([
       }),
     ),
     bounds: browserBoundsSchema,
+    /** Retain an existing opener behind a link preview, without capturing its pixels. */
+    background: Schema.optional(browserPreviewBackgroundSchema),
   }),
   mutableStruct({
     action: Schema.Literal('watch-frames'),
@@ -421,6 +428,7 @@ export const browserCommandSchema = Schema.Union([
     /** Return keyboard focus to the page after a passive overlay, unless Studio receives input. */
     preserveFocus: Schema.optional(Schema.Boolean),
     bounds: Schema.optional(browserBoundsSchema),
+    background: Schema.optional(browserPreviewBackgroundSchema),
   }),
   mutableStruct({
     action: Schema.Literals([

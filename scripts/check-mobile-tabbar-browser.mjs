@@ -30,6 +30,11 @@ for (const name of ['settings', 'issues', 'artifacts'])
 
 const stubs = [
   {
+    path: '../ui/content/open-link',
+    importer: workbench,
+    contents: `import {useNavigation} from './apps/mobile/src/shell/navigation';export function LinkBrowser(){const navigation=useNavigation();window.linkNavigation=navigation;return <output aria-label="Link navigation host">{String(navigation.focused)}</output>}`,
+  },
+  {
     path: '../runtime/preferences/storage-notice',
     importer: workbench,
     contents:
@@ -191,6 +196,11 @@ try {
     'Native tabs must start on the thread list instead of the compose redirect',
   )
   await page.getByText('Collection content', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByLabel('Link navigation host').textContent(),
+    'true',
+    'Global link previews have the active tab navigation host',
+  )
   const nativeInsets = () =>
     page
       .locator('[data-native-safe-area]')

@@ -93,6 +93,8 @@ type Entry = {
   workspace: boolean
   /** Selected page, including temporary menu underlays; independent of frame subscribers. */
   foreground: boolean
+  /** Existing live opener retained beneath this preview and Studio's controls. */
+  previewBackgroundKey?: string
   openedLinks: string[]
   favicon?: string | null
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
@@ -968,6 +970,18 @@ export function registerBrowser(
     view.webContents.on('did-navigate-in-page', () => syncBackgroundThrottling(created))
     // Service-worker clients.focus() and Chromium's native notification focus follow this path.
     view.webContents.on('focus', () => {
+      if (
+        view.getVisible() &&
+        [...views.values()].some(
+          (entry) =>
+            entry.windowId === created.windowId &&
+            entry.view.getVisible() &&
+            entry.previewBackgroundKey === created.key,
+        )
+      ) {
+        focusTab(created)
+        return
+      }
       if (
         created.workspace &&
         !agentConnected(created) &&
@@ -2128,6 +2142,10 @@ export function registerBrowser(
       awakeRequests.delete(viewKey)
       if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry) {
+        if (entry.view.getVisible() && entry.previewBackgroundKey) {
+          const background = views.get(JSON.stringify([window.id, entry.previewBackgroundKey]))
+          if (background) setVisible(background, false)
+        }
         releaseView(viewKey)
       }
       return
@@ -2135,6 +2153,11 @@ export function registerBrowser(
     if (command.action === 'hide') {
       if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry?.key === command.key) {
+        if (!command.occluded && entry.previewBackgroundKey) {
+          const background = views.get(JSON.stringify([window.id, entry.previewBackgroundKey]))
+          if (background) setVisible(background, false)
+          entry.previewBackgroundKey = undefined
+        }
         exitFullscreen(entry)
         entry.restoreFocus = !!(
           command.preserveFocus &&
@@ -2149,6 +2172,15 @@ export function registerBrowser(
         if (overlay && command.bounds) {
           const bounds = browserViewBounds(window, command.bounds)
           if (bounds) entry.view.setBounds(bounds)
+        }
+        if (
+          overlay &&
+          command.background &&
+          command.background.key === entry.previewBackgroundKey
+        ) {
+          const background = views.get(JSON.stringify([window.id, entry.previewBackgroundKey]))
+          const bounds = browserViewBounds(window, command.background.bounds)
+          if (background && bounds) background.view.setBounds(bounds)
         }
         setVisible(entry, !!overlay, command.occluded)
         if (!entry.foreground) entry.inactiveAt ??= Date.now()
@@ -2168,6 +2200,27 @@ export function registerBrowser(
           : previewUrl(command.url)
       const showing = { key: viewKey }
       activeViews.set(window.id, showing)
+      const background = command.background
+        ? views.get(JSON.stringify([window.id, command.background.key]))
+        : undefined
+      const retained =
+        background &&
+        background !== entry &&
+        background.workspace === workspace &&
+        background.taskId === command.taskId &&
+        !background.contents.isDestroyed()
+          ? background
+          : undefined
+      if (retained && command.background) {
+        const backgroundBounds = browserViewBounds(window, command.background.bounds)
+        if (backgroundBounds) {
+          retained.inactiveAt = undefined
+          retained.view.setBounds(backgroundBounds)
+          // Paint the live opener immediately, including while the child loads.
+          setVisible(retained, true)
+          raiseStudioOverlay(window)
+        }
+      }
       if (workspace) {
         profileWindows.set(profileId, { window, key: command.key })
         // Extensions load before the profile's first page so content scripts see it.
@@ -2179,7 +2232,7 @@ export function registerBrowser(
       }
       if (entry) entry.inactiveAt = undefined
       for (const [key, other] of views) {
-        if (other.windowId !== window.id || other === entry) continue
+        if (other.windowId !== window.id || other === entry || other === retained) continue
         exitFullscreen(other)
         other.restoreFocus = false
         setVisible(other, false)
@@ -2198,6 +2251,7 @@ export function registerBrowser(
         entry = undefined
       }
       entry ??= createEntry(window, viewKey, command.key, profileId, workspace)
+      entry.previewBackgroundKey = retained?.key
       entry.keepAwake = command.keepAwake
       entry.sleeping = false
       // Selection precedes loading/painting. A selected page must not auto-pop out

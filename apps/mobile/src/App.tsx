@@ -11,7 +11,6 @@ import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { RuntimeProvider } from './runtime/connection/provider'
 import { Workbench } from './shell/workbench'
-import { LinkBrowser } from './ui/content/open-link'
 import { TaskWidgetProvider } from './widgets/provider'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BrowserWorkspaceProvider } from './browser/browser-workspace'
@@ -66,7 +65,6 @@ function ThemedApp() {
                           </BrowserWorkspaceProvider>
                         </NativeBrowserProvider>
                         <TaskQuickActions />
-                        <LinkBrowser />
                       </TaskWidgetProvider>
                     </LiveActivityProvider>
                   </PushNotificationProvider>
