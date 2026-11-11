@@ -15,11 +15,6 @@ const setup = source
     "const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.composerPreferences=preferences;",
   )
   .replace(
-    'controller,submitBusy,submittedText,disabled})',
-    'controller,submitBusy,submittedText,disabled,input})',
-  )
-  .replace('<textarea data-editor-mount={mount}', '<textarea ref={input} data-editor-mount={mount}')
-  .replace(
     'permissionPolicySupported:true}};',
     'permissionPolicySupported:true,promptQueueStagingSupported:true,queuePausePreservationSupported:true,directMessageSupported:true,planModeSupported:true}};',
   )
