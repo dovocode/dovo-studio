@@ -58,9 +58,10 @@ opener's profile and extensions. Electron's original guest preserves POST data, 
 to the main window. Run
 `pnpm exec vp test apps/desktop/electron/browser.test.ts apps/desktop/electron/browser-window.test.ts`
 for mocked boundary checks. The native smoke command is
-`xvfb-run -a node apps/desktop/scripts/check-browser-extensions-native.mjs` on Linux. This checkout
-cannot start that check because Electron's SUID sandbox helper lacks the required owner/mode. Real
-Google sign-in and extension behavior remain unverified here.
+`xvfb-run -a node apps/desktop/scripts/check-browser-extensions-native.mjs` on Linux. The native smoke
+passes in two fresh Electron 45.2.3 processes with the Chromium sandbox enabled. It checks popup
+adoption, the control-less shell flag in preload, the profile, extension content scripts, the opener
+and cleanup after `window.close()`. Real Google sign-in and arbitrary extensions remain unverified.
 
 ## Workspace and conversation reads
 
