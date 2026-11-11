@@ -204,10 +204,6 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
     { path: 'expo-clipboard', contents: 'export const setStringAsync=async()=>{};' },
     { path: 'react-native-webview', contents: 'export default ()=>null;' },
     {
-      path: 'react-native-safe-area-context',
-      contents: 'export const useSafeAreaInsets=()=>({bottom:0});',
-    },
-    {
       path: 'expo-router',
       contents: `export const usePathname=()=>'/pull';export const router={push:href=>window.nav.push(href),canGoBack:()=>true,back:()=>window.nav.push('back'),replace:href=>window.nav.push(href)};`,
     },
