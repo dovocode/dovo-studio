@@ -211,12 +211,31 @@ notice and a link to Jira, rather than making the entire issue unavailable. Edit
 comments are converted from Markdown to ADF. Temporary body files are private and deleted after the
 command finishes.
 
-Jira lists follow the server’s most-recently-updated order. The CLI does not expose update dates in
-search results, so those rows omit the date; detail reads provide the real revision before any
-write. Open/closed queries use Jira status categories, and exact workflow status names remain
-supported. Pagination reads a bounded prefix because `acli` has no offset token; the prefix is
-cached per state and search, so later pages reuse the rows already read. Actively changing results
-can move between pages. Search can narrow the result set.
+Jira lists use the server’s most-recently-updated order by default. Board cards use Jira Rank within
+each source. Desktop board columns and mobile status groups follow Jira workflow categories: to do,
+in progress, then done. Status names sort alphabetically within a category; statuses without
+category data appear last. The CLI does not expose custom board column positions, so these views do
+not copy a saved board’s exact column order. Use the sort control to select Jira Rank, recent
+updates, or title. Sort changes apply on the server before pagination. The CLI does not expose
+update dates in search results, so those rows omit the date; detail reads provide the real revision
+before any write. Open/closed queries use Jira status categories, and exact workflow status names
+remain supported. Pagination reads a bounded prefix because `acli` has no offset token; the prefix
+is cached per state and search, so later pages reuse the rows already read. Actively changing
+results can move between pages. Search can narrow the result set.
+
+Verify Jira ordering with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/protocol build
+pnpm exec vp test packages/protocol/src/scm/forges/jira-filters.test.ts packages/runtime/src/scm/forges/providers/jira.test.ts packages/extension-scm/src/work/work-source-page.test.ts apps/mobile/src/scm/work/work-cache.test.ts
+node scripts/check-jira-views-browser.mjs
+node scripts/check-jira-workspace-browser.mjs
+node scripts/check-pipeline-list-browser.mjs
+```
+
+These checks use Jira CLI fixtures and browser renderers. They do not verify a live Jira account.
+The pipeline list check also covers the shared mobile issue list’s status groups and sort requests.
 
 Jira lists and issue overviews load before action options. The description stays available while
 options or discussion are loading or unavailable. Desktop/web and mobile show issue metadata and

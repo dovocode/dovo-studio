@@ -375,7 +375,8 @@ function BrowserContent({
     }
   }
   const previewLinks = useRef(true)
-  previewLinks.current = preferences.browserLinkOpening !== 'tab'
+  // A window without a tab list needs a preview so the opener remains reachable.
+  previewLinks.current = !!browserPageOnly || preferences.browserLinkOpening !== 'tab'
   const [homeEditor, setHomeEditor] = useApplicationState<{ tabId: string; url: string } | null>(
     null,
   )
@@ -745,6 +746,12 @@ function BrowserContent({
             : { targetWindowId: destination }),
       })
       if (!mount.current) return
+      if (activeTabRef.current === tab.id) {
+        const opener = currentTabs.current.find(
+          (item) => item.id === (tab.previewOf ?? previewBackground?.tabId),
+        )
+        if (opener) selectTab(opener)
+      }
       nativeTabKeys.delete(`${scope}:${tab.id}`)
       currentTabs.current = currentTabs.current.filter((item) => item.id !== tab.id)
       setTabs((previous) => previous.filter((item) => item.id !== tab.id))
@@ -758,7 +765,10 @@ function BrowserContent({
   }
   const cancelCreatedWindow = () => {
     if (windowMoving || !pendingWindows[0]) return
-    closeTab(pendingWindows[0])
+    const id = pendingWindows[0].id
+    setTabs((previous) =>
+      previous.map((tab) => (tab.id === id ? { ...tab, pendingWindow: undefined } : tab)),
+    )
     setWindowMoveError('')
   }
   const showLinkPreview = async (tab: BrowserTab, source = selectedTab) => {
@@ -1338,10 +1348,9 @@ function BrowserContent({
                 runtimeId: store.localRuntimeId ?? undefined,
                 profileId: tab.profileId,
                 visitedAt: 0,
-                pendingWindow: !!browserPageOnly,
                 previewOf:
-                  !browserPageOnly && previewLinks.current && tab.openerKey
-                    ? (identities.get(tab.openerKey) ??
+                  previewLinks.current && (tab.openerKey || browserPageOnly)
+                    ? ((tab.openerKey ? identities.get(tab.openerKey) : undefined) ??
                       currentTabs.current.find((item) => nativeKey(item.id) === tab.openerKey)
                         ?.id ??
                       activeTab)
@@ -1388,9 +1397,10 @@ function BrowserContent({
                 )
               let foreground = -1
               additions.slice(0, capacity).forEach((tab, index) => {
-                if (tab.active || (previewLinks.current && tab.openerKey)) foreground = index
+                if (tab.active || (previewLinks.current && (tab.openerKey || browserPageOnly)))
+                  foreground = index
               })
-              if (!browserPageOnly && foreground >= 0) {
+              if (foreground >= 0) {
                 void showLinkPreview(adopted[foreground], previousSelected)
               }
               for (const [key, value] of nativeTabKeys)
@@ -3432,6 +3442,7 @@ function BrowserContent({
               onPlacementChange: (placement) =>
                 placement === 'inline' ? closeTab(selectedTab) : setPreviewPlacement(placement),
               onClose: () => closeTab(selectedTab),
+              promoteLabel: browserPageOnly ? 'Open in another window' : 'Open in new tab',
               onReturnToOpener: () => {
                 const opener = currentTabs.current.find(
                   (tab) => tab.id === previewBackground?.tabId,
@@ -3442,7 +3453,11 @@ function BrowserContent({
               onPromote: () =>
                 setTabs((previous) =>
                   previous.map((tab) =>
-                    tab.id === activeTab ? { ...tab, previewOf: undefined } : tab,
+                    tab.id === activeTab
+                      ? browserPageOnly
+                        ? { ...tab, pendingWindow: true }
+                        : { ...tab, previewOf: undefined }
+                      : tab,
                   ),
                 ),
             }
@@ -3821,15 +3836,14 @@ function BrowserContent({
                       favicon: undefined,
                       pinned: false,
                       homeUrl: undefined,
-                      pendingWindow: !!browserPageOnly,
-                      previewOf: !browserPageOnly && previewLinks.current ? tab.id : undefined,
+                      previewOf: previewLinks.current ? tab.id : undefined,
                     }))
                     currentTabs.current = [...currentTabs.current, ...adopted]
                     setTabs((previous) => [
                       ...previous,
                       ...adopted.filter((child) => !previous.some((item) => item.id === child.id)),
                     ])
-                    if (!browserPageOnly && adopted.length) {
+                    if (adopted.length) {
                       void showLinkPreview(adopted[adopted.length - 1], tab)
                     }
                   }
@@ -4201,6 +4215,7 @@ function BrowserLayout({
     onClose: () => void
     onReturnToOpener: () => void
     onPromote: () => void
+    promoteLabel: string
   }
 }) {
   const sidebarState = useNavigationSidebar()
@@ -4251,7 +4266,7 @@ function BrowserLayout({
             actions={
               preview && (
                 <IconButton
-                  label="Open in new tab"
+                  label={preview.promoteLabel}
                   className="size-7 shrink-0"
                   onClick={preview.onPromote}
                 >

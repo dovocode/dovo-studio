@@ -24,7 +24,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {JiraView} from '${root}/packages/extension-scm/src/work/work-view.tsx';window.currentRuntime='remote';window.delaySwitch=false;window.moreCount=0;window.source={key:'remote-team',scope:'remote-team',name:'Team',runtimeId:'remote',runtimeName:'Mac',connected:true,jira:{id:'team',site:'https://team.atlassian.net',project:'TEAM'},input:{jiraSourceId:'team'}};window.issues=[{id:'TEAM-1',title:'Fix login',state:'In progress',priority:'High',type:'Bug',assignees:[],labels:['all'],url:'https://team.atlassian.net/browse/TEAM-1',updatedAt:''},{id:'TEAM-2',title:'Ship feature',state:'Released',priority:'Low',type:'Story',assignees:['me'],labels:[],url:'https://team.atlassian.net/browse/TEAM-2',updatedAt:''}];createRoot(document.getElementById('app')).render(<JiraView/>);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {JiraView} from '${root}/packages/extension-scm/src/work/work-view.tsx';window.currentRuntime='remote';window.delaySwitch=false;window.moreCount=0;window.source={key:'remote-team',scope:'remote-team',name:'Team',runtimeId:'remote',runtimeName:'Mac',connected:true,jira:{id:'team',site:'https://team.atlassian.net',project:'TEAM'},input:{jiraSourceId:'team'}};window.issues=[{id:'TEAM-1',title:'Fix login',state:'In progress',statusCategory:'in-progress',priority:'High',type:'Bug',assignees:[],labels:['all'],url:'https://team.atlassian.net/browse/TEAM-1',updatedAt:''},{id:'TEAM-2',title:'Ship feature',state:'Released',statusCategory:'done',priority:'Low',type:'Story',assignees:['me'],labels:[],url:'https://team.atlassian.net/browse/TEAM-2',updatedAt:''}];createRoot(document.getElementById('app')).render(<JiraView/>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -70,7 +70,17 @@ try {
   )
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  assert.equal(await page.evaluate(() => window.lastQuery.filters.orderBy), 'updated')
   await page.getByRole('button', { name: 'Board', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.lastQuery.filters.orderBy), 'rank')
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await page.getByRole('button', { name: 'Sort results', exact: true }).click()
+  await page.getByRole('option', { name: 'Recently updated · per source', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.lastQuery.filters.orderBy), 'updated')
+  await page.getByRole('button', { name: 'Sort results', exact: true }).click()
+  await page.getByRole('option', { name: 'Default · Jira rank', exact: true }).click()
+  await page.keyboard.press('Escape')
+  assert.equal(await page.evaluate(() => window.lastQuery.filters.orderBy), 'rank')
   assert.equal(await page.getByRole('complementary', { name: 'Jira issue preview' }).count(), 0)
   await page.getByRole('button', { name: /TEAM-1 · Fix login/ }).click()
   await page.getByRole('heading', { name: 'Preview TEAM-1' }).waitFor()

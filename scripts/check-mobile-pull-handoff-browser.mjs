@@ -142,7 +142,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
   [
     {
       path: 'react-native',
-      contents: `export const Alert={alert:()=>{throw Error('Unexpected draft limit alert')}};export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children})=><div>{children}</div>;export const ScrollView=({children,refreshControl})=><div>{refreshControl}{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:(name,callback)=>{(window.appStateListeners??=new Set()).add(callback);return{remove(){window.appStateListeners.delete(callback)}}}};`,
+      contents: `import {useImperativeHandle} from 'react';export const Alert={alert:()=>{throw Error('Unexpected draft limit alert')}};export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children,ref})=>{useImperativeHandle(ref,()=>({measureLayout:(_parent,done)=>done(0,240)}));return <div>{children}</div>};export const ScrollView=({children,refreshControl,ref})=>{useImperativeHandle(ref,()=>({scrollTo:position=>(window.scrolls??=[]).push(position)}));return <div>{refreshControl}{children}</div>};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:(name,callback)=>{(window.appStateListeners??=new Set()).add(callback);return{remove(){window.appStateListeners.delete(callback)}}}};`,
     },
     { path: 'expo-router', contents: 'export const router={push(){}};' },
   ],
@@ -178,6 +178,7 @@ try {
     true,
   )
   await page.getByRole('button', { name: 'View pull request checks', exact: true }).click()
+  await page.waitForFunction(() => window.scrolls?.some((position) => position.y === 240))
   assert.equal(
     await page.getByRole('button', { name: 'Checks', exact: true }).getAttribute('aria-pressed'),
     'true',
@@ -185,6 +186,16 @@ try {
   assert.equal(
     await page.getByRole('heading', { name: 'PR from origin 0', exact: true }).isVisible(),
     true,
+  )
+  await page.getByRole('button', { name: 'View pull request approvals', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Activity', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
+  await page.getByRole('button', { name: 'View pull request comments', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Activity', exact: true }).getAttribute('aria-pressed'),
+    'true',
   )
   await page.getByRole('button', { name: 'Overview', exact: true }).click()
   await page.getByRole('button', { name: 'More PRs', exact: true }).click()

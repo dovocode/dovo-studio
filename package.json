@@ -96,7 +96,7 @@
     "test:startup-draft:browser": "node scripts/check-startup-draft-browser.mjs && node scripts/check-startup-sidebar-browser.mjs && node scripts/check-startup-composer-browser.mjs && node scripts/check-startup-waiting-browser.mjs",
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
     "test:mobile-notifications:browser": "node scripts/check-mobile-notifications-browser.mjs",
-    "test:pull-workspace:browser": "pnpm --filter @dovo/desktop build && node scripts/check-pull-routing-browser.mjs && node scripts/check-pull-workspace-browser.mjs && node scripts/check-pull-pipelines-browser.mjs",
+    "test:pull-workspace:browser": "pnpm --filter @dovo/desktop build && node scripts/check-pull-routing-browser.mjs && node scripts/check-pull-workspace-browser.mjs && node scripts/check-pull-readiness-browser.mjs && node scripts/check-pull-pipelines-browser.mjs",
     "test:pull-stability:browser": "pnpm --filter @dovo/desktop build && node scripts/check-pull-stability-browser.mjs && node scripts/check-mobile-pull-attributes-browser.mjs",
     "test:mobile-pull-handoff:browser": "node scripts/check-mobile-pull-handoff-browser.mjs",
     "test:pr-task-checkout:browser": "node scripts/check-pr-task-checkout-browser.mjs",

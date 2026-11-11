@@ -1,3 +1,4 @@
+import { PullReadinessPanel } from './readiness'
 import { PullAgentChat } from './agent-chat'
 import { PullLinkedThreads } from './linked-threads'
 import { PullSectionStatus } from './section-status'
@@ -9,6 +10,7 @@ import {
   type ForgeConnection,
   runtimeComputerName,
   pullChangesSnapshot,
+  pullReadiness,
 } from '@dovo/protocol'
 import { CreatePull } from '../list/create-pull'
 import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
@@ -26,13 +28,7 @@ import { pipelineRunsHref } from '../../../shell/source-route'
 import { type ComponentRef, useEffect, useRef, useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
-import {
-  pullState,
-  pullDetailChecks,
-  pullDetailReviews,
-  pullMergeability,
-  forgeLabels,
-} from '@dovo/protocol'
+import { pullState, forgeLabels } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
@@ -45,7 +41,7 @@ import { PullTabs } from './pull-tabs'
 import { PullStatus, Signal } from './pull-status'
 import { ScreenHeader } from '../../../ui/layout/screen-header'
 import { PullMenu } from '../list/pull-menu'
-import { PullPrimaryAction, PullActionSheet, type PullActionTarget } from '../list/pull-actions'
+import { PullActionSheet, type PullActionTarget } from '../list/pull-actions'
 import { pullActionOptions } from '../list/pull-action-options'
 import { LineComment } from './line-comment'
 import { formatDateTime } from '../../../ui/content/format-date'
@@ -245,6 +241,38 @@ export function PullDetail({
       setAction(target)
     }
   }
+  const [summaryTarget, setSummaryTarget] = useApplicationState<PullTab | null>(null)
+  const summaryNodes = useRef<Partial<Record<PullTab, ComponentRef<typeof View>>>>({})
+  const openReadiness = (section: 'checks' | 'comments' | 'approvals') => {
+    setFragment('')
+    if (section === 'comments') {
+      const inline =
+        detail?.comments.find(
+          (comment) => comment.kind === 'inline' && comment.resolved === false,
+        ) ?? detail?.comments.find((comment) => comment.kind === 'inline')
+      if (inline) {
+        anchored.current = false
+        setFragment(new URL(inline.url).hash || `#${inline.id}`)
+        setTab('changes')
+        setChangesOpened(true)
+        return
+      }
+    }
+    const destination = section === 'checks' ? 'checks' : 'discussion'
+    setTab(destination)
+    setSummaryTarget(destination)
+  }
+  useEffect(() => {
+    if (!summaryTarget || summaryTarget !== tab) return
+    const frame = requestAnimationFrame(() => {
+      if (content.current)
+        summaryNodes.current[summaryTarget]?.measureLayout(content.current, (_x, y) =>
+          body.current?.scrollTo({ y, animated: false }),
+        )
+      setSummaryTarget(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [summaryTarget, tab])
   return (
     <View style={styles.screen}>
       <ScreenHeader
@@ -463,35 +491,23 @@ export function PullDetail({
                   </View>
                 </View>
                 <PullSectionStatus label="Status" section={sections.status} />
-                <View style={[styles.row, { flexWrap: 'wrap', gap: 10 }]}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="View pull request checks"
-                    onPress={() => {
-                      setFragment('')
-                      setTab('checks')
-                      body.current?.scrollTo({ y: 0, animated: false })
-                    }}
-                    style={{ minHeight: 44, justifyContent: 'center' }}
-                  >
-                    <Signal
-                      signal={
-                        sections.status.ready || sections.checks.ready
-                          ? pullDetailChecks(detail)
-                          : { label: 'Loading checks…', tone: 'neutral' }
-                      }
-                    />
-                  </Pressable>
-                  <Signal
-                    signal={
-                      sections.status.ready || sections.discussion.ready
-                        ? pullDetailReviews(detail)
-                        : { label: 'Loading review status…', tone: 'neutral' }
-                    }
-                  />
-                  <Signal signal={pullMergeability(detail.pull)} />
-                </View>
               </View>
+              <PullReadinessPanel summary={pullReadiness(detail, sections)} onOpen={openReadiness}>
+                {[
+                  ...(actions?.primary ? [actions.primary] : []),
+                  ...(actions?.secondary.filter(
+                    (option) => option.action === 'merge' || option.action === 'auto-merge',
+                  ) ?? []),
+                ].map((option) => (
+                  <Action
+                    key={option.action}
+                    label={option.label}
+                    variant="outline"
+                    disabled={actionDisabled}
+                    onPress={() => openAction({ action: option.action })}
+                  />
+                ))}
+              </PullReadinessPanel>
               <PullLinkedThreads pull={detail.pull} />
               <Action
                 secondary
@@ -666,6 +682,10 @@ export function PullDetail({
                 </View>
               </View>
               <View
+                ref={(node) => {
+                  summaryNodes.current.discussion = node ?? undefined
+                }}
+                collapsable={false}
                 style={{
                   display: tab === 'discussion' ? 'flex' : 'none',
                 }}
@@ -697,6 +717,10 @@ export function PullDetail({
                 </View>
               </View>
               <View
+                ref={(node) => {
+                  summaryNodes.current.checks = node ?? undefined
+                }}
+                collapsable={false}
                 style={{
                   display: tab === 'checks' ? 'flex' : 'none',
                 }}
@@ -768,11 +792,6 @@ export function PullDetail({
               </View>
             </View>
           </ScrollView>
-          <PullPrimaryAction
-            option={actions?.primary}
-            onAction={openAction}
-            disabled={actionDisabled}
-          />
         </>
       )}
       {creatingStack && detail && (

@@ -95,6 +95,41 @@ reports it. These diagnostics expire after seven days and contain no tokens, req
 variables. Rate-limit coordination still observes successful responses in memory without issuing
 additional API requests.
 
+## PR status panel
+
+Desktop, web and mobile show a status panel at the top of each PR detail. The header shows merge
+readiness from the provider and the actions that the provider supports. Review, merge and auto-merge
+actions use the existing dialogs and confirmation rules. Update a branch on the server when the
+provider requires it; the existing server link opens the PR.
+
+Select **Checks** to open check reports. Select **Comments** to open the first unresolved code
+thread, or activity when no code comments are loaded. Select **Approvals** to open review activity.
+Check bars show passed, failed, pending and other results. Comment bars count review threads once,
+including replies. Approval bars show the latest submitted decisions and requested reviewers. These
+bars describe known data; they do not claim a percentage of required approvals. Missing resolution
+metadata stays unknown. Empty and unloaded sections stay neutral. Saved and offline values carry a
+saved label; failed sections show unavailable.
+
+The panel adds no requests or polling. Desktop uses its existing check-report read. Mobile keeps
+check and discussion reads lazy and shows provider summaries until those sections load. Account,
+destination and commit matching still control which section data can appear together.
+
+Verify with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/protocol build
+pnpm exec vp test packages/protocol/src/scm/pulls/pull-readiness.test.ts packages/protocol/src/scm/pulls/pull-sections.test.ts
+node scripts/check-pull-readiness-browser.mjs
+node scripts/check-pull-workspace-browser.mjs
+node scripts/check-pull-stability-browser.mjs
+node scripts/check-mobile-pull-handoff-browser.mjs
+```
+
+The panel check saves desktop and mobile screenshots under `work/pr-readiness`. Browser checks use
+real React components, provider fixtures and mocked native presentation. They do not verify a
+physical iPhone or live provider writes. The workspace checks use existing built desktop CSS.
+
 ## Loading and caching PR details
 
 Overview loads the PR header and description first. Status summaries and stack discovery load

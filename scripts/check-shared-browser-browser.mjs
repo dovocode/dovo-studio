@@ -2008,6 +2008,7 @@ try {
   )
   await page.evaluate(() => {
     window.fixturePageOnly = true
+    window.setCleanup({ browserLinkOpening: 'tab' })
     window.renderBrowser()
   })
   await preview
@@ -2040,6 +2041,8 @@ try {
     name: 'Open link in another window',
     exact: true,
   })
+  assert.equal(await remoteChooser.count(), 0, 'Remote links also preview before choosing a window')
+  await preview.getByRole('button', { name: 'Open in another window', exact: true }).click()
   await remoteChooser.getByRole('button', { name: 'Main window', exact: true }).click()
   await remoteChooser.waitFor({ state: 'detached' })
   const remoteTransfer = await page.evaluate(() =>
@@ -2056,6 +2059,7 @@ try {
   )
   await page.evaluate(() => {
     window.fixturePageOnly = false
+    window.setCleanup({ browserLinkOpening: undefined })
     window.renderBrowser()
   })
   const remotePreviewFrame = preview
@@ -4379,6 +4383,7 @@ try {
   )
   await controlsPage.evaluate(() => {
     window.fixturePageOnly = true
+    window.setCleanup({ browserLinkOpening: 'tab' })
     window.renderBrowser()
   })
   await controlsPage.getByLabel('Preview URL', { exact: true }).waitFor()
@@ -4415,6 +4420,14 @@ try {
       name: 'Open link in another window',
       exact: true,
     })
+    const linkPreview = controlsPage.getByRole('region', { name: 'Link preview', exact: true })
+    await linkPreview.waitFor()
+    assert.equal(await chooser.count(), 0, 'Show the link preview before choosing a window')
+    assert.equal(
+      await linkPreview.getByLabel('Link preview URL', { exact: true }).inputValue(),
+      'https://example.test/new-window',
+    )
+    await linkPreview.getByRole('button', { name: 'Open in another window', exact: true }).click()
     await chooser.waitFor()
     assert.equal(
       await controlsPage.evaluate(
@@ -4469,14 +4482,26 @@ try {
     await window.pollBrowser()
   })
   await controlsPage
+    .getByRole('region', { name: 'Link preview', exact: true })
+    .getByRole('button', { name: 'Open in another window', exact: true })
+    .click()
+  await controlsPage
     .getByRole('dialog', { name: 'Open link in another window', exact: true })
     .getByRole('button', { name: 'Cancel', exact: true })
     .click()
-  await controlsPage.waitForFunction(() =>
-    window.calls.some(
-      (command) => command.action === 'close' && command.key === 'compact-cancel-link',
+  assert.equal(
+    await controlsPage.evaluate(() =>
+      window.calls.some(
+        (command) => command.action === 'close' && command.key === 'compact-cancel-link',
+      ),
     ),
+    false,
+    'Cancelling the window choice keeps the preview and its page state',
   )
+  await controlsPage
+    .getByRole('region', { name: 'Link preview', exact: true })
+    .getByRole('button', { name: 'Close preview', exact: true })
+    .click()
   assert.equal(await controlsPage.getByLabel('Preview URL', { exact: true }).inputValue(), opener)
   await controlsPage.evaluate(async () => {
     window.failWindowMove = true
@@ -4492,6 +4517,10 @@ try {
     name: 'Open link in another window',
     exact: true,
   })
+  await controlsPage
+    .getByRole('region', { name: 'Link preview', exact: true })
+    .getByRole('button', { name: 'Open in another window', exact: true })
+    .click()
   await retryChooser.getByRole('button', { name: 'Other browser window', exact: true }).click()
   await retryChooser.getByRole('alert').filter({ hasText: 'Destination closed' }).waitFor()
   assert.equal(await controlsPage.getByLabel('Preview URL', { exact: true }).inputValue(), opener)
@@ -4509,6 +4538,7 @@ try {
   await controlsPage.evaluate((original) => (window.transferredTab = original), originalPinTransfer)
   await controlsPage.evaluate(() => {
     window.fixturePageOnly = false
+    window.setCleanup({ browserLinkOpening: undefined })
     window.renderBrowser()
   })
   const detachedPin = compactSidebar.locator('[data-browser-tab-id="compact-2"]')

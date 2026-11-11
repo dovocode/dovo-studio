@@ -210,8 +210,11 @@ describe('Jira filtered list cache identity', () => {
         key({ label: 'all' }),
         key({ label: 'mobile' }),
         key({ statusCategory: 'done' }),
+        key({ orderBy: 'rank' }),
+        key({ orderBy: 'updated' }),
+        key({ orderBy: 'title' }),
       ]).size,
-    ).toBe(8)
+    ).toBe(11)
   })
   it('shares equivalent empty filters and canonicalizes property order', () => {
     expect(key()).toBe(key({ assignee: 'all' }))

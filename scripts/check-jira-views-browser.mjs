@@ -15,7 +15,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import React,{useState} from 'react';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {createRoot} from 'react-dom/client';import {JiraToolbar} from '${root}/packages/extension-scm/src/work/jira-toolbar.tsx';import {JiraIssueList} from '${root}/packages/extension-scm/src/work/jira-issue-list.tsx';window.metadataReads=[];const source={readCache:{readEffect:()=>Effect.succeed(null),writeEffect:()=>Effect.void},input:{jiraSourceId:'team'},requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{window.metadataReads.push({path,input});if(path==='/api/scm/source/identity')return decode(schema,{readerIdentity:'account',destination:'dest'});if(window.failMetadata)throw Error('Metadata unavailable');return decode(schema,path.endsWith('/boards')?{boards:[{id:'104',name:'Delivery',type:'scrum'},{id:'105',name:'Support',type:'kanban'}],truncated:false}:{board:input.id,sprints:input.id==='104'?[{id:'176',name:input.state==='closed'?'Last sprint':'Sprint 2',state:input.state==='closed'?'closed':'active'}]:[],truncated:false})},catch:error=>error}),key:'team',scope:'team',name:'Team',runtimeName:'Mac',connected:true,jira:{id:'team',site:'https://team.atlassian.net',project:'TEAM'}};const issues=[{id:'TEAM-1',title:'Fix login',state:'In progress',priority:'High',type:'Bug',assignees:[],labels:['needs-review'],url:'https://team.atlassian.net/browse/TEAM-1'},{id:'TEAM-2',title:'Ship feature',state:'Released',priority:'Low',type:'Story',assignees:['a'],assigneeNames:['Dominic'],labels:[],url:'https://team.atlassian.net/browse/TEAM-2'}];function App(){const [state,setState]=useState('open'),[filters,setFilters]=useState({}),[view,setView]=useState('list'),[project,setProject]=useState('team'),[linked,setLinked]=useState('all'),[sort,setSort]=useState('updated'),[selected,setSelected]=useState(null);window.state={state,filters,view,project,linked,selected};return <><JiraToolbar state={state} onState={setState} filters={filters} onFilters={setFilters} view={view} onView={setView} issues={issues} sources={[source]} source={project} onSource={setProject} linked={linked} onLinked={setLinked} sort={sort} onSort={setSort} onClear={()=>{setFilters({});setState('open');setProject('');setLinked('all');setSort('updated')}}/><JiraIssueList layout={view} rows={issues.map(item=>({source,item}))} selected={selected} opening={false} onOpen={async(source,id)=>setSelected({source,id})}/></>}createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import React,{useState} from 'react';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {createRoot} from 'react-dom/client';import {JiraToolbar} from '${root}/packages/extension-scm/src/work/jira-toolbar.tsx';import {JiraIssueList} from '${root}/packages/extension-scm/src/work/jira-issue-list.tsx';window.metadataReads=[];const source={readCache:{readEffect:()=>Effect.succeed(null),writeEffect:()=>Effect.void},input:{jiraSourceId:'team'},requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{window.metadataReads.push({path,input});if(path==='/api/scm/source/identity')return decode(schema,{readerIdentity:'account',destination:'dest'});if(window.failMetadata)throw Error('Metadata unavailable');return decode(schema,path.endsWith('/boards')?{boards:[{id:'104',name:'Delivery',type:'scrum'},{id:'105',name:'Support',type:'kanban'}],truncated:false}:{board:input.id,sprints:input.id==='104'?[{id:'176',name:input.state==='closed'?'Last sprint':'Sprint 2',state:input.state==='closed'?'closed':'active'}]:[],truncated:false})},catch:error=>error}),key:'team',scope:'team',name:'Team',runtimeName:'Mac',connected:true,jira:{id:'team',site:'https://team.atlassian.net',project:'TEAM'}};const issues=[{id:'TEAM-1',title:'Fix login',state:'In progress',statusCategory:'in-progress',priority:'High',type:'Bug',assignees:[],labels:['needs-review'],url:'https://team.atlassian.net/browse/TEAM-1'},{id:'TEAM-2',title:'Ship feature',state:'Released',statusCategory:'done',priority:'Low',type:'Story',assignees:['a'],assigneeNames:['Dominic'],labels:[],url:'https://team.atlassian.net/browse/TEAM-2'}];window.issues=issues;function App(){const [revision,setRevision]=useState(0);window.render=()=>setRevision(value=>value+1);const [state,setState]=useState('open'),[filters,setFilters]=useState({}),[view,setView]=useState('list'),[project,setProject]=useState('team'),[linked,setLinked]=useState('all'),[sort,setSort]=useState('updated'),[selected,setSelected]=useState(null);window.state={state,filters,view,project,linked,selected};return <><JiraToolbar state={state} onState={setState} filters={filters} onFilters={setFilters} view={view} onView={setView} issues={issues} sources={[source]} source={project} onSource={setProject} linked={linked} onLinked={setLinked} sort={sort} onSort={setSort} onClear={()=>{setFilters({});setState('open');setProject('');setLinked('all');setSort('updated')}}/><JiraIssueList layout={view} rows={issues.map(item=>({source,item}))} selected={selected} opening={false} onOpen={async(source,id)=>setSelected({source,id})}/></>}createRoot(document.getElementById('app')).render(<App/>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -108,6 +108,37 @@ try {
   await page.getByRole('button', { name: /TEAM-1 · Fix login/ }).focus()
   await page.keyboard.press('ArrowDown')
   assert.equal(await page.evaluate(() => window.state.selected.id), 'TEAM-2')
+  await page.evaluate(() => {
+    const original = window.issues[0]
+    window.issues.push(
+      { ...original, id: 'TEAM-8', title: 'Zulu first', state: 'Queued', statusCategory: 'todo' },
+      { ...original, id: 'TEAM-3', title: 'Alpha second', state: 'Queued', statusCategory: 'todo' },
+      {
+        ...original,
+        id: 'TEAM-9',
+        title: 'No category',
+        state: 'Unmapped',
+        statusCategory: undefined,
+      },
+    )
+    window.render()
+  })
+  await page.getByRole('button', { name: 'Board', exact: true }).click()
+  assert.deepEqual(
+    await page
+      .locator('[aria-label="Jira status board"] > div > section')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
+    ['Queued column', 'In progress column', 'Released column', 'Unmapped column'],
+  )
+  assert.deepEqual(
+    await page
+      .getByRole('region', { name: 'Queued column', exact: true })
+      .locator('[data-work-item]')
+      .evaluateAll((nodes) => nodes.map((node) => JSON.parse(node.dataset.workItem)[1])),
+    ['TEAM-8', 'TEAM-3'],
+    'Board columns retain server rank instead of title or issue key order',
+  )
+  await page.getByRole('button', { name: 'List', exact: true }).click()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Filters', exact: true }).click()
   await page.getByRole('textbox', { name: 'Find filter values' }).fill('custom-label')

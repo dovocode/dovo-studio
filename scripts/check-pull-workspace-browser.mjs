@@ -312,7 +312,7 @@ try {
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
     .getByLabel('Pull request status', { exact: true })
-    .getByText('Repository merge status: Waiting for required reviews', { exact: true })
+    .getByText('Waiting for required reviews', { exact: true })
     .waitFor()
   assert.equal(await detail.getByText('Mergeability', { exact: true }).count(), 0)
   assert.equal(
@@ -321,6 +321,21 @@ try {
     'PR and sidebar branding share one row',
   )
   await screenshot({ path: '/tmp/dovo-pull-overview.png' })
+  await detail.getByRole('button', { name: 'View pull request approvals', exact: true }).click()
+  assert.equal(
+    await detail
+      .getByRole('button', { name: 'Reviews 1', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
+  await detail.getByRole('button', { name: 'View pull request comments', exact: true }).click()
+  assert.equal(
+    await detail
+      .getByRole('button', { name: 'All activity 2', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
+
   await detail.getByRole('button', { name: 'Reviews 1', exact: true }).click()
   assert.equal(await detail.getByText('Please add a test', { exact: true }).isVisible(), false)
   await detail.getByText('Looks good to me', { exact: true }).waitFor()
@@ -476,10 +491,11 @@ try {
   ])
     await sourceValue(statusDisclosure, name, value).waitFor()
   const headerStatus = detail.getByLabel('Pull request status', { exact: true })
+  await headerStatus.getByText('Waiting for required reviews', { exact: true }).waitFor()
   await headerStatus
-    .getByText('Repository merge status: Waiting for required reviews', { exact: true })
+    .locator('[aria-label="View pull request approvals"]')
+    .getByText('1 approved · 1 pending', { exact: true })
     .waitFor()
-  await headerStatus.getByText('Review required', { exact: true }).waitFor()
   for (const status of [
     'Pipeline runs: 1 failed',
     'Check reports: 1 check passed',
@@ -736,7 +752,7 @@ try {
     'Passed check-report count stays neutral when a linked pipeline fails',
   )
   assert.equal(await checksTab.locator('svg.lucide-circle-alert').count(), 1)
-  await headerStatus.getByText('Repository merge status: Ready to merge', { exact: true }).waitFor()
+  await headerStatus.getByText('Ready to merge', { exact: true }).waitFor()
   assert.equal(
     await detail.getByRole('button', { name: 'Merge', exact: true }).getAttribute('data-variant'),
     'outline',
@@ -1021,8 +1037,7 @@ try {
     window.pipelineRuns = [{ status: 'failure' }]
     window.showDestination('overview', 'enable-auto-merge')
   })
-  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
+  await headerStatus.getByRole('button', { name: 'Enable auto-merge', exact: true }).click()
   const autoDialog = page.getByRole('dialog')
   assert.equal(await autoDialog.locator('details').getAttribute('open'), null)
   const autoFailures = autoDialog.getByRole('list', { name: 'Current merge failures' })
@@ -1093,7 +1108,7 @@ try {
     window.detail.pull.autoMergeEnabled = true
     window.showDestination('overview', 'disable-auto-merge')
   })
-  await page.getByText('Auto-merge enabled', { exact: true }).waitFor()
+  await headerStatus.getByText(/Auto-merge enabled\./).waitFor()
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Disable auto-merge', exact: true }).click()
   await page
@@ -1101,6 +1116,28 @@ try {
     .getByRole('button', { name: 'Disable auto-merge', exact: true })
     .click()
   assert.equal((await page.evaluate(() => window.writes.at(-1).input)).enabled, false)
+  await page.evaluate(() => {
+    window.detail.comments.push({
+      id: 'readiness-feedback',
+      kind: 'inline',
+      author: 'reviewer',
+      body: 'Resolve this review thread',
+      date: '2026-11-11',
+      url: window.detail.pull.url + '#readiness-feedback',
+      path: 'src/second.ts',
+      threadId: 'readiness-thread',
+      resolved: false,
+    })
+    window.showDestination('overview', 'readiness-inline')
+  })
+  await detail.getByRole('button', { name: 'View pull request comments', exact: true }).click()
+  assert.equal(
+    await detail
+      .getByRole('tab', { name: 'Changes (2)', exact: true })
+      .getAttribute('aria-selected'),
+    'true',
+  )
+  await detail.getByText('Resolve this review thread', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts, embedded previews and visible merge/auto-merge footers at 1440×960, 1100×960 and 1440×720 passed.',

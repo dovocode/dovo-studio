@@ -292,7 +292,7 @@ it('keeps Jira filters on every refreshed page and separates offline cache entri
     const query = decode(forgeWorkQuerySchema, input)
     return { items: [issue(query.cursor ? 2 : 1)], next: query.cursor ? undefined : '30' }
   })
-  const filters = { assignee: 'mine', label: 'needs-review' } as const
+  const filters = { assignee: 'mine', label: 'needs-review', orderBy: 'rank' } as const
   const page = await Effect.runPromise(
     loadWorkSourcePage(
       source,
@@ -321,6 +321,8 @@ it('treats a label named all as an active cache filter, and normalizes assignmen
   const key = (filters?: import('@dovo/protocol').JiraIssueFilters) =>
     workSourceCacheKey(source, 'issues', 'list', '', 'open', filters)
   expect(key({ label: 'all' })).not.toBe(key())
+  expect(key({ orderBy: 'rank' })).not.toBe(key({ orderBy: 'updated' }))
+  expect(key({ orderBy: 'title' })).not.toBe(key({ orderBy: 'rank' }))
   expect(key({ assignee: 'all' })).toBe(key())
   expect(key({ label: 'release', assignee: 'mine' })).toBe(
     key({ assignee: 'mine', label: 'release' }),

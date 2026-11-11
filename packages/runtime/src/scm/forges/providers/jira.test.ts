@@ -708,7 +708,7 @@ it('uses the board-aware sprint endpoint, bounded prefixes and quoted Team/compo
     expect(args[args.indexOf('--sprint') + 1]).toBe('176')
     expect(args[args.indexOf('--limit') + 1]).toBe('61')
     expect(args[args.indexOf('--jql') + 1]).toBe(
-      'project = TEAM AND statusCategory != Done AND "Team" = "team-id" AND component = "API\\\" OR project = OTHER" AND fixVersion = "v2" AND sprint = 176 ORDER BY updated DESC, key DESC',
+      'project = TEAM AND statusCategory != Done AND "Team" = "team-id" AND component = "API\\\" OR project = OTHER" AND fixVersion = "v2" AND sprint = 176 ORDER BY Rank ASC, key ASC',
     )
     return JSON.stringify({ issues: [{ key: raw.key, fields: raw.fields }], startAt: 0 })
   })
@@ -719,6 +719,7 @@ it('uses the board-aware sprint endpoint, bounded prefixes and quoted Team/compo
     {
       board: '104',
       sprint: '176',
+      orderBy: 'rank',
       team: 'team-id',
       component: 'API" OR project = OTHER',
       release: 'v2',
@@ -753,4 +754,58 @@ it('does not return metadata after the pinned account changes during a board rea
     return JSON.stringify({ values: [{ id: 104, name: 'Delivery', type: 'scrum' }], isLast: true })
   })
   await expect(new JiraWork('acli', binding, run).boards()).rejects.toThrow('account changed')
+})
+
+it.each([
+  ['rank', 'Rank ASC, key ASC'],
+  ['updated', 'updated DESC, key DESC'],
+  ['title', 'summary ASC, key ASC'],
+] as const)('orders %s on Jira before slicing a page', async (orderBy, order) => {
+  const run = vi
+    .fn<typeof runForgeCli>()
+    .mockResolvedValueOnce(auth)
+    .mockResolvedValueOnce(JSON.stringify(project))
+    .mockResolvedValueOnce(
+      JSON.stringify(
+        Array.from({ length: 61 }, (_, i) => ({
+          ...raw,
+          key: `TEAM-${100 - i}`,
+        })),
+      ),
+    )
+  const page = await new JiraWork('acli', binding, readContext(run)).issues(
+    'all',
+    '30',
+    undefined,
+    { orderBy },
+  )
+  expect(run.mock.calls[2]?.[1]).toContain(`project = TEAM ORDER BY ${order}`)
+  expect(page.items[0]?.id).toBe('TEAM-70')
+  expect(page.items[29]?.id).toBe('TEAM-41')
+  expect(page.next).toBe('60')
+})
+it.each([
+  ['new', 'todo'],
+  ['indeterminate', 'in-progress'],
+  ['done', 'done'],
+  ['custom', undefined],
+] as const)('preserves the %s category for a custom status name', async (key, category) => {
+  const run = vi
+    .fn<typeof runForgeCli>()
+    .mockResolvedValueOnce(auth)
+    .mockResolvedValueOnce(JSON.stringify(project))
+    .mockResolvedValueOnce(
+      JSON.stringify([
+        {
+          ...raw,
+          fields: {
+            ...raw.fields,
+            status: { name: 'Custom status', statusCategory: { key } },
+          },
+        },
+      ]),
+    )
+  const page = await new JiraWork('acli', binding, readContext(run)).issues('all')
+  expect(page.items[0]?.state).toBe('Custom status')
+  expect(page.items[0]?.statusCategory).toBe(category)
 })

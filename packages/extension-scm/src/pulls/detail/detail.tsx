@@ -1,8 +1,10 @@
+import { PullReadinessPanel } from './readiness'
 import { PullLinkedThreads } from './linked-threads'
 import { AuthorAvatar } from '../author-avatar'
 import {
   buildPullReviewObjective,
   pullChangesSnapshot,
+  pullReadiness,
   pullLinkedTasks,
   type PullReviewSelection,
   type Task,
@@ -183,7 +185,6 @@ function PullDetailContent({
           ? 'Checks failed'
           : undefined
   const ciSummary = detail ? pullChecks(detail.pull) : undefined
-  const providerReadiness = detail ? pullMergeability(detail.pull) : undefined
   const pipelineStatus: PullSignal = pipelineRuns.runs.length
     ? pipelineSummary
     : {
@@ -245,7 +246,37 @@ function PullDetailContent({
     if (value === 'changes') setChangesOpened(true)
     if (value === 'checks') setChecksOpened(true)
   }
+  const [summaryFragment, setSummaryFragment] = useApplicationState('')
+  const [summaryTarget, setSummaryTarget] = useApplicationState<string | null>(null)
+  const openReadiness = (section: 'checks' | 'comments' | 'approvals') => {
+    if (section === 'comments') {
+      const inline =
+        detail?.comments.find(
+          (comment) => comment.kind === 'inline' && comment.resolved === false,
+        ) ?? detail?.comments.find((comment) => comment.kind === 'inline')
+      if (inline) {
+        setSummaryFragment(new URL(inline.url).hash || `#${inline.id}`)
+        selectTab('changes')
+        return
+      }
+    }
+    setSummaryFragment('')
+    setDiscussionFilter(section === 'approvals' ? 'review' : 'all')
+    selectTab(section === 'checks' ? 'checks' : 'overview')
+    setSummaryTarget(section === 'checks' ? 'pr-panel-checks' : 'pr-panel-discussion')
+  }
   useEffect(() => {
+    if (!summaryTarget) return
+    const frame = requestAnimationFrame(() => {
+      const target = content.current?.querySelector<HTMLElement>(`#${summaryTarget}`)
+      target?.scrollIntoView({ block: 'start' })
+      target?.focus({ preventScroll: true })
+      setSummaryTarget(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [summaryTarget, tab])
+  useEffect(() => {
+    setSummaryFragment('')
     if (initialTab) selectTab(initialTab)
   }, [initialTab, initialFragment])
   const scrolledFragment = useRef('')
@@ -355,75 +386,6 @@ function PullDetailContent({
                 setObjectiveBaseline(undefined)
                 setStackAction(undefined)
               }}
-            />
-          )}
-          {detail && (
-            <PullActions
-              repositoryId={repositoryId}
-              detail={detail}
-              mergeStatus={{
-                headSha: detail.pull.headSha,
-                checks: {
-                  busy: sections.checks.busy,
-                  ready: sections.checks.ready,
-                  error: sections.checks.error,
-                  readConnected: sections.checks.readConnected,
-                  refresh: sections.checks.refresh,
-                },
-                providerReadiness: pullMergeability(detail.pull),
-                sources: [...statusSources, { name: 'Review status', signal: reviewSummary }],
-                signals: [
-                  checkSummary,
-                  pipelineRuns.runs.length
-                    ? pipelineSummary
-                    : {
-                        label: pipelineRuns.busy
-                          ? 'Loading pipeline runs…'
-                          : 'No pipeline runs loaded',
-                        tone: 'neutral',
-                      },
-                  reviewSummary,
-                  pullMergeability(detail.pull),
-                ],
-                warnings: [
-                  ...new Set(
-                    [
-                      sections.status.error,
-                      sections.checks.error,
-                      sections.discussion.error,
-                      detail.pull.statusError,
-                      pipelineRuns.error,
-                      pipelineRuns.notice,
-                      ...detail.warnings,
-                    ].filter((message): message is string => !!message),
-                  ),
-                ],
-              }}
-              onDone={changed}
-              extraMenuItems={
-                <>
-                  {(thread || repository) && (
-                    <DropdownMenu.Item
-                      className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
-                      disabled={!thread && !connected}
-                      onSelect={() =>
-                        thread ? thread.onAsk(buildPullReviewObjective(detail)) : setAsking({})
-                      }
-                    >
-                      {thread ? `Ask in linked thread ${thread.title}` : 'Ask agent about this PR'}
-                    </DropdownMenu.Item>
-                  )}
-                </>
-              }
-              onStartTask={
-                repository
-                  ? () => {
-                      setObjective(undefined)
-                      setObjectiveBaseline(undefined)
-                      setStarting(true)
-                    }
-                  : undefined
-              }
             />
           )}
         </header>
@@ -609,30 +571,6 @@ function PullDetailContent({
                   </button>
                 ))}
               </div>
-              <div
-                className="ml-auto flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2"
-                aria-label="Pull request status"
-              >
-                <button
-                  type="button"
-                  aria-label="View pull request checks"
-                  onClick={() => selectTab('checks')}
-                  className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
-                >
-                  {providerReadiness && (
-                    <Signal
-                      signal={{
-                        ...providerReadiness,
-                        label: `Repository merge status: ${providerReadiness.label}`,
-                      }}
-                    />
-                  )}
-                </button>
-                <Signal signal={reviewSummary} subtle />
-                {detail.pull.autoMergeEnabled && (
-                  <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
-                )}
-              </div>
             </div>
           </>
         )}
@@ -648,6 +586,77 @@ function PullDetailContent({
             className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
             aria-label="Pull request content"
           >
+            <PullReadinessPanel summary={pullReadiness(detail, sections)} onOpen={openReadiness}>
+              <PullActions
+                repositoryId={repositoryId}
+                detail={detail}
+                mergeStatus={{
+                  headSha: detail.pull.headSha,
+                  checks: {
+                    busy: sections.checks.busy,
+                    ready: sections.checks.ready,
+                    error: sections.checks.error,
+                    readConnected: sections.checks.readConnected,
+                    refresh: sections.checks.refresh,
+                  },
+                  providerReadiness: pullMergeability(detail.pull),
+                  sources: [...statusSources, { name: 'Review status', signal: reviewSummary }],
+                  signals: [
+                    checkSummary,
+                    pipelineRuns.runs.length
+                      ? pipelineSummary
+                      : {
+                          label: pipelineRuns.busy
+                            ? 'Loading pipeline runs…'
+                            : 'No pipeline runs loaded',
+                          tone: 'neutral',
+                        },
+                    reviewSummary,
+                    pullMergeability(detail.pull),
+                  ],
+                  warnings: [
+                    ...new Set(
+                      [
+                        sections.status.error,
+                        sections.checks.error,
+                        sections.discussion.error,
+                        detail.pull.statusError,
+                        pipelineRuns.error,
+                        pipelineRuns.notice,
+                        ...detail.warnings,
+                      ].filter((message): message is string => !!message),
+                    ),
+                  ],
+                }}
+                onDone={changed}
+                extraMenuItems={
+                  <>
+                    {(thread || repository) && (
+                      <DropdownMenu.Item
+                        className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                        disabled={!thread && !connected}
+                        onSelect={() =>
+                          thread ? thread.onAsk(buildPullReviewObjective(detail)) : setAsking({})
+                        }
+                      >
+                        {thread
+                          ? `Ask in linked thread ${thread.title}`
+                          : 'Ask agent about this PR'}
+                      </DropdownMenu.Item>
+                    )}
+                  </>
+                }
+                onStartTask={
+                  repository
+                    ? () => {
+                        setObjective(undefined)
+                        setObjectiveBaseline(undefined)
+                        setStarting(true)
+                      }
+                    : undefined
+                }
+              />
+            </PullReadinessPanel>
             {tab === 'overview' && <PullLinkedThreads pull={detail.pull} />}
             {error && (
               <p
@@ -708,7 +717,11 @@ function PullDetailContent({
                       </MessageResponse>
                     </div>
                   </section>
-                  <section id="pr-panel-discussion" aria-label="Pull request activity">
+                  <section
+                    id="pr-panel-discussion"
+                    tabIndex={-1}
+                    aria-label="Pull request activity"
+                  >
                     <PullSectionStatus label="Activity" section={sections.discussion} />
                     <div className="mb-4 flex flex-wrap items-center gap-1">
                       <h3 className="mr-auto text-sm font-medium">Activity</h3>
@@ -841,6 +854,7 @@ function PullDetailContent({
             <section
               role="tabpanel"
               id="pr-panel-checks"
+              tabIndex={-1}
               aria-labelledby="pr-tab-checks"
               hidden={tab !== 'checks'}
             >
@@ -898,7 +912,7 @@ function PullDetailContent({
                   key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}
                   detail={changesDetail}
                   embedded={embedded}
-                  initialFragment={initialFragment}
+                  initialFragment={summaryFragment || initialFragment}
                   repositoryId={repositoryId}
                   onPosted={changed}
                   thread={thread}

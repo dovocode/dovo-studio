@@ -115,7 +115,6 @@ export function PullActions(
         <Button
           size="sm"
           variant="outline"
-          className="max-sm:hidden @max-sm/pr-detail:hidden"
           disabled={!connected}
           onClick={() => {
             setNotice('')
@@ -129,7 +128,6 @@ export function PullActions(
         <Button
           size="sm"
           variant={mergeReady ? 'default' : 'outline'}
-          className="max-sm:hidden @max-sm/pr-detail:hidden"
           disabled={!connected || !!props.detail.stale || !!props.detail.refreshError}
           onClick={() => {
             setNotice('')
@@ -137,6 +135,19 @@ export function PullActions(
           }}
         >
           Merge
+        </Button>
+      )}
+      {available.includes('auto-merge') && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!connected || !!props.detail.stale || !!props.detail.refreshError}
+          onClick={() => {
+            setNotice('')
+            setAction('auto-merge')
+          }}
+        >
+          {props.detail.pull.autoMergeEnabled ? 'Disable auto-merge' : 'Enable auto-merge'}
         </Button>
       )}
       <DropdownMenu.Root>

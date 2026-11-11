@@ -305,7 +305,11 @@ export function JiraToolbar({
                 Project links filter loaded results in Dovo.
               </p>
               <ChoicePicker aria-label="Sort results" value={sort} onValueChange={onSort}>
-                <option value="updated">Jira order · per source</option>
+                <option value="updated">
+                  Default · {view === 'board' ? 'Jira rank' : 'recently updated'}
+                </option>
+                <option value="rank">Jira rank · per source</option>
+                <option value="recent">Recently updated · per source</option>
                 <option value="project">Source</option>
                 <option value="title">Title · within each source</option>
               </ChoicePicker>

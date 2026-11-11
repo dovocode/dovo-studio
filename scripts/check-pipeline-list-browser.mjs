@@ -26,7 +26,7 @@ export const useTheme=()=>({colors:{text:'#24292f',background:'#fff',surface:'#f
 export const Icon=()=>null;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)} style={{boxSizing:'border-box',width:'100%',padding:10,font:'inherit'}}/>;
-export const Choice=()=>null;export const Sheet=()=>null;
+export const Choice=({label,value,onChange,items})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;export const Sheet=({children,title})=><section aria-label={title}>{children}</section>;
 export const ScreenHeader=({title,subtitle,buttons=[]})=><header><h1 style={{fontSize:20}}>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} aria-label={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
 `
 async function bundle(isMobile) {
@@ -42,12 +42,12 @@ async function bundle(isMobile) {
         '../../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
         '../../shell/source-route': `export const backToCollection=()=>{};export const issueHref=()=>'/issue';export const jiraIssueHref=()=>'/jira';export const pipelineHref=(runtime,repo,id)=>'/pipeline/'+id;`,
         './work-sources': `export const jiraSourceKey=()=>'';export const workSources=()=>window.sources;export const workSourceName=source=>source.name;export const workSourceContentIdentity=source=>source.key;export const workSourceInput=()=>({});`,
-        './use-work-collection': `export const useWorkCollection=(mode,id,state,query,filters,sha)=>{window.readStates.push(state);window.readCommits.push(sha);return {pages:window.sources.map(source=>({source,items:window.runs,stale:!source.connected,options:{provider:'github'},next:'page2'})),busy:window.refreshing,refresh:window.refreshWork,more:async()=>{window.runs.push({...window.runs[3],id:'more',title:'Earlier release'});window.render()}}};`,
+        './use-work-collection': `export const useWorkCollection=(mode,id,state,query,filters,sha)=>{window.readStates.push(state);window.readCommits.push(sha);window.lastFilters=filters;return {pages:window.sources.map(source=>({source,items:window.runs,stale:!source.connected,options:{provider:'github'},next:'page2'})),busy:window.refreshing,refresh:window.refreshWork,more:async()=>{window.runs.push({...window.runs[3],id:'more',title:'Earlier release'});window.render()}}};`,
         '../../ui/layout/use-list-scroll': `export const useListScroll=()=>({retainPosition:()=>{}});`,
         '../connections/jira-binding': `export const JiraProjectForm=()=>null;`,
         './work-form': `export const WorkForm=()=>null;`,
         './jira-browse-controls': `export const JiraBrowseControls=()=>null;`,
-        './jira-filters': `export const JiraChip=()=>null;export const JiraQuickViews=()=>null;export const JiraFilterFields=()=>null;`,
+        './jira-filters': `export const JiraChip=({label,onPress})=><button onClick={onPress}>{label}</button>;export const JiraQuickViews=()=>null;export const JiraFilterFields=()=>null;`,
         ...Object.fromEntries(
           [
             '../../ui/content/text',
@@ -372,6 +372,83 @@ try {
         .getByText(isMobile ? 'No issues found' : 'Your issues, in one place', { exact: true })
         .waitFor()
       assert.deepEqual(errors, [])
+      if (isMobile && width === 390) {
+        await page.evaluate(() => {
+          const source = window.sources[0]
+          source.kind = 'jira'
+          source.jiraSource = { id: 'team', site: 'https://team.atlassian.net', project: 'TEAM' }
+          const base = {
+            body: '',
+            type: 'Task',
+            author: '',
+            assignees: [],
+            labels: [],
+            url: 'https://team.atlassian.net/browse/TEAM-1',
+            revision: '',
+          }
+          window.runs = [
+            {
+              ...base,
+              id: 'TEAM-1',
+              title: 'Archive',
+              state: 'Archived',
+              statusCategory: 'done',
+              updatedAt: '2026-11-10',
+            },
+            {
+              ...base,
+              id: 'TEAM-8',
+              title: 'Zulu first',
+              state: 'Queued',
+              statusCategory: 'todo',
+              updatedAt: '2026-11-01',
+            },
+            {
+              ...base,
+              id: 'TEAM-3',
+              title: 'Alpha second',
+              state: 'Queued',
+              statusCategory: 'todo',
+              updatedAt: '2026-11-11',
+            },
+            {
+              ...base,
+              id: 'TEAM-4',
+              title: 'Building',
+              state: 'Building',
+              statusCategory: 'in-progress',
+              updatedAt: '',
+            },
+          ]
+          window.render()
+        })
+        await page.getByRole('button', { name: 'By status', exact: true }).waitFor()
+        assert.equal(await page.evaluate(() => window.lastFilters.orderBy), 'updated')
+        await page.getByRole('button', { name: 'By status', exact: true }).click()
+        assert.equal(await page.evaluate(() => window.lastFilters.orderBy), 'rank')
+        assert.deepEqual(
+          await rows.evaluateAll((nodes) => nodes.map((node) => node.dataset.testid)),
+          ['Work item TEAM-8', 'Work item TEAM-3', 'Work item TEAM-4', 'Work item TEAM-1'],
+          'Mobile groups use workflow category order and preserve server rank within a status',
+        )
+        await page.getByRole('button', { name: 'Issue filters', exact: true }).click()
+        await page.getByLabel('Sort issues', { exact: true }).selectOption('recent')
+        assert.equal(await page.evaluate(() => window.lastFilters.orderBy), 'updated')
+        await page.getByLabel('Sort issues', { exact: true }).selectOption('title')
+        assert.equal(await page.evaluate(() => window.lastFilters.orderBy), 'title')
+        assert.deepEqual(
+          await rows.evaluateAll((nodes) => nodes.map((node) => node.dataset.testid)),
+          ['Work item TEAM-3', 'Work item TEAM-8', 'Work item TEAM-4', 'Work item TEAM-1'],
+        )
+        await page.getByRole('button', { name: 'List', exact: true }).click()
+        await page.getByLabel('Sort issues', { exact: true }).selectOption('rank')
+        assert.equal(await page.evaluate(() => window.lastFilters.orderBy), 'rank')
+        assert.deepEqual(
+          await rows.evaluateAll((nodes) => nodes.map((node) => node.dataset.testid)),
+          ['Work item TEAM-1', 'Work item TEAM-8', 'Work item TEAM-3', 'Work item TEAM-4'],
+        )
+        assert.deepEqual(errors, [])
+      }
       await page.close()
     }
   console.log(

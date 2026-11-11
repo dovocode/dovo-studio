@@ -39,12 +39,14 @@ const jiraFilterValue = refine(
   (value) => !/[\p{Cc}]/u.test(value),
 )
 export const jiraNumericId = Schema.String.pipe(Schema.check(Schema.isPattern(/^[1-9]\d{0,14}$/)))
+export const jiraStatusCategorySchema = Schema.Literals(['todo', 'in-progress', 'done'])
 export const jiraIssueFiltersSchema = mutableStruct({
   assignee: Schema.optional(Schema.Literals(['all', 'mine', 'unassigned'])),
   priority: Schema.optional(jiraFilterValue),
   type: Schema.optional(jiraFilterValue),
   label: Schema.optional(jiraFilterValue),
-  statusCategory: Schema.optional(Schema.Literals(['todo', 'in-progress', 'done'])),
+  statusCategory: Schema.optional(jiraStatusCategorySchema),
+  orderBy: Schema.optional(Schema.Literals(['rank', 'updated', 'title'])),
   board: Schema.optional(jiraNumericId),
   sprint: Schema.optional(
     Schema.Union([jiraNumericId, Schema.Literals(['active', 'future', 'none'])]),
@@ -67,7 +69,30 @@ export function jiraIssueFilterKey(filters?: JiraIssueFilters) {
     )
       ? [filters?.board, filters?.sprint, filters?.team, filters?.component, filters?.release]
       : []),
+    ...(filters?.orderBy ? [filters.orderBy] : []),
   ]
+}
+/** Board cards follow Jira Rank; list views keep the newest issues first. */
+export function jiraIssueOrder(layout: 'list' | 'board', sort: string) {
+  if (sort === 'title') return 'title' as const
+  if (sort === 'recent') return 'updated' as const
+  if (sort === 'rank' || layout === 'board') return 'rank' as const
+  return 'updated' as const
+}
+
+/** The CLI exposes status categories, but not custom board column positions. */
+export function jiraWorkflowStatuses(
+  issues: ReadonlyArray<{ state: string; statusCategory?: typeof jiraStatusCategorySchema.Type }>,
+) {
+  const order = { todo: 0, 'in-progress': 1, done: 2 }
+  const statuses = new Map<string, number>()
+  for (const issue of issues) {
+    const rank = issue.statusCategory ? order[issue.statusCategory] : 3
+    statuses.set(issue.state, Math.min(statuses.get(issue.state) ?? 3, rank))
+  }
+  return [...statuses]
+    .sort(([a, rankA], [b, rankB]) => rankA - rankB || a.localeCompare(b))
+    .map(([state]) => state)
 }
 export function hasJiraIssueFilters(filters?: JiraIssueFilters) {
   return jiraIssueFilterKey(filters).some((value) => value !== undefined)

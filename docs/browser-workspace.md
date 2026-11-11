@@ -455,12 +455,13 @@ page controls and page. The existing **Detach to new window** option keeps the t
 options keep the same page and browser profile. Closing a detached pinned window returns its page to
 the source window.
 
-In a window without sidebars, new-page links (`target="_blank"` and `window.open`) open another
-window. Studio asks for **Main window**, **New window**, or another open browser window. A new
-window has no sidebars. The opener and any current preview stay open. Studio shows a notice in the
-source window. A failed move keeps the picker open for retry. Cancel closes only the child page.
-Local pages retain their native page and opener session; paired-runtime pages retain their runtime
-and profile. The normal browser workspace keeps its floating link previews.
+In a window without sidebars, new-page links (`target="_blank"` and `window.open`) open a floating
+link preview. This also applies when the normal browser link preference is **Open in new tab**.
+Choose **Open in another window** in the preview to select **Main window**, **New window**, or
+another open browser window. A new window has no sidebars. Cancel returns to the preview and keeps
+its page state. A failed move keeps the picker open for retry. A successful move returns to the page
+that opened the preview and shows a notice. Local pages retain their native page and opener session;
+paired-runtime pages retain their runtime and profile.
 
 Verify with:
 
@@ -471,3 +472,7 @@ pnpm --filter @dovo/desktop build
 node scripts/check-shared-browser-browser.mjs
 pnpm exec vp test apps/desktop/electron/browser-window.test.ts apps/desktop/electron/browser.test.ts
 ```
+
+The shared browser renderer check covers local and remote preview adoption, nested links, window
+choices, cancellation, retries and remounts. Its native and remote boundaries use fixtures; it does
+not verify physical macOS or Windows windows.

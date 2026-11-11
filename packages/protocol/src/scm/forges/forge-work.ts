@@ -8,7 +8,7 @@ import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, refine, urlSchema } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
 import { forgeProviderSchema } from './forges.js'
-import { jiraIssueFiltersSchema } from './jira.js'
+import { jiraIssueFiltersSchema, jiraStatusCategorySchema } from './jira.js'
 const id = refine(
   maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 300),
   (value) => !/[\p{Cc}]/u.test(value) && !['.', '..'].includes(value),
@@ -77,6 +77,7 @@ export const forgeIssueSchema = mutableStruct({
   title: Schema.String,
   body: Schema.String,
   state: Schema.String,
+  statusCategory: Schema.optional(jiraStatusCategorySchema),
   type: Schema.String.pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'Issue'))),
   url,
   author: Schema.String,

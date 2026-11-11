@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { CircleDot } from 'lucide-react'
 import { formatDateTime, issueLabel, type ForgeIssue } from '@dovo/studio-core'
 import type { WorkSource } from './work-sources'
+import { jiraWorkflowStatuses } from '@dovo/protocol'
 import { formatDate } from './format-date'
 
 type Row = { source: WorkSource; item: ForgeIssue; stale?: boolean; cachedAt?: string }
@@ -22,11 +23,11 @@ export function JiraIssueList({
 }) {
   const buttons = useRef(new Map<string, HTMLButtonElement>())
   if (layout === 'board') {
-    const statuses = [...new Set(rows.map((row) => row.item.state))].sort()
+    const statuses = jiraWorkflowStatuses(rows.map((row) => row.item))
     return (
       <div className="space-y-3" aria-label="Jira status board">
         <p className="text-xs text-muted-foreground">
-          Columns show workflow statuses in loaded results. Open an issue to change its status.
+          Columns follow Jira workflow categories. Open an issue to change its status.
         </p>
         <div className="flex items-start gap-3 overflow-x-auto pb-3">
           {statuses.map((status) => {

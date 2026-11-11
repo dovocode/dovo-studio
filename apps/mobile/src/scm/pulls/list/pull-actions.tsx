@@ -10,7 +10,7 @@ import {
   useDetailDraft,
 } from '../../../runtime/state/detail-drafts'
 import { useRef } from 'react'
-import { Alert, View } from 'react-native'
+import { Alert } from 'react-native'
 import {
   pullActionSchema,
   pullActionResultSchema,
@@ -25,8 +25,6 @@ import { Field } from '../../../ui/controls/field'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import type { PullActionOption } from './pull-action-options'
 export type PullActionTarget = {
   action: PullAction['action']
   comment?: PullComment
@@ -360,45 +358,5 @@ export function PullActionSheet({
         </Text>
       )}
     </Sheet>
-  )
-}
-export function PullPrimaryAction({
-  option,
-  onAction,
-  disabled,
-}: {
-  option: PullActionOption | undefined
-  onAction: (target: PullActionTarget) => void
-  disabled: boolean
-}) {
-  const { colors, styles } = useTheme()
-
-  const insets = useSafeAreaInsets()
-  if (!option) return null
-  return (
-    <View
-      style={[
-        styles.row,
-        {
-          justifyContent: 'flex-end',
-          flexWrap: 'nowrap',
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: Math.max(8, insets.bottom),
-          borderTopWidth: 0.5,
-          borderTopColor: colors.border,
-        },
-      ]}
-    >
-      <Action
-        label={option.label}
-        disabled={disabled}
-        onPress={() =>
-          onAction({
-            action: option.action,
-          })
-        }
-      />
-    </View>
   )
 }

@@ -4,13 +4,14 @@ import {
   pipelineSignal,
   pipelineStatusSummary,
   hasJiraIssueFilters,
+  jiraIssueOrder,
   type ForgeWorkOptions,
   type JiraIssueFilters,
 } from '@dovo/protocol'
 import { JiraToolbar } from './jira-toolbar'
 import { EmptyState, PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   ArrowLeft,
   CircleDot,
@@ -136,13 +137,17 @@ function WorkView({
     const timer = setTimeout(() => setQuery(mode === 'issues' ? search.trim() : ''), 300)
     return () => clearTimeout(timer)
   }, [mode, search])
+  const readFilters = useMemo(
+    () => ({ ...jiraFilters, orderBy: jiraIssueOrder(jiraLayout, sort) }),
+    [jiraFilters, jiraLayout, sort],
+  )
   const { sources, pages, busy, refresh, more, chooseReader } = useWorkSources(
     mode,
     query,
     sourceKind,
     project,
     isJira ? state : 'all',
-    isJira ? jiraFilters : undefined,
+    isJira ? readFilters : undefined,
   )
   const allSources = useIssueSources(mode === 'issues', false)
   const [selected, setSelected] = useApplicationState<{
@@ -300,7 +305,7 @@ function WorkView({
         ? a.item.title.localeCompare(b.item.title)
         : sort === 'project'
           ? a.source.name.localeCompare(b.source.name) ||
-            b.item.updatedAt.localeCompare(a.item.updatedAt)
+            (isJira ? 0 : b.item.updatedAt.localeCompare(a.item.updatedAt))
           : !isJira && a.item.updatedAt && b.item.updatedAt
             ? b.item.updatedAt.localeCompare(a.item.updatedAt)
             : 0,

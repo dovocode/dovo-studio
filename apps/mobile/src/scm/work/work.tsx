@@ -2,6 +2,8 @@ import {
   pipelineSignal,
   pipelineStatusSummary,
   hasJiraIssueFilters,
+  jiraIssueOrder,
+  jiraWorkflowStatuses,
   type JiraIssueFilters,
   runtimeComputerName,
 } from '@dovo/protocol'
@@ -12,7 +14,7 @@ import {
 } from '../../runtime/state/detail-drafts'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { router } from 'expo-router'
-import { useDeferredValue, useEffect, useRef } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef } from 'react'
 import { FlatList, Keyboard, Pressable, View } from 'react-native'
 import {
   issueLabel,
@@ -139,12 +141,19 @@ export function WorkScreen({
   const pinForm = (page: WorkPage | undefined) =>
     setFormTarget(page?.options ? { source: page.source, options: page.options } : undefined)
   const [message, setMessage] = useApplicationState('')
+  const readFilters = useMemo(
+    () => ({
+      ...jiraFilters,
+      orderBy: jiraIssueOrder(layout === 'status' ? 'board' : 'list', sort),
+    }),
+    [jiraFilters, layout, sort],
+  )
   const { pages, busy, refresh, more } = useWorkCollection(
     mode,
     repositoryId,
     mode === 'pipelines' ? 'all' : state,
     mode === 'issues' ? serverQuery : '',
-    jiraOnly ? jiraFilters : undefined,
+    jiraOnly ? readFilters : undefined,
     mode === 'pipelines' ? commitSha : undefined,
   )
   const connected = sources.some(
@@ -162,6 +171,12 @@ export function WorkScreen({
     setSearch('')
     listOffset.current = 0
   }, [workTarget, mode, activeId, onRepositoryChange])
+  const statusOrder =
+    jiraOnly && layout === 'status'
+      ? jiraWorkflowStatuses(
+          pages.flatMap((page) => page.items.filter((row): row is ForgeIssue => 'state' in row)),
+        )
+      : []
   const matching = pages
     .flatMap((page) =>
       page.items.map((row) => ({
@@ -186,10 +201,12 @@ export function WorkScreen({
       'state' in a.row &&
       'state' in b.row &&
       a.row.state !== b.row.state
-        ? a.row.state.localeCompare(b.row.state)
+        ? statusOrder.indexOf(a.row.state) - statusOrder.indexOf(b.row.state)
         : sort === 'title'
           ? a.row.title.localeCompare(b.row.title)
-          : (b.row.updatedAt ?? '').localeCompare(a.row.updatedAt ?? ''),
+          : jiraOnly
+            ? 0
+            : (b.row.updatedAt ?? '').localeCompare(a.row.updatedAt ?? ''),
     )
   const visible =
     mode === 'pipelines' && state !== 'all'
@@ -785,8 +802,16 @@ export function WorkScreen({
             items={[
               {
                 id: 'updated',
-                name: 'Recently updated',
+                name: jiraOnly
+                  ? `Default · ${layout === 'status' ? 'Jira rank' : 'recently updated'}`
+                  : 'Recently updated',
               },
+              ...(jiraOnly
+                ? [
+                    { id: 'rank', name: 'Jira rank · per source' },
+                    { id: 'recent', name: 'Recently updated · per source' },
+                  ]
+                : []),
               {
                 id: 'title',
                 name: 'Title',

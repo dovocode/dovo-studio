@@ -210,6 +210,7 @@ const rawIssue = mutableStruct({
     description: Schema.optional(Schema.Unknown),
     status: mutableStruct({
       name: Schema.String,
+      statusCategory: Schema.optional(Schema.NullOr(mutableStruct({ key: Schema.String }))),
     }),
     issuetype: mutableStruct({
       name: Schema.String,
@@ -451,6 +452,14 @@ export class JiraWork implements ForgeWorkProvider {
       title: raw.fields.summary,
       ...renderJiraBody(raw.fields.description),
       state: raw.fields.status.name,
+      statusCategory:
+        raw.fields.status.statusCategory?.key === 'new'
+          ? 'todo'
+          : raw.fields.status.statusCategory?.key === 'indeterminate'
+            ? 'in-progress'
+            : raw.fields.status.statusCategory?.key === 'done'
+              ? 'done'
+              : undefined,
       type: raw.fields.issuetype.name,
       ...(raw.fields.priority ? { priority: raw.fields.priority.name } : {}),
       url: new URL('/browse/' + raw.key, this.binding.site).href,
@@ -581,7 +590,13 @@ export class JiraWork implements ForgeWorkProvider {
       : /^[A-Z][A-Z0-9_]*-\d+$/i.test(text)
         ? ` AND key = ${JSON.stringify(text.toUpperCase())}`
         : ` AND text ~ ${JSON.stringify('"' + text.replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&') + '"')}`
-    const jql = `project = ${this.binding.project}${status}${search}${structured} ORDER BY updated DESC, key DESC`
+    const order =
+      filters.orderBy === 'rank'
+        ? 'Rank ASC, key ASC'
+        : filters.orderBy === 'title'
+          ? 'summary ASC, key ASC'
+          : 'updated DESC, key DESC'
+    const jql = `project = ${this.binding.project}${status}${search}${structured} ORDER BY ${order}`
     const fields = 'key,summary,description,status,issuetype,priority,creator,assignee,labels'
     // The CLI has no board issue endpoint or saved-filter/configuration read. Only its
     // sprint endpoint can enforce a saved board's filter; never invent `board = id` JQL.
