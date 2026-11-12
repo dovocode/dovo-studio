@@ -5,18 +5,18 @@ retained Unified views. Keep HTTP LAN/VPN access, optional HTTPS, pairing codes 
 No account service or connection policy change is needed.
 
 This audit covers desktop/web and mobile drafts, Unified view lifetimes, runtime synchronization,
-read caches, connection recovery and runtime backups. It combines source review, isolated probes
-and existing regression tests. It does not prove app-wide stability. Earlier findings and fixes
-remain recorded in the [October audit](stability-audit-2026-10-29.md) and its linked follow-ups.
+read caches, connection recovery and runtime backups. It combines source review, isolated probes and
+existing regression tests. It does not prove app-wide stability. Earlier findings and fixes remain
+recorded in the [October audit](stability-audit-2026-10-29.md) and its linked follow-ups.
 
 ## Open findings
 
-| Priority | Finding | Evidence | Recommended change |
-| --- | --- | --- | --- |
-| P1 | Desktop can lose the last unsaved keystrokes when the page closes | Reproduced with the actual draft hook in Chromium and an isolated storage adapter | Write drafts to durable local storage before delayed runtime sync |
-| P2 | Mobile retains inactive draft text in memory | Measured with actual draft storage and synthetic drafts after garbage collection | Evict clean inactive records; retain dirty and pending work |
-| P2 | Unified retains every opened thread/terminal view | Source review; total memory growth not measured | Measure long sessions, then suspend inactive views with state preservation |
-| P2 | Rich editor import failure has no local recovery | Source review; chunk failure not injected | Fall back to source input and preserve the draft |
+| Priority | Finding                                                           | Evidence                                                                          | Recommended change                                                         |
+| -------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| P1       | Desktop can lose the last unsaved keystrokes when the page closes | Reproduced with the actual draft hook in Chromium and an isolated storage adapter | Write drafts to durable local storage before delayed runtime sync          |
+| P2       | Mobile retains inactive draft text in memory                      | Measured with actual draft storage and synthetic drafts after garbage collection  | Evict clean inactive records; retain dirty and pending work                |
+| P2       | Unified retains every opened thread/terminal view                 | Source review; total memory growth not measured                                   | Measure long sessions, then suspend inactive views with state preservation |
+| P2       | Rich editor import failure has no local recovery                  | Source review; chunk failure not injected                                         | Fall back to source input and preserve the draft                           |
 
 P1 means a confirmed path to loss of unsent text. P2 means a resource or recovery risk. These open
 findings are investigation results. This change does not implement the proposed storage or view
@@ -25,10 +25,11 @@ lifetime changes.
 ### Desktop draft close window
 
 [`createComposerDraft`](../packages/extension-tasks/src/chat/composer/composer-draft.ts) delays
-writes by 300 ms. [`useComposerDraft`](../packages/extension-tasks/src/chat/composer/use-composer-draft.ts)
-flushes on React cleanup, but does not flush on page hide. A browser close does not guarantee React
-cleanup. The workspace provider has its own persistence and page-hide path. It cannot save text
-that the composer has not yet passed to it.
+writes by 300 ms.
+[`useComposerDraft`](../packages/extension-tasks/src/chat/composer/use-composer-draft.ts) flushes on
+React cleanup, but does not flush on page hide. A browser close does not guarantee React cleanup.
+The workspace provider has its own persistence and page-hide path. It cannot save text that the
+composer has not yet passed to it.
 
 The probe mounts the real hook. Its workspace adapter writes immediately to an isolated browser
 origin. It updates the draft, dispatches page hide and closes the page before the debounce. On
@@ -57,10 +58,11 @@ memory.
 ### Unified view lifetime
 
 [`openWorkspaceTab`](../packages/extension-tasks/src/unified/workspace-tabs.ts) keeps references
-until explicit close or confirmed removal. [`WorkspaceContent`](../packages/extension-tasks/src/unified/workspace-view.tsx)
-mounts non-browser views under React `Activity`. Hidden effects pause, but component state remains.
-Each visited thread can therefore retain editor and conversation state for the window's lifetime.
-This retention preserves useful state; a blind tab limit could lose work.
+until explicit close or confirmed removal.
+[`WorkspaceContent`](../packages/extension-tasks/src/unified/workspace-view.tsx) mounts non-browser
+views under React `Activity`. Hidden effects pause, but component state remains. Each visited thread
+can therefore retain editor and conversation state for the window's lifetime. This retention
+preserves useful state; a blind tab limit could lose work.
 
 Measure heap and mounted views over a realistic long session before setting a budget. Separate
 recoverable view state from live resources. Keep drafts, pending sends, selection, scroll position
@@ -89,17 +91,17 @@ client build, restored connectivity and a non-empty draft.
 - Runtime backup tests cover damaged and missing storage paths. Existing error boundaries limit
   screen failures. They do not establish recovery from every crash or disk failure.
 
-The focused stability suite passed 154 tests in 11 files. It covers workspace updates/registry,
-live sync, read cache, mobile draft storage, backups, socket heartbeats, desktop draft controllers
-and Unified tab lifecycle. Tests use controlled fixtures. They do not establish real network,
-OS termination or physical-device behavior.
+The focused stability suite passed 154 tests in 11 files. It covers workspace updates/registry, live
+sync, read cache, mobile draft storage, backups, socket heartbeats, desktop draft controllers and
+Unified tab lifecycle. Tests use controlled fixtures. They do not establish real network, OS
+termination or physical-device behavior.
 
 ## Changes verified in this work
 
-Unified now uses shared prompt/page activity ordering on desktop and mobile. Stream output does
-not move threads. Desktop also follows the saved section order. Composer chips preserve the saved
-Markdown source. The rich editor's source-position mapping also fixes caret offsets after emoji.
-See [composer references](composer-references.md) for native checks and their limits.
+Unified now uses shared prompt/page activity ordering on desktop and mobile. Stream output does not
+move threads. Desktop also follows the saved section order. Composer chips preserve the saved
+Markdown source. The rich editor's source-position mapping also fixes caret offsets after emoji. See
+[composer references](composer-references.md) for native checks and their limits.
 
 ## Reproduce
 
@@ -113,9 +115,9 @@ pnpm exec vp test packages/studio-core/src/workspace/runtime-updates.test.ts pac
 ```
 
 The probe uses synthetic drafts and temporary files. It does not open user runtime storage. Its
-output reports observations; successful exit does not mean that the findings are fixed. Heap
-numbers vary by runtime. The close probe currently reports `stored: null` and `restored: null`.
+output reports observations; successful exit does not mean that the findings are fixed. Heap numbers
+vary by runtime. The close probe currently reports `stored: null` and `restored: null`.
 
 No full-app soak test, physical phone test, production fault injection, disk-full test or hosted CI
-run was performed. The next useful implementation is the draft journal with failure tests, then
-safe mobile cache eviction. Measure Unified retention before changing its lifetime model.
+run was performed. The next useful implementation is the draft journal with failure tests, then safe
+mobile cache eviction. Measure Unified retention before changing its lifetime model.

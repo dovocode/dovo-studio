@@ -573,7 +573,14 @@ try {
       .getByRole('listbox', { name: 'Files, models and MCP servers', exact: true })
       .waitFor()
     await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
-    assert.ok((await composerText(mentionField)).includes('src/App.tsx'))
+    if (await mentionField.evaluate((element) => element instanceof HTMLTextAreaElement))
+      assert.ok((await composerText(mentionField)).includes('src/App.tsx'))
+    else {
+      const fileChip = mentionField.locator('[data-reference-kind="file"]')
+      await fileChip.waitFor()
+      assert.equal(await fileChip.getAttribute('title'), '@src/App.tsx')
+      assert.ok((await fileChip.innerText()).includes('App.tsx'))
+    }
     await page.getByRole('button', { name: 'Idle task', exact: true }).click()
     const composerField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await composerField.fill('Verify a full production composer')

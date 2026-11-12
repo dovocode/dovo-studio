@@ -76,17 +76,17 @@ working directory, copy terminal ID and close actions. Close asks for confirmati
 use the session’s owning computer, without changing the active thread’s computer. Other rows also
 show direct lifecycle actions on hover or keyboard focus and on touch screens. Status sections keep
 all resource types mixed. Within each section, threads use their latest real prompt time and pages
-use their latest visit time, newest first. Streamed output does not move a thread. Pinned page
-tiles keep their saved order. Terminals have no activity timestamp and keep their existing order
-after timed items. Desktop and mobile use this shared activity rule. Desktop also follows the
-saved thread section order. Pinned items appear first, and settled or snoozed items remain available
-to reopen or unsnooze. Settling a thread follows the existing thread rules. Settling or snoozing a
-terminal keeps working, blocked and unreported jobs running. A remembered agent with an exact
-recovery target may release its PTY once the program explicitly reports **Idle** or **Done** through
-a supported lifecycle hook or OSC 7501. Restoring it resumes that exact conversation; concurrent
-restores open one process. Multiplexers stay live. Automatic sleep checks for background jobs and
-helper processes; unknown or wrapped process trees stay live. Windows terminals currently stay live
-until runtime shutdown. Tools without those activity reports stay running until runtime shutdown.
+use their latest visit time, newest first. Streamed output does not move a thread. Pinned page tiles
+keep their saved order. Terminals have no activity timestamp and keep their existing order after
+timed items. Desktop and mobile use this shared activity rule. Desktop also follows the saved thread
+section order. Pinned items appear first, and settled or snoozed items remain available to reopen or
+unsnooze. Settling a thread follows the existing thread rules. Settling or snoozing a terminal keeps
+working, blocked and unreported jobs running. A remembered agent with an exact recovery target may
+release its PTY once the program explicitly reports **Idle** or **Done** through a supported
+lifecycle hook or OSC 7501. Restoring it resumes that exact conversation; concurrent restores open
+one process. Multiplexers stay live. Automatic sleep checks for background jobs and helper
+processes; unknown or wrapped process trees stay live. Windows terminals currently stay live until
+runtime shutdown. Tools without those activity reports stay running until runtime shutdown.
 Foreground-process detection alone never authorizes sleeping. Terminal metadata is shared through
 its owning runtime for paired clients, and remembered metadata survives restarts.
 
