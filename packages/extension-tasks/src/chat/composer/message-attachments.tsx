@@ -1,4 +1,5 @@
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
+import { taskImageReadSchema } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { EditChatImage } from './chat-image-edit-context'
 import { useContext, useEffect, useRef, useState } from 'react'
@@ -352,19 +353,25 @@ function AttachmentThumbnail({
   file: Attachment
   compact: boolean
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, connection } = useWorkspace()
   const [src, setSrc] = useApplicationState('')
   const [failed, setFailed] = useApplicationState(false)
   const ref = useRef<HTMLSpanElement>(null)
   useEffect(() => {
+    setSrc('')
+    setFailed(false)
     if (!connected || !ref.current) return
     let cancelled = false
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return
       observer.disconnect()
-      void request('/api/attachments/read', { taskId, id: file.id }, attachmentReadSchema)
+      void request(
+        '/api/tasks/images/read',
+        { taskId, attachmentId: file.id, maxSize: 128 },
+        taskImageReadSchema,
+      )
         .then((result) => {
-          if (!cancelled) setSrc(`data:${file.mime};base64,${result.data}`)
+          if (!cancelled) setSrc(result.uri)
         })
         .catch(() => {
           if (!cancelled) setFailed(true)
@@ -375,7 +382,16 @@ function AttachmentThumbnail({
       cancelled = true
       observer.disconnect()
     }
-  }, [connected, request, taskId, file.id, file.mime])
+  }, [
+    connected,
+    request,
+    connection?.address,
+    connection?.token,
+    connection?.runtimeId,
+    taskId,
+    file.id,
+    file.mime,
+  ])
   return (
     <span
       ref={ref}
@@ -386,7 +402,7 @@ function AttachmentThumbnail({
       ) : (
         <FileImage
           className="size-4"
-          aria-label={failed ? 'Preview unavailable; click to retry' : 'Loading image preview'}
+          aria-label={failed ? 'Preview unavailable' : 'Loading image preview'}
         />
       )}
     </span>

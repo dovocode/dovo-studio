@@ -1168,3 +1168,52 @@ it('keeps a due one-time trigger pending while another run is active', async () 
   expect(runtime.services.jobs.list()).toHaveLength(2)
   expect(runtime.services.store.get().automations[0].enabled).toBe(false)
 })
+
+it('records skipped recurring occurrences with due time, without creating a run or retry queue', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'skipped-schedule-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.jobs.dispose()
+  const flow = createFlow()
+  flow.enabled = true
+  flow.nodes[0]!.data.trigger = 'schedule'
+  flow.nodes[0]!.data.schedule = '* * * * *'
+  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async () => {},
+  })
+  const now = Date.parse('2026-09-07T12:00:00Z')
+  s.jobs.tick(now)
+  s.jobs.tick(now + 60_000)
+  await waitForJob(() => expect(s.jobs.list()[0]?.status).toBe('waiting'))
+  s.jobs.tick(now + 120_000)
+  s.jobs.tick(now + 120_000)
+  const skipped = s.activity.list('', 'job-skipped', 0).events
+  expect(skipped).toHaveLength(1)
+  expect(skipped[0]?.summary).toContain('Skipped: previous run still active')
+  expect(JSON.parse(skipped[0]!.payload)).toMatchObject({
+    automationId: flow.id,
+    dueAt: '2026-09-07T12:02:00.000Z',
+    deliveryKey: `schedule:${now + 120_000}`,
+    previousRunId: s.jobs.list()[0]!.id,
+  })
+  expect(s.jobs.list()).toHaveLength(1)
+  s.jobs.approve(s.jobs.list()[0]!.id, true)
+  await waitForJob(() => expect(s.jobs.list()[0]?.status).toBe('completed'))
+  s.jobs.tick(now + 120_000)
+  expect(s.jobs.list()).toHaveLength(1)
+  s.jobs.tick(now + 180_000)
+  expect(s.jobs.list()).toHaveLength(2)
+  await waitForJob(() => expect(s.jobs.list().some((run) => run.status === 'waiting')).toBe(true))
+  expect(s.activity.pruneDiagnosticsBefore(new Date(Date.now() + 1).toISOString())).toBeGreaterThan(
+    0,
+  )
+  expect(s.activity.list('', 'job-skipped', 0).events).toEqual([])
+})

@@ -210,18 +210,24 @@ export function TaskSearchDialog({
             search.error ? 'text-destructive' : 'text-muted-foreground',
           )}
         >
-          {search.error ||
-            (search.loading
-              ? 'Searching conversations…'
-              : search.offline
-                ? 'Offline computers: searching saved messages only.'
-                : mode === 'messages' && !query.trim()
-                  ? 'Type to search conversation history.'
-                  : mode === 'messages' && search.hits.length === 50
-                    ? 'Showing up to 50 matches. Refine your search for older messages.'
-                    : mode === 'tasks' && threadGroups.some((group) => group.matches.length)
-                      ? 'Hold Alt to show matching subthreads.'
-                      : '\u00a0')}
+          {search.error ? (
+            <>
+              {search.error}
+              {search.loading && <span role="status"> · Searching other computers…</span>}
+            </>
+          ) : search.loading ? (
+            'Searching conversations…'
+          ) : search.offline ? (
+            'Offline computers: searching saved messages only.'
+          ) : mode === 'messages' && !query.trim() ? (
+            'Type to search conversation history.'
+          ) : mode === 'messages' && search.hits.length === 50 ? (
+            'Showing up to 50 matches. Refine your search for older messages.'
+          ) : mode === 'tasks' && threadGroups.some((group) => group.matches.length) ? (
+            'Hold Alt to show matching subthreads.'
+          ) : (
+            '\u00a0'
+          )}
         </p>
       </DialogContent>
     </Dialog>

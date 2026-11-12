@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 type Visibility = Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>
 
@@ -32,14 +32,21 @@ export function startLiveRefresh(
   }
   visibility.addEventListener('visibilitychange', changed)
   void tick()
-  return () => {
-    stopped = true
-    clearTimeout(timer)
-    visibility.removeEventListener('visibilitychange', changed)
-  }
+  return Object.assign(
+    () => {
+      stopped = true
+      clearTimeout(timer)
+      visibility.removeEventListener('visibilitychange', changed)
+    },
+    { refresh: tick },
+  )
 }
 
-export function useLiveRefresh(enabled: boolean, action: () => Promise<void>) {
+export function useLiveRefreshState(enabled: boolean, action: () => Promise<void>) {
+  const reader = useRef<ReturnType<typeof startLiveRefresh> | null>(null)
+  const retry = useCallback(async () => {
+    await reader.current?.refresh()
+  }, [])
   const [error, setError] = useState('')
   useEffect(() => {
     setError('')
@@ -53,10 +60,16 @@ export function useLiveRefresh(enabled: boolean, action: () => Promise<void>) {
       document,
       (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
     )
+    reader.current = stop
     return () => {
+      reader.current = null
       active = false
       stop()
     }
   }, [enabled, action])
-  return error
+  return { error, retry }
+}
+
+export function useLiveRefresh(enabled: boolean, action: () => Promise<void>) {
+  return useLiveRefreshState(enabled, action).error
 }

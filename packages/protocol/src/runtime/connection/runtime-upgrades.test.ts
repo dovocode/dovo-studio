@@ -352,3 +352,114 @@ it.each([false, true])(
     expect(f.commands.filter((command) => command.path.endsWith('/restart'))).toHaveLength(1)
   },
 )
+
+it.each(['address', 'token', 'runtimeId', 'target', 'removed', 'away-back'] as const)(
+  'cancels pending update discovery when its binding changes: %s',
+  async (field) => {
+    const entries = [entry('server')]
+    const f = fixture(entries)
+    const original = globalThis.fetch
+    let release!: () => void
+    let started!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const pending = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input, init) => {
+        if ((input instanceof Request ? input.url : input.toString()).includes('api.github.com')) {
+          started()
+          await gate
+        }
+        return original(input, init)
+      }),
+    )
+    f.manager.toggle('server')
+    const update = f.manager.start(['server'])
+    await pending
+    const connection = entries[0].profile.connection
+    if (field === 'removed') entries.splice(0)
+    else if (field === 'target') entries[0].target = 'desktop'
+    else if (field === 'away-back') {
+      connection.address = 'http://other.local'
+      f.manager.sync()
+      connection.address = 'http://server.local'
+    } else connection[field] = 'replacement'
+    f.manager.sync()
+    release()
+    // Release discovery can request stable and nightly endpoints concurrently.
+    vi.stubGlobal('fetch', original)
+    await update
+    expect(f.commands).toEqual([])
+    expect(f.manager.getSnapshot()).toMatchObject({ selected: [], statuses: {}, busy: [] })
+  },
+)
+
+it('ignores a mutation reply from the previous computer and clears automatic restart intent', async () => {
+  const entries = [entry('desktop', true)]
+  const f = fixture(entries)
+  const original = globalThis.fetch
+  let finish!: () => void
+  let dispatched!: () => void
+  const pending = new Promise<void>((resolve) => {
+    dispatched = resolve
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input, init) => {
+      const response = await original(input, init)
+      if ((input instanceof Request ? input.url : input.toString()).endsWith('/start')) {
+        dispatched()
+        await new Promise<void>((resolve) => {
+          finish = resolve
+        })
+      }
+      return response
+    }),
+  )
+  const update = f.manager.start(['desktop'], { restartDesktops: true, resumeInterrupted: true })
+  await pending
+  entries[0].profile.connection.address = 'http://replacement.local'
+  f.manager.sync()
+  finish()
+  await update
+  expect(f.manager.getSnapshot().statuses).toEqual({})
+  f.states.set('replacement', { status: 'downloaded', version: '1.0.1' })
+  await f.manager.poll()
+  expect(f.commands).toHaveLength(1)
+  expect(f.manager.getSnapshot().statuses.desktop.status).toBe('downloaded')
+})
+
+it('ignores a stale status response after changing the connection', async () => {
+  const entries = [entry('server')]
+  const f = fixture(entries)
+  const original = globalThis.fetch
+  let finish!: () => void
+  let reading!: () => void
+  const pending = new Promise<void>((resolve) => {
+    reading = resolve
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input, init) => {
+      if ((input instanceof Request ? input.url : input.toString()).endsWith('/status')) {
+        reading()
+        await new Promise<void>((resolve) => {
+          finish = resolve
+        })
+        return Response.json({ status: 'downloaded', version: '1.0.1' })
+      }
+      return original(input, init)
+    }),
+  )
+  const poll = f.manager.poll()
+  await pending
+  entries[0].profile.connection.token = 'new-token'
+  f.manager.sync()
+  finish()
+  await poll
+  expect(f.manager.getSnapshot().statuses).toEqual({})
+})

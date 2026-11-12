@@ -16,12 +16,9 @@ export function useWorkDraftText(key: string, field: string, initial: string) {
         const before = state.id === id ? state.value : (drafts.get(id) ?? initial)
         const value = typeof update === 'function' ? update(before) : update
         drafts.delete(id)
-        drafts.set(id, value)
-        while (drafts.size > 200) {
-          const oldest = drafts.keys().next().value
-          if (oldest === undefined) break
-          drafts.delete(oldest)
-        }
+        // Only unsaved changes need retention. Never evict user text to bound this cache.
+        // Successful form submission clears its fields through clearWorkDraft.
+        if (value !== initial) drafts.set(id, value)
         return { id, value }
       })
     },

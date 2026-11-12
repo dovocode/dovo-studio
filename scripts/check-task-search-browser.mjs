@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFile, readdir } from 'node:fs/promises'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
@@ -11,13 +12,13 @@ const built = await bundleBrowser(
       resolveDir: root,
       loader: 'tsx',
       contents: `
-import {createRoot} from 'react-dom/client';import {useState} from 'react';import {flushSync} from 'react-dom';
+import {Effect} from 'effect';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {flushSync} from 'react-dom';
 import {TaskSearchDialog} from './packages/extension-tasks/src/dialogs/task-search-dialog';
 window.calls=[];window.opened=[];window.activeCalls=0;window.watches=[];window.stops=[];
-const readRuntime=(profile,path,input)=>new Promise(resolve=>window.calls.push({owner:profile.id,token:profile.connection.token,query:input.query,reply:(snippet,taskId='shared')=>resolve({taskIds:[taskId],hits:[{taskId,messageId:'remote',snippet,role:'assistant'}]})}));
+const readRuntime=(profile,path,input)=>new Promise((resolve,reject)=>window.calls.push({owner:profile.id,token:profile.connection.token,query:input.query,fail:()=>reject(new Error('Host unavailable')),reply:(snippet,taskId='shared')=>resolve({taskIds:[taskId],hits:[{taskId,messageId:'remote',snippet,role:'assistant'}]})}));
 function App(){const[cfg,setCfg]=useState({owners:['a','b'],token:'first',online:true,missing:false,older:false}),[tick,setTick]=useState(0),[mode,setMode]=useState(null);window.change=patch=>flushSync(()=>setCfg(old=>({...old,...patch})));window.stream=()=>flushSync(()=>setTick(n=>n+1));
 const profiles=['a','b'].filter(id=>id!=='b'||!cfg.missing).map(id=>({id,name:id,connection:{address:'http://'+id+'.lan',token:id==='b'?cfg.token:'first'}}));
-window.workspace={activeRuntimeId:'a',connection:profiles[0].connection,runtimeRegistry:{profiles},readRuntime,request:async()=>{window.activeCalls++;return {taskIds:[],hits:[]}}};
+window.workspace={activeRuntimeId:'a',connection:profiles[0].connection,runtimeRegistry:{profiles},readRuntimeEffect:(...args)=>Effect.tryPromise({try:()=>readRuntime(...args),catch:error=>error}),requestEffect:()=>Effect.sync(()=>{window.activeCalls++;return {taskIds:[],hits:[]}}),readRuntime,request:async()=>{window.activeCalls++;return {taskIds:[],hits:[]}}};
 const entries=cfg.owners.flatMap(id=>['shared',...(cfg.older?['older']:[]),...(cfg.children?['child','sibling']:[])].map(taskId=>({key:JSON.stringify([id,taskId]),projectName:'Studio',source:{runtimeId:id,name:'Computer '+id,online:id==='a'||cfg.online},task:{id:taskId,title:(taskId==='child'?'Needle child ':taskId==='sibling'?'Unrelated sibling ':taskId==='older'?'Older settled thread ':'Thread ')+id,...(['child','sibling'].includes(taskId)?{delegation:{parentTaskId:'shared',parentRunId:'run',key:taskId}}:{}),createdAt:'2026-10-24',draft:String(tick),messages:cfg.online?[]:[{id:'local',role:'user',text:'needle in saved messages'}]}})));
 return <><button onClick={()=>setMode('messages')}>Search conversations</button><button onClick={()=>setMode('tasks')}>Go to thread</button><TaskSearchDialog mode={mode} entries={entries} onModeChange={setMode} onClose={()=>setMode(null)} onSelect={(entry,messageId)=>window.opened.push({key:entry.key,messageId})}/></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -47,6 +48,19 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     },
   ],
 )
+const server = await createServer({
+  configFile: false,
+  root,
+  plugins: [tailwindcss()],
+  server: { middlewareMode: true },
+  logLevel: 'error',
+})
+let css
+try {
+  css = (await server.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+} finally {
+  await server.close()
+}
 const browser = await chromium.launch()
 try {
   for (const width of [390, 840]) {
@@ -58,12 +72,7 @@ try {
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent('<html class="dark"><body><div id="app"></div></body></html>')
-    for (const name of (await readdir(root + 'apps/desktop/dist/assets')).filter((n) =>
-      n.endsWith('.css'),
-    ))
-      await page.addStyleTag({
-        content: await readFile(root + 'apps/desktop/dist/assets/' + name, 'utf8'),
-      })
+    await page.addStyleTag({ content: css })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.getByRole('button', { name: 'Search conversations', exact: true }).click()
     const input = page.getByRole('combobox', { name: 'Search conversations', exact: true })
@@ -74,9 +83,11 @@ try {
     await page.waitForFunction(() => window.calls.length === 2)
     await page.evaluate(() => {
       window.calls[0].reply('Old A')
-      window.calls[1].reply('Old B')
     })
     await page.getByText('Old A', { exact: true }).waitFor()
+    await page.getByRole('status').filter({ hasText: 'Searching conversations…' }).waitFor()
+    assert.equal(await page.getByText('Old B', { exact: true }).count(), 0)
+    await page.evaluate(() => window.calls[1].reply('Old B'))
     await page.getByText('Old B', { exact: true }).waitFor()
     assert.deepEqual(await input.boundingBox(), before, 'Results keep the search input anchored')
     await page.evaluate(() => {
@@ -218,6 +229,22 @@ try {
     await taskInput.press('Enter')
     await page.keyboard.up('Alt')
     assert.equal(await page.evaluate(() => window.opened.at(-1).key), '["a","child"]')
+    const failuresStart = await page.evaluate(() => window.calls.length)
+    await page.getByRole('button', { name: 'Search conversations', exact: true }).click()
+    await input.fill('partial')
+    await page.waitForFunction((count) => window.calls.length === count + 2, failuresStart)
+    await page.evaluate(
+      (count) => window.calls[count].reply('Survives slow failure'),
+      failuresStart,
+    )
+    await page.getByText('Survives slow failure', { exact: true }).waitFor()
+    await page.getByRole('status').filter({ hasText: 'Searching conversations…' }).waitFor()
+    await page.evaluate((count) => window.calls[count + 1].fail(), failuresStart)
+    await page.getByRole('alert').filter({ hasText: 'Host unavailable' }).waitFor()
+    await page.getByText('Survives slow failure', { exact: true }).waitFor()
+    await page.waitForFunction(
+      () => document.querySelector('[role="listbox"]').getAttribute('aria-busy') === 'false',
+    )
     assert.deepEqual(errors, [])
     await page.close()
   }

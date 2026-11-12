@@ -383,3 +383,4 @@ export * from './runtime/dictation.js'
 
 export * from './shared/conditional-read.js'
 export * from './conversation/presentation/composer-references.js'
+export * from './conversation/workflow/question-recovery.js'

@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vite-plus/test'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,6 +13,7 @@ import { TaskCheckout } from '../tasks/task-checkout'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 
@@ -315,4 +316,84 @@ it('protects a standalone terminal worktree while its shell runs, then allows sa
     (await base.git.command(f.directory, ['branch', '--list', 'dovo/terminal-checkout'])).trim(),
   ).not.toBe('')
   expect(existsSync(external)).toBe(true)
+})
+
+for (const flag of ['--assume-unchanged', '--skip-worktree'])
+  it(`preserves tracked edits hidden by ${flag} in choices, removal and housekeeping`, async () => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'hidden-edit-test-owner-token-at-least-32-characters',
+      port: 0,
+    })
+    cleanups.push(() => runtime.close())
+    const s = runtime.services
+    s.store.update(() => f.workspace)
+    const task = s.tasks.create({
+      title: 'Hidden edit',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      execution: 'worktree',
+      objective: 'Keep edits',
+    })
+    const cwd = await s.checkouts.directory(task.id)
+    cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+    s.store.updateTask(task.id, (current) => ({ ...current, archivedAt: new Date().toISOString() }))
+    await s.git.command(cwd, ['update-index', flag, 'hello.txt'])
+    const flags = await s.git.command(cwd, ['ls-files', '-v'])
+    await writeFile(join(cwd, 'hello.txt'), 'hidden work\n')
+    expect((await s.git.command(cwd, ['status', '--porcelain'])).trim()).toBe('')
+    expect(
+      (await runClientEffect(listWorktreesEffect(s))).worktrees.find((item) => item.path === cwd)
+        ?.dirty,
+    ).toBe(true)
+    expect(
+      (await runClientEffect(worktreeChoicesEffect(s, 'repo'))).worktrees.find(
+        (item) => item.path === cwd,
+      )?.dirty,
+    ).toBe(true)
+    await expect(runClientEffect(removeWorktreeEffect(s, cwd))).rejects.toThrow(
+      'uncommitted changes',
+    )
+    s.preferences.save({ removeArchivedWorktrees: true })
+    expect(await new Housekeeping(s).removeArchivedWorktrees()).toEqual([])
+    expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('hidden work\n')
+    expect(await s.git.command(cwd, ['ls-files', '-v'])).toBe(flags)
+    await writeFile(join(cwd, 'hello.txt'), 'original\n')
+    await runClientEffect(removeWorktreeEffect(s, cwd))
+    expect(existsSync(cwd)).toBe(false)
+  })
+
+it('rechecks hidden edits after listing and before removing a worktree', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'hidden-race-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'Changes during inspection',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Keep edits',
+  })
+  const cwd = await s.checkouts.directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  s.store.updateTask(task.id, (current) => ({ ...current, archivedAt: new Date().toISOString() }))
+  await s.git.command(cwd, ['update-index', '--assume-unchanged', 'hello.txt'])
+  const inspect = s.git.inspect.bind(s.git)
+  let inspections = 0
+  vi.spyOn(s.git, 'inspect').mockImplementation(async (...args) => {
+    const result = await inspect(...args)
+    if (++inspections === 2) await writeFile(join(cwd, 'hello.txt'), 'changed during inspection\n')
+    return result
+  })
+  await expect(runClientEffect(removeWorktreeEffect(s, cwd))).rejects.toThrow('uncommitted changes')
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('changed during inspection\n')
 })

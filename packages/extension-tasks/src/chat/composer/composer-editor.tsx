@@ -1,8 +1,6 @@
 import { createComposerHistory } from './composer-history'
 import {
-  lazy,
   memo,
-  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -11,7 +9,7 @@ import {
   useSyncExternalStore,
   type RefObject,
 } from 'react'
-import { useAppPreferences } from '@dovo/studio-core'
+import { composerCaretRecoveryKey, useAppPreferences } from '@dovo/studio-core'
 import { ComposerTextarea } from '@dovo/studio-ui'
 import type {
   ComposerReferenceResources,
@@ -21,7 +19,7 @@ import type {
 } from '@dovo/protocol'
 import { useFileMentions, type ComposerCommandId } from './file-mentions'
 import type { createComposerDraft } from './composer-draft'
-import { selectComposerInput } from './composer-input'
+import { composerSelection, selectComposerInput } from './composer-input'
 import {
   loadRichComposer,
   rememberModeCaret,
@@ -31,7 +29,7 @@ import {
 import { parseRichMarkdown } from './rich-markdown'
 import type { RichComposerHandle, RichKeyContext } from './rich-composer-editor'
 
-const RichComposerEditor = lazy(loadRichComposer)
+type RichEditor = (typeof import('./rich-composer-editor'))['default']
 type HistoryMessage = { role: string; text: string }
 /** The key fields shared by textarea and rich-editor keyboard events. */
 type ComposerKey = {
@@ -128,7 +126,77 @@ export const ComposerEditor = memo(function ComposerEditor({
       rememberModeCaret(input, { start: shown.length, end: shown.length, focused: true })
   }
   if (sourceFallback && (!richTextComposer || !draft.trim())) setSourceFallback(false)
-  const rich = !!richCheck?.supported && !sourceFallback
+  const wantsRich = !!richCheck?.supported && !sourceFallback
+  const [editorLoad, setEditorLoad] = useState<{
+    editor?: RichEditor
+    error?: string
+    reloadError?: string
+  }>({})
+  const RichComposerEditor = editorLoad.editor
+  const rich = wantsRich && !!RichComposerEditor
+  useEffect(() => {
+    if (!wantsRich) return
+    let disposed = false
+    void loadRichComposer()
+      .then((module) => {
+        if (disposed) return
+        const element = input.current
+        rememberModeCaret(input, {
+          ...composerSelection(element, controller.text.length),
+          focused: !!element && document.activeElement === element,
+        })
+        setEditorLoad({ editor: module.default })
+      })
+      .catch((cause: unknown) => {
+        if (!disposed) setEditorLoad({ error: String(cause) })
+      })
+    return () => {
+      disposed = true
+    }
+  }, [wantsRich, controller, input])
+  const reloadEditor = () => {
+    try {
+      controller.flush()
+      const element = input.current
+      sessionStorage.setItem(
+        composerCaretRecoveryKey(historyScope, taskId),
+        JSON.stringify({
+          ...composerSelection(element, controller.text.length),
+          focused: !!element && document.activeElement === element,
+        }),
+      )
+      window.location.reload()
+    } catch (cause) {
+      setEditorLoad({
+        error: editorLoad.error ?? 'Rich editor unavailable.',
+        reloadError: `Could not save before reloading. Keep this window open. ${String(cause)}`,
+      })
+    }
+  }
+  useLayoutEffect(() => {
+    const key = composerCaretRecoveryKey(historyScope, taskId)
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (!raw) return
+      const caret: unknown = JSON.parse(raw)
+      if (
+        caret &&
+        typeof caret === 'object' &&
+        'start' in caret &&
+        typeof caret.start === 'number' &&
+        'end' in caret &&
+        typeof caret.end === 'number' &&
+        'focused' in caret &&
+        typeof caret.focused === 'boolean'
+      ) {
+        if (caret.focused) input.current?.focus()
+        selectComposerInput(input.current, caret.start, caret.end)
+      }
+      sessionStorage.removeItem(key)
+    } catch (cause) {
+      console.warn('Could not restore the composer caret.', cause)
+    }
+  }, [historyScope, taskId, input])
   const richHandle = useRef<RichComposerHandle | null>(null)
   const attachSource = useCallback(
     (element: HTMLTextAreaElement | null) => {
@@ -268,7 +336,7 @@ export const ComposerEditor = memo(function ComposerEditor({
       event.key.toLowerCase() === 'm'
     ) {
       event.preventDefault()
-      void toggleComposerMode(input)
+      toggleComposerMode(input)
       return
     }
     if (
@@ -392,30 +460,46 @@ export const ComposerEditor = memo(function ComposerEditor({
   return (
     <>
       {!submitBusy && mentions.menu}
-      {rich ? (
-        <Suspense fallback={source}>
-          <RichComposerEditor
-            value={shown}
-            resources={resources}
-            onChange={edited}
-            input={input}
-            handle={richHandle}
-            onKeyDown={onKey}
-            onSelectionChange={mentions.track}
-            onMount={onInputElement}
-            sendWith={sendWith}
-            readOnly={submitBusy}
-            disabled={disabled}
-            hidden={hidden}
-            autoFocus={autoFocus}
-            placeholder={placeholder}
-            attributes={attributes}
-          />
-        </Suspense>
+      {rich && RichComposerEditor ? (
+        <RichComposerEditor
+          value={shown}
+          resources={resources}
+          onChange={edited}
+          input={input}
+          handle={richHandle}
+          onKeyDown={onKey}
+          onSelectionChange={mentions.track}
+          onMount={onInputElement}
+          sendWith={sendWith}
+          readOnly={submitBusy}
+          disabled={disabled}
+          hidden={hidden}
+          autoFocus={autoFocus}
+          placeholder={placeholder}
+          attributes={attributes}
+        />
       ) : (
         source
       )}
-      {richTextComposer && !rich && !hidden && (
+      {wantsRich && editorLoad.error && !hidden && (
+        <div role="alert" className="px-4 pb-2 text-xs text-destructive">
+          Rich editor could not load. Your Markdown source is still editable.
+          <button
+            type="button"
+            className="ml-2 underline"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={reloadEditor}
+          >
+            Retry rich editor
+          </button>
+          <span className="ml-2 text-muted-foreground">
+            Retry saves your draft and reloads this page.
+          </span>
+          {editorLoad.reloadError && <p className="mt-1">{editorLoad.reloadError}</p>}
+          <span className="sr-only">{editorLoad.error}</span>
+        </div>
+      )}
+      {richTextComposer && !rich && !wantsRich && !hidden && (
         <p role="status" className="px-4 pb-1 text-[0.6875rem] text-muted-foreground">
           Editing Markdown source.{' '}
           {richCheck && !richCheck.supported

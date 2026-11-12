@@ -82,6 +82,7 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
         needsInput: inputIds.length > 0,
         inputIds,
         failed: task.status === 'failed',
+        cancelled: task.status === 'cancelled',
         delegated: !!(task.delegation || task.spawnParent),
         checks: task.pullStatus?.state === 'open' ? task.pullStatus.checks : undefined,
         pullNumber: task.pullStatus?.number,

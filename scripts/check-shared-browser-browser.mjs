@@ -113,6 +113,7 @@ import {resolveSettingsTarget,decode,browserCommandSchema} from '@dovo/protocol'
 import {Effect} from 'effect';
 export * from '@dovo/protocol';
 export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
+export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '${root}packages/studio-core/src/workspace/composer-recovery.ts';
 export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';

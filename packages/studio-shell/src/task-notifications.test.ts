@@ -384,3 +384,22 @@ it('queues all attention events in order, suppresses the active destination and 
     ),
   ).toHaveLength(50)
 })
+
+it('keeps cancellation from production task snapshots out of success notices', () => {
+  const { runtime, snapshot } = fixture()
+  const before = taskNotificationStates([runtime])
+  const task = snapshot.workspace.tasks[0]!
+  task.status = 'cancelled'
+  const cancelled = taskNotificationStates([runtime])
+  expect([...cancelled.values()][0]?.cancelled).toBe(true)
+  expect(taskNotificationEvents(before, cancelled)).toEqual([])
+  expect(enqueueTaskNotices([], taskNotificationEvents(before, cancelled))).toEqual([])
+  task.status = 'review'
+  expect(
+    taskNotificationEvents(before, taskNotificationStates([runtime])).map((event) => event.kind),
+  ).toEqual(['done'])
+  task.status = 'failed'
+  expect(
+    taskNotificationEvents(before, taskNotificationStates([runtime])).map((event) => event.kind),
+  ).toEqual(['failed'])
+})

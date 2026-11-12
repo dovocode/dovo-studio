@@ -22,6 +22,9 @@ import { Button } from './components/ui/button'
 export function QuestionForm({
   request,
   connected,
+  savedDrafts,
+  onDraftsChange,
+  onAnswered,
   onAnswer,
   attachmentIdsByQuestion = {},
   renderAttachments,
@@ -29,6 +32,9 @@ export function QuestionForm({
 }: {
   request: PendingQuestion
   connected: boolean
+  savedDrafts?: Record<string, QuestionDraft>
+  onDraftsChange?: (drafts: Record<string, QuestionDraft>) => void
+  onAnswered?: () => void
   onAnswer: (
     answers: QuestionAnswers | null,
     outcomes?: QuestionOutcomes,
@@ -38,7 +44,7 @@ export function QuestionForm({
   renderAttachments?: (question: AgentQuestion, disabled: boolean) => ReactNode
   attachmentsBusy?: boolean
 }) {
-  const [drafts, setDrafts] = useApplicationState<Record<string, QuestionDraft>>(() =>
+  const [localDrafts, setLocalDrafts] = useApplicationState<Record<string, QuestionDraft>>(() =>
       Object.fromEntries(
         request.prompt.questions.map((q) => [
           q.id,
@@ -52,6 +58,22 @@ export function QuestionForm({
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const [references, setReferences] = useApplicationState<QuestionSecretReferences>({})
+  const drafts = Object.fromEntries(
+    request.prompt.questions.map((q) => [
+      q.id,
+      (!q.secret && savedDrafts?.[q.id]) || localDrafts[q.id] || { selected: [], text: '' },
+    ]),
+  )
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
+  const setDrafts = (
+    update: (current: Record<string, QuestionDraft>) => Record<string, QuestionDraft>,
+  ) => {
+    const next = update(draftsRef.current)
+    draftsRef.current = next
+    setLocalDrafts(next)
+    onDraftsChange?.(next)
+  }
   const submitting = useRef(false)
   const form = useRef<HTMLFormElement>(null)
   useEffect(() => {
@@ -100,6 +122,7 @@ export function QuestionForm({
     setBusy(true)
     try {
       await onAnswer(answers, outcomes, answers && !outcomes ? references : {})
+      if (answers && !outcomes) onAnswered?.()
     } catch (error) {
       setError(String(error))
       submitting.current = false

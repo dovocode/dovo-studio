@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { taskSearchSchema, type TaskSearchResult } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
@@ -6,13 +7,15 @@ import { taskCollectionKey, type TaskEntry } from './task-collection'
 
 /** Query each owning runtime instead of downloading every conversation for a search. */
 export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
-  const { runtimeRegistry, readRuntime, request, connection, activeRuntimeId } = useWorkspace()
+  const { runtimeRegistry, readRuntimeEffect, requestEffect, connection, activeRuntimeId } =
+    useWorkspace()
   const needle = query.trim()
   const [remote, setRemote] = useState<{
     scope: string
     results: { runtimeId: string | null; result: TaskSearchResult }[]
     error: string
-  }>({ scope: '', results: [], error: '' })
+    pending: number
+  }>({ scope: '', results: [], error: '', pending: 0 })
   // Streaming metadata changes must not restart an in-flight search.
   const owners = [
     ...new Map(entries.map((entry) => [entry.source.runtimeId, entry.source])).values(),
@@ -28,16 +31,23 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
       .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
   )
   const scope = JSON.stringify([needle, identity])
-  const run = useEffectEvent(() =>
+  const run = useEffectEvent((signal: AbortSignal) =>
     owners
       .filter((source) => source.online)
       .map(async (source) => {
         const profile = runtimeRegistry.profiles.find((profile) => profile.id === source.runtimeId)
         if (!profile && source.runtimeId !== null && source.runtimeId !== activeRuntimeId)
           throw new Error(`${source.name}: this computer connection is no longer available`)
-        const result = await (profile
-          ? readRuntime(profile, '/api/tasks/search', { query: needle }, taskSearchSchema)
-          : request('/api/tasks/search', { query: needle }, taskSearchSchema))
+        const result = await Effect.runPromise(
+          profile
+            ? readRuntimeEffect(profile, '/api/tasks/search', { query: needle }, taskSearchSchema)
+            : requestEffect('/api/tasks/search', { query: needle }, taskSearchSchema),
+          { signal },
+        ).catch((error: unknown) => {
+          throw new Error(
+            `${source.name}: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        })
         // A history response can beat the full-summary subscription. Keep its IDs
         // until the summaries arrive instead of dropping unresolved matches.
         return { runtimeId: source.runtimeId, result }
@@ -45,27 +55,33 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
   )
   useEffect(() => {
     if (!needle) return
-    let stopped = false
+    const controller = new AbortController()
     const timer = setTimeout(() => {
-      void Promise.allSettled(run()).then((results) => {
-        if (stopped) return
-        const values = results.flatMap((result) =>
-          result.status === 'fulfilled' ? [result.value] : [],
+      const requests = run(controller.signal)
+      setRemote({ scope, results: [], error: '', pending: requests.length })
+      for (const request of requests)
+        void request.then(
+          (result) => {
+            if (controller.signal.aborted) return
+            setRemote((current) => ({
+              ...current,
+              results: [...current.results, result],
+              pending: current.pending - 1,
+            }))
+          },
+          (error: unknown) => {
+            if (controller.signal.aborted) return
+            const message = error instanceof Error ? error.message : String(error)
+            setRemote((current) => ({
+              ...current,
+              error: [current.error, message].filter(Boolean).join(' · '),
+              pending: current.pending - 1,
+            }))
+          },
         )
-        const errors = results.flatMap((result) =>
-          result.status === 'rejected'
-            ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
-            : [],
-        )
-        setRemote({
-          scope,
-          results: values,
-          error: errors.join(' · '),
-        })
-      })
     }, 200)
     return () => {
-      stopped = true
+      controller.abort()
       clearTimeout(timer)
     }
   }, [needle, scope])
@@ -90,7 +106,7 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
       ...local.map((hit) => hit.entry.key),
     ]),
     error: remote.scope === scope ? remote.error : '',
-    loading: !!needle && remote.scope !== scope,
+    loading: !!needle && (remote.scope !== scope || remote.pending > 0),
     offline: !!needle && owners.some((source) => !source.online),
   }
 }

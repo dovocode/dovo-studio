@@ -1,3 +1,4 @@
+import { useQuestionRecovery } from '../composer/question-recovery'
 import { useState } from 'react'
 import { Effect } from 'effect'
 import { QuestionAttachments } from '../composer/question-attachments'
@@ -33,9 +34,11 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
   const project = snapshot?.workspace.repositories.find(
     (repo) => repo.id === task?.repositoryId,
   )?.name
+  const recovery = <RecoveredAnswers taskId={taskId} pendingIds={questions.map((q) => q.id)} />
   if (questionId && !pending)
     return (
       <View style={{ padding: 16, gap: 8 }}>
+        {recovery}
         <Text accessibilityRole="alert" style={styles.muted}>
           {connected
             ? 'This question has already been answered or is no longer pending.'
@@ -48,7 +51,7 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
         />
       </View>
     )
-  if (!pending) return null
+  if (!pending) return recovery
   return (
     <View
       style={{
@@ -68,8 +71,15 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
             pending.taskId}
         </Text>
       )}
+      {recovery}
       <QuestionCard
-        key={JSON.stringify([profile?.id, profile?.connection.address, pending.taskId, pending.id])}
+        key={JSON.stringify([
+          profile?.id,
+          profile?.connection.address,
+          profile?.connection.token,
+          pending.taskId,
+          pending.id,
+        ])}
         pending={pending}
         notificationAccessible={visible && pending.taskId === taskId}
       />
@@ -85,7 +95,24 @@ function QuestionCard({
   notificationAccessible: boolean
 }) {
   const { connected, profile, callEffect, finishAttachmentEffect, reviewAttachments } = useRuntime()
-  const [files, setFiles] = useState<AnswerFiles>({})
+  const { scope, store } = useQuestionRecovery()
+  const saved = store
+    .entries(scope)
+    .find((entry) => entry.request.id === pending.id && entry.request.taskId === pending.taskId)
+  const files = saved?.files ?? {}
+  const setFiles = (update: (files: AnswerFiles) => AnswerFiles) =>
+    store.update(
+      scope,
+      pending,
+      undefined,
+      update(
+        store
+          .entries(scope)
+          .find(
+            (entry) => entry.request.id === pending.id && entry.request.taskId === pending.taskId,
+          )?.files ?? {},
+      ),
+    )
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const ids = Object.fromEntries(
     Object.entries(files).map(([id, files]) => [id, files.map((file) => file.id)]),
@@ -94,6 +121,18 @@ function QuestionCard({
   return (
     <QuestionForm
       request={pending}
+      savedDrafts={saved?.drafts}
+      onDraftsChange={(drafts) => store.update(scope, pending, drafts)}
+      onAnswered={() => {
+        if (
+          store
+            .entries(scope)
+            .find(
+              (entry) => entry.request.id === pending.id && entry.request.taskId === pending.taskId,
+            ) === saved
+        )
+          store.remove(scope, pending.taskId, pending.id, saved ?? null)
+      }}
       connected={connected}
       runtimeId={profile?.id}
       notificationAccessible={notificationAccessible}
@@ -156,5 +195,61 @@ function QuestionCard({
         )
       }
     />
+  )
+}
+
+function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: string[] }) {
+  const { scope, store } = useQuestionRecovery()
+  const { styles } = useTheme()
+  const entries = store
+    .entries(scope)
+    .filter(
+      (entry) =>
+        entry.request.taskId === taskId &&
+        !pendingIds.includes(entry.request.id) &&
+        (Object.values(entry.drafts).some((draft) => draft.text || draft.selected.length) ||
+          Object.values(entry.files).some((files) => files.length)),
+    )
+  return (
+    <View style={{ gap: 8 }}>
+      {!!store.error(scope) && (
+        <View style={{ gap: 8 }}>
+          <Text accessibilityRole="alert" style={styles.error}>
+            {store.error(scope)}
+          </Text>
+          <Action label="Retry saved answers" secondary onPress={() => void store.retry(scope)} />
+        </View>
+      )}
+      {entries.map((entry) => (
+        <View key={entry.request.id} style={[styles.card, { padding: 12, gap: 8 }]}>
+          <Text style={styles.text}>Saved answers · {entry.request.prompt.title}</Text>
+          <Text style={styles.muted}>
+            This request is no longer pending. Select and copy the answers you want to keep.
+          </Text>
+          {entry.request.prompt.questions
+            .filter((q) => !q.secret)
+            .map((q) => (
+              <View key={q.id}>
+                <Text style={styles.muted}>{q.question}</Text>
+                <Text selectable style={styles.text}>
+                  {[...(entry.drafts[q.id]?.selected ?? []), entry.drafts[q.id]?.text ?? '']
+                    .filter(Boolean)
+                    .join('\n')}
+                </Text>
+                {(entry.files[q.id] ?? []).map((file) => (
+                  <Text key={file.id} selectable style={styles.muted}>
+                    Attachment: {file.name} ({file.id})
+                  </Text>
+                ))}
+              </View>
+            ))}
+          <Action
+            label="Discard saved answers"
+            secondary
+            onPress={() => store.remove(scope, taskId, entry.request.id)}
+          />
+        </View>
+      ))}
+    </View>
   )
 }

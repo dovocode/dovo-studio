@@ -1,8 +1,9 @@
 import { Disclosure } from '@dovo/studio-ui'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   createRuntimeUpgradeManager,
   runtimeUpgradeTargets,
+  runtimeUpgradeIdentity,
   runtimeUpdate,
   runtimeUpgradeBlocked,
   type RuntimeUpgradeEntry,
@@ -30,6 +31,10 @@ export function ComputerUpdates() {
     }),
   )
   const state = useSyncExternalStore(manager.subscribe, manager.getSnapshot)
+  const bindings = JSON.stringify(
+    targets.map((entry) => [entry.profile.id, runtimeUpgradeIdentity(entry)]),
+  )
+  useLayoutEffect(() => manager.sync(), [manager, bindings])
   const [open, setOpen] = useState(false)
   const updating =
     state.busy.length > 0 ||

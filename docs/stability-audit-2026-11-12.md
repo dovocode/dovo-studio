@@ -1,15 +1,17 @@
 # Workspace and composer stability audit — 2026-11-12
 
-The first priority is durable desktop draft storage. Next, bound mobile draft memory and measure
-retained Unified views. Keep HTTP LAN/VPN access, optional HTTPS, pairing codes and device tokens.
-No account service or connection policy change is needed.
+Desktop message drafts and ordinary question answers now have local recovery. The rich editor has a
+source fallback. Update actions, issue drafts, thumbnails and refresh feedback also have fixes. The
+follow-up sections below record behavior and checks. Mobile draft memory and retained Unified views
+still need measurements in real use. HTTP LAN/VPN access, optional HTTPS, pairing codes and device
+tokens remain supported.
 
 This audit covers desktop/web and mobile drafts, Unified view lifetimes, runtime synchronization,
 read caches, connection recovery and runtime backups. It combines source review, isolated probes and
 existing regression tests. It does not prove app-wide stability. Earlier findings and fixes remain
 recorded in the [October audit](stability-audit-2026-10-29.md) and its linked follow-ups.
 
-## Open findings
+## Original audit findings
 
 | Priority | Finding                                                           | Evidence                                                                          | Recommended change                                                         |
 | -------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -18,9 +20,9 @@ recorded in the [October audit](stability-audit-2026-10-29.md) and its linked fo
 | P2       | Unified retains every opened thread/terminal view                 | Source review; total memory growth not measured                                   | Measure long sessions, then suspend inactive views with state preservation |
 | P2       | Rich editor import failure has no local recovery                  | Source review; chunk failure not injected                                         | Fall back to source input and preserve the draft                           |
 
-P1 means a confirmed path to loss of unsent text. P2 means a resource or recovery risk. These open
-findings are investigation results. This change does not implement the proposed storage or view
-lifetime changes.
+P1 means a confirmed path to loss of unsent text. P2 means a resource or recovery risk. These
+findings describe the initial investigation. The recovery follow-up below addresses desktop draft
+storage and editor load failure. It does not change mobile draft memory or Unified view lifetimes.
 
 ### Desktop draft close window
 
@@ -119,5 +121,61 @@ output reports observations; successful exit does not mean that the findings are
 vary by runtime. The close probe currently reports `stored: null` and `restored: null`.
 
 No full-app soak test, physical phone test, production fault injection, disk-full test or hosted CI
-run was performed. The next useful implementation is the draft journal with failure tests, then safe
-mobile cache eviction. Measure Unified retention before changing its lifetime model.
+run was performed. The draft journal follow-up is described below. Measure mobile and Unified
+retention in realistic sessions before changing their memory or lifetime model.
+
+## Recovery changes
+
+The follow-up implementation adds local message draft records, ordinary question answer recovery,
+and a source-editor fallback with deliberate reload retry. See
+[Composer and question recovery](composer-recovery.md) for behavior, retention limits and exact
+verification commands. The original observations above remain the audit evidence. The follow-up
+browser check injects an actual editor chunk HTTP 404.
+
+## Runtime identity, forms and refresh follow-up
+
+Computer update actions now capture the exact target, address, device token and runtime ID. Changing
+or removing that binding clears its selection, progress and automatic restart intent. Pending reads
+and commands cannot attach their results to the replacement connection. A temporary disconnect with
+the same binding keeps update progress. A command already sent to the old computer can still finish
+there; changing the connection does not cancel a remote installer.
+
+Issue forms retain all edited fields for this app session. The former 200-field limit could discard
+unsent text. Fields that match their initial value no longer need a cache entry. Successful
+submission still clears the form draft. This change does not add form recovery after app
+termination.
+
+Desktop image attachment rows request a 128-pixel preview from the existing task image route.
+Opening or downloading the attachment still reads the original. The preview uses the MIME type
+returned by the runtime. Connection changes invalidate pending thumbnail results. The HTTP
+regression checks verify a 2048 × 1024 source produces a 128 × 64 preview and preserves the original
+and task ownership. This verifies request and image size bounds; it does not measure full-app frame
+time or network load.
+
+Changes, Git status and watching refresh failures share one compact thread notice. Expand it for
+source details. Retry reads the failed sources again. Successful refreshes remove their own errors.
+A failed Stop watching action remains visible through later background reads. Send, Save and Stop
+agent errors keep their existing feedback. Standalone panels show a local compact notice.
+
+Run these checks from the repository root:
+
+```sh
+pnpm exec playwright install chromium
+pnpm exec vp test packages/protocol/src/runtime/connection/runtime-upgrades.test.ts packages/extension-tasks/src/detail/live-refresh.test.ts packages/runtime/src/http/task-images.test.ts --maxWorkers=1
+pnpm test:stability-recovery:browser
+pnpm test:attachment-media:browser
+```
+
+The browser checks mount the real hooks and attachment component with controlled requests. They
+verify more than 200 edited form fields, form reset, combined refresh details, successful and failed
+Retry, persistent action errors, bounded image requests, original reads and stale thumbnail replies.
+They do not run an installed desktop updater or a signed release package.
+
+Local release validation passed the production build, full typecheck and formatting/lint check. The
+full unit and integration run passed 7,731 tests, skipped 14 and failed six sandboxed runtime
+browser tests. Those six fail because this host blocks Chromium user namespaces. A separate run
+confirmed the sandbox failure. Hosted CI enables those namespaces through its existing browser
+setup. No production sandbox setting was changed. Focused managed Chromium checks passed for the new
+behavior, computer updates and desktop/mobile watching lifecycles. The refresh notice also passed a
+visual check with the built desktop CSS at a 360-pixel viewport. Signed installer and
+physical-device checks remain outside this local verification.

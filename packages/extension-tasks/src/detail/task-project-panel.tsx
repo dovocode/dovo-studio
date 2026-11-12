@@ -58,7 +58,8 @@ import {
 } from 'lucide-react'
 import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { gitPrimaryAction } from './git-primary-action'
-import { useLiveRefresh } from './live-refresh'
+import { useLiveRefreshState } from './live-refresh'
+import { BackgroundRefreshIssue } from './background-refresh-notice'
 import { taskPullLinks } from './task-pull-links'
 import { TaskPullLinkDialog } from '../dialogs/task-pull-link-dialog'
 import { TaskBranchMenu } from './task-branch-menu'
@@ -199,6 +200,8 @@ export function TaskProjectPanel({
   const gitKey = JSON.stringify([
     activeRuntimeId,
     connection?.address,
+    connection?.token,
+    connection?.runtimeId,
     task.id,
     task.repositoryId,
     repo?.path,
@@ -233,7 +236,7 @@ export function TaskProjectPanel({
     )
       setGitResult({ key: gitKey, state })
   }, [request, task.repositoryId, task.id, gitKey])
-  const gitError = useLiveRefresh(gitReady, refreshGit)
+  const { error: gitError, retry: retryGit } = useLiveRefreshState(gitReady, refreshGit)
   const mutable = gitReady && !!gitState && !gitError && !commitBusy && task.status !== 'running'
   const pushAvailable =
     !!gitState?.canPush && (gitState.ahead > 0 || !gitState.tracking) && gitState.behind === 0
@@ -823,6 +826,7 @@ export function TaskProjectPanel({
   }
   return (
     <section aria-label="Thread info" className="studio-project-panel flex min-h-0 flex-col">
+      <BackgroundRefreshIssue label="Git status" error={gitError} retry={retryGit} />
       <div className="studio-thread-info-content">
         {snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
           <Button

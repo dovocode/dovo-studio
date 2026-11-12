@@ -85,6 +85,28 @@ export function runtimeUpgradeBlocked(entry: RuntimeUpgradeEntry, interruptDeskt
 const inProgress = (status?: ServerUpdateStatus) =>
   !!status && ['queued', 'downloading', 'installing'].includes(status.status)
 
+/** A saved profile can be paired with a different computer without changing its ID. */
+export const runtimeUpgradeIdentity = (entry: RuntimeUpgradeEntry) =>
+  JSON.stringify([
+    entry.target,
+    entry.profile.connection.address,
+    entry.profile.connection.token,
+    entry.profile.connection.runtimeId,
+  ])
+
+const captureEntry = (entry: RuntimeUpgradeEntry): RuntimeUpgradeEntry => ({
+  ...entry,
+  profile: { ...entry.profile, connection: { ...entry.profile.connection } },
+  ...(entry.sourceProfile
+    ? {
+        sourceProfile: {
+          ...entry.sourceProfile,
+          connection: { ...entry.sourceProfile.connection },
+        },
+      }
+    : {}),
+})
+
 /** Batch dispatch is bounded; each host reports independent progress and failure. */
 export function createRuntimeUpgradeManager(options: {
   entries: () => readonly RuntimeUpgradeEntry[]
@@ -92,6 +114,8 @@ export function createRuntimeUpgradeManager(options: {
 }) {
   let state: RuntimeUpgradeState = { checking: false, busy: [], selected: [], statuses: {} }
   let polling = false
+  let dispatching = false
+  const identities = new Map<string, string>()
   const generations = new Map<string, number>()
   const unconfirmed = new Set<string>()
   const automaticRestarts = new Map<string, boolean>()
@@ -99,6 +123,36 @@ export function createRuntimeUpgradeManager(options: {
   const update = (next: Partial<RuntimeUpgradeState>) => {
     state = { ...state, ...next }
     listeners.forEach((listener) => listener())
+  }
+  const sync = () => {
+    const entries = options.entries()
+    const next = new Map(entries.map((entry) => [entry.profile.id, runtimeUpgradeIdentity(entry)]))
+    const changed = new Set<string>()
+    for (const [id, identity] of identities) {
+      if (next.get(id) === identity) continue
+      changed.add(id)
+      generations.set(id, (generations.get(id) ?? 0) + 1)
+      unconfirmed.delete(id)
+      automaticRestarts.delete(id)
+    }
+    identities.clear()
+    for (const [id, identity] of next) identities.set(id, identity)
+    if (changed.size)
+      update({
+        statuses: Object.fromEntries(
+          Object.entries(state.statuses).filter(([id]) => !changed.has(id)),
+        ),
+        selected: state.selected.filter((id) => !changed.has(id)),
+        busy: state.busy.filter((id) => !changed.has(id)),
+      })
+    return entries
+  }
+  const current = (entry: RuntimeUpgradeEntry, generation: number | undefined) => {
+    sync()
+    return (
+      identities.get(entry.profile.id) === runtimeUpgradeIdentity(entry) &&
+      generations.get(entry.profile.id) === generation
+    )
   }
   const status = (id: string, next: ServerUpdateStatus) => {
     const previous = state.statuses[id]
@@ -154,8 +208,8 @@ export function createRuntimeUpgradeManager(options: {
     polling = true
     try {
       await Promise.all(
-        options
-          .entries()
+        sync()
+          .map(captureEntry)
           .filter(
             (entry) =>
               inProgress(state.statuses[entry.profile.id]) ||
@@ -181,7 +235,7 @@ export function createRuntimeUpgradeManager(options: {
                   { method: 'GET', timeoutMs: 5000 },
                 )
                 const snapshot = entry.target === 'desktop' ? desktopSnapshot(received) : received
-                if (generations.get(entry.profile.id) !== generation) return
+                if (!current(entry, generation)) return
                 if (
                   snapshot.releaseVersion &&
                   previous.version &&
@@ -195,8 +249,9 @@ export function createRuntimeUpgradeManager(options: {
                   return
                 }
               }
+              if (!current(entry, generation)) return
               const next = await request(entry, 'status')
-              if (generations.get(entry.profile.id) !== generation) return
+              if (!current(entry, generation)) return
               if (unconfirmed.has(entry.profile.id)) {
                 unconfirmed.delete(entry.profile.id)
                 if (next.version !== previous?.version || next.status === 'idle') {
@@ -221,13 +276,14 @@ export function createRuntimeUpgradeManager(options: {
               if (next.status === 'complete' && previous?.status !== 'complete')
                 await options.refreshed(entry)
             } catch {
-              if (generations.get(entry.profile.id) !== generation) return
+              if (!current(entry, generation)) return
               stalled(entry.profile.id, previous)
               // Runtime fleet polling owns connection errors; updater progress survives disconnects.
             }
           }),
       )
       // Older desktop bridges only download; finish their explicitly requested restart here.
+      sync()
       if (!state.busy.length) {
         for (const [id, resumeInterrupted] of automaticRestarts) {
           const entry = options.entries().find((entry) => entry.profile.id === id)
@@ -252,22 +308,34 @@ export function createRuntimeUpgradeManager(options: {
     restart = false,
     restartOptions?: { restartDesktops: boolean; resumeInterrupted: boolean },
   ) => {
-    if (state.busy.length) return
-    const targets = options.entries().filter((entry) => ids.includes(entry.profile.id))
-    update({ busy: targets.map((entry) => entry.profile.id) })
+    if (dispatching) return
+    dispatching = true
+    const targets = sync()
+      .filter((entry) => ids.includes(entry.profile.id))
+      .map((entry) => {
+        const generation = (generations.get(entry.profile.id) ?? 0) + 1
+        generations.set(entry.profile.id, generation)
+        return { entry: captureEntry(entry), generation }
+      })
+    update({ busy: targets.map(({ entry }) => entry.profile.id) })
     // Finish dispatching remote commands before restarting the local desktop controller.
     const ordered = [
-      ...targets.filter((entry) => !entry.snapshot?.owner),
-      ...targets.filter((entry) => entry.snapshot?.owner),
+      ...targets.filter(({ entry }) => !entry.snapshot?.owner),
+      ...targets.filter(({ entry }) => entry.snapshot?.owner),
     ]
     try {
       if (!restart) update({ releases: await fetchRuntimeReleases(), error: undefined })
-      for (const entry of ordered) {
+      for (const { entry, generation } of ordered) {
+        if (!current(entry, generation)) continue
+        const fresh = options
+          .entries()
+          .find((candidate) => candidate.profile.id === entry.profile.id)
+        if (!fresh) continue
         const id = entry.profile.id
-        const release = runtimeUpdate(entry.snapshot, state.releases)
+        const release = runtimeUpdate(fresh.snapshot, state.releases)
         const previous = state.statuses[id]
         const version = restart ? previous?.version : release.latest?.version
-        const blocked = runtimeUpgradeBlocked(entry, restartOptions?.restartDesktops)
+        const blocked = runtimeUpgradeBlocked(fresh, restartOptions?.restartDesktops)
         if (
           blocked ||
           !version ||
@@ -279,7 +347,6 @@ export function createRuntimeUpgradeManager(options: {
           continue
         }
         try {
-          generations.set(id, (generations.get(id) ?? 0) + 1)
           unconfirmed.delete(id)
           if (
             !restart &&
@@ -287,16 +354,15 @@ export function createRuntimeUpgradeManager(options: {
             entry.snapshot?.releaseDistribution === 'desktop'
           )
             automaticRestarts.set(id, restartOptions.resumeInterrupted)
-          status(
-            id,
-            await request(
-              entry,
-              restart ? 'restart' : 'start',
-              version,
-              restartOptions?.restartDesktops ? restartOptions.resumeInterrupted : undefined,
-            ),
+          const received = await request(
+            entry,
+            restart ? 'restart' : 'start',
+            version,
+            restartOptions?.restartDesktops ? restartOptions.resumeInterrupted : undefined,
           )
+          if (current(entry, generation)) status(id, received)
         } catch (cause) {
+          if (!current(entry, generation)) continue
           if (
             cause instanceof RuntimeRequestError &&
             (cause.kind === 'connection' ||
@@ -319,11 +385,15 @@ export function createRuntimeUpgradeManager(options: {
     } catch (cause) {
       update({ error: cause instanceof Error ? cause.message : String(cause) })
     } finally {
+      dispatching = false
       update({ busy: [] })
     }
   }
   return {
     getSnapshot: () => state,
+    sync: () => {
+      sync()
+    },
     subscribe: (listener: () => void) => {
       listeners.add(listener)
       return () => {
@@ -331,6 +401,7 @@ export function createRuntimeUpgradeManager(options: {
       }
     },
     toggle(id: string) {
+      sync()
       update({
         selected: state.selected.includes(id)
           ? state.selected.filter((value) => value !== id)

@@ -86,6 +86,14 @@ Only one run of an automation may be active or waiting for review at a time. Dif
 may run concurrently, subject to the existing task checkout lock. A task using a new worktree has
 its own checkout; tasks sharing a local checkout must wait for the other task to finish.
 
+Recurring schedules do not overlap or queue missed occurrences. If a previous run is still active or
+waiting for review, the due occurrence is skipped. The schedule then moves to its next future time.
+**Activity & message history** on desktop or the computer’s **Activity** panel on mobile shows
+**Skipped: previous run still active**, the automation name and due time. Expand the entry for the
+automation ID, occurrence key and previous run ID. These entries follow the seven-day diagnostic
+retention window, even when activity history has no limit. One-time reminders keep their durable
+pending and retry behavior until a run is accepted.
+
 ## Retry and stop
 
 **Retry** resumes a failed or cancelled run. It preserves completed steps and reuses the unfinished

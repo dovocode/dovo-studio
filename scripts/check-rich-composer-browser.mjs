@@ -64,7 +64,8 @@ createRoot(document.getElementById('app')).render(<Composer />);
         }))
         builder.onLoad({ filter: /.*/, namespace: 'rich-composer-environment' }, ({ path }) => ({
           contents: path.endsWith('studio-core')
-            ? `import { useSyncExternalStore } from 'react';
+            ? `export { composerCaretRecoveryKey } from '../studio-core/src/workspace/composer-recovery';
+import { useSyncExternalStore } from 'react';
 const listeners = new Set(); let preferences = { sendWith: 'enter', richTextComposer: true, showSkillsInSlashMenu: true };
 export const readAppPreferences = () => preferences;
 export const updateAppPreferences = changes => { preferences = { ...preferences, ...changes }; listeners.forEach(listener => listener()) };

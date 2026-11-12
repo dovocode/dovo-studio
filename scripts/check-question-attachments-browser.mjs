@@ -17,7 +17,7 @@ const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export const useWorkspace=()=>window.runtime;export {responses,attachmentUploadResultSchema,attachmentReadSchema,attachmentMutationSchema,MAX_ATTACHMENT_BYTES,MAX_ATTACHMENTS} from '@dovo/protocol';`,
+      '@dovo/studio-core': `export {useWorkspace} from '${root}packages/studio-core/src/workspace/context.ts';export {useQuestionRecovery} from '${root}packages/studio-core/src/workspace/question-recovery.ts';export {responses,attachmentUploadResultSchema,attachmentReadSchema,attachmentMutationSchema,MAX_ATTACHMENT_BYTES,MAX_ATTACHMENTS} from '@dovo/protocol';`,
       '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
       '@dovo/studio-ui': `export {QuestionForm} from '${root}packages/studio-ui/src/question-form.tsx';export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';`,
       '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=effect=>Effect.runPromise(effect);`,
@@ -25,6 +25,7 @@ try {
       './image-editor': `export const useImageEditor=()=>({edit:async file=>file,editor:null});`,
       './optimize-attachment-image': `export const optimizeAttachmentImage=async asset=>asset;`,
       '../../agents/secret-reference-fields': `export const SecretReferenceFields=()=>null;`,
+      '@react-native-async-storage/async-storage': `const records=new Map();window.nativeRecoveryStorage=records;export default {getAllKeys:async()=>[...records.keys()],getItem:async key=>records.get(key)??null,setItem:async(key,value)=>{records.set(key,value)}};`,
       'react-native': native,
       '../../ui/content/text': native,
       '../../ui/controls/action': native,
@@ -48,13 +49,14 @@ try {
         loader: 'tsx',
         contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode,questionPromptSchema} from '@dovo/protocol';
+import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
 import {TaskQuestions} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/chat/thread'}/task-questions.tsx';
 const prompt=decode(questionPromptSchema,{title:'Answer with references',questions:[{id:'design',header:'Design',question:'Attach design'},{id:'notes',header:'Notes',question:'Attach notes',required:false},{id:'secret',header:'Secret',question:'Private',secret:true,required:false},{id:'number',header:'Number',question:'Count',inputType:'number',required:false}]});
 window.uploads=[];window.answers=[];window.acknowledged=[];window.alerts=[];window.fail=false;window.hold=false;
 const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
 window.request=async(path,input)=>{if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
 const read=(...args)=>Effect.tryPromise({try:()=>window.request(...args),catch:e=>e});
-function App(){const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <><TaskQuestions taskId="task"/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <WorkspaceContext.Provider value={window.runtime}><TaskQuestions key={mount} taskId="task"/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></WorkspaceContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -147,6 +149,25 @@ function App(){const[connected,setConnected]=useState(true);const[question,setQu
         (input) => input.taskId === 'task' && input.detached === true && !input.queuedMessageId,
       ),
     )
+    await page.waitForFunction(() => {
+      const records = window.nativeRecoveryStorage
+        ? [...window.nativeRecoveryStorage.values()]
+        : Object.keys(localStorage)
+            .filter((key) => key.startsWith('dovo.question-recovery.v2.'))
+            .map((key) => localStorage.getItem(key))
+      return records.some(
+        (value) =>
+          value.includes('answer.txt') && value.includes('design') && value.includes('notes'),
+      )
+    })
+    await page.evaluate(() => window.remount())
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll('[aria-label="Remove answer.txt"]').length === 2 ||
+        [...document.querySelectorAll('button')].filter(
+          (button) => button.textContent === 'Remove answer.txt',
+        ).length === 2,
+    )
     await page.evaluate(() => (window.fail = true))
     await page.getByRole('button', { name: 'Send answers', exact: true }).click()
     await page.getByRole('alert').filter({ hasText: 'Answer admission failed' }).waitFor()
@@ -226,7 +247,7 @@ function App(){const[connected,setConnected]=useState(true);const[question,setQu
     await page.close()
   }
   console.log(
-    'Question files: desktop and mobile form adapters passed per-question ownership, detached uploads, upload gating, file-only answers, unchanged drafts, failed admission retention and identical retry checks.',
+    'Question files: desktop and mobile form adapters passed per-question ownership, detached uploads, upload gating, file-only answers, unchanged drafts, saved attachment references, form remount recovery, failed admission retention and identical retry checks.',
   )
 } finally {
   await browser.close()

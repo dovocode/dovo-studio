@@ -1,11 +1,17 @@
+import { runClientEffect } from '@dovo/client-runtime'
 import { useEffect, useEffectEvent, useState } from 'react'
-import { runtimeResourceKey, taskSearchSchema, type RuntimeOverview } from '@dovo/protocol'
+import {
+  runtimeResourceKey,
+  taskSearchSchema,
+  type TaskSearchResult,
+  type RuntimeOverview,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAppActive } from '../../runtime/state/app-active'
 
 /** Search history on each owning computer; snapshots deliberately omit conversation bodies. */
 export function useTaskSearch(entries: readonly RuntimeOverview[], query: string, enabled = true) {
-  const { readRuntime } = useRuntime()
+  const { readRuntimeEffect } = useRuntime()
   const active = useAppActive() && enabled
   const identity = JSON.stringify(
     entries.map((entry) => [entry.profile.id, entry.profile.connection, entry.connected]),
@@ -35,56 +41,80 @@ export function useTaskSearch(entries: readonly RuntimeOverview[], query: string
   const [remote, setRemote] = useState<{
     scope: string
     history: string
-    keys: Set<string>
+    results: { runtimeId: string; result: TaskSearchResult }[]
+    pending: number
     error: string
   }>({
     scope: '',
     history: '',
-    keys: new Set(),
+    results: [],
+    pending: 0,
     error: '',
   })
   const owners = useEffectEvent(() => entries.filter((entry) => entry.connected))
-  const read = useEffectEvent(readRuntime)
+  const read = useEffectEvent(readRuntimeEffect)
   useEffect(() => {
     if (!needle || !active) return
-    let cancelled = false
+    const controller = new AbortController()
     const timer = setTimeout(() => {
-      void Promise.allSettled(
-        owners().map(async (entry) => {
-          const result = await read(
-            entry.profile,
-            '/api/tasks/search',
-            { query: needle },
-            taskSearchSchema,
-          )
-          return result.taskIds.map((id) => runtimeResourceKey(entry.profile.id, id))
-        }),
-      ).then((results) => {
-        if (cancelled) return
-        setRemote({
-          scope,
-          history,
-          keys: new Set(
-            results.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])),
-          ),
-          error: results
-            .flatMap((result) =>
-              result.status === 'rejected'
-                ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
-                : [],
-            )
-            .join(' · '),
-        })
-      })
+      const sources = owners()
+      setRemote((current) => ({
+        scope,
+        history,
+        results: current.scope === scope ? current.results : [],
+        error: '',
+        pending: sources.length,
+      }))
+      for (const entry of sources)
+        void runClientEffect(
+          read(entry.profile, '/api/tasks/search', { query: needle }, taskSearchSchema),
+          controller.signal,
+        ).then(
+          (result) => {
+            if (controller.signal.aborted) return
+            setRemote((current) => ({
+              ...current,
+              results: [
+                ...current.results.filter((item) => item.runtimeId !== entry.profile.id),
+                { runtimeId: entry.profile.id, result },
+              ],
+              pending: current.pending - 1,
+            }))
+          },
+          (error: unknown) => {
+            if (controller.signal.aborted) return
+            const message = `${entry.profile.name}: ${error instanceof Error ? error.message : String(error)}`
+            setRemote((current) => ({
+              ...current,
+              error: [current.error, message].filter(Boolean).join(' · '),
+              pending: current.pending - 1,
+            }))
+          },
+        )
     }, 200)
     return () => {
-      cancelled = true
+      controller.abort()
       clearTimeout(timer)
     }
   }, [needle, scope, history, active])
+  const results = remote.scope === scope ? remote.results : []
   return {
-    keys: remote.scope === scope ? remote.keys : new Set<string>(),
-    loading: active && !!needle && (remote.scope !== scope || remote.history !== history),
+    hits: results.flatMap(({ runtimeId, result }) =>
+      result.hits.map((hit) => ({
+        ...hit,
+        runtimeId,
+        key: runtimeResourceKey(runtimeId, hit.taskId),
+      })),
+    ),
+    keys: new Set(
+      results.flatMap(({ runtimeId, result }) =>
+        result.taskIds.map((id) => runtimeResourceKey(runtimeId, id)),
+      ),
+    ),
+    loading:
+      active &&
+      !!needle &&
+      (remote.scope !== scope || remote.history !== history || remote.pending > 0),
     error: needle && remote.scope === scope ? remote.error : '',
     offline: !!needle && entries.some((entry) => !entry.connected),
   }

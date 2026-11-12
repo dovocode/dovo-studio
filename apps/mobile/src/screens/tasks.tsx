@@ -1,3 +1,4 @@
+import { requestMessageReveal } from '../tasks/conversation/message-reveal'
 import {
   taskIsWorking,
   watchRuntimeSettled,
@@ -640,6 +641,32 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         }),
       )
   }
+  const openMessage = (hit: (typeof historySearch.hits)[number]) => {
+    const owner = entries.find((entry) => entry.profile.id === hit.runtimeId)
+    if (!owner?.connected) return
+    retainPosition()
+    act(() =>
+      mobileWorkflow(function* () {
+        if (hit.runtimeId !== activeId) yield* selectRuntimeEffect(hit.runtimeId)
+        requestMessageReveal(owner.profile.connection, hit.taskId, hit.messageId)
+        navigate('tasks', hit.taskId, hit.runtimeId)
+      }),
+    )
+  }
+  const messageHits = historySearch.hits.flatMap((hit) => {
+    const owner = entries.find((entry) => entry.profile.id === hit.runtimeId)
+    const task = owner?.snapshot?.workspace.tasks.find((task) => task.id === hit.taskId)
+    if (!owner || (task && !!task.archivedAt !== archived)) return []
+    if (
+      project &&
+      (!task ||
+        !(project === 'scratch'
+          ? !task.repositoryId
+          : projectMembers.has(runtimeResourceKey(hit.runtimeId, task.repositoryId))))
+    )
+      return []
+    return [{ ...hit, owner, task }]
+  })
   const commands: TaskListRowActions = {
     open: (key) => {
       if (selecting) return toggleSelected(key)
@@ -913,6 +940,39 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               <Text style={styles.muted}>
                 Offline computers: searching saved thread details only.
               </Text>
+            )}
+            {!!query && !!messageHits.length && (
+              <View accessibilityLabel="Message results" style={{ gap: 6, paddingVertical: 10 }}>
+                <Text style={{ color: colors.text, fontWeight: '600' }}>Messages</Text>
+                {messageHits.map((hit) => (
+                  <Pressable
+                    key={JSON.stringify([hit.runtimeId, hit.taskId, hit.messageId])}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${hit.role} message in ${hit.task?.title ?? 'thread'} on ${hit.owner.profile.name}`}
+                    disabled={busy || !hit.owner.connected}
+                    onPress={() => openMessage(hit)}
+                    style={{
+                      padding: 12,
+                      gap: 4,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: 10,
+                      opacity: hit.owner.connected ? 1 : 0.6,
+                    }}
+                  >
+                    <Text numberOfLines={1} style={{ color: colors.text, fontWeight: '600' }}>
+                      {hit.task?.title ?? 'Thread'}
+                    </Text>
+                    <Text style={styles.muted}>
+                      {hit.owner.profile.name} · {hit.role}
+                      {hit.task?.delegation || hit.task?.spawnParent ? ' · Child thread' : ''}
+                    </Text>
+                    <Text numberOfLines={3} style={{ color: colors.text }}>
+                      {hit.snippet}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
             )}
           </View>
         }

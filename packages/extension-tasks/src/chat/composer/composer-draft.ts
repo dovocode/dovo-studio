@@ -11,6 +11,7 @@ export function createComposerDraft(
   initial: string,
   write: (text: string, expected?: string) => void,
   onError: (cause: unknown) => void = () => {},
+  protect: (text: string, expected?: string) => boolean | void = () => {},
 ) {
   const listeners = new Set<() => void>()
   const publish = () => listeners.forEach((listener) => listener())
@@ -18,8 +19,10 @@ export function createComposerDraft(
   let observed = initial
   let revision = 0
   let dirty = false
+  let protectedRevision = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let expected: string | undefined
+  let protectionExpected: string | undefined
   const consumed = new Set<string>()
   const cancel = () => {
     clearTimeout(timer)
@@ -28,10 +31,20 @@ export function createComposerDraft(
   const flush = () => {
     cancel()
     if (!dirty) return
+    if (protectedRevision !== revision) {
+      if (protect(text, protectionExpected ?? expected) === false) {
+        dirty = false
+        expected = undefined
+        protectionExpected = undefined
+        return
+      }
+      protectedRevision = revision
+    }
     if (expected === undefined) write(text)
     else write(text, expected)
     dirty = false
     expected = undefined
+    protectionExpected = undefined
   }
   return {
     rebind(writer: (text: string, expected?: string) => void) {
@@ -54,6 +67,13 @@ export function createComposerDraft(
       revision++
       dirty = true
       expected = undefined
+      protectionExpected = undefined
+      try {
+        protect(text)
+        protectedRevision = revision
+      } catch (cause) {
+        onError(cause)
+      }
       publish()
       cancel()
       timer = setTimeout(() => {
@@ -87,11 +107,12 @@ export function createComposerDraft(
         // A persisted send clears only the submitted text; another composer may since have
         // saved a newer draft. Unpersisted local text keeps the unconditional write.
         if (!dirty) expected = text
+        protectionExpected = text
         text = ''
         revision++
       }
-      publish()
       dirty = true
+      publish()
       flush()
       return text
     },

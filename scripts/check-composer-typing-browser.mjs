@@ -41,7 +41,7 @@ window.controller = controller;
         }))
         builder.onLoad({ filter: /.*/, namespace: 'editor-environment' }, ({ path }) => ({
           contents: path.endsWith('studio-core')
-            ? `const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace; const preferences={sendWith:'enter'}; export const useAppPreferences=()=>preferences; export const readAppPreferences=()=>preferences; export const updateAppPreferences=value=>Object.assign(preferences,value); export const useWorkspaceSelector=select=>select(workspace); export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key])); export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes';`
+            ? `export {composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace; const preferences={sendWith:'enter'}; export const useAppPreferences=()=>preferences; export const readAppPreferences=()=>preferences; export const updateAppPreferences=value=>Object.assign(preferences,value); export const useWorkspaceSelector=select=>select(workspace); export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key])); export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes';`
             : `export {cn} from '../studio-ui/src/lib/utils'; export {Button} from '../studio-ui/src/components/ui/button'; export {ComposerTextarea} from '../studio-ui/src/composer-surface'; export const IconButton=()=>null;`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
           loader: 'js',
@@ -61,7 +61,10 @@ try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.setContent('<div id="app"></div>')
+  await page.route('http://typing.test/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  await page.goto('http://typing.test/')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByRole('textbox', { name: 'Message thread' })
   await input.click()

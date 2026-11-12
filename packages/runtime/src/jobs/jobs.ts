@@ -217,17 +217,18 @@ export class Jobs {
     if (activeDeletion && activeDeletion !== reservation)
       throw new HttpError(409, 'This automation is being deleted.')
     if (this.stopping) throw new HttpError(503, 'Runtime is shutting down')
-    if (
-      [...this.runs.values()].some(
-        (run) =>
-          run.id !== except &&
-          run.automationId === automationId &&
-          (['running', 'waiting'].includes(run.status) ||
-            this.active.has(run.id) ||
-            run.taskIds.some((id) => this.tasks.hasWorkingFamily(id))),
-      )
-    )
+    if (this.blockingRun(automationId, except))
       throw new HttpError(409, 'This automation already has an active run')
+  }
+  private blockingRun(automationId: string, except?: string) {
+    return [...this.runs.values()].find(
+      (run) =>
+        run.id !== except &&
+        run.automationId === automationId &&
+        (['running', 'waiting'].includes(run.status) ||
+          this.active.has(run.id) ||
+          run.taskIds.some((id) => this.tasks.hasWorkingFamily(id))),
+    )
   }
   startManual(id: string, requestId?: string) {
     const key = requestId ? `manual:${requestId}` : undefined
@@ -719,7 +720,21 @@ export class Jobs {
           try {
             this.start(flow.id, `schedule:${due}`)
           } catch (error) {
-            if (!(error instanceof HttpError && error.status === 409))
+            const previous = this.blockingRun(flow.id)
+            if (error instanceof HttpError && error.status === 409 && previous) {
+              this.activity?.add(
+                'job-skipped',
+                flow.id,
+                `${flow.name} · Skipped: previous run still active · Due ${new Date(due).toISOString()}`,
+                {
+                  automationId: flow.id,
+                  dueAt: new Date(due).toISOString(),
+                  deliveryKey: `schedule:${due}`,
+                  reason: 'previous run still active',
+                  previousRunId: previous.id,
+                },
+              )
+            } else if (!(error instanceof HttpError && error.status === 409))
               console.error('Scheduled job failed', error)
           }
         }

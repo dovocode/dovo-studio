@@ -250,7 +250,7 @@ export class Activity {
   pruneDiagnosticsBefore(before: string, limit = 2000) {
     const changes = this.db
       .prepare(
-        "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? AND kind IN ('command','agent-event') ORDER BY time LIMIT ?)",
+        "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? AND kind IN ('command','agent-event','job-skipped') ORDER BY time LIMIT ?)",
       )
       .run(before, limit).changes
     if (changes) this.changed()

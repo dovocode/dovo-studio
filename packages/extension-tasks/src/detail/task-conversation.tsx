@@ -376,7 +376,7 @@ export function TaskConversation({
                 startup={welcome}
                 onStartBackground={welcome ? onStartBackground : undefined}
                 collapsed={minimalComposer && collapseComposerOnScroll && composerCollapsed}
-                key={task.id}
+                key={JSON.stringify([connection?.runtimeId, pendingScope])}
                 task={task}
                 temporary={temporary}
                 workspaceControls={workspaceControls}

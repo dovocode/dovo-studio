@@ -1,3 +1,4 @@
+import { BackgroundRefreshIssue } from './background-refresh-notice'
 import { useCallback, useId, useState } from 'react'
 import { taskWaitingSchema, type taskWaitingRequestSchema } from '@dovo/protocol'
 import { useTaskWaiting, useWorkspace, useStudioHost, encodeWorkTarget } from '@dovo/studio-core'
@@ -34,13 +35,14 @@ export function TaskWaitingPanel({
       request('/api/tasks/waiting', input, taskWaitingSchema),
     [request],
   )
-  const { data, error, busy, refresh } = useTaskWaiting(
+  const { data, error, refreshError, mutationError, busy, refresh } = useTaskWaiting(
     taskId,
     connected,
     read,
     JSON.stringify([activeRuntimeId, connection]),
     active,
   )
+  const retry = useCallback(() => refresh(), [refresh])
   const watchingUrls = new Set(data?.dependencies.map((item) => item.url))
   const related = panel ? (data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []) : []
   if (connected && !error && !data?.dependencies.length && !related.length) return null
@@ -73,9 +75,10 @@ export function TaskWaitingPanel({
       }
     >
       {!connected && <p>Offline · Showing saved watches. Reconnect to update or stop them.</p>}
-      {error && (
-        <p role="alert" className="max-w-full truncate text-destructive">
-          {error}
+      <BackgroundRefreshIssue label="Watching" error={refreshError} retry={retry} />
+      {mutationError && (
+        <p role="alert" className="max-w-full break-words text-destructive">
+          {mutationError}
         </p>
       )}
       {panel ? (

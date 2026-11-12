@@ -8,6 +8,7 @@ const mocks = {
   '@dovo/studio-core': `
     import {createContext,useContext,useState} from 'react';
 export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
+export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '${root}packages/studio-core/src/workspace/composer-recovery.ts';
     import {decode,runtimeDefaultsSchema,defaultTaskHarness} from '@dovo/protocol';
     import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
     // This navigation fixture has no active remote desktop sessions.
@@ -34,7 +35,7 @@ export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/s
       window.switchRuntime=switchRuntime;window.spaces=spaces;
       const workspace=spaces[runtimeId];
       const runtimes=Object.entries(spaces).map(([id,workspace])=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'fixture-token'}},connected:true,snapshot:{workspace}}));
-      const store={workspace,ready:true,connected:true,snapshot:defaults?{defaults}:null,storageError:null,syncError:null,pendingSync:false,runtimes,
+      const store={connection:runtimes.find(source=>source.profile.id===runtimeId).profile.connection,flush:async()=>{},workspace,ready:true,connected:true,snapshot:defaults?{defaults}:null,storageError:null,syncError:null,pendingSync:false,runtimes,
         runtimeRegistry:{activeId:runtimeId,profiles:[{id:'mac',connection:{address:'http://mac.lan',token:'fixture-token'}},{id:'remote',connection:{address:'http://remote.lan',token:'fixture-token'}}]},activeRuntimeId:runtimeId,switchRuntime,
         setWorkspace:update=>setSpaces(current=>({...current,[runtimeId]:typeof update==='function'?update(current[runtimeId]):update}))};
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;
@@ -114,7 +115,10 @@ try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.setContent('<div id="app"></div>')
+  await page.route('https://dovo.test/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  await page.goto('https://dovo.test/')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const selected = async (id) =>
     page.waitForFunction((id) => document.getElementById('selected')?.textContent === id, id)

@@ -1,3 +1,4 @@
+import { useMessageReveal, consumeMessageReveal } from './message-reveal'
 import { FailedTaskRetry } from './components/failed-task-retry'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
@@ -541,6 +542,7 @@ export function Conversation({
   const bookmarks = history.bookmarks
   const car = useCarMode()
   const { activeId, connected, snapshot, connection } = useRuntime()
+  const reveal = useMessageReveal()
   const positionKey = JSON.stringify([connection?.address, connection?.token, task.id])
   const project = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const messageIds = unstable_useThreadMessageIds()
@@ -572,6 +574,11 @@ export function Conversation({
     return value
   }, [positionKey])
   const [following, setFollowing] = useApplicationState(true)
+  const [revealStatus, setRevealStatus] = useApplicationState({
+    key: '',
+    message: '',
+    failed: false,
+  })
   const frame = useRef<number | null>(null)
   const pendingOffset = useRef<number | undefined>(undefined)
   const indexRetry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -584,6 +591,7 @@ export function Conversation({
         started: boolean
         attempts: number
         stable: number
+        search?: boolean
       }
     | undefined
   >(undefined)
@@ -662,12 +670,58 @@ export function Conversation({
     } else latest()
     return cancelRestore
   }, [positionKey, visible, scroll, latest, cancelMove, cancelRestore, scheduleRestore])
+  useEffect(() => {
+    if (!visible || !recentReady || reveal?.scope !== positionKey) return
+    cancelRestore()
+    cancelMove()
+    scroll.pause()
+    setFollowing(false)
+    const position: ConversationReadingPosition = {
+      anchorId: reveal.messageId,
+      anchorOffset: 0,
+      scrollOffset: offset.current,
+      atEnd: false,
+    }
+    readingPositions.remember(positionKey, position)
+    restoration.current = { key: positionKey, position, started: false, attempts: 0, stable: 0 }
+    restoration.current.search = true
+    setRevealStatus({
+      key: positionKey,
+      message: 'Finding message in conversation history…',
+      failed: false,
+    })
+    consumeMessageReveal(reveal)
+    if (history.hasMore && !history.busy && connected) void history.load()
+    scheduleRestore()
+  }, [
+    reveal,
+    visible,
+    recentReady,
+    positionKey,
+    cancelRestore,
+    cancelMove,
+    scroll,
+    setFollowing,
+    history.hasMore,
+    history.busy,
+    history.load,
+    connected,
+    scheduleRestore,
+  ])
   restoreStep.current = () => {
     const pending = restoration.current
     if (!pending || pending.key !== positionKey || !visible) return
     const index = newestFirst.indexOf(pending.position.anchorId ?? '')
     if (index < 0) {
       if (history.hasMore && connected && !history.error) return
+      if (pending.search)
+        setRevealStatus({
+          key: positionKey,
+          message: connected
+            ? history.error || 'This message is no longer available.'
+            : 'Reconnect this computer to open the message.',
+          failed: true,
+        })
       move(pending.position.scrollOffset)
       cancelRestore()
       return
@@ -680,6 +734,12 @@ export function Conversation({
     const cell = cellViews.current.get(newestFirst[index])
     if (!cell || !viewportView.current) {
       if (pending.attempts >= 60) {
+        if (pending.search)
+          setRevealStatus({
+            key: positionKey,
+            message: 'Could not show this message. Open the search result again to retry.',
+            failed: true,
+          })
         move(pending.position.scrollOffset)
         cancelRestore()
       } else scheduleRestore()
@@ -698,8 +758,18 @@ export function Conversation({
           pending.stable = 0
           move(target)
         } else pending.stable++
-        if (pending.stable >= 3 || pending.attempts >= 60) cancelRestore()
-        else scheduleRestore()
+        if (pending.stable >= 3 || pending.attempts >= 60) {
+          if (pending.search)
+            setRevealStatus({
+              key: positionKey,
+              message:
+                pending.stable >= 3
+                  ? ''
+                  : 'Could not show this message. Open the search result again to retry.',
+              failed: pending.stable < 3,
+            })
+          cancelRestore()
+        } else scheduleRestore()
       }),
     )
   }
@@ -821,6 +891,14 @@ export function Conversation({
         flex: 1,
       }}
     >
+      {revealStatus.key === positionKey && !!revealStatus.message && (
+        <Text
+          accessibilityRole={revealStatus.failed ? 'alert' : 'status'}
+          style={revealStatus.failed ? styles.error : styles.muted}
+        >
+          {revealStatus.message}
+        </Text>
+      )}
       {!!bookmarks.length && (
         <ScrollView
           horizontal

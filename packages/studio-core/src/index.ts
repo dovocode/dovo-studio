@@ -271,3 +271,5 @@ export {
 } from './confirmation'
 export * from './use-next-prompt'
 export * from './runtime-dictation'
+export * from './workspace/composer-recovery'
+export * from './workspace/question-recovery'

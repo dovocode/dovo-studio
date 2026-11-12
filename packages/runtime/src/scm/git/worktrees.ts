@@ -1,4 +1,5 @@
 import { Effect } from 'effect'
+import { worktreeChanged } from './worktree-changes.js'
 import { readdir, realpath, rmdir } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Services } from '../../services.js'
@@ -103,14 +104,8 @@ export function worktreeChoicesEffect(s: Pick<Services, 'git' | 'store'>, reposi
             record.find((line) => line.startsWith('branch '))?.slice(7) ?? ''
           ).replace(/^refs\/heads\//, '')
           return [
-            s.git
-              .command(path, [
-                'status',
-                '--porcelain',
-                '--untracked-files=all',
-                '--ignore-submodules=none',
-              ])
-              .then((status) => ({ path, branch, dirty: !!status.trim() }))
+            worktreeChanged(s.git, path)
+              .then((dirty) => ({ path, branch, dirty }))
               .catch(() => undefined),
           ]
         }),
@@ -171,19 +166,8 @@ export function listWorktreesEffect(s: WorktreeServices) {
                 ? 'archived'
                 : 'missing'
           const prunable = record.some((line) => line.startsWith('prunable'))
-          // A prunable entry has no directory left to inspect; nothing there can be lost.
-          const dirty = prunable
-            ? undefined
-            : yield* Effect.result(
-                runtimeOperation(() =>
-                  s.git.command(path, [
-                    'status',
-                    '--porcelain',
-                    '--untracked-files=all',
-                    '--ignore-submodules=none',
-                  ]),
-                ),
-              )
+          // Prunable registrations may still have files on disk. Inspect those too.
+          const dirty = yield* Effect.result(runtimeOperation(() => worktreeChanged(s.git, path)))
           worktrees.push({
             path,
             branch: branch.replace(/^refs\/heads\//, ''),
@@ -194,7 +178,7 @@ export function listWorktreesEffect(s: WorktreeServices) {
             threadIds: owners.map((task) => task.id),
             state,
             // Unreadable status counts as changed: never offer to delete what we can't inspect.
-            dirty: !!dirty && (dirty._tag === 'Failure' || !!dirty.success.trim()),
+            dirty: dirty._tag === 'Failure' || dirty.success,
             prunable,
             retainedLocation: !withinWorktrees(path, root),
           })
@@ -232,6 +216,11 @@ export function removeWorktreeEffect(s: WorktreeServices, path: string, orphanOn
         const common = (
           await s.git.command(top, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
         ).trim()
+        if (await worktreeChanged(s.git, path))
+          throw new HttpError(
+            409,
+            'This worktree has uncommitted changes. Commit or discard them before removing it.',
+          )
         const branch = `refs/heads/${entry.branch}`
         // Git inspection yields; references must be checked against the latest workspace.
         const owners = s.store

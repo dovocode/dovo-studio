@@ -68,11 +68,12 @@ createRoot(document.getElementById('app')).render(<Provider><Composer/></Provide
             resolveDir: root,
             contents: `
 import {createContext,useContext,useState} from 'react';const Context=createContext(null);
+export {composerRecoveryKey,createComposerRecovery} from './packages/studio-core/src/workspace/composer-recovery';
 export const useWorkspace=()=>useContext(Context);
 export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});
 export function Provider({children}) { const [workspace,set]=useState({tasks:[{id:'audit-task',draft:localStorage.getItem('audit-draft')??''}]});window.savedText=workspace.tasks[0].draft;
 const setWorkspace=update=>set(current=>{const next=typeof update==='function'?update(current):update;localStorage.setItem('audit-draft',next.tasks[0].draft);return next});
-return <Context.Provider value={{setWorkspace}}>{children}</Context.Provider> }
+return <Context.Provider value={{setWorkspace,connection:{address:'http://audit-runtime.test',token:'audit-token'},flush:async()=>{}}}>{children}</Context.Provider> }
 `,
           }))
         },

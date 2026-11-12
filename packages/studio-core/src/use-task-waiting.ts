@@ -21,7 +21,8 @@ export function useTaskWaiting(
   const [data, setData] = useState<TaskWaiting | null>(() =>
     key ? (saved.get(key) ?? null) : null,
   )
-  const [error, setError] = useState('')
+  const [refreshError, setRefreshError] = useState('')
+  const [mutationError, setMutationError] = useState('')
   const [busy, setBusy] = useState(false)
   const mounted = useRef(false)
   const inFlight = useRef<Promise<void> | null>(null)
@@ -33,18 +34,18 @@ export function useTaskWaiting(
       const current = generation.current
       if (!online.current) {
         if (unlink && mounted.current)
-          setError('Reconnect to stop watching this item. No changes were made.')
+          setMutationError('Reconnect to stop watching this item. No changes were made.')
         return
       }
       if (!unlink && inFlight.current) return inFlight.current
       while (inFlight.current) await inFlight.current
       if (!mounted.current || current !== generation.current) return
       if (!online.current) {
-        if (unlink) setError('Reconnect to stop watching this item. No changes were made.')
+        if (unlink) setMutationError('Reconnect to stop watching this item. No changes were made.')
         return
       }
       setBusy(true)
-      setError('')
+      if (unlink) setMutationError('')
       const operation = (async () => {
         try {
           const result = await Promise.resolve().then(() => {
@@ -57,10 +58,13 @@ export function useTaskWaiting(
           if (mounted.current && generation.current === current) {
             if (key) remember(key, result)
             setData(result)
+            setRefreshError('')
           }
         } catch (cause) {
           if (mounted.current && generation.current === current)
-            setError(cause instanceof Error ? cause.message : String(cause))
+            (unlink ? setMutationError : setRefreshError)(
+              cause instanceof Error ? cause.message : String(cause),
+            )
         } finally {
           if (mounted.current && generation.current === current) {
             inFlight.current = null
@@ -77,7 +81,8 @@ export function useTaskWaiting(
     mounted.current = true
     setBusy(false)
     setData(key ? (saved.get(key) ?? null) : null)
-    setError('')
+    setRefreshError('')
+    setMutationError('')
     return () => {
       mounted.current = false
       generation.current++
@@ -106,5 +111,5 @@ export function useTaskWaiting(
         document.removeEventListener('visibilitychange', visibility)
     }
   }, [active, connected, refresh])
-  return { data, error, busy, refresh }
+  return { data, error: mutationError || refreshError, refreshError, mutationError, busy, refresh }
 }

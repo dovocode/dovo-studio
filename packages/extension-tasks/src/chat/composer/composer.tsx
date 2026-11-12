@@ -52,6 +52,7 @@ import { Schema } from 'effect'
 import { mutableStruct, replacePullReviewHandoff } from '@dovo/protocol'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
 import { useComposerDraft } from './use-composer-draft'
+import { ComposerDraftRecovery } from './composer-draft-recovery'
 import { ComposerCommandDialog } from './composer-command-dialog'
 import type { ComposerCommandId } from './file-mentions'
 import { ComposerEditor } from './composer-editor'
@@ -1827,6 +1828,12 @@ export function Composer({
           <p role="status" className="px-3 text-xs text-muted-foreground">
             Prompt suggestion unavailable. {nextPrompt.error}
           </p>
+        )}
+        {!editing && (
+          <ComposerDraftRecovery
+            text={composerDraft.recoveryText}
+            onDiscard={composerDraft.discardRecovery}
+          />
         )}
         <ComposerEditor
           onAlternativeSubmit={
