@@ -10,13 +10,13 @@ const built = await bundleBrowser(
       resolveDir: root,
       loader: 'tsx',
       contents: `
-import {useState} from 'react';import {createRoot} from 'react-dom/client';
-import {WorkspaceContext} from './packages/studio-core/src/workspace/context';
+import {useEffect,useState} from 'react';import {createRoot} from 'react-dom/client';
+import {WorkspaceContext,useWorkspace} from './packages/studio-core/src/workspace/context';
 import {useCachedTask} from './packages/studio-core/src/workspace/use-cached-task';
 const task={id:'thread',title:'Thread',repositoryId:'repo',status:'done',files:[],messages:[],turns:[]};
 const profiles=['one','two'].map(id=>({id,name:id,connection:{address:'http://'+id+'.lan:8787/',token:'fixture-token'}}));
 const cache={read:async()=>{window.cacheReads++;if(window.cacheFailure)throw Error('Cache unavailable');return window.cached?{value:{snapshot:{workspace:{tasks:[{...task,historyRevision:window.historyRevision??0,messages:[{id:'saved',role:'user',text:'Cached request'}]}]},detailTaskIds:['thread']}}}:null}};
-function Reader(){const state=useCachedTask({...task,historyRevision:window.historyRevision??0});window.cacheState=state;return <p>{state.loaded?'Ready':state.error||'Waiting'}</p>}
+function Reader(){const state=useCachedTask({...task,historyRevision:window.historyRevision??0});window.cacheState=state;const {connected,activeRuntimeId}=useWorkspace();useEffect(()=>{window.committedScope={connected,owner:activeRuntimeId}},[connected,activeRuntimeId]);return <p>{state.loaded?'Ready':state.error||'Waiting'}</p>}
 function App(){const [version,setVersion]=useState(0);window.publish=()=>setVersion(v=>v+1);const profile=profiles[window.owner??0];return <WorkspaceContext.Provider value={{connection:profile.connection,connected:!!window.connected,snapshot:{detailTaskIds:window.live?['thread']:[]},readCache:cache,activeRuntimeId:profile.id,runtimeRegistry:{profiles},runtimes:[],refreshRuntime:async target=>{window.refreshOwners.push(target.id);if(window.holdRefresh)await new Promise((resolve,reject)=>window.finishRefresh={resolve,reject});if(window.networkFailure)throw Error('Computer unavailable')}}}><Reader/></WorkspaceContext.Provider>}
 window.cacheReads=0;window.refreshOwners=[];createRoot(document.getElementById('app')).render(<App/>);`,
     },
@@ -33,6 +33,8 @@ window.cacheReads=0;window.refreshOwners=[];createRoot(document.getElementById('
 const browser = await chromium.launch()
 try {
   const page = await browser.newPage()
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
@@ -65,13 +67,17 @@ try {
     window.holdRefresh = true
     window.publish()
   })
+  // Wait for the connection-reset effect before starting a new recovery attempt.
+  await page.waitForFunction(() => window.committedScope?.connected === false)
   await page.evaluate(() => window.cacheState.retry())
   await page.waitForFunction(() => window.cacheState.retrying && window.finishRefresh)
   await page.evaluate(() => {
     window.owner = 1
     window.publish()
   })
-  await page.waitForFunction(() => !window.cacheState.retrying)
+  await page.waitForFunction(
+    () => window.committedScope?.owner === 'two' && !window.cacheState.retrying,
+  )
   await page.evaluate(() => window.finishRefresh.reject(new Error('Old computer failure')))
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
   assert.equal(
