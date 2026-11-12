@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -11,15 +11,17 @@ import { _electron as electron } from 'playwright'
 const root = new URL('../', import.meta.url).pathname
 const require = createRequire(root + 'apps/desktop/package.json')
 const directory = await mkdtemp(join(tmpdir(), 'dovo-video-pip-'))
-const server = createServer((_request, response) => {
+// A recorded synthetic green canvas, VP8/WebM, 320x180. Creating this media during
+// the check could stop the recorder before CI's compositor delivered its first frame.
+const videoFixture = await readFile(new URL('./fixtures/browser-pip.webm', import.meta.url))
+const server = createServer((request, response) => {
+  if (request.url === '/fixture.webm') {
+    response.setHeader('Content-Type', 'video/webm')
+    response.end(videoFixture)
+    return
+  }
   response.setHeader('Content-Type', 'text/html')
-  response.end(`<button id="open">Open PiP</button><video id="video" autoplay muted></video><script>
-const canvas=document.createElement('canvas');canvas.width=320;canvas.height=180;
-window.draw=setInterval(()=>{canvas.getContext('2d').fillStyle='green';canvas.getContext('2d').fillRect(0,0,320,180)},50);
-const stream=canvas.captureStream(20),recorder=new MediaRecorder(stream,{mimeType:'video/webm'}),chunks=[];
-recorder.ondataavailable=event=>chunks.push(event.data);
-recorder.onstop=()=>{video.loop=true;video.src=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));stream.getTracks().forEach(track=>track.stop())};
-recorder.start();setTimeout(()=>recorder.stop(),800);
+  response.end(`<button id="open">Open PiP</button><video id="video" autoplay muted loop src="/fixture.webm"></video><script>
 document.getElementById('open').onclick=()=>{window.lastRequest='requested';video.requestPictureInPicture().then(()=>window.lastRequest='opened',error=>window.lastRequest=error.message)};
 </script>`)
 })
@@ -60,7 +62,22 @@ app.whenReady().then(async()=>{
   })
   const page = await app.firstWindow()
   page.setDefaultTimeout(15000)
-  await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2)
+  const ready = async () => {
+    await page.waitForFunction(() => {
+      const video = document.querySelector('video')
+      return video && (video.readyState >= 2 || video.error)
+    })
+    const media = await page.evaluate(() => {
+      const video = document.querySelector('video')
+      return {
+        error: video.error?.message ?? null,
+        width: video.videoWidth,
+        height: video.videoHeight,
+      }
+    })
+    assert.deepEqual(media, { error: null, width: 320, height: 180 }, 'The PiP video must decode.')
+  }
+  await ready()
   const open = async () => {
     await app.evaluate(() => {
       globalThis.owner.show()
@@ -138,7 +155,7 @@ app.whenReady().then(async()=>{
       globalThis.setVisible(true)
     })
     await page.reload()
-    await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2)
+    await ready()
     await open()
     await clickControl(16)
     await page.waitForFunction(() => document.querySelector('video').paused)
