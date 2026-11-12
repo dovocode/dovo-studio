@@ -4,6 +4,8 @@ import {
   isSnoozed,
   runtimeComputerName,
   runtimeResourceKey,
+  sortWorkspaceActivity,
+  taskPromptTime,
   STUDIO_TERMINAL_SCOPE,
   taskIsWorking,
   terminalStatus,
@@ -157,10 +159,21 @@ export function workspaceItems(
       offline: tab.kind === 'remote' && !owner?.connected,
     })
   }
-  // Keep the pinned page tiles first, then threads and shells. Other sections stay mixed.
-  return items.sort(
-    (a, b) =>
-      Number(b.section === 'pinned' && b.kind === 'browser') -
-      Number(a.section === 'pinned' && a.kind === 'browser'),
-  )
+  return sortWorkspaceActivity(items, (item) => ({
+    key:
+      item.kind === 'browser'
+        ? runtimeResourceKey('', item.tab.id)
+        : runtimeResourceKey(
+            item.runtimeId,
+            item.kind === 'thread' ? item.task.id : item.terminal.id,
+          ),
+    kind: item.kind,
+    pinned: item.section === 'pinned',
+    activityAt:
+      item.kind === 'thread'
+        ? Date.parse(taskPromptTime(item.task))
+        : item.kind === 'browser'
+          ? item.tab.visitedAt
+          : undefined,
+  }))
 }

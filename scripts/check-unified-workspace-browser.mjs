@@ -144,7 +144,7 @@ export const restoredSharedBrowserTabs=windowId=>readSharedBrowserTabs(windowId)
 export function saveSharedBrowserWorkspaceTabs(tabs,windowId){const saved=readSharedBrowserTabs(windowId).state;const restorable=tabs.filter(tab=>!tab.previewOf&&!isPrivateBrowserProfile(tab.profileId));if(restorable.length)saveSharedBrowserTabs({tabs:restorable,active:restorable.some(tab=>tab.id===saved?.active)?saved.active:restorable[0].id,closed:saved?.closed??[]},windowId)}
 export function BrowserPane({workspaceControl:control,openLink,onLinkOpened}){
 const [snoozing,setSnoozing]=useState(null);window.openBrowserSnooze=setSnoozing;const [activity,setActivity]=useState({});window.setBrowserActivity=states=>{window.browserActivity=states;setActivity(states)};
-const [ownTabs,setOwnTabs]=useState(()=>restoredSharedBrowserTabs()??[]);const tabs=control.tabs??ownTabs;const setTabs=control.onSetTabs??setOwnTabs;const opened=useRef('');
+const [ownTabs,setOwnTabs]=useState(()=>restoredSharedBrowserTabs()??[]);const tabs=control.tabs??ownTabs;const setTabs=control.onSetTabs??setOwnTabs;const opened=useRef('');window.sortTabs=()=>tabs;window.sortSetTabs=setTabs;
 useEffect(()=>{if(!control.tabs)control.onSetTabs?.(ownTabs)},[control.tabs,ownTabs]);
 useEffect(()=>{control.onTabsChange(tabs,tabs.at(-1)?.id);saveSharedBrowserWorkspaceTabs(tabs)},[tabs]);
 useEffect(()=>{const req=control.lifecycleRequest;if(!req)return;setTabs(previous=>previous.map(tab=>tab.id!==req.tabId?tab:req.action==='pin'||req.action==='unpin'?{...wakeBrowserTab(tab),pinned:req.action==='pin'}:req.action==='settle'?settleBrowserTab(tab):req.action==='snooze'?snoozeBrowserTab(tab,req.until):wakeBrowserTab(tab)));control.onLifecycleHandled?.(req.requestId)},[control.lifecycleRequest?.requestId]);
@@ -489,6 +489,81 @@ try {
     'Browsing recent work preserves the starter editor',
   )
   const workspaceRows = page.getByRole('complementary').locator('[data-workspace-kind]')
+  // Mix page visits with real thread input. Output and title changes must not move rows.
+  await page.evaluate(() => {
+    const tasks = window.computers.map((owner) =>
+      owner.snapshot.workspace.tasks.find((task) => task.id === 'thread'),
+    )
+    window.sortBackup = tasks.map((task) => ({ ...task }))
+    tasks[0].lastPromptAt = new Date(Date.now() - 3600000).toISOString()
+    tasks[1].lastPromptAt = new Date(Date.now() - 10800000).toISOString()
+    window.sortSetTabs(
+      window
+        .sortTabs()
+        .map((page) => (page.id === 'page' ? { ...page, visitedAt: Date.now() - 7200000 } : page)),
+    )
+    window.composerPreferences = {
+      threadSectionOrder: ['pinned', 'working', 'active', 'waiting', 'snoozed', 'settled'],
+    }
+    window.refresh()
+  })
+  await page.waitForFunction(
+    () => window.sortTabs().find((tab) => tab.id === 'page')?.visitedAt > 0,
+  )
+  const activeRows = page
+    .getByRole('complementary')
+    .locator('[data-section="active"] [data-workspace-kind]')
+  const mixedOrder = () =>
+    activeRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label')))
+  assert.deepEqual((await mixedOrder()).slice(0, 3), [
+    'Thread: local thread',
+    'Page: LAN browser',
+    'Thread: remote thread',
+  ])
+  await page.evaluate(() => {
+    window.computers[0].snapshot.workspace.tasks.find((task) => task.id === 'thread').status =
+      'running'
+    window.refresh()
+  })
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('[data-section]')].some(
+      (section) => section.dataset.section === 'working',
+    ),
+  )
+  assert.deepEqual(
+    await page
+      .getByRole('complementary')
+      .locator('[data-section]')
+      .evaluateAll((sections) => sections.map((section) => section.dataset.section)),
+    ['pinned', 'working', 'active'],
+  )
+  await page.evaluate(() => {
+    window.computers[0].snapshot.workspace.tasks.find((task) => task.id === 'thread').status =
+      'draft'
+    window.refresh()
+  })
+  await page.waitForFunction(() => !document.querySelector('[data-section="working"]'))
+  await page.evaluate(() => {
+    window.computers[1].snapshot.workspace.tasks.find((task) => task.id === 'thread').updatedAt =
+      '2026-11-06T00:00:00Z'
+    window.refresh()
+  })
+  assert.deepEqual((await mixedOrder()).slice(0, 3), [
+    'Thread: local thread',
+    'Page: LAN browser',
+    'Thread: remote thread',
+  ])
+  await page.evaluate(() => {
+    window.computers.forEach((owner, index) =>
+      Object.assign(
+        owner.snapshot.workspace.tasks.find((task) => task.id === 'thread'),
+        window.sortBackup[index],
+        { lastPromptAt: undefined, updatedAt: undefined },
+      ),
+    )
+    window.composerPreferences = undefined
+    window.refresh()
+  })
   const pinnedSection = page.getByRole('region', { name: 'Pinned workspace items', exact: true })
   const pinnedGrid = pinnedSection.getByRole('group', { name: 'Pinned browser tabs', exact: true })
   const pinnedPages = pinnedGrid.locator('[data-pinned-page]')
@@ -1414,12 +1489,12 @@ try {
       'Thread: Pinned remote work',
       'Terminal: Pinned shell',
       'Page: LAN browser',
-      'Terminal: local shell',
       'Thread: local thread',
-      'Terminal: remote shell',
       'Thread: remote thread',
+      'Terminal: local shell',
+      'Terminal: remote shell',
     ],
-    'Pinned pages lead, threads follow, and Active items retain mixed title order across computers',
+    'Pinned pages retain manual order; Active items use mixed input activity across computers',
   )
   assert.equal(await workspaceRows.filter({ hasText: 'thread terminal' }).count(), 0)
   assert.equal(
@@ -1936,11 +2011,10 @@ try {
   await snoozeRow('local thread', 'Unsnooze')
   await rowAction('local thread', 'Pin')
   await page.waitForFunction(() => window.computers[0].snapshot.workspace.tasks[0].pinned === true)
-  assert.ok(
-    (await pinnedSection.locator('.studio-thread-card').first().textContent()).includes(
-      'local thread',
-    ),
-    'Pinned items lead the mixed list',
+  assert.equal(
+    await pinnedSection.getByRole('group', { name: 'Thread: local thread', exact: true }).count(),
+    1,
+    'Pinning moves the thread into the pinned section without replacing its activity time',
   )
   await rowAction('local thread', 'Unpin')
   await rowAction('local thread', 'Settle')

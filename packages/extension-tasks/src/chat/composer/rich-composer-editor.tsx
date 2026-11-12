@@ -15,6 +15,8 @@ import { Fragment, Slice, type MarkType, type Node } from 'prosemirror-model'
 import { EditorState, Plugin, Selection, TextSelection, type Command } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import { cn } from '@dovo/studio-ui'
+import type { ResourceSettings } from '@dovo/protocol'
+import { contextReferences, expandReferences, referenceNodeView } from './composer-references'
 import { registerComposerInput } from './composer-input'
 import {
   parseRichMarkdown,
@@ -37,6 +39,7 @@ export type RichKeyContext = { atStart: boolean; collapsed: boolean }
 
 export type RichComposerEditorProps = {
   value: string
+  resources: ResourceSettings
   onChange: (text: string) => void
   input: RefObject<HTMLElement | null>
   handle: RefObject<RichComposerHandle | null>
@@ -194,8 +197,15 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
     const editor: EditorView = new EditorView(mount.current, {
       state: EditorState.create({
         doc: initial.doc,
-        plugins: [history(), readOnly, editingKeys, keymap(baseKeymap)],
+        plugins: [
+          history(),
+          readOnly,
+          contextReferences(() => latest.current.resources),
+          editingKeys,
+          keymap(baseKeymap),
+        ],
       }),
+      nodeViews: { context_reference: referenceNodeView },
       editable: () => !latest.current.disabled,
       attributes: () => {
         const { attributes, placeholder, disabled, readOnly } = latest.current
@@ -215,12 +225,16 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
         return values
       },
       dispatchTransaction(tr) {
-        const next = editor.state.apply(tr)
+        const next = editor.state.applyTransaction(tr).state
         editor.updateState(next)
         if (tr.docChanged && !tr.getMeta(external) && current.current) {
-          current.current = serializeRichMarkdown(next.doc, current.current)
+          const before = current.current.text
+          current.current = serializeRichMarkdown(
+            expandReferences(next.doc, current.current.doc),
+            current.current,
+          )
           rememberRichMarkdown(current.current)
-          latest.current.onChange(current.current.text)
+          if (current.current.text !== before) latest.current.onChange(current.current.text)
         }
         if (tr.docChanged || tr.selectionSet) latest.current.onSelectionChange()
       },
@@ -256,8 +270,23 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
       handleDrop: (_, event) => !!(event as DragEvent).dataTransfer?.files.length,
       clipboardTextParser: (text, $context) =>
         $context.parent.type.spec.code ? (null as unknown as Slice) : plainTextSlice(text),
+      clipboardTextSerializer: (slice) => {
+        const content = expandReferences(nodes.doc.create(null, slice.content)).content
+        const doc = nodes.doc.create(
+          null,
+          content.firstChild?.isInline ? nodes.paragraph.create(null, content) : content,
+        )
+        const empty = parseRichMarkdown('')
+        return empty.supported ? serializeRichMarkdown(doc, empty.value).text : ''
+      },
     })
     view.current = editor
+    editor.dispatch(
+      editor.state.tr
+        .replaceWith(0, editor.state.doc.content.size, initial.doc.content)
+        .setMeta(external, true)
+        .setMeta('addToHistory', false),
+    )
     const input = latest.current.input
     input.current = editor.dom
     const unregister = registerComposerInput(editor.dom, {
@@ -323,12 +352,12 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
     editor.dispatch(tr)
     // Keep exact source for the replaced blocks so the next edit rewrites only what changes.
     const blocks: Node[] = []
-    editor.state.doc.forEach((block) => blocks.push(block))
+    expandReferences(editor.state.doc, parsed.value.doc).forEach((block) => blocks.push(block))
     current.current =
       blocks.length === parsed.value.blocks.length &&
       blocks.every((block, index) => block.eq(parsed.value.blocks[index]))
-        ? { ...parsed.value, doc: editor.state.doc, blocks }
-        : { ...parsed.value, doc: editor.state.doc, blocks: [], pieces: [], separators: [] }
+        ? { ...parsed.value, blocks }
+        : { ...parsed.value, blocks: [], pieces: [], separators: [] }
     if (focused) editor.focus()
   }, [props.value])
   // Attributes and editability follow props without recreating the editor.

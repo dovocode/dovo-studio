@@ -13,10 +13,11 @@ import { useRef, useState, useSyncExternalStore } from 'react';
 import { ComposerEditor } from './src/chat/composer/composer-editor.tsx';
 import { ComposerModeToggle } from './src/chat/composer/composer-mode.tsx';
 import { createComposerDraft } from './src/chat/composer/composer-draft.ts';
+import { selectComposerInput, composerSelection } from './src/chat/composer/composer-input.ts';
 const controller = createComposerDraft('', () => {}, console.error);
 window.editorRenders = 0; window.controller = controller; window.submits = []; window.alternatives = 0; window.commands = [];
 const messages = [{ role: 'user', text: 'First message' }, { role: 'user', text: 'Second **message**' }];
-const resources = { skills: [], mcpServers: [] };
+const resources = { skills: [{ name: 'review', enabled: true }], mcpServers: [{ name: 'docs', enabled: true }] };
 const history = () => messages;
 const command = id => window.commands.push(id);
 const alternative = () => window.alternatives++;
@@ -27,6 +28,8 @@ function Composer() {
   const [menu, setMenu] = useState(false); window.setMenuMode = setMenu;
   const [tick, setTick] = useState(0); window.runtimeTick = () => setTick(value => value + 1);
   const input = useRef(null);
+  window.selectSource = (start, end = start) => { input.current.focus(); selectComposerInput(input.current, start, end) };
+  window.sourceSelection = () => composerSelection(input.current, 0);
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   return <form data-suggestion={suggestion} data-has-text={hasText} data-runtime-tick={tick} onSubmit={event => { event.preventDefault(); window.submits.push(controller.text) }}>
     <ComposerModeToggle input={input} menu={menu} />
@@ -311,6 +314,76 @@ try {
   await source.press('End')
   await page.getByRole('status').filter({ hasText: 'Catalog temporarily unavailable' }).waitFor()
   assert.equal(await text(), '@other')
+  // Chips retain source through selection, copy, atomic deletion, undo, and editor swaps.
+  await source.press('ControlOrMeta+Shift+m')
+  await editor.waitFor()
+  const chipDraft =
+    '🚀 Review @src/file.ts $review @docs and `model:harness%3Acodex/gpt%2Fexact` please'
+  await setDraft(chipDraft)
+  await editor.locator('[data-reference-kind="model"]').waitFor()
+  assert.equal(await editor.locator('.dovo-composer-reference').count(), 4)
+  assert.equal(
+    await editor.locator('[data-reference-kind="file"]').getAttribute('title'),
+    '@src/file.ts',
+  )
+  assert.match(await editor.locator('[data-reference-kind="model"]').innerText(), /gpt\/exact/)
+  assert.equal(await text(), chipDraft, 'Chips must not rewrite saved Markdown')
+  await editor.press('ControlOrMeta+a')
+  const copied = await editor.evaluate((element) => {
+    const clipboardData = new DataTransfer()
+    element.dispatchEvent(
+      new ClipboardEvent('copy', { clipboardData, bubbles: true, cancelable: true }),
+    )
+    return clipboardData.getData('text/plain')
+  })
+  assert.equal(
+    copied,
+    chipDraft.trimEnd(),
+    'Copy includes the full paths and exact model reference',
+  )
+  const fileStart = chipDraft.indexOf('@src')
+  const fileEnd = fileStart + '@src/file.ts'.length
+  await page.evaluate((end) => window.selectSource(end), fileEnd)
+  assert.deepEqual(await page.evaluate(() => window.sourceSelection()), {
+    start: fileEnd,
+    end: fileEnd,
+  })
+  await editor.press('Backspace')
+  assert.equal(await editor.locator('[data-reference-kind="file"]').count(), 0)
+  assert.equal(await text(), chipDraft.slice(0, fileStart) + chipDraft.slice(fileEnd))
+  await editor.press('ControlOrMeta+z')
+  assert.equal(await text(), chipDraft)
+  await page.getByRole('button', { name: /Markdown source/ }).click()
+  await source.waitFor()
+  assert.equal(await source.inputValue(), chipDraft)
+  await source.press('ControlOrMeta+Shift+m')
+  await editor.locator('[data-reference-kind="file"]').waitFor()
+  assert.equal(await text(), chipDraft)
+  const punctuatedPath = 'Read @src/__tests__/my_file.ts please'
+  await setDraft(punctuatedPath)
+  await editor.locator('[data-reference-kind="file"]').waitFor()
+  assert.equal(await editor.locator('.dovo-composer-reference').count(), 1)
+  assert.equal(await text(), punctuatedPath)
+  await editor.press('ControlOrMeta+a')
+  const copiedPath = await editor.evaluate((element) => {
+    const clipboardData = new DataTransfer()
+    element.dispatchEvent(
+      new ClipboardEvent('copy', { clipboardData, bubbles: true, cancelable: true }),
+    )
+    return clipboardData.getData('text/plain')
+  })
+  assert.equal(copiedPath, punctuatedPath)
+  await page.evaluate((end) => window.selectSource(end), punctuatedPath.length)
+  await editor.pressSequentially(' again')
+  assert.equal(await text(), punctuatedPath + ' again')
+  await setDraft(
+    '# Heading @src/file.ts here\n\nCode `@src/file.ts `\n\n[`model:codex/gpt`](https://example.com)',
+  )
+  assert.equal(await editor.locator('.dovo-composer-reference').count(), 0)
+  assert.equal(
+    await text(),
+    '# Heading @src/file.ts here\n\nCode `@src/file.ts `\n\n[`model:codex/gpt`](https://example.com)',
+  )
   assert.deepEqual(errors, [])
   console.log('Rich composer browser checks passed')
 } finally {

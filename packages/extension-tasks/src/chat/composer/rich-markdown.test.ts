@@ -136,3 +136,14 @@ test('caret positions map between rich text and Markdown source', () => {
   }
   expect(doc.textBetween(0, positionAtSourceOffset(doc, markdown, 17))).toContain('Keep bo')
 })
+
+test('caret mapping uses UTF-16 after emoji and non-Latin text', () => {
+  const markdown = 'Fix 🚀 **café** and 日本語 now'
+  const { doc } = parse(markdown)
+  for (const word of ['café', '日本語', 'now']) {
+    const offset = markdown.indexOf(word) + 1
+    expect(sourceOffsetAt(doc, markdown, positionAtSourceOffset(doc, markdown, offset))).toBe(
+      offset,
+    )
+  }
+})

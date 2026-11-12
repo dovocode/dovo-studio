@@ -16,6 +16,15 @@ import { Schema, type Node } from 'prosemirror-model'
 export const richSchema = new Schema({
   nodes: markdownSchema.spec.nodes
     .remove('image')
+    .addBefore('text', 'context_reference', {
+      inline: true,
+      group: 'inline',
+      content: 'text*',
+      atom: true,
+      attrs: { kind: {}, label: {} },
+      // The clipboard HTML contains the full reference. Only the live node view shortens it.
+      toDOM: () => ['span', 0],
+    })
     .update('heading', { ...markdownSchema.spec.nodes.get('heading')!, content: 'text*' })
     // Chat lists are tight and keep the bullet they were written with.
     .update('bullet_list', {
@@ -34,6 +43,18 @@ export const richSchema = new Schema({
 
 // Tables are tokenized only so that the parser rejects them instead of flattening them.
 const tokenizer = MarkdownIt('commonmark', { html: false }).enable(['strikethrough', 'table'])
+// A file reference is literal source. Do not interpret __tests__ or other path punctuation
+// as Markdown marks before the reference plugin turns the completed token into a chip.
+tokenizer.inline.ruler.before('text', 'composer_file_reference', (state, silent) => {
+  const match = /^([^\\\n`*_[\]<>!~]*\s)?(@[^\s@]+)(?=\s)/.exec(
+    state.src.slice(state.pos, state.posMax),
+  )
+  if (!match || !/[\\/]|\.[\w-]+$/.test(match[2].slice(1))) return false
+  if (!match[1] && state.pos > 0 && !/\s/.test(state.src[state.pos - 1])) return false
+  if (!silent) state.pending += match[0]
+  state.pos += match[0].length
+  return true
+})
 const { image: _image, ...tokens } = defaultMarkdownParser.tokens
 type Token = ReturnType<typeof tokenizer.parse>[number]
 const tight = (list: readonly Token[], index: number) => {
@@ -273,7 +294,8 @@ function sourceIndexes(doc: Node, markdown: string) {
   const visible = visibleText(doc)
   const indexes: number[] = []
   let cursor = 0
-  for (const character of visible) {
+  for (let index = 0; index < visible.length; index++) {
+    const character = visible[index]
     const found = markdown.indexOf(character, cursor)
     if (found === -1) break
     indexes.push(found)
@@ -303,5 +325,16 @@ export function positionAtSourceOffset(doc: Node, markdown: string, offset: numb
     if (visibleText(doc, middle).length < count) low = middle + 1
     else high = middle
   }
+  // Inline atoms expose their source text but have no editable caret positions inside.
+  doc.descendants((node, position) => {
+    if (!node.isInline || !node.isAtom || node.isText) return true
+    const end = position + node.nodeSize
+    if (low > position && low < end) {
+      const startOffset = sourceOffsetAt(doc, markdown, position)
+      const endOffset = sourceOffsetAt(doc, markdown, end)
+      low = offset - startOffset < endOffset - offset ? position : end
+    }
+    return false
+  })
   return low
 }

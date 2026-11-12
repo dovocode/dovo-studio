@@ -74,11 +74,11 @@ const page: BrowserTab = {
 it('mixes resources while separating thread PTYs and namespacing identities by type and computer', () => {
   const items = workspaceItems([computer(), computer('linux')], [page], now)
   expect(items.map((item) => item.kind)).toEqual([
-    'thread',
-    'terminal',
-    'thread',
-    'terminal',
     'browser',
+    'thread',
+    'thread',
+    'terminal',
+    'terminal',
   ])
   expect(new Set(items.map((item) => item.key)).size).toBe(5)
   expect(items.find((item) => item.kind === 'browser')?.detail).toContain('app.lan:3000')
@@ -151,7 +151,70 @@ it('retains offline sessions, excludes private/preview pages, and keeps pages wi
     { offline: true, status: 'Offline' },
   ])
   expect(items.filter((item) => item.kind === 'browser').map((item) => item.tab.id)).toEqual([
-    'same',
     'assistant',
+    'same',
   ])
+})
+
+it('mixes page visits and latest prompts across computers, without moving on streamed output', () => {
+  const owner = (id: string, prompt: string): RuntimeOverview => ({
+    profile: {
+      ...runtimeProfile(
+        { address: 'http://' + id + '.lan', token: 'private-device-token-at-least-32-characters' },
+        id,
+      ),
+      id,
+    },
+    connected: true,
+    lastSeen: null,
+    error: null,
+    pulls: null,
+    pullError: null,
+    snapshot: decode(snapshotSchema, {
+      revision: 1,
+      owner: false,
+      workspace: {
+        version: 1,
+        runtimeAddress: '',
+        repositories: [],
+        agents: [],
+        automations: [],
+        tasks: [
+          decode(taskSchema, {
+            id: 'same',
+            repositoryId: '',
+            title: id,
+            lastPromptAt: prompt,
+            agentId: '',
+            messages: [],
+            files: [],
+            draft: '',
+            example: false,
+            createdAt: '2026-11-01T00:00:00Z',
+            updatedAt: '2026-11-09T00:00:00Z',
+            status: 'done',
+          }),
+        ],
+      },
+      terminals: [{ id: 'shell', taskId: 'studio:terminals', title: id + ' shell', exited: false }],
+      questions: [],
+      approvals: [],
+      runs: [],
+      devices: [],
+      pendingDevices: [],
+    }),
+  })
+  const owners = [owner('new', '2026-11-05T00:00:00Z'), owner('old', '2026-11-03T00:00:00Z')]
+  const tab: BrowserTab = {
+    kind: 'local',
+    id: 'page',
+    profileId: 'device',
+    title: 'page',
+    url: 'http://app.lan',
+    visitedAt: Date.parse('2026-11-04T00:00:00Z'),
+  }
+  const titles = () => workspaceItems(owners, [tab], Date.now()).map((item) => item.title)
+  expect(titles()).toEqual(['new', 'page', 'old', 'new shell', 'old shell'])
+  owners[1].snapshot!.workspace.tasks[0].updatedAt = '2026-11-10T00:00:00Z'
+  expect(titles()).toEqual(['new', 'page', 'old', 'new shell', 'old shell'])
 })

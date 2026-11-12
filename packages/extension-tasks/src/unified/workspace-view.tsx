@@ -25,6 +25,9 @@ import {
   workspacePatchResultSchema,
   isPrivateBrowserProfile,
   isSnoozed,
+  orderThreadSections,
+  sortWorkspaceActivity,
+  taskPromptTime,
   randomUUID,
   runtimeComputerName,
   preferredThreadCopies,
@@ -170,6 +173,7 @@ export default function UnifiedWorkspace() {
 }
 
 function WorkspaceContent() {
+  const preferences = useAppPreferences()
   const store = useWorkspace()
   const computers = useWorkspaceComputers()
   const host = useStudioHost()
@@ -760,46 +764,53 @@ function WorkspaceContent() {
   )
   const threadKey = (resource: WorkspaceResource) =>
     taskCollectionKey(resource.tab.runtimeId, resource.tab.id)
-  const listResources = resources.flatMap((resource): WorkspaceResource[] => {
-    if (resource.row.kind !== 'thread') return [resource]
-    const root = threadRoots.get(threadKey(resource))
-    if (!root) return []
-    return [
-      {
-        ...resource,
-        status: !resource.row.task.archived && root.needsInput ? 'needs-input' : resource.status,
-        row: { ...resource.row, needsInput: root.needsInput },
-      },
-    ]
-  })
+  const listResources = sortWorkspaceActivity(
+    resources.flatMap((resource): WorkspaceResource[] => {
+      if (resource.row.kind !== 'thread') return [resource]
+      const root = threadRoots.get(threadKey(resource))
+      if (!root) return []
+      return [
+        {
+          ...resource,
+          status: !resource.row.task.archived && root.needsInput ? 'needs-input' : resource.status,
+          row: { ...resource.row, needsInput: root.needsInput },
+        },
+      ]
+    }),
+    (resource) => ({
+      key: taskCollectionKey(resource.tab.runtimeId, resource.tab.id),
+      kind: resource.row.kind,
+      pinned: resource.pinned,
+      activityAt:
+        resource.row.kind === 'thread'
+          ? Date.parse(taskPromptTime(resource.row.task))
+          : resource.row.kind === 'browser'
+            ? resource.row.page.visitedAt
+            : undefined,
+    }),
+  )
   const selectedThreadKey =
     active?.kind === 'thread' ? taskCollectionKey(active.runtimeId, active.id) : undefined
   const selectedRootKey = selectedThreadKey && threadTree.rootKeys.get(selectedThreadKey)
-  const matchingResources = listResources
-    .filter(
-      (resource) =>
-        (filter === 'all' || resource.tab.kind === filter) &&
-        (!projectFilter ||
-          (resource.row.kind === 'thread' &&
-            resource.tab.runtimeId === projectFilter.runtimeId &&
-            resource.row.task.repositoryId === projectFilter.repositoryId)) &&
-        (!computer ||
-          resource.tab.runtimeId === computer ||
-          (resource.tab.kind === 'thread' && threadTree.contextKeys.has(threadKey(resource))) ||
-          (resource.tab.kind === 'browser' &&
-            pages.find((page) => page.id === resource.tab.id)?.runtimeId === computer)) &&
-        (`${resource.title} ${resource.detail}`.toLowerCase().includes(search.toLowerCase()) ||
-          (resource.tab.kind === 'thread' &&
-            threadDescendants(threadTree.nodes.get(threadKey(resource))?.children ?? []).some(
-              (child) =>
-                `${child.title} ${child.computerName}`.toLowerCase().includes(search.toLowerCase()),
-            ))),
-    )
-    .sort(
-      (a, b) =>
-        a.title.localeCompare(b.title, undefined, { numeric: true }) ||
-        workspaceTabKey(a.tab).localeCompare(workspaceTabKey(b.tab)),
-    )
+  const matchingResources = listResources.filter(
+    (resource) =>
+      (filter === 'all' || resource.tab.kind === filter) &&
+      (!projectFilter ||
+        (resource.row.kind === 'thread' &&
+          resource.tab.runtimeId === projectFilter.runtimeId &&
+          resource.row.task.repositoryId === projectFilter.repositoryId)) &&
+      (!computer ||
+        resource.tab.runtimeId === computer ||
+        (resource.tab.kind === 'thread' && threadTree.contextKeys.has(threadKey(resource))) ||
+        (resource.tab.kind === 'browser' &&
+          pages.find((page) => page.id === resource.tab.id)?.runtimeId === computer)) &&
+      (`${resource.title} ${resource.detail}`.toLowerCase().includes(search.toLowerCase()) ||
+        (resource.tab.kind === 'thread' &&
+          threadDescendants(threadTree.nodes.get(threadKey(resource))?.children ?? []).some(
+            (child) =>
+              `${child.title} ${child.computerName}`.toLowerCase().includes(search.toLowerCase()),
+          ))),
+  )
   /** One row per item, in its kind's established design; shared by the sidebar and overview. */
   const renderResource = (resource: WorkspaceResource, pinnedPage = false) => {
     const key = workspaceTabKey(resource.tab)
@@ -902,9 +913,7 @@ function WorkspaceContent() {
       ),
     ),
     ...listResources.filter((resource) => resource.pinned),
-    ...listResources
-      .filter((resource) => resource.status === 'active')
-      .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })),
+    ...listResources.filter((resource) => resource.status === 'active'),
   ]
     .filter(
       (resource, index, all) =>
@@ -931,7 +940,11 @@ function WorkspaceContent() {
     })
   }
   // Sections follow the thread workflow; each one mixes threads, pages and terminals.
-  const sidebarSections = sections
+  const sidebarSections = orderThreadSections(
+    sections,
+    (section) => section.id,
+    preferences.threadSectionOrder,
+  )
     .map((section) => ({
       ...section,
       items: matchingResources.filter((resource) => sectionOf(resource) === section.id),
@@ -1161,10 +1174,7 @@ function WorkspaceContent() {
                                   </div>
                                 )}
                                 {section.items
-                                  .filter((item) => item.tab.kind === 'thread')
-                                  .map((item) => renderResource(item))}
-                                {section.items
-                                  .filter((item) => item.tab.kind === 'terminal')
+                                  .filter((item) => item.tab.kind !== 'browser')
                                   .map((item) => renderResource(item))}
                               </>
                             ) : (

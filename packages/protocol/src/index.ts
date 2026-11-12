@@ -63,6 +63,7 @@ export * from './shared/resources.js'
 export * from './shared/resource-catalogs.js'
 
 export * from './tasks/task-priority.js'
+export * from './tasks/workspace-activity.js'
 export * from './tasks/task-preparation.js'
 export * from './tasks/task-transcript.js'
 export * from './conversation/workflow/review-comments.js'
@@ -380,3 +381,4 @@ export * from './tasks/prompt-suggestion.js'
 export * from './runtime/dictation.js'
 
 export * from './shared/conditional-read.js'
+export * from './conversation/presentation/composer-references.js'

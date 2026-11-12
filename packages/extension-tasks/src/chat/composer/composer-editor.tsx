@@ -391,6 +391,7 @@ export const ComposerEditor = memo(function ComposerEditor({
         <Suspense fallback={source}>
           <RichComposerEditor
             value={shown}
+            resources={resources}
             onChange={edited}
             input={input}
             handle={richHandle}

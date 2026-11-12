@@ -153,7 +153,7 @@ export function taskSnoozeMenuChoices(
 export function isSnoozed(task: Task, now: number) {
   return !!task.snoozedUntil && Date.parse(task.snoozedUntil) > now
 }
-function promptTime(task: Task) {
+export function taskPromptTime(task: Task) {
   if (task.lastPromptAt) return task.lastPromptAt
   // Older servers do not report lastPromptAt. Use actual user input, never updatedAt.
   let latest = task.createdAt
@@ -173,7 +173,7 @@ function promptTime(task: Task) {
   return latest
 }
 export function compareTaskActivity(a: Task, b: Task, _needsInput?: ReadonlySet<string>) {
-  return promptTime(b).localeCompare(promptTime(a)) || a.id.localeCompare(b.id)
+  return taskPromptTime(b).localeCompare(taskPromptTime(a)) || a.id.localeCompare(b.id)
 }
 
 export const taskSortOptions = [

@@ -45,7 +45,6 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
-  Keyboard,
   Linking,
   Platform,
   Pressable,
@@ -56,6 +55,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentRef,
@@ -77,6 +77,7 @@ import type { BackgroundStart } from '../conversation/state/use-actions'
 import { useConversationControls } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
+import { dismissComposerKeyboard } from './native-composer-input'
 import { ComposerActivity } from './composer-activity'
 import { ComposerHistoryGesture } from './composer-history-gesture'
 import { Sheet } from '../../ui/layout/sheet'
@@ -258,6 +259,36 @@ export function Composer({
     setDraftTools(undefined)
     setToolsAnchor(null)
   }, [task.id, stashRuntimeId])
+  const composerResources = taskResources(
+    turnSettings?.harness
+      ? {
+          ...task,
+          agentId: '',
+          agentOverrides: undefined,
+          harness: turnSettings.harness,
+        }
+      : task,
+    {
+      agents: snapshot?.workspace.agents ?? [],
+      repositories: snapshot?.workspace.repositories ?? [],
+    },
+    snapshot?.defaults,
+  )
+  // Resource names are stable during streaming; do not rerender the native input for output.
+  const skillNames = composerResources.skills.map((skill) => skill.name).join('\n')
+  const serverNames = composerResources.mcpServers
+    .filter((server) => server.enabled)
+    .map((server) => server.name)
+    .join('\n')
+  const chipResources = useMemo(
+    () => ({
+      skills: skillNames ? skillNames.split('\n').map((name) => ({ name })) : [],
+      mcpServers: serverNames
+        ? serverNames.split('\n').map((name) => ({ name, enabled: true }))
+        : [],
+    }),
+    [skillNames, serverNames],
+  )
   const [draftFocus, setDraftFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
@@ -339,7 +370,7 @@ export function Composer({
       if (latestDraft.current.key === draft.key && latestDraft.current.text === text)
         draft.update('')
       asideAttempt.current = undefined
-      Keyboard.dismiss()
+      dismissComposerKeyboard()
       router.push(taskHref(activeId, chat.id))
     } catch (cause) {
       Alert.alert(
@@ -797,7 +828,7 @@ export function Composer({
                 }
                 disabled={busy || !connected || !draft.ready || attaching || dictation.active}
                 onPress={() => {
-                  Keyboard.dismiss()
+                  dismissComposerKeyboard()
                   setLinkingProjects(true)
                 }}
               />
@@ -872,7 +903,7 @@ export function Composer({
                     }}
                     disabled={busy}
                     onPress={() => {
-                      Keyboard.dismiss()
+                      dismissComposerKeyboard()
                       setCheckout(true)
                     }}
                     style={({ pressed }) => ({
@@ -1097,21 +1128,7 @@ export function Composer({
               provider={composerAgent?.provider}
               text={draft.text}
               caret={caret}
-              resources={taskResources(
-                turnSettings?.harness
-                  ? {
-                      ...task,
-                      agentId: '',
-                      agentOverrides: undefined,
-                      harness: turnSettings.harness,
-                    }
-                  : task,
-                {
-                  agents: snapshot?.workspace.agents ?? [],
-                  repositories: snapshot?.workspace.repositories ?? [],
-                },
-                snapshot?.defaults,
-              )}
+              resources={composerResources}
               onChange={draft.update}
               onSideChat={canAskAside ? (text) => void askAside(text) : undefined}
               onCommand={
@@ -1191,6 +1208,7 @@ export function Composer({
                 }}
               >
                 <ComposerField
+                  resources={chipResources}
                   focusKey={editing?.message.id ?? draftFocus}
                   key={draft.key}
                   onFocus={focus}
@@ -1244,7 +1262,7 @@ export function Composer({
                         label="Dismiss keyboard"
                         variant="plain"
                         icon="keyboard"
-                        onPress={() => Keyboard.dismiss()}
+                        onPress={() => dismissComposerKeyboard()}
                       />
                     </Animated.View>
                   )}
@@ -1393,7 +1411,7 @@ export function Composer({
                       }
                       onPress={() => {
                         if (dictation.active) dictation.stop()
-                        Keyboard.dismiss()
+                        dismissComposerKeyboard()
                         if (nextTurnControls) setTurnModelOpen(true)
                         else setSettings(true)
                       }}

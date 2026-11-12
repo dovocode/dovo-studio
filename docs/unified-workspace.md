@@ -75,7 +75,11 @@ delete actions. Terminals and Unified share a terminal menu with rename, split, 
 working directory, copy terminal ID and close actions. Close asks for confirmation. Split and close
 use the session’s owning computer, without changing the active thread’s computer. Other rows also
 show direct lifecycle actions on hover or keyboard focus and on touch screens. Status sections keep
-all resource types mixed. Pinned items appear first, and settled or snoozed items remain available
+all resource types mixed. Within each section, threads use their latest real prompt time and pages
+use their latest visit time, newest first. Streamed output does not move a thread. Pinned page
+tiles keep their saved order. Terminals have no activity timestamp and keep their existing order
+after timed items. Desktop and mobile use this shared activity rule. Desktop also follows the
+saved thread section order. Pinned items appear first, and settled or snoozed items remain available
 to reopen or unsnooze. Settling a thread follows the existing thread rules. Settling or snoozing a
 terminal keeps working, blocked and unreported jobs running. A remembered agent with an exact
 recovery target may release its PTY once the program explicitly reports **Idle** or **Done** through

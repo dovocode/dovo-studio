@@ -4,6 +4,10 @@ import Animated, { Easing, LinearTransition, ReduceMotion } from 'react-native-r
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
 import type { DraftSelection } from './dictation-draft'
+import type { ComposerReferenceResources } from '@dovo/protocol'
+import { NativeComposerInput, nativeComposerAvailable } from './native-composer-input'
+
+const emptyResources: ComposerReferenceResources = { skills: [], mcpServers: [] }
 
 /** Streaming updates and caret notifications must not update the native text view's props. */
 export const ComposerField = memo(function ComposerField({
@@ -14,6 +18,7 @@ export const ComposerField = memo(function ComposerField({
   value = '',
   revision,
   onChangeText,
+  resources = emptyResources,
   ...props
 }: Pick<
   TextInputProps,
@@ -24,6 +29,7 @@ export const ComposerField = memo(function ComposerField({
   trailingControlCount: number
   revision: string
   onSelectionChange: (selection: DraftSelection) => void
+  resources?: ComposerReferenceResources
 }) {
   const { styles, reduceMotion } = useTheme()
 
@@ -67,44 +73,57 @@ export const ComposerField = memo(function ComposerField({
         marginRight: showOptions ? 0 : trailingControlCount * 44 - 12,
       }}
     >
-      <Field
-        key={Platform.OS === 'web' ? revision : undefined}
-        {...props}
-        inputRef={input}
-        defaultValue={Platform.OS === 'web' ? value : initial.current}
-        onChangeText={type}
-        label="Message"
-        hideLabel
-        // iOS can still revise text/selection through spellcheck and smart spacing
-        // with autocorrect off. Keep this command composer free of keyboard rewrites.
-        autoCorrect={false}
-        spellCheck={false}
-        smartInsertDelete={false}
-        autoComplete="off"
-        textContentType="none"
-        multiline
-        submitBehavior="newline"
-        // Fabric measures native text as it changes. A fixed height prevents that layout
-        // from growing and can leave iOS content-size notifications stuck at one line.
-        scrollEnabled
-        textAlignVertical="top"
-        autoCapitalize="sentences"
-        onSelectionChange={select}
-        style={[
-          styles.chatText,
-          {
-            maxHeight: 144,
-            minHeight: showOptions ? 64 : 44,
-            borderWidth: 0,
-            paddingLeft: 12,
-            paddingRight: 12,
-            lineHeight: 22,
-            paddingTop: 11,
-            paddingBottom: 11,
-            backgroundColor: 'transparent',
-          },
-        ]}
-      />
+      {nativeComposerAvailable ? (
+        <NativeComposerInput
+          {...props}
+          value={value}
+          revision={revision}
+          resources={resources}
+          focusKey={focusKey}
+          expanded={showOptions}
+          onChangeText={type}
+          onSelectionChange={onSelectionChange}
+        />
+      ) : (
+        <Field
+          key={Platform.OS === 'web' ? revision : undefined}
+          {...props}
+          inputRef={input}
+          defaultValue={Platform.OS === 'web' ? value : initial.current}
+          onChangeText={type}
+          label="Message"
+          hideLabel
+          // iOS can still revise text/selection through spellcheck and smart spacing
+          // with autocorrect off. Keep this command composer free of keyboard rewrites.
+          autoCorrect={false}
+          spellCheck={false}
+          smartInsertDelete={false}
+          autoComplete="off"
+          textContentType="none"
+          multiline
+          submitBehavior="newline"
+          // Fabric measures native text as it changes. A fixed height prevents that layout
+          // from growing and can leave iOS content-size notifications stuck at one line.
+          scrollEnabled
+          textAlignVertical="top"
+          autoCapitalize="sentences"
+          onSelectionChange={select}
+          style={[
+            styles.chatText,
+            {
+              maxHeight: 144,
+              minHeight: showOptions ? 64 : 44,
+              borderWidth: 0,
+              paddingLeft: 12,
+              paddingRight: 12,
+              lineHeight: 22,
+              paddingTop: 11,
+              paddingBottom: 11,
+              backgroundColor: 'transparent',
+            },
+          ]}
+        />
+      )}
     </Animated.View>
   )
 })

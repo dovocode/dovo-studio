@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["DovoComposerInputModule"] },
+  "android": { "modules": ["expo.modules.dovocomposerinput.DovoComposerInputModule"] }
+}
