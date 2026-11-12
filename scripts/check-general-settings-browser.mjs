@@ -758,7 +758,26 @@ try {
   )
   await page.setViewportSize({ width: 1600, height: 900 })
   await profiles.getByRole('button', { name: /Claude Code/ }).waitFor()
-  assert.equal(await profiles.getByRole('button').count(), 9, 'Providers are present before setup')
+  assert.deepEqual(
+    await profiles
+      .getByRole('button')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.querySelector(':scope > span > span').textContent),
+      ),
+    [
+      'Codex',
+      'Claude Code',
+      'Mistral Vibe',
+      'OpenCode',
+      'Cursor',
+      'GitHub Copilot',
+      'Hermes',
+      'Grok Build',
+      'Muse',
+      'Antigravity',
+    ],
+    'Built-in agent profiles are present before setup',
+  )
   assert.equal(await profiles.getByText('Default model', { exact: true }).count(), 0)
   assert.equal(
     await profiles
@@ -769,6 +788,14 @@ try {
   )
   await profiles.getByRole('button', { name: /Mistral Vibe/ }).waitFor()
   await screenshot('agents-dark')
+  await profiles.getByRole('button', { name: /Antigravity/ }).click()
+  assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Antigravity')
+  await page.locator('summary').filter({ hasText: 'Connection & account' }).click()
+  assert.equal(
+    await page.getByLabel('Connection / executable', { exact: true }).inputValue(),
+    'agy',
+  )
+  assert.equal(await page.getByLabel(/^Executable arguments \(one per line\)/).inputValue(), 'acp')
   await profiles.getByRole('button', { name: /Claude Code/ }).click()
   await page.getByLabel('Instructions', { exact: true }).fill('Always explain your changes.')
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
