@@ -38,6 +38,19 @@ const agent = {
   instructions: '',
   permission: 'workspace-write',
   endpoint: '',
+  resources: {
+    skills: [
+      {
+        name: 'review',
+        enabled: true,
+        description: 'Review changes',
+        content: 'Review the changes.',
+      },
+    ],
+    mcpServers: [
+      { name: 'docs', enabled: true, transport: 'http', url: 'http://preview.local/mcp' },
+    ],
+  },
 }
 const claudeAgent = {
   ...agent,

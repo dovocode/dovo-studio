@@ -1,9 +1,9 @@
 import { requireNativeView, requireOptionalNativeModule } from 'expo'
-import { composerReferences, type ComposerReference } from '@dovo/protocol'
+import { composerReferences, composerReferenceIcon, type ComposerReference } from '@dovo/protocol'
 import { Keyboard, type TextInputProps, type ViewProps } from 'react-native'
 import { useMemo, useState, type ComponentType } from 'react'
 import { useTheme } from '../../ui/theme'
-import { harnessIconImages } from '../../agents/harness-icon-images'
+import { harnessIconImages, composerIconImages } from '../../agents/harness-icon-images'
 import type { NativeComposerInputProps } from './native-composer-input.types'
 
 type InputProps = ViewProps & {
@@ -54,7 +54,11 @@ export function NativeComposerInput({
     () =>
       composerReferences(value, resources).map((reference) => {
         const image = reference.provider && harnessIconImages[reference.provider]
-        return image ? { ...reference, icon: image.png, iconTemplate: image.template } : reference
+        return {
+          ...reference,
+          icon: image ? image.png : composerIconImages[composerReferenceIcon(reference)],
+          iconTemplate: image ? image.template : true,
+        }
       }),
     [value, resources],
   )

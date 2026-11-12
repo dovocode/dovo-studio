@@ -1,6 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import {
   composerModelReference,
+  composerReferenceIcon,
   composerReferences,
   composerTextReferences,
 } from './composer-references'
@@ -82,4 +83,22 @@ it('uses the referenced harness for model icons, including custom agents and ACP
     label: 'same-model',
   })
   expect(composerModelReference('model:harness%3Aunknown/same-model')?.provider).toBeUndefined()
+})
+
+it('identifies the file type and reference kind without adding a label prefix', () => {
+  expect(
+    ['App.tsx', 'package.json', 'README.md', '.env', 'logo.png', 'run.sh', 'unknown.bin'].map(
+      (label) => composerReferenceIcon({ kind: 'file', label }),
+    ),
+  ).toEqual([
+    'file-code',
+    'file-data',
+    'file-text',
+    'file-config',
+    'file-image',
+    'file-terminal',
+    'file-file',
+  ])
+  expect(composerReferenceIcon({ kind: 'skill', label: 'review' })).toBe('skill')
+  expect(composerReferenceIcon({ kind: 'mcp', label: 'docs' })).toBe('mcp')
 })

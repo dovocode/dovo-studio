@@ -248,7 +248,7 @@ class DovoComposerInputView(context: Context, appContext: AppContext) : ExpoView
     var end = 0
     content.references.forEach { reference ->
       if (reference.start >= end && reference.end > reference.start && reference.end <= value.length) {
-        value.setSpan(ReferenceSpan(reference.kind.uppercase() + " " + reference.label, chipColor, input.currentTextColor,
+        value.setSpan(ReferenceSpan(reference.label, chipColor, input.currentTextColor,
           { max(30f * density, input.width - input.paddingLeft - input.paddingRight.toFloat()) }, density,
           reference.icon, reference.iconTemplate), reference.start, reference.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         end = reference.end

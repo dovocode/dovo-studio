@@ -5,10 +5,12 @@ Desktop/web uses the existing rich editor. Native iOS and Android use a local Ex
 module. The saved draft and sent message remain Markdown text. Chips add no new saved format and do
 not change the selected model or runtime.
 
-Model chips also show the referenced harness icon. Custom agent references use that agent's harness.
-ACP installation references use the ACP icon. Unknown or removed harnesses keep the model label
-without an icon. Native inputs use bundled images from the shared harness icon data and keep brand
-colors or apply the current text color as appropriate.
+Chips show an icon and name, with no type prefix. File chips use the file tree's code, data, text,
+image, config, terminal or generic file icon. Skills use a sparkles icon. MCP servers use a plug
+icon. Model chips use the referenced harness icon. Custom agent references use that agent's harness.
+ACP installation references use the ACP icon. Unknown or removed harnesses use a generic model icon.
+Native inputs use bundled images from the same Lucide and harness icon data and keep brand colors or
+apply the current text color as appropriate.
 
 Use the existing mention menu to insert a reference. A completed file token such as `@src/app.ts `
 becomes a file chip. Skill and MCP tokens must match available resource names. Model chips use the
@@ -82,7 +84,7 @@ The Android instrumentation tests exercise the production EditText and InputConn
 UTF-16 positions, whole-chip hardware/software deletion and IME composition. The desktop browser
 fixture checks source preservation, clipboard source, deletion, undo and source-mode changes.
 
-Local validation passed the rich-composer browser fixture, native JavaScript adapter fixture, 22
+Local validation passed the rich-composer browser fixture, native JavaScript adapter fixture, 23
 UIKit simulator checks, five Android emulator instrumentation tests and the real Expo module builds
 on both platforms. The JavaScript adapter fixture mocks the native event boundary.
 

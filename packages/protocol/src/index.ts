@@ -206,6 +206,7 @@ export * from './tasks/task-search.js'
 export * from './runtime/cache/thread-cache.js'
 
 export * from './tasks/harness-icon-data.js'
+export * from './conversation/presentation/composer-reference-icons.js'
 
 export * from './conversation/presentation/usage-history.js'
 

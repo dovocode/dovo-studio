@@ -73,6 +73,13 @@ try {
         ['file', 'skill', 'mcp', 'model'],
       )
       assert.equal(await page.evaluate(() => window.nativeProps.content.references[0].start), 3)
+      assert.ok(
+        await page.evaluate(() =>
+          window.nativeProps.content.references.every((reference) =>
+            reference.icon?.startsWith('iVBOR'),
+          ),
+        ),
+      )
       const model = await page.evaluate(() => window.nativeProps.content.references[3])
       assert.equal(model.provider, 'codex')
       assert.ok(model.icon.startsWith('iVBOR'), 'The native bridge must receive bundled PNG data')

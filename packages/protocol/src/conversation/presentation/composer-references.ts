@@ -1,5 +1,6 @@
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { providerSchema, type Agent, type TaskHarness } from '../../workspace.js'
+import { fileIconKind } from '../../scm/repositories/file-tree.js'
 
 export type ComposerReferenceResources = {
   skills: readonly { name: string }[]
@@ -14,6 +15,16 @@ export type ComposerReference = {
   label: string
   provider?: TaskHarness['provider']
 }
+
+export type ComposerReferenceIcon =
+  | `file-${ReturnType<typeof fileIconKind>}`
+  | 'skill'
+  | 'mcp'
+  | 'model'
+export const composerReferenceIcon = (
+  reference: Pick<ComposerReference, 'kind' | 'label'>,
+): ComposerReferenceIcon =>
+  reference.kind === 'file' ? `file-${fileIconKind(reference.label)}` : reference.kind
 
 export function composerTextReferences(
   text: string,

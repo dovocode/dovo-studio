@@ -189,7 +189,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
       guard reference.start >= 0, reference.end > reference.start, reference.end <= nextStart else { continue }
       let range = NSRange(location: reference.start, length: reference.end - reference.start)
       let source = (content.text as NSString).substring(with: range)
-      let chip = ReferenceAttachment(source: source, label: reference.kind.uppercased() + " " + reference.label,
+      let chip = ReferenceAttachment(source: source, label: reference.label,
         foreground: foreground, background: chipColor, font: font, icon: reference.icon, iconTemplate: reference.iconTemplate)
       text.replaceCharacters(in: range, with: NSAttributedString(attachment: chip))
       nextStart = reference.start
@@ -235,7 +235,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
       }
     }
     return actual.count == references.count && zip(actual, references).allSatisfy { value, reference in
-      value.0 == reference.start && value.1 == reference.end && value.2 == reference.kind.uppercased() + " " + reference.label && value.3 == reference.icon && value.4 == reference.iconTemplate
+      value.0 == reference.start && value.1 == reference.end && value.2 == reference.label && value.3 == reference.icon && value.4 == reference.iconTemplate
     }
   }
   func refreshStyle() {

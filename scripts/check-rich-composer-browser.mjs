@@ -327,6 +327,13 @@ try {
     '@src/file.ts',
   )
   assert.match(await editor.locator('[data-reference-kind="model"]').innerText(), /gpt\/exact/)
+  assert.equal(await editor.locator('[data-reference-kind="model"]').innerText(), 'gpt/exact')
+  assert.equal(await editor.locator('[data-reference-kind="file"]').innerText(), 'file.ts')
+  assert.equal(await editor.locator('[data-reference-kind="skill"]').innerText(), 'review')
+  assert.equal(await editor.locator('[data-reference-kind="mcp"]').innerText(), 'docs')
+  assert.equal(await editor.locator('[data-reference-icon="file-code"]').count(), 1)
+  assert.equal(await editor.locator('[data-reference-icon="skill"]').count(), 1)
+  assert.equal(await editor.locator('[data-reference-icon="mcp"]').count(), 1)
   const modelIcon = editor.locator('[data-reference-kind="model"] svg[data-harness="codex"]')
   await modelIcon.waitFor()
   assert.equal(await modelIcon.getAttribute('aria-hidden'), 'true')

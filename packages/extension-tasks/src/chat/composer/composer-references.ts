@@ -3,6 +3,8 @@ import {
   composerTextReferences,
   harnessIconData,
   providerSchema,
+  composerReferenceIcon,
+  composerIconMasks,
   type ComposerReference,
   type ComposerReferenceResources,
 } from '@dovo/protocol'
@@ -116,9 +118,21 @@ export function referenceNodeView(node: Node) {
     }
     dom.append(icon)
   }
-  const kind = document.createElement('span')
-  kind.className = 'dovo-composer-reference-kind'
-  kind.textContent = String(node.attrs.kind === 'mcp' ? 'MCP' : node.attrs.kind)
-  dom.append(kind, document.createTextNode(String(node.attrs.label)))
+  if (!provider) {
+    const kind = node.attrs.kind
+    if (kind === 'file' || kind === 'skill' || kind === 'mcp' || kind === 'model') {
+      const key = composerReferenceIcon({ kind, label: String(node.attrs.label) })
+      const icon = document.createElement('span')
+      icon.className = 'dovo-composer-reference-icon'
+      icon.dataset.referenceIcon = key
+      icon.setAttribute('aria-hidden', 'true')
+      icon.style.maskImage = `url("${composerIconMasks[key]}")`
+      icon.style.maskSize = 'contain'
+      icon.style.maskRepeat = 'no-repeat'
+      icon.style.backgroundColor = 'currentColor'
+      dom.append(icon)
+    }
+  }
+  dom.append(document.createTextNode(String(node.attrs.label)))
   return { dom }
 }

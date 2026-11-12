@@ -580,6 +580,11 @@ try {
       await fileChip.waitFor()
       assert.equal(await fileChip.getAttribute('title'), '@src/App.tsx')
       assert.ok((await fileChip.innerText()).includes('App.tsx'))
+      const icon = await fileChip.locator('[data-reference-icon="file-code"]').boundingBox()
+      assert.ok(
+        icon && icon.width > 0 && icon.width <= 24 && icon.height > 0 && icon.height <= 24,
+        'The catalog must load the production chip icon styles',
+      )
     }
     await page.getByRole('button', { name: 'Idle task', exact: true }).click()
     const composerField = page.getByRole('textbox', { name: 'Message thread', exact: true })

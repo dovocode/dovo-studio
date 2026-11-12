@@ -46,9 +46,10 @@ struct EventDispatcher {
     view.receive(ComposerContentRecord(text: source, revision: "initial", eventCount: 0, references: [file, model]))
     let input = view.input
     let modelChip = input.textStorage.attribute(.attachment, at: input.displayOffset(modelRange.location), effectiveRange: nil) as? ReferenceAttachment
-    let plainModel = ReferenceAttachment(source: "`model:codex/gpt`", label: "MODEL gpt", foreground: .label, background: .secondarySystemBackground, font: .preferredFont(forTextStyle: .body))
+    let plainModel = ReferenceAttachment(source: "`model:codex/gpt`", label: "gpt", foreground: .label, background: .secondarySystemBackground, font: .preferredFont(forTextStyle: .body))
     expect(modelChip?.image != nil && modelChip!.bounds.width == plainModel.bounds.width + 20, "Model icon did not reserve drawing space")
     expect(modelChip?.icon == model.icon && modelChip?.iconTemplate == true, "Model icon did not reach attachment")
+    expect(modelChip?.label == "gpt", "Model chip has a redundant type prefix")
     view.foreground = .systemBlue
     view.refreshStyle()
     expect(input.source() == source, "Icon theme update changed source")
@@ -127,6 +128,23 @@ struct EventDispatcher {
           label.text = "\(checks) checks · \(failures.count) failures"
           label.textColor = failures.isEmpty ? .systemGreen : .systemRed
           surface.addSubview(label)
+          let preview = "Review @src/App.tsx and @package.json with $review and @docs using `model:harness%3Acodex/gpt-6.1-sol`"
+          view.foreground = .label
+          let previewText = preview as NSString
+          let examples = [
+            ("@src/App.tsx", "file", "App.tsx", "__REFERENCE_ICON_file-code__"),
+            ("@package.json", "file", "package.json", "__REFERENCE_ICON_file-data__"),
+            ("$review", "skill", "review", "__REFERENCE_ICON_skill__"),
+            ("@docs", "mcp", "docs", "__REFERENCE_ICON_mcp__"),
+            ("`model:harness%3Acodex/gpt-6.1-sol`", "model", "gpt-6.1-sol", "__HARNESS_ICON_PNG__"),
+          ]
+          let references = examples.map { token, kind, title, icon in
+            let range = previewText.range(of: token)
+            return ComposerReferenceRecord(start: range.location, end: NSMaxRange(range), kind: kind, label: title, icon: icon)
+          }
+          let finalCount = bridgeEvents.compactMap { $0["eventCount"] as? Int }.max() ?? 0
+          view.receive(ComposerContentRecord(text: preview, revision: "visual-preview", eventCount: finalCount, references: references))
+          input.resignFirstResponder()
         }
       }
     }
