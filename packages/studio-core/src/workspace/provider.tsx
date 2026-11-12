@@ -95,6 +95,7 @@ import { createWorkspace } from './seed'
 import { decodeWorkspace, encodeWorkspace, storageKey } from './persistence'
 import {
   emptyRegistry,
+  retainRuntimeRegistry,
   mergeRuntimeRegistry,
   readRuntimeRegistry,
   writeRuntimeRegistry,
@@ -204,7 +205,10 @@ export function WorkspaceProvider({
     },
     [],
   )
-  const [runtimeRegistry, setRegistry, registryRef] = useApplicationState(emptyRegistry)
+  const [runtimeRegistry, setRegistry, registryRef] = useApplicationState(
+    emptyRegistry,
+    retainRuntimeRegistry,
+  )
   const [overviews, setOverviews, overviewsRef] = useApplicationState<
     Record<string, RuntimeOverview>
   >({}, (previous, next) => {

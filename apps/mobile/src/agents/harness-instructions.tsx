@@ -17,7 +17,7 @@ export function HarnessInstructions() {
   const { styles } = useSettingsTheme()
   const [opened, setOpened] = useState(false)
   const editor = useHarnessInstructions({
-    scope: JSON.stringify([profile?.id, profile?.connection]),
+    scope: JSON.stringify([profile?.id, profile?.connection.address, profile?.connection.token]),
     request: call,
     connected,
     supported: snapshot?.harnessInstructionsSupported === true && opened,

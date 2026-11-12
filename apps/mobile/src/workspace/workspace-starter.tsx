@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { DovoWebKitBrowserView } from '../../modules/dovo-webkit-browser'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native'
 import { router } from 'expo-router'
 import { randomUUID } from 'expo-crypto'
@@ -60,9 +60,11 @@ type Receipt = {
 export function WorkspaceStarter({
   initialMode,
   embedded = false,
+  onActiveChange,
 }: {
   initialMode: 'auto' | 'terminal'
   embedded?: boolean
+  onActiveChange?: (active: boolean) => void
 }) {
   const runtime = useRuntime()
   const browser = useBrowserWorkspace()
@@ -99,6 +101,9 @@ export function WorkspaceStarter({
   const [error, setError] = useState('')
   const [editorFocused, setEditorFocused] = useState(false)
   const [options, setOptions] = useState(false)
+  useLayoutEffect(() => {
+    onActiveChange?.(busy || !!text.length || !!error || options || editorFocused)
+  }, [busy, text, error, options, editorFocused, onActiveChange])
   const [shellRetry, setShellRetry] = useState(0)
   const [checkoutRetry, setCheckoutRetry] = useState(0)
   const [shells, setShells] = useState<{ key: string; items?: TerminalShell[]; error?: string }>({
@@ -131,7 +136,11 @@ export function WorkspaceStarter({
   const repositories = owner?.snapshot?.workspace.repositories ?? []
   const repository = repositories.find((entry) => entry.id === repositoryId)
   const { readRuntime, refreshRuntime } = runtime
-  const ownerKey = JSON.stringify([runtimeId, profile?.connection])
+  const ownerKey = JSON.stringify([
+    runtimeId,
+    profile?.connection.address,
+    profile?.connection.token,
+  ])
   const currentOwnerKey = useRef(ownerKey)
   currentOwnerKey.current = ownerKey
   const checkoutKey = JSON.stringify([ownerKey, repositoryId, checkout])
@@ -348,7 +357,11 @@ export function WorkspaceStarter({
           if (result.model)
             setModel({
               key: JSON.stringify([
-                JSON.stringify([result.runtimeId, next?.profile.connection]),
+                JSON.stringify([
+                  result.runtimeId,
+                  next?.profile.connection.address,
+                  next?.profile.connection.token,
+                ]),
                 result.repositoryId,
               ]),
               fields: {

@@ -13,6 +13,7 @@ import {
   nativeBrowserHole,
 } from './native-browser-layout'
 import { BrowserTabRow } from './browser-tab-row'
+import { Globe2 } from 'lucide-react'
 import { SnoozeDialog } from '../dialogs/snooze-dialog'
 import { BrowserSiteControls } from './browser-site-controls'
 import { BrowserExtensions } from './browser-extensions'
@@ -2132,6 +2133,17 @@ function BrowserContent({
       }
       active={target ? target.active : !tab.detached && activeTab === tab.id}
       pinnedTile={target?.pinnedTile ?? !!tab.pinned}
+      titleIcon={
+        target && !target.pinnedTile ? (
+          <span
+            aria-hidden="true"
+            data-workspace-kind-icon
+            className="pointer-events-none inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
+          >
+            <Globe2 className="size-3.5" strokeWidth={1.7} />
+          </span>
+        ) : undefined
+      }
       disabled={target?.disabled}
       busy={busy || !!tab.detached || !!target?.disabled}
       reorder={

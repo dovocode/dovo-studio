@@ -533,6 +533,29 @@ stays on the host. Authenticate `gh` on that host for PRs; authenticate the chos
 OpenCode requires its server to be running; installing its CLI alone is not enough. Dovo detects
 OpenCode 1 and 2 from the configured Serve URL and uses the matching client protocol.
 
+### Antigravity through the installed CLI
+
+Dovo includes the **Antigravity** agent profile (`dovo:antigravity`). It runs the installed `agy`
+executable with the single argument `acp`. The ACP configuration ships with desktop, mobile and the
+runtime. The CLI and its Google credentials stay on the runtime host.
+
+1. Run `agy --version` as the same operating-system user that runs Dovo. Use a CLI version with
+   `agy acp` support. T3's current CLI integration targets 1.5.1 or later for open model discovery.
+2. Sign in through the installed CLI on that host. Use `agy --help` for its sign-in commands.
+3. Select **Antigravity** in the agent picker. On mobile, select the computer with that
+   installation.
+4. If `agy` is outside the runtime's `PATH`, set its executable path in the Antigravity profile.
+   Keep its arguments set to `acp`.
+
+Models come from the CLI's ACP session. The profile does not pin a model or copy credentials between
+computers. An existing profile override still takes precedence over the built-in profile. Dovo does
+not install, bundle or update the CLI.
+
+The launcher follows
+[T3's CLI support](https://github.com/pingdotgg/t3code/blob/1e438c8f806c361943f6f20ed5b1a5cc7ec70e4e/apps/server/src/provider/AntigravityInstallation.ts).
+The subprocess regression uses a test executable. It checks model discovery, `agy acp` arguments,
+streamed output and session cleanup. It does not verify Google sign-in or model access.
+
 ## Caching and offline behavior
 
 The runtime keeps PR pages and details in SQLite, with up to 500 cached entries. Results older than

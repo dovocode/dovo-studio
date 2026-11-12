@@ -202,6 +202,35 @@ stubs.push({
   contents:
     'export const openPeerTunnel=async()=>{throw Error("LAN task list tests must not open a native peer")};',
 })
+
+// The Unified overview uses the same real rows and RuntimeProvider as the classic list.
+stubs.push({
+  path: '../shell/navigation',
+  importer: mobile + 'workspace/',
+  contents: 'export const useNavigation=()=>window.navigation;',
+})
+const workspaceControls =
+  controls +
+  `export const SearchField=SettingsSearchField;export const Choice=SettingsChoice;export const Glass=View;`
+for (const path of [
+  '../ui/content/text',
+  '../ui/controls/icon',
+  '../ui/controls/field',
+  '../ui/controls/choice',
+  '../ui/controls/action',
+  '../ui/layout/sheet',
+  '../ui/layout/screen-header',
+  '../ui/theme',
+])
+  stubs.push({ path, importer: mobile + 'workspace/', contents: workspaceControls })
+for (const [path, contents] of [
+  ['../shell/more-actions', 'export const useMoreActions=()=>[];'],
+  ['./workspace-modes', 'export const WorkspaceModes=()=>null;'],
+  ['./workspace-starter', 'export const WorkspaceStarter=()=>null;'],
+  ['./standalone-row', 'export const StandaloneRow=()=>null;'],
+  ['./resource-actions', 'export const ResourceActions=()=>null;'],
+])
+  stubs.push({ path, importer: mobile + 'workspace/', contents })
 const built = await bundleBrowser(
   {
     stdin: {
@@ -219,6 +248,9 @@ import {RuntimeProvider,RuntimeContext,useRuntime} from './apps/mobile/src/runti
 import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.tsx';
 import {updateMobilePreferences,readMobilePreferences,preferencesReady} from '${mobile}runtime/preferences/app-preferences.ts';window.setListPreferences=updateMobilePreferences;Object.defineProperty(window,'listPreferences',{get:readMobilePreferences});window.preferencesReady=preferencesReady;
 import TasksScreen from './apps/mobile/src/screens/tasks.tsx';
+import {WorkspaceOverview} from './apps/mobile/src/workspace/workspace-overview';
+import {WorkspaceViewProvider} from './apps/mobile/src/workspace/workspace-view';
+import {BrowserWorkspaceProvider} from './apps/mobile/src/browser/browser-workspace';
 const now=Date.now(),iso=age=>new Date(now-age).toISOString();
 const profile=runtimeProfile({address:'http://mobile-owner.lan:8787',token:'test-token-private-at-least-32-characters'},'Owner');
 window.settledPath=()=>runtimeSnapshotPath(profile.connection);window.saved=JSON.stringify({version:1,activeId:profile.id,profiles:[profile]});
@@ -243,7 +275,8 @@ window.publish=changes=>flushSync(()=>{
 });
 function Probe(){window.runtime=useRuntime();return null}
 function PaneProbe({children}){const runtime=useRuntime();const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
-createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><TasksScreen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
+function Screen(){const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);return overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
+createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><Screen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
 `,
     },
     conditions: ['development'],
@@ -1587,6 +1620,96 @@ try {
     else assert.match(await indicator.innerText(), /^\d+[mhd]$/)
   }
   assert.deepEqual(errors, [])
+
+  if (!process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
+    await page.evaluate(() => {
+      const base = {
+        repositoryId: 'repo',
+        agentId: 'agent',
+        draft: '',
+        files: [],
+        example: false,
+        messages: [],
+        status: 'done',
+        createdAt: new Date().toISOString(),
+      }
+      window.snapshot = {
+        ...window.snapshot,
+        revision: window.snapshot.revision + 1,
+        workspace: {
+          ...window.snapshot.workspace,
+          tasks: [
+            { ...base, id: 'streaming-hidden', title: 'Hidden stream', status: 'running' },
+            ...Array.from({ length: 100 }, (_, i) => ({
+              ...base,
+              id: 'overview-' + i,
+              title: 'Overview ' + i,
+            })),
+          ],
+        },
+      }
+      window.setListPreferences({ collapsedThreadSections: ['working'] })
+      window.pushSnapshot(window.snapshot)
+      window.showDevices(false)
+      window.showOverview()
+    })
+    await page.getByTestId('Workspace thread Overview 50').waitFor()
+    await page.evaluate(() => {
+      window.rowRenders = {}
+    })
+    for (let frame = 0; frame < 30; frame++) {
+      await page.evaluate(
+        (frame) =>
+          window.publish({
+            'streaming-hidden': {
+              messages: [{ id: 'stream', role: 'assistant', text: 'Chunk ' + frame }],
+            },
+          }),
+        frame,
+      )
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    }
+    assert.deepEqual(
+      await page.evaluate(() => window.rowRenders),
+      {},
+      'Unified streaming must not render unchanged rows',
+    )
+    await page.evaluate(() => window.publish({ 'overview-50': { title: 'Renamed overview' } }))
+    await page.getByTestId('Workspace thread Renamed overview').waitFor()
+    assert.deepEqual(await page.evaluate(() => window.rowRenders), { 'overview-50': 1 })
+    await page.getByTestId('Workspace thread Renamed overview').click()
+    assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'overview-50')
+    await page.evaluate(() =>
+      window.publish({
+        'overview-50': {
+          threadWatches: [
+            {
+              runtimeId: 'remote',
+              threadId: 'remote-child',
+              computerName: 'Server',
+              relation: 'spawned',
+              status: 'watching',
+              offline: false,
+              snapshot: {
+                title: 'Remote child',
+                phase: 'needs-input',
+                revision: 'one',
+                attention: ['question'],
+                watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+              },
+            },
+          ],
+        },
+      }),
+    )
+    await page
+      .getByTestId('Workspace thread Renamed overview')
+      .getByLabel('Needs input', { exact: true })
+      .waitFor()
+    console.log(
+      'Mobile Unified overview: 100 unchanged rows, 30 hidden streaming updates, zero row renders; one rename renders one row and keeps navigation current.',
+    )
+  }
   console.log(
     'Mobile task-list status and project sections persist collapse and expansion through full reloads using real preferences and a storage adapter.',
   )

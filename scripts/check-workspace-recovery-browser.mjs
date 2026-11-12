@@ -7,7 +7,7 @@ const built = await bundleBrowser(
   {
     stdin: {
       contents: `
-import React from 'react';
+import React,{useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Schema} from 'effect';
 import {decode,runtimeProfile,snapshotSchema,removeRuntime,upsertRuntime} from '@dovo/protocol';
@@ -15,6 +15,7 @@ import {TooltipProvider} from '@dovo/studio-ui';
 import DeviceHostsView from './packages/extension-runtime/src/device-hosts-view.tsx';
 import {PairingClient} from './packages/extension-runtime/src/pairing-client.tsx';
 import {WorkspaceProvider,useWorkspace} from './packages/studio-core/src/workspace/provider.tsx';
+import {WorkspaceScope} from './packages/studio-core/src/workspace/scope.tsx';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {sha256} from '@noble/hashes/sha2.js';
 import {bytesToHex,utf8ToBytes} from '@noble/hashes/utils.js';
@@ -79,8 +80,22 @@ window.checkCacheFactories=async()=>{
   await launcherNext.write('factory-probe','launcher recovered');
   return {closed,recreated:[workspaceNext!==workspaceCache,launcherNext!==launcherCache],value:(await workspaceNext.read('factory-probe',Schema.String))?.value};
 };
+window.scopeStarts=0;window.scopeStops=0;
+function ScopedProbe(){const{connection,request}=useWorkspace();window.scopedRequest=request;useEffect(()=>{window.scopeStarts++;return()=>window.scopeStops++},[connection,request]);return null}
+function ScopedHost(){const{runtimeRegistry}=useWorkspace();const profile=runtimeRegistry.profiles.find(profile=>profile.id===window.profiles[1].id);return profile?<WorkspaceScope profile={profile}><ScopedProbe/></WorkspaceScope>:null}
+window.publishRegistry=async index=>{
+ const saved=await readRuntimeRegistry();
+ await writeRuntimeRegistry({...saved,profiles:saved.profiles.map((profile,i)=>i===index?{...profile,name:profile.name+' renamed'}:profile)});
+ window.dispatchEvent(new StorageEvent('storage',{key:'dovo.runtimes.changed'}));
+};
+window.callOldScope=()=>window.oldScopedRequest('/api/device-hosts',undefined,Schema.Struct({enabled:Schema.Boolean,hosts:Schema.Array(Schema.Unknown)}),'GET');
+window.replaceScopedToken=async token=>{
+ const saved=await readRuntimeRegistry();
+ await writeRuntimeRegistry({...saved,profiles:saved.profiles.map((profile,i)=>i===1?{...profile,connection:{...profile.connection,token}}:profile)});
+ window.dispatchEvent(new StorageEvent('storage',{key:'dovo.runtimes.changed'}));
+};
 function Probe(){const value=useWorkspace();window.workspaceContext=value;return <div>{value.ready?'Ready':'Loading'}</div>}
-createRoot(document.getElementById('app')).render(<ApplicationStateProvider><WorkspaceProvider><Probe/><TooltipProvider><DeviceHostsView/><PairingClient onManage={()=>{}}/></TooltipProvider></WorkspaceProvider></ApplicationStateProvider>);
+createRoot(document.getElementById('app')).render(<ApplicationStateProvider><WorkspaceProvider><Probe/><ScopedHost/><TooltipProvider><DeviceHostsView/><PairingClient onManage={()=>{}}/></TooltipProvider></WorkspaceProvider></ApplicationStateProvider>);
 window.pendingCommands=()=>browserMutationStorage.read(window.profiles[0].connection);
 const saveRecovery=browserMutationStorage.recoverWorkspaceEdit.bind(browserMutationStorage);
 browserMutationStorage.recoverWorkspaceEdit=(connection,edit)=>window.failRecoveryStorage?Promise.reject(new Error('Recovery storage temporarily unavailable')):saveRecovery(connection,edit);
@@ -148,6 +163,42 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => window.workspaceContext?.connected)
   await page.waitForFunction(() => window.workspaceContext.runtimes.length === 6)
+  await page.waitForFunction(() => window.scopeStarts === 1)
+  await page.evaluate(() => window.publishRegistry(5))
+  await page.waitForFunction(() =>
+    window.workspaceContext.runtimeRegistry.profiles[5].name.endsWith('renamed'),
+  )
+  assert.deepEqual(
+    await page.evaluate(() => [window.scopeStarts, window.scopeStops]),
+    [1, 0],
+    'An unrelated decoded registry write must keep scoped terminal/request effects mounted',
+  )
+  await page.evaluate(() => window.publishRegistry(1))
+  await page.waitForFunction(() =>
+    window.workspaceContext.runtimeRegistry.profiles[1].name.endsWith('renamed'),
+  )
+  assert.deepEqual(
+    await page.evaluate(() => [window.scopeStarts, window.scopeStops]),
+    [1, 0],
+    'Renaming the scoped computer must keep its transport mounted',
+  )
+  await page.evaluate(async () => {
+    window.oldScopedRequest = window.scopedRequest
+    await window.replaceScopedToken('replacement-fixture-token')
+  })
+  await page.waitForFunction(() => window.scopedRequest !== window.oldScopedRequest)
+  const oldRequestError = await page.evaluate(() =>
+    window.callOldScope().then(
+      () => '',
+      (error) => String(error),
+    ),
+  )
+  assert.match(
+    oldRequestError,
+    /connection changed/,
+    'Old async callers must not be retargeted to new credentials',
+  )
+  await page.evaluate(() => window.replaceScopedToken(window.profiles[1].connection.token))
   await page.evaluate(() => window.workspaceContext.refreshRuntimes())
   const reads = await page.evaluate(() =>
     window.calls.filter((call) => call.path === '/api/snapshot'),

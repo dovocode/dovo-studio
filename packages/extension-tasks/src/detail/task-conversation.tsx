@@ -44,6 +44,10 @@ export function TaskConversation({
   task,
   historyLoaded,
   historyError,
+  onRetryHistory,
+  historyRetrying = false,
+  historyRetryError = '',
+  historyUnauthorized = false,
   onReview,
   onCodeReview,
   onTerminal,
@@ -68,6 +72,10 @@ export function TaskConversation({
   onStartBackground?: (task: Task) => void
   historyLoaded?: boolean
   historyError?: string
+  onRetryHistory?: () => void
+  historyRetrying?: boolean
+  historyRetryError?: string
+  historyUnauthorized?: boolean
   onReview: () => void
   onCodeReview?: (finding?: CodeFinding) => void
   onTerminal?: (terminalId: string) => void
@@ -210,14 +218,40 @@ export function TaskConversation({
   if (!loaded)
     return (
       <div
-        role="status"
-        className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
+        role={historyError ? 'alert' : 'status'}
+        className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
       >
-        <LoaderCircle className="size-4 animate-spin" />
-        {historyError ||
-          (connected
-            ? 'Loading conversation…'
-            : 'Connect this thread’s computer to load the conversation.')}
+        {connected && !historyError && !historyRetryError && !historyUnauthorized && (
+          <LoaderCircle className="size-4 animate-spin" />
+        )}
+        <p>
+          {historyUnauthorized
+            ? 'This computer rejected this device’s pairing. Open Computers to pair it again.'
+            : historyError ||
+              (connected
+                ? historyRetryError
+                  ? 'Could not load the conversation.'
+                  : 'Loading conversation…'
+                : 'Connect this thread’s computer to load the conversation.')}
+        </p>
+        {historyRetryError && !historyUnauthorized && (
+          <p role="alert" className="text-xs">
+            {historyRetryError}
+          </p>
+        )}
+        {onRetryHistory &&
+          !historyUnauthorized &&
+          (historyError || historyRetryError || historyRetrying || !connected) && (
+            <Button variant="outline" size="sm" onClick={onRetryHistory} disabled={historyRetrying}>
+              {historyRetrying
+                ? connected
+                  ? 'Retrying…'
+                  : 'Reconnecting…'
+                : connected
+                  ? 'Retry'
+                  : 'Reconnect'}
+            </Button>
+          )}
       </div>
     )
   return (

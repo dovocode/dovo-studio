@@ -23,6 +23,101 @@ function memoryStorage(values = new Map<string, string>()) {
 }
 
 describe('persistent draft ordering', () => {
+  it('keeps published typing when loading the prior disk record fails', async () => {
+    const storage = memoryStorage()
+    let fail = true
+    const drafts = createDraftStorage({
+      ...storage,
+      getItem: async (key) => {
+        if (fail) {
+          fail = false
+          throw new Error('Read unavailable')
+        }
+        return storage.getItem(key)
+      },
+    })
+    await expect(drafts.write('runtime.task', 'Typing')).rejects.toThrow('Read unavailable')
+    await runClientEffect(drafts.appendEffect('runtime.task', 'Result', ''))
+    expect(await drafts.read('runtime.task')).toBe('Typing\n\nResult')
+  })
+  it('releases saved inactive text and reloads it without removing disk drafts', async () => {
+    const values = new Map<string, string>()
+    const storage = memoryStorage(values)
+    const getItem = vi.fn<typeof storage.getItem>(storage.getItem)
+    const removeItem = vi.fn<typeof storage.removeItem>(storage.removeItem)
+    const drafts = createDraftStorage({ ...storage, getItem, removeItem })
+    const unsubscribe = drafts.subscribe('runtime.task', () => {})
+    await drafts.write('runtime.task', 'Keep this unsent draft')
+    getItem.mockClear()
+    expect(await drafts.read('runtime.task')).toBe('Keep this unsent draft')
+    expect(getItem).not.toHaveBeenCalled()
+    unsubscribe()
+    expect(values.get('runtime.task')).toBe('Keep this unsent draft')
+    expect(await drafts.read('runtime.task')).toBe('Keep this unsent draft')
+    expect(getItem).toHaveBeenCalledOnce()
+    expect(removeItem).not.toHaveBeenCalled()
+  })
+
+  it('retains a failed write after unsubscribe until a successful flush', async () => {
+    const storage = memoryStorage()
+    const writing = gate()
+    const started = gate()
+    let fail = true
+    const getItem = vi.fn<typeof storage.getItem>(storage.getItem)
+    const drafts = createDraftStorage({
+      ...storage,
+      getItem,
+      setItem: async (key, value) => {
+        started.resolve()
+        await writing.promise
+        if (fail) throw new Error('Disk unavailable')
+        await storage.setItem(key, value)
+      },
+    })
+    const unsubscribe = drafts.subscribe('runtime.task', () => {})
+    const saved = drafts.write('runtime.task', 'Last unsaved text')
+    await started.promise
+    unsubscribe()
+    writing.resolve()
+    await expect(saved).rejects.toThrow('Disk unavailable')
+    getItem.mockClear()
+    expect(await drafts.read('runtime.task')).toBe('Last unsaved text')
+    expect(getItem).not.toHaveBeenCalled()
+    fail = false
+    await runClientEffect(drafts.flushEffect())
+    expect(await drafts.read('runtime.task')).toBe('Last unsaved text')
+    expect(getItem).toHaveBeenCalledOnce()
+  })
+
+  it('keeps queued append and typing in order when the last subscriber leaves', async () => {
+    const storage = memoryStorage()
+    const writing = gate()
+    const started = gate()
+    let hold = false
+    const drafts = createDraftStorage({
+      ...storage,
+      setItem: async (key, value) => {
+        if (hold) {
+          started.resolve()
+          await writing.promise
+        }
+        await storage.setItem(key, value)
+      },
+    })
+    const unsubscribe = drafts.subscribe('runtime.task', () => {})
+    await drafts.write('runtime.task', 'Before')
+    hold = true
+    const typed = drafts.write('runtime.task', 'Typing')
+    await started.promise
+    const appended = runClientEffect(drafts.appendEffect('runtime.task', 'Result', '', 'handoff'))
+    unsubscribe()
+    writing.resolve()
+    await Promise.all([typed, appended])
+    expect(await drafts.read('runtime.task')).toBe('Typing\n\nResult')
+    await runClientEffect(drafts.appendEffect('runtime.task', 'Result', '', 'handoff'))
+    expect(await drafts.read('runtime.task')).toBe('Typing\n\nResult')
+  })
+
   it('retains uncertain side-chat create IDs across reopening and restart', async () => {
     const storage = memoryStorage()
     const drafts = createDraftStorage(storage)

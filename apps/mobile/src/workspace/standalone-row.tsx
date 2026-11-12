@@ -27,7 +27,12 @@ export function StandaloneRow({
   const dense = threadDensity === 'compact'
   const settled = item.section === 'settled'
   const repository = item.kind === 'terminal' ? item.repository : undefined
-  const icon = projectIcon(repository)
+  const icon =
+    item.kind === 'browser'
+      ? 'favicon' in item.tab && typeof item.tab.favicon === 'string'
+        ? item.tab.favicon
+        : undefined
+      : projectIcon(repository)
   const host = item.kind === 'browser' ? new URL(item.tab.url).hostname.replace(/^www\./, '') : ''
   const context = item.kind === 'terminal' ? (repository?.name ?? 'Home folder') : host
   const typeIcon = item.kind === 'terminal' ? 'terminal' : 'web'
@@ -56,18 +61,6 @@ export function StandaloneRow({
         ) : (
           <Icon name="terminal" size={tile ? 22 : 14} color={colors.muted} />
         )}
-      </View>
-      <View
-        style={{
-          position: 'absolute',
-          bottom: -5,
-          right: -4,
-          borderRadius: 6,
-          padding: 1,
-          backgroundColor: colors.background,
-        }}
-      >
-        <Icon name={typeIcon} size={tile ? 11 : 9} color={colors.muted} />
       </View>
     </View>
   )
@@ -147,18 +140,29 @@ export function StandaloneRow({
                 </Text>
               )}
             </View>
-            <Text
-              numberOfLines={1}
+            <View
               style={{
-                color: colors.text,
-                fontSize: dense ? 15 : 16,
-                lineHeight: dense ? 18 : 20,
-                fontWeight: '500',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
                 flex: settled ? 1 : undefined,
+                minWidth: 0,
               }}
             >
-              {item.title}
-            </Text>
+              <Icon name={typeIcon} size={14} color={colors.muted} />
+              <Text
+                numberOfLines={1}
+                style={{
+                  color: colors.text,
+                  fontSize: dense ? 15 : 16,
+                  lineHeight: dense ? 18 : 20,
+                  fontWeight: '500',
+                  flex: 1,
+                }}
+              >
+                {item.title}
+              </Text>
+            </View>
             {settled ? (
               <Text style={{ color: statusColor, fontSize: 11 }}>{status}</Text>
             ) : (
@@ -196,7 +200,7 @@ export function StandaloneRow({
             justifyContent: 'center',
           }}
         >
-          <Text style={{ color: colors.muted, fontSize: 14 }}>•••</Text>
+          <Icon name="more" size={20} color={colors.muted} />
         </Pressable>
       )}
     </View>

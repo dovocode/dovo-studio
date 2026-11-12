@@ -409,6 +409,24 @@ describe('Runtime dashboard', () => {
       pulls: null,
     })
   })
+  it('distinguishes a rejected pairing from a temporary runtime failure', async () => {
+    for (const status of [401, 503]) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+          new Response(JSON.stringify({ error: 'Runtime unavailable' }), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+      )
+      expect(await Effect.runPromise(loadRuntimeOverviewEffect(profile, overview))).toMatchObject({
+        connected: false,
+        unauthorized: status === 401,
+        snapshot,
+      })
+    }
+  })
   it('does not mark a healthy device offline when PR loading fails', async () => {
     vi.stubGlobal(
       'fetch',

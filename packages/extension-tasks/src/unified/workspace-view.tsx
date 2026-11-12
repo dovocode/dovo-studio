@@ -2,6 +2,7 @@ import {
   Activity,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -97,6 +98,7 @@ import {
   WorkspaceTerminalRow,
   WorkspaceThreadRow,
   type WorkspaceRowStatus,
+  type WorkspaceThreadCommands,
 } from './workspace-rows'
 import {
   closeWorkspaceTab,
@@ -188,6 +190,10 @@ function WorkspaceContent() {
     restoredSharedBrowserTabs(browserWindowId),
   )
   const [browserLifecycleRequest, setBrowserLifecycleRequest] = useState<BrowserLifecycleRequest>()
+  const browserTabsRef = useRef(browserTabs)
+  useLayoutEffect(() => {
+    browserTabsRef.current = browserTabs
+  })
   const [browserTabTargets, setBrowserTabTargets] = useState<readonly BrowserTabTarget[]>([])
   const registerTabTarget = useCallback(
     (target: BrowserTabTarget | null, element: HTMLDivElement) => {
@@ -419,7 +425,9 @@ function WorkspaceContent() {
     (tab: WorkspaceTab) => {
       setCreatingTerminal(false)
       const page =
-        tab.kind === 'browser' ? browserTabs?.find((page) => page.id === tab.id) : undefined
+        tab.kind === 'browser'
+          ? browserTabsRef.current?.find((page) => page.id === tab.id)
+          : undefined
       if (page?.detached && host.browser) {
         void host
           .browser({ action: 'focus-detached-browser', key: page.detached })
@@ -434,7 +442,7 @@ function WorkspaceContent() {
         )
       setState((previous) => openWorkspaceTab(previous, tab))
     },
-    [browserTabs, host.browser],
+    [host.browser],
   )
   const openBrowser = useCallback(
     (id: string) => open({ kind: 'browser', runtimeId: '', id }),
@@ -453,6 +461,10 @@ function WorkspaceContent() {
     },
     [openBrowser],
   )
+  const routing = useRef({ computers, activeRuntimeId: store.activeRuntimeId })
+  useLayoutEffect(() => {
+    routing.current = { computers, activeRuntimeId: store.activeRuntimeId }
+  })
   const api = useMemo<StudioHostApi>(
     () => ({
       ...host,
@@ -471,7 +483,7 @@ function WorkspaceContent() {
             runtimeId:
               origin?.kind === 'thread' && origin.runtimeId
                 ? origin.runtimeId
-                : (store.activeRuntimeId ?? ''),
+                : (routing.current.activeRuntimeId ?? ''),
             id: target.entityId ?? '',
           }
           threadNavigation.current.set(workspaceTabKey(tab), target)
@@ -489,7 +501,7 @@ function WorkspaceContent() {
         } else host.navigate(target, options)
       },
       openThread: (target: Parameters<NonNullable<typeof host.openThread>>[0]) => {
-        const owner = computers.find(
+        const owner = routing.current.computers.find(
           (entry) =>
             entry.profile.id === target.runtimeId ||
             (!!target.runtimeIdentity && entry.snapshot?.runtimeId === target.runtimeIdentity),
@@ -520,7 +532,7 @@ function WorkspaceContent() {
         if (!host.openPullLink?.(url) && !host.openPipelineLink?.(url)) void openBrowserLink(url)
       },
     }),
-    [host, store.activeRuntimeId, computers, open, openBrowserLink, newBrowser],
+    [host, open, openBrowserLink, newBrowser],
   )
   /** Serialize lifecycle changes per item; closing or hiding never ends a session. */
   const runLifecycle = (tab: WorkspaceTab, action: () => Promise<void> | void) => {
@@ -811,6 +823,65 @@ function WorkspaceContent() {
               `${child.title} ${child.computerName}`.toLowerCase().includes(search.toLowerCase()),
           ))),
   )
+  // Row commands resolve current committed resources, including after a computer switch.
+  const rowContext = {
+    resources: new Map(resources.map((item) => [workspaceTabKey(item.tab), item])),
+    open,
+    runLifecycle,
+    createThread,
+  }
+  const rowContextRef = useRef(rowContext)
+  useLayoutEffect(() => {
+    rowContextRef.current = rowContext
+  })
+  const threadCommands = useMemo<WorkspaceThreadCommands>(
+    () => ({
+      open: (key) => {
+        const context = rowContextRef.current,
+          resource = context.resources.get(key)
+        if (resource) context.open(resource.tab)
+      },
+      pin: (key) => {
+        const context = rowContextRef.current,
+          resource = context.resources.get(key)
+        if (resource) context.runLifecycle(resource.tab, resource.pin)
+      },
+      settle: (key) => {
+        const context = rowContextRef.current,
+          resource = context.resources.get(key)
+        if (resource) context.runLifecycle(resource.tab, resource.settle)
+      },
+      snooze: (key, until) => {
+        const context = rowContextRef.current,
+          resource = context.resources.get(key)
+        if (resource) context.runLifecycle(resource.tab, () => resource.snooze(until))
+      },
+      create: (key, templateId) => {
+        const context = rowContextRef.current,
+          resource = context.resources.get(key)
+        if (resource?.row.kind === 'thread')
+          context.createThread(resource.row.task, resource.row.owner, templateId)
+      },
+      filter: (key) => {
+        const resource = rowContextRef.current.resources.get(key)
+        if (resource?.row.kind !== 'thread') return
+        const { task, owner } = resource.row
+        setProjectFilter({
+          runtimeId: resource.tab.runtimeId,
+          repositoryId: task.repositoryId,
+          name:
+            owner.repositories.find((entry) => entry.id === task.repositoryId)?.name ??
+            'No Project',
+        })
+        setSearch('')
+        setComputer('')
+        setFilter('all')
+      },
+      deselect: () => setState((previous) => ({ ...previous, active: '' })),
+      error: setLifecycleError,
+    }),
+    [],
+  )
   /** One row per item, in its kind's established design; shared by the sidebar and overview. */
   const renderResource = (resource: WorkspaceResource, pinnedPage = false) => {
     const key = workspaceTabKey(resource.tab)
@@ -845,32 +916,22 @@ function WorkspaceContent() {
     return row.kind === 'thread' ? (
       <WorkspaceThreadRow
         key={key}
-        {...shell}
+        rowKey={key}
+        commands={threadCommands}
+        title={shell.title}
+        selected={shell.selected}
+        disabled={shell.disabled}
+        pinned={resource.pinned}
+        settled={resource.status === 'settled'}
+        snoozedUntil={resource.snoozedUntil}
+        actionDisabled={shell.actions.disabled}
+        settleDisabled={resource.settleDisabled}
         {...row}
         thread={threadTree.nodes.get(threadKey(resource))}
-        selectedThreadKey={selectedThreadKey}
+        selectedThreadKey={threadKey(resource) === selectedRootKey ? selectedThreadKey : undefined}
         searching={searching}
         search={threadSearch}
         revealSearch={revealSearch}
-        menu={{
-          onCreate: () => createThread(row.task, row.owner),
-          onTemplate: (templateId) => createThread(row.task, row.owner, templateId),
-          onFilter: () => {
-            const repository = row.owner.repositories.find(
-              (entry) => entry.id === row.task.repositoryId,
-            )
-            setProjectFilter({
-              runtimeId: resource.tab.runtimeId,
-              repositoryId: row.task.repositoryId,
-              name: repository?.name ?? 'No Project',
-            })
-            setSearch('')
-            setComputer('')
-            setFilter('all')
-          },
-          onDeselect: () => setState((previous) => ({ ...previous, active: '' })),
-          onError: setLifecycleError,
-        }}
       />
     ) : row.kind === 'browser' ? (
       <WorkspacePageRow

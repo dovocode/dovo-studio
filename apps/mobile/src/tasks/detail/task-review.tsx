@@ -267,8 +267,14 @@ export function TaskReview({
         : '',
     [file?.path, file?.preview, file?.before, file?.after],
   )
-  const refresh = () =>
-    call(
+  const refresh = () => {
+    if (!checkoutId && scope === 'working')
+      return call(
+        '/api/scm/changes',
+        { repositoryId: task.repositoryId, taskId: task.id, includeFiles: false },
+        responses.changesRefresh,
+      ).then(() => null)
+    return call(
       checkoutId
         ? '/api/tasks/checkouts/changes'
         : scope === 'branch'
@@ -279,6 +285,7 @@ export function TaskReview({
         : { repositoryId: task.repositoryId, taskId: task.id, includeWorking: scope === 'branch' },
       responses.files,
     )
+  }
   const openFinding = (finding: CodeFinding) => {
     setCommit(null)
     setFocusedFinding(finding)
@@ -450,8 +457,9 @@ export function TaskReview({
                     return
                   }
                   const result = await refresh()
-                  if (checkoutId) setLinkedFiles({ key: loadKey, files: result.files, error: '' })
-                  else if (scope === 'branch') setBranchFiles(result.files)
+                  if (result && checkoutId)
+                    setLinkedFiles({ key: loadKey, files: result.files, error: '' })
+                  else if (result && scope === 'branch') setBranchFiles(result.files)
                   review.reload()
                 })
               }

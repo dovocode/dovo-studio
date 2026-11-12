@@ -48,7 +48,7 @@ import {
   Network,
   SquareTerminal,
 } from 'lucide-react'
-import { memo, useId, useMemo, useState } from 'react'
+import { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskOwner } from './task-collection'
@@ -84,6 +84,7 @@ function TaskRowView({
   searching,
   search,
   revealSearch,
+  titleIcon,
 }: {
   task: Task
   selected: boolean
@@ -102,6 +103,7 @@ function TaskRowView({
   searching?: boolean
   search?: ThreadSearchFilter
   revealSearch?: boolean
+  titleIcon?: ReactNode
 }) {
   const activeTerminals = terminals + taskBackgroundTerminalCount(task)
   const terminalIndicator = activeTerminals > 0 && (
@@ -374,6 +376,7 @@ function TaskRowView({
                     compact && editable && 'pr-24',
                   )}
                 >
+                  {titleIcon}
                   <span className="min-w-0 flex-1 truncate" data-thread-title data-thread-copy="">
                     {task.title}
                   </span>

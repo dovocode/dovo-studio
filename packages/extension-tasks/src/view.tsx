@@ -156,6 +156,10 @@ export default function TasksView({
     task: storedTask,
     loaded: historyLoaded,
     error: historyError,
+    retry: retryHistory,
+    retrying: historyRetrying,
+    retryError: historyRetryError,
+    unauthorized: historyUnauthorized,
   } = useCachedTask(selectedTask)
   // Saving a startup draft changes persistence, not its provider or editor identity.
   const usingStartupDraft =
@@ -192,6 +196,10 @@ export default function TasksView({
     task: splitTask,
     loaded: splitHistoryLoaded,
     error: splitHistoryError,
+    retry: retrySplitHistory,
+    retrying: splitHistoryRetrying,
+    retryError: splitHistoryRetryError,
+    unauthorized: splitHistoryUnauthorized,
   } = useCachedTask(splitSummary)
   useEffect(() => {
     const connection = store.connection
@@ -1231,6 +1239,10 @@ export default function TasksView({
                     <TaskConversation
                       historyLoaded={usingStartupDraft || historyLoaded}
                       historyError={historyError}
+                      onRetryHistory={retryHistory}
+                      historyRetrying={historyRetrying}
+                      historyRetryError={historyRetryError}
+                      historyUnauthorized={historyUnauthorized}
                       key={taskCollectionKey(activeRuntimeId, task.id)}
                       task={task}
                       temporary={temporary}
@@ -1829,6 +1841,10 @@ export default function TasksView({
                     <TaskConversation
                       historyLoaded={splitHistoryLoaded}
                       historyError={splitHistoryError}
+                      onRetryHistory={retrySplitHistory}
+                      historyRetrying={splitHistoryRetrying}
+                      historyRetryError={splitHistoryRetryError}
+                      historyUnauthorized={splitHistoryUnauthorized}
                       onPullLink={(url) => openPullPreview(splitTask, url)}
                       onArtifact={openArtifact}
                       key={`split:${splitTask.id}`}

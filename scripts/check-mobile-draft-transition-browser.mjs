@@ -88,7 +88,7 @@ const mocks = {
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,buttons,leading,hidden,onBack,gestureEnabled,collapsedMenuGroups})=>{window.headerCollapsedMenuGroups=collapsedMenuGroups;const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;window.headerActions=buttons;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
+  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,titleMenuDisabled,buttons,leading,hidden,onBack,gestureEnabled,collapsedMenuGroups})=>{window.headerTitleMenuDisabled=!!titleMenuDisabled;window.headerCollapsedMenuGroups=collapsedMenuGroups;const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;window.headerActions=buttons;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
   '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
   '../files/task-files': 'export const TaskFiles=()=>null;',
   './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
@@ -182,7 +182,7 @@ mocks['../files/saved-file-preview'] =
 mocks['../preview/diff-view'] =
   'export const DiffView=({path,after})=> <div data-git-controls>Git controls {path} {after}</div>;'
 mocks['../../scm/review/use-file-review'] =
-  'export const useFileReview=()=>({progress:null,ready:false,busy:false,error:"",reload:()=>{},setViewed:()=>{}});'
+  'export const useFileReview=()=>({progress:null,ready:false,busy:false,error:"",reload:()=>{window.reviewReloads=(window.reviewReloads??0)+1},setViewed:()=>{}});'
 mocks['../../scm/review/use-task-review'] =
   'export const useTaskReview=()=>({report:null,busy:false,error:"",refresh:async()=>{},run:async()=>false});'
 mocks['../../scm/review/organize-review'] = 'export const MobileOrganizeReview=()=>null;'
@@ -223,6 +223,7 @@ const built = await build({
         const read=cache.read.bind(cache);
         cache.read=async(...args)=>{
           window.cacheReads++;
+          if(window.failCacheRead)throw Error('Cache read failed');
           const entry=await read(...args);
           if(window.holdCacheRead)await new Promise(resolve=>window.releaseCacheRead=resolve);
           return entry;
@@ -250,17 +251,18 @@ const built = await build({
         window.selectRuntime=setActiveId;
         window.setLinkedProject=(present)=>setSnapshots(s=>({...s,a:{...s.a,workspace:{...s.a.workspace,repositories:[s.a.workspace.repositories[0],...(present?[{id:'repo',name:'Linked project',path:'/linked',branch:'main'}]:[])]}}}));
         window.makeGit=(runtimeId,kind)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind}))}}}));
-        const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id]}));
-        const request=(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{
+        const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id],unauthorized:window.pairingRejected}));
+        const request=(runtimeId,path,input,schema)=>Effect.tryPromise({try:async()=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({runtimeId,path,input});
+          if(path==='/api/scm/changes')return decode(schema,window.legacyChanges?{files:window.task.files}:{ok:true});
           if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Native mobile prompt'},{id:'native-answer',role:'assistant',text:'Native mobile answer'}]};
           if(path==='/api/workspace'){window.created=input.create;return {revision:1}}
           if(window.holdMessage&&path==='/api/tasks/message')await new Promise(resolve=>window.releaseMessage=resolve);
           if(window.failAttachment&&path==='/api/attachments/upload'){window.failAttachment=false;throw Error('Upload failed')}
           return {ok:true};
         },catch:error=>error});
-        const runtime={ready:true,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,call:(...args)=>Effect.runPromise(request(activeId,...args)),readEffect:(...args)=>request(activeId,...args),callEffect:(...args)=>request(activeId,...args),readCache:window.caches[activeId]??null,refresh:async()=>{}};
+        const runtime={ready:true,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,call:(...args)=>Effect.runPromise(request(activeId,...args)),readEffect:(...args)=>request(activeId,...args),callEffect:(...args)=>request(activeId,...args),readCache:window.caches[activeId]??null,refresh:async()=>{if(window.holdRefresh)await new Promise((resolve,reject)=>window.finishRefresh={resolve,reject});if(window.failRefresh)throw Error('Computer unavailable')}};
         return <FocusContext.Provider value={focused}><RuntimeContext.Provider value={runtime}><RouteContext.Provider value={route.params}>
           {route.href==='/new'?<NewTaskScreen key={route.key}/>:<TaskRouteScreen key={route.key}/>}
         </RouteContext.Provider></RuntimeContext.Provider></FocusContext.Provider>;
@@ -591,6 +593,21 @@ try {
   })
   await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
   await page.locator('[data-git-controls]').waitFor()
+  // The actual review action decodes lightweight and old-runtime replies without losing files.
+  for (const legacy of [false, true]) {
+    await page.evaluate((legacy) => {
+      window.legacyChanges = legacy
+      window.reviewReloads = 0
+    }, legacy)
+    await page.getByRole('button', { name: 'Refresh changes', exact: true }).click()
+    await page.waitForFunction(() => window.reviewReloads === 1)
+    const refreshRequest = await page.evaluate(() =>
+      window.requests.findLast((request) => request.path === '/api/scm/changes'),
+    )
+    assert.equal(refreshRequest.runtimeId, 'b')
+    assert.equal(refreshRequest.input.includeFiles, false)
+    assert.equal(await page.locator('[data-git-controls]').count(), 1)
+  }
   // Returning from a thread diff must keep the same thread and composer mounted.
   const diffRoute = await page.evaluate(() => window.params)
   await page.evaluate(() => {
@@ -635,8 +652,25 @@ try {
   )
   assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
   await page.evaluate(() => window.publish('b', { ...window.created, status: 'done', files: [] }))
+  await page.waitForFunction(() => window.task.files.length === 0)
   await page.getByRole('button', { name: 'Back to chat', exact: true }).waitFor()
   assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
+  // A saved file edit keeps Changes in the header even before history loads, with no Git changes.
+  await page.evaluate(() => {
+    window.pendingEditTask = { ...window.task, historyRevision: 1 }
+    window.makeGit('b', 'folder')
+    window.publish('b', window.pendingEditTask, false)
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: window.task.id } })
+  })
+  await page.getByText('Loading conversation…', { exact: true }).waitFor()
+  assert.ok(await page.getByRole('button', { name: 'Changes (0)', exact: true }).isDisabled())
+  assert.equal(await page.evaluate(() => window.headerTitleMenuDisabled), true)
+  await page.evaluate(() => window.publish('b', window.pendingEditTask, true))
+  await input.waitFor()
+  await page.getByRole('button', { name: 'Changes (0)', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.headerTitleMenuDisabled), false)
+  assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
+  await page.evaluate(() => window.makeGit('b'))
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await page.getByText('No changed files.', { exact: true }).waitFor()
 
@@ -720,6 +754,10 @@ try {
 
   // A rewind invalidates cached history instead of mounting an empty conversation as loaded.
   const loadedHeader = await page.locator('header').boundingBox()
+  const loadedSubtitle = await page
+    .locator('header span[aria-label]')
+    .first()
+    .getAttribute('aria-label')
   await page.evaluate(() =>
     window.publish('b', { ...window.cacheSummary, historyRevision: 1 }, false),
   )
@@ -731,6 +769,51 @@ try {
   )
   assert.equal(await page.getByText('Decoded reply', { exact: true }).count(), 0)
   assert.equal(await input.count(), 0)
+  assert.equal(await page.getByText('Loading', { exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'Back', exact: true }).count(), 1)
+  assert.ok(await page.getByLabel(loadedSubtitle, { exact: true }).isVisible())
+  assert.ok(await page.getByRole('button', { name: 'Thread info', exact: true }).isDisabled())
+  // A failed cache read offers Retry. A failed reconnect keeps its separate network feedback.
+  await page.evaluate(() => {
+    window.failCacheRead = true
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: 'cached' } })
+  })
+  await page.getByText('Cache read failed', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Loading', { exact: true }).count(), 0)
+  await page.evaluate(() => {
+    window.failCacheRead = false
+    window.holdRefresh = true
+  })
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishRefresh)
+  assert.ok(await page.getByRole('button', { name: 'Retrying…', exact: true }).isDisabled())
+  await page.evaluate(() => window.finishRefresh.reject(new Error('Computer unavailable')))
+  await page.getByText('Computer unavailable', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Cache read failed', { exact: true }).count(), 0)
+  await page.evaluate(() => window.online(false))
+  await page
+    .getByText('This conversation is not cached. Connect b to load it.', { exact: true })
+    .waitFor()
+  assert.equal(await page.getByText('Loading', { exact: true }).count(), 0)
+  await page.evaluate(() => window.online(true))
+  await page.getByText('Loading', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Computer unavailable', { exact: true }).count(), 0)
+  await page.evaluate(() => window.online(false))
+  await page.evaluate(() => {
+    window.pairingRejected = true
+    window.publish('b', { ...window.cacheSummary, historyRevision: 1 }, false)
+  })
+  await page
+    .getByText('This computer rejected this device’s pairing. Open Computers to pair it again.', {
+      exact: true,
+    })
+    .waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Reconnect', exact: true }).count(), 0)
+  await page.evaluate(() => {
+    window.pairingRejected = false
+    window.holdRefresh = false
+    window.online(true)
+  })
   await page.evaluate(() =>
     window.publish('b', { ...window.cacheSummary, historyRevision: 1 }, true),
   )
@@ -738,6 +821,7 @@ try {
   assert.equal(await page.evaluate(() => window.task.messages.length), 0)
 
   // A cold cache still hydrates from storage, and a late read cannot replace another computer.
+  const readsBeforeCold = await page.evaluate(() => window.cacheReads)
   await page.evaluate(async () => {
     const summary = await window.seedCache('b', 'Persistent reply', true)
     window.publish('b', summary, false)
@@ -745,7 +829,7 @@ try {
   })
   await page.getByText('Persistent reply', { exact: true }).waitFor()
   const reads = await page.evaluate(() => window.cacheReads)
-  assert.equal(reads, 2)
+  assert.equal(reads - readsBeforeCold, 1, 'Cold history needs one aggregate cache read')
   await page.evaluate(() => {
     window.holdCacheRead = true
     window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: 'cached' } })

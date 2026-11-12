@@ -1,13 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   cachedThread,
   cachedRuntimeThread,
   runtimeSnapshotCacheSchema,
+  retryRuntimeSync,
   type Task,
 } from '@dovo/protocol'
 import { useWorkspace } from './context'
 export function useCachedTask(summary: Task | undefined) {
-  const { snapshot, readCache } = useWorkspace()
+  const {
+    snapshot,
+    readCache,
+    connection,
+    connected,
+    activeRuntimeId,
+    runtimeRegistry,
+    runtimes,
+    refreshRuntime,
+  } = useWorkspace()
+  const [recovery, setRecovery] = useState<{ busy: boolean; error: string } | null>(null)
+  const recoveryAttempt = useRef(0)
+  const [retryVersion, setRetryVersion] = useState(0)
   const [cached, setCached] = useState<{ cache: typeof readCache; task: Task } | null>(null)
   const [failure, setFailure] = useState<{
     cache: typeof readCache
@@ -43,7 +56,36 @@ export function useCachedTask(summary: Task | undefined) {
     return () => {
       stopped = true
     }
-  }, [id, readCache, live, retained])
+  }, [id, summary?.historyRevision, readCache, live, retained, retryVersion])
+  useEffect(() => {
+    recoveryAttempt.current++
+    setRecovery(null)
+    return () => {
+      recoveryAttempt.current++
+    }
+  }, [readCache, id, connection, connected])
+  const retry = useCallback(() => {
+    const attempt = ++recoveryAttempt.current
+    setFailure(null)
+    setRecovery({ busy: true, error: '' })
+    setRetryVersion((value) => value + 1)
+    if (connection) retryRuntimeSync(connection)
+    const profile = runtimeRegistry.profiles.find((entry) => entry.id === activeRuntimeId)
+    if (profile && id) {
+      void refreshRuntime(profile).then(
+        () => {
+          if (attempt === recoveryAttempt.current) setRecovery(null)
+        },
+        (error: unknown) => {
+          if (attempt === recoveryAttempt.current)
+            setRecovery({
+              busy: false,
+              error: error instanceof Error ? error.message : String(error),
+            })
+        },
+      )
+    } else setRecovery(null)
+  }, [id, readCache, connection, activeRuntimeId, runtimeRegistry.profiles, refreshRuntime])
   const available =
     !!summary &&
     cached?.cache === readCache &&
@@ -55,5 +97,10 @@ export function useCachedTask(summary: Task | undefined) {
     loaded: live || !!history,
     error:
       !live && !history && failure?.cache === readCache && failure.id === id ? failure.error : '',
+    retry,
+    retrying: recovery?.busy ?? false,
+    retryError: recovery?.error ?? '',
+    unauthorized:
+      runtimes?.find((entry) => entry.profile.id === activeRuntimeId)?.unauthorized ?? false,
   }
 }

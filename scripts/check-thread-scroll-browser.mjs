@@ -14,7 +14,7 @@ const mocks = {
   // Sharing is verified separately from scroll anchoring and composer collapse.
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
-  '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export const useAppPreferences=()=>({minimalComposer:true,collapseComposerOnScroll:true});export const useWorkspace=()=>({snapshot:null,connected:true,workspace:{repositories:[]}});export const formatDateTime=value=>value;`,
+  '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export const useAppPreferences=()=>({minimalComposer:true,collapseComposerOnScroll:true});export const useWorkspace=()=>({snapshot:null,connected:window.historyConnected!==false,workspace:{repositories:[]}});export const formatDateTime=value=>value;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '../chat/composer/chat-image-edit': `export const ChatImageEditProvider=({children})=>children;`,
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
@@ -38,7 +38,7 @@ for (const [path, name] of [
   mocks[path] = `export const ${name}=()=>null;`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.setTurnCount=count=>{window.turnCount=count;render(n=>n+1)};window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[],watchCounts:{pipelines:1}}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[history,setHistory]=useState({loaded:true,error:''});window.setHistory=next=>{window.historyConnected=next.connected;setHistory(next)};const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.setTurnCount=count=>{window.turnCount=count;render(n=>n+1)};window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[],watchCounts:{pipelines:1}}} historyLoaded={history.loaded} historyError={history.error} historyRetrying={history.retrying} historyUnauthorized={history.unauthorized} onRetryHistory={()=>{window.historyRetries=(window.historyRetries??0)+1;window.historyConnected=true;setHistory({loaded:false,error:''})}} visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
   },
@@ -487,6 +487,36 @@ try {
   await page.evaluate(() => window.openThread('third'))
   await page.waitForSelector('[data-task-conversation=third]')
   await bottom()
+  await page.evaluate(() => window.setHistory({ loaded: false, connected: true, error: '' }))
+  await page.getByRole('status').filter({ hasText: 'Loading conversation' }).waitFor()
+  assert.equal(await page.locator('.animate-spin').count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0)
+  await page.evaluate(() => window.setHistory({ loaded: false, connected: false, error: '' }))
+  await page.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
+  assert.equal(await page.locator('.animate-spin').count(), 0)
+  await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Loading conversation' }).waitFor()
+  await page.evaluate(() =>
+    window.setHistory({ loaded: false, connected: true, error: 'Cache read failed' }),
+  )
+  await page.getByRole('alert').filter({ hasText: 'Cache read failed' }).waitFor()
+  assert.equal(await page.locator('.animate-spin').count(), 0)
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Loading conversation' }).waitFor()
+  assert.equal(await page.evaluate(() => window.historyRetries), 2)
+  await page.evaluate(() =>
+    window.setHistory({ loaded: false, connected: true, error: '', retrying: true }),
+  )
+  assert.ok(await page.getByRole('button', { name: 'Retrying…', exact: true }).isDisabled())
+  await page.evaluate(() =>
+    window.setHistory({ loaded: false, connected: false, error: '', unauthorized: true }),
+  )
+  await page
+    .getByText('This computer rejected this device’s pairing. Open Computers to pair it again.', {
+      exact: true,
+    })
+    .waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Reconnect', exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     'Thread following, composer resizing, long turn navigation, keyboard previews, reduced motion, and reading-column action placement passed.',

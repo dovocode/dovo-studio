@@ -62,6 +62,8 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   const [actions, setActions] = useState<WorkspaceItem | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
+  const [starterActive, setStarterActive] = useState(false)
+  const previousTree = useRef<ReturnType<typeof mobileThreadTree>['nodes']>(new Map())
   useForegroundInterval(() => setNow(Date.now()), focused ? 15000 : null)
   const threadRows = useMemo(
     () => taskListProjection(runtime.overviews, now, previousThreads.current),
@@ -72,7 +74,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
       mobileThreadTree(
         threadRows,
         runtime.overviews,
-        undefined,
+        previousTree.current,
         (row) =>
           !row.task.archivedAt && (view.computer === 'all' || row.runtimeId === view.computer),
         (child) => view.computer === 'all' || child.runtimeId === view.computer,
@@ -81,7 +83,8 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   )
   useLayoutEffect(() => {
     previousThreads.current = threadRows
-  }, [threadRows])
+    previousTree.current = tree.nodes
+  }, [threadRows, tree])
   useEffect(() => {
     if (
       view.computer !== 'all' &&
@@ -141,31 +144,40 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
         ),
     [allItems, view.kind, view.computer, query, threadRoots, tree],
   )
+  const commands: TaskListRowActions = {
+    open: (key) => {
+      const row = threadRows.get(key)?.row
+      if (row) {
+        listScroll.retainPosition()
+        navigate('tasks', row.task.id, row.runtimeId)
+      }
+    },
+    details: (key) => {
+      const item = allItems.find(
+        (item) =>
+          item.kind === 'thread' && runtimeResourceKey(item.runtimeId, item.task.id) === key,
+      )
+      if (item) setActions(item)
+    },
+    select: (key) => {
+      const item = allItems.find(
+        (item) =>
+          item.kind === 'thread' && runtimeResourceKey(item.runtimeId, item.task.id) === key,
+      )
+      if (item) setActions(item)
+    },
+  }
+  const latestCommands = useRef(commands)
+  useLayoutEffect(() => {
+    latestCommands.current = commands
+  })
   const threadCommands = useMemo<TaskListRowActions>(
     () => ({
-      open: (key) => {
-        const row = threadRows.get(key)?.row
-        if (row) {
-          listScroll.retainPosition()
-          navigate('tasks', row.task.id, row.runtimeId)
-        }
-      },
-      details: (key) => {
-        const item = allItems.find(
-          (item) =>
-            item.kind === 'thread' && runtimeResourceKey(item.runtimeId, item.task.id) === key,
-        )
-        if (item) setActions(item)
-      },
-      select: (key) => {
-        const item = allItems.find(
-          (item) =>
-            item.kind === 'thread' && runtimeResourceKey(item.runtimeId, item.task.id) === key,
-        )
-        if (item) setActions(item)
-      },
+      open: (key) => latestCommands.current.open(key),
+      details: (key) => latestCommands.current.details(key),
+      select: (key) => latestCommands.current.select(key),
     }),
-    [threadRows, allItems, navigate, listScroll.retainPosition],
+    [],
   )
   const rows: Row[] = []
   for (const section of orderThreadSections(
@@ -205,7 +217,8 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
     const data = threadRows.get(runtimeResourceKey(item.runtimeId, item.task.id))
     return data ? (
       <TaskListRow
-        row={threadRoots.get(data.row.key) ?? data.row}
+        row={data.row}
+        needsInput={threadRoots.get(data.row.key)?.needsInput ?? data.row.needsInput}
         owner={data.owner}
         thread={tree.nodes.get(data.row.key)}
         searching={!!query}
@@ -257,8 +270,12 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           {error || browser.storageError}
         </Text>
       )}
-      {!allItems.length && !filtered ? (
-        <WorkspaceStarter initialMode={unified ? 'auto' : 'terminal'} embedded />
+      {starterActive || (!allItems.length && !filtered) ? (
+        <WorkspaceStarter
+          initialMode={unified ? 'auto' : 'terminal'}
+          embedded
+          onActiveChange={setStarterActive}
+        />
       ) : (
         <FlatList
           {...listScroll}
@@ -285,7 +302,9 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
             setError('')
             void runtime
               .refreshAll()
-              .catch((cause: unknown) => setError(String(cause)))
+              .catch((cause: unknown) =>
+                setError(cause instanceof Error ? cause.message : String(cause)),
+              )
               .finally(() => setRefreshing(false))
           }}
           ListEmptyComponent={

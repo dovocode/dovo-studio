@@ -8,7 +8,7 @@ export function HarnessInstructions() {
   const { request, connected, snapshot, activeRuntimeId, connection } = useWorkspace()
   const [opened, setOpened] = useState(false)
   const editor = useHarnessInstructions({
-    scope: JSON.stringify([activeRuntimeId, connection]),
+    scope: JSON.stringify([activeRuntimeId, connection?.address, connection?.token]),
     request,
     connected,
     supported: snapshot?.harnessInstructionsSupported === true && opened,

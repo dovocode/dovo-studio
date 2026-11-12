@@ -82,7 +82,7 @@ window.rpc=async(owner,path,input)=>{
  if(path.endsWith('/save')){if(window.blockedSaves.includes(input.id))await new Promise(resolve=>window.releases.push(resolve));doc.text=input.text;doc.version+='-saved';return {version:doc.version}};
  throw Error('Unexpected path '+path);
 };
-function App(){const[owner,setOwner]=useState('one'),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setOwner=setOwner;window.setConnected=setConnected;window.setSupported=setSupported;const request=useCallback((...args)=>window.rpc(owner,...args),[owner]);window.store={request,call:request,connected,snapshot:{runtimeId:owner,harnessInstructionsSupported:supported},activeRuntimeId:owner,connection:{address:'http://'+owner+'.lan',token:'paired'},profile:{id:owner,connection:{address:'http://'+owner+'.lan',token:'paired'}}};return <HarnessInstructions/>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[route,setRoute]=useState(false);window.learnRoute=()=>setRoute(true);const[owner,setOwner]=useState('one'),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setOwner=setOwner;window.setConnected=setConnected;window.setSupported=setSupported;const request=useCallback((...args)=>window.rpc(owner,...args),[owner]);window.store={request,call:request,connected,snapshot:{runtimeId:owner,harnessInstructionsSupported:supported},activeRuntimeId:owner,connection:{address:'http://'+owner+'.lan',token:'paired',...(route?{alternateAddresses:['http://100.64.0.1:8787']}:{} )},profile:{id:owner,connection:{address:'http://'+owner+'.lan',token:'paired',...(route?{alternateAddresses:['http://100.64.0.1:8787']}:{} )}}};return <HarnessInstructions/>};createRoot(document.getElementById('app')).render(<App/>);
 `,
       },
       bundle: true,
@@ -144,6 +144,12 @@ try {
     const review = page.getByRole('button', { name: 'Review diff', exact: true })
     assert.equal(await save.isDisabled(), true)
     await text.fill('Keep my draft\n')
+    await page.evaluate(() => window.learnRoute())
+    assert.equal(
+      await text.inputValue(),
+      'Keep my draft\n',
+      'Learning another route must keep the current computer draft visible',
+    )
     await choose('claude')
     await page.waitForFunction(
       () => document.querySelector('textarea')?.value === 'one claude instructions\n',

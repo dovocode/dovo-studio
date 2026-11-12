@@ -273,25 +273,7 @@ function TaskListRowView({
         )}
       </View>
     )
-  const projectBadge = (
-    <View style={{ position: 'relative' }}>
-      {projectImage}
-      {showTypeIndicator && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: -5,
-            right: -4,
-            borderRadius: 6,
-            backgroundColor: colors.background,
-            padding: 1,
-          }}
-        >
-          <Icon name="chat" size={9} color={colors.muted} />
-        </View>
-      )}
-    </View>
-  )
+  const projectBadge = projectImage
   const subthreadControl = childCount > 0 && (
     <Pressable
       accessibilityRole="button"
@@ -386,7 +368,7 @@ function TaskListRowView({
       {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
     </View>
   )
-  const title = (
+  const titleText = (
     <Text
       numberOfLines={1}
       style={{
@@ -399,6 +381,14 @@ function TaskListRowView({
     >
       {task.title}
     </Text>
+  )
+  const title = showTypeIndicator ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+      <Icon name="chat" size={14} color={colors.muted} />
+      {titleText}
+    </View>
+  ) : (
+    titleText
   )
 
   const statusIndicator = state !== 'Review' && (

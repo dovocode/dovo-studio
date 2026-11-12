@@ -259,7 +259,7 @@ function ThreadConversation({
 }) {
   const store = useWorkspace()
   const host = useStudioHost()
-  const { task, loaded, error } = useCachedTask(
+  const { task, loaded, error, retry, retrying, retryError, unauthorized } = useCachedTask(
     store.workspace.tasks.find((task) => task.id === id),
   )
   useEffect(() => {
@@ -293,6 +293,10 @@ function ThreadConversation({
             task={task}
             historyLoaded={loaded}
             historyError={error}
+            onRetryHistory={retry}
+            historyRetrying={retrying}
+            historyRetryError={retryError}
+            historyUnauthorized={unauthorized}
             visible
             onReview={open}
             onArtifact={open}

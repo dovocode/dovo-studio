@@ -25,7 +25,7 @@ import {
 } from '@dovo/protocol'
 import { BrowserFavicon } from './browser-favicon'
 import { useBrowserProfileDetails } from './browser-profile-label'
-import type { DragEventHandler } from 'react'
+import type { DragEventHandler, ReactNode } from 'react'
 import type { BrowserTab } from './shared-browser-tabs'
 
 export function BrowserTabRow({
@@ -51,6 +51,7 @@ export function BrowserTabRow({
   onError,
   disabled = false,
   pinnedTile = !!tab.pinned,
+  titleIcon,
 }: {
   tab: BrowserTab
   active: boolean
@@ -76,6 +77,7 @@ export function BrowserTabRow({
   disabled?: boolean
   /** Pinned tabs use normal rows in a mixed overview and tiles in the pinned grid. */
   pinnedTile?: boolean
+  titleIcon?: ReactNode
   reorder?: {
     dragging: boolean
     edge?: 'before' | 'after'
@@ -285,7 +287,14 @@ export function BrowserTabRow({
             </span>
             {!pinnedTile && (
               <>
-                <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
+                {titleIcon ? (
+                  <span className="studio-thread-card-title flex min-w-0 flex-1 items-center gap-1.5">
+                    {titleIcon}
+                    <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
+                  </span>
+                ) : (
+                  <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
+                )}
                 {identity}
               </>
             )}

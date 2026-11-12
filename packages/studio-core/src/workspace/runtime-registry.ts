@@ -18,6 +18,26 @@ const registryKey = 'dovo.runtimes.v1'
 const legacyConnectionKey = 'dovo.connection.v1'
 let observed: RuntimeRegistry | undefined
 const eventKey = 'dovo.runtimes.changed'
+/** Registry storage decodes fresh objects. Keep unchanged hosts and transports mounted. */
+export function retainRuntimeRegistry(
+  previous: RuntimeRegistry | undefined,
+  next: RuntimeRegistry,
+): RuntimeRegistry {
+  if (!previous) return next
+  if (JSON.stringify(previous) === JSON.stringify(next)) return previous
+  const profiles = new Map(previous.profiles.map((profile) => [profile.id, profile]))
+  return {
+    ...next,
+    profiles: next.profiles.map((profile) => {
+      const prior = profiles.get(profile.id)
+      if (!prior) return profile
+      if (JSON.stringify(prior) === JSON.stringify(profile)) return prior
+      return JSON.stringify(prior.connection) === JSON.stringify(profile.connection)
+        ? { ...profile, connection: prior.connection }
+        : profile
+    }),
+  }
+}
 export function subscribeRuntimeRegistry(listener: () => void) {
   const bridge = decodeResult(bridgeSchema, window)
   if (bridge.success) return bridge.data.dovo.subscribeRuntimeRegistry(listener)

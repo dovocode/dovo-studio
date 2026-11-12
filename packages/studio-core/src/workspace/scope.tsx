@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react'
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { resolveRuntimeTarget, type RuntimeProfile } from '@dovo/protocol'
@@ -27,16 +27,23 @@ export function WorkspaceScope({
   const { readRuntimeEffect, refreshRuntime, runtimeReadCache, setWorkspace } = root
   const { id, name, connection } = profile
   const owner = useMemo(() => ({ id, name, connection }), [id, name, connection])
+  // Renames keep the transport. New hosts/credentials get a separate holder, so old
+  // asynchronous callers cannot start sending requests to the replacement owner.
+  const currentOwner = useMemo(() => ({ current: owner }), [id, connection])
+  useLayoutEffect(() => {
+    currentOwner.current = owner
+  }, [owner, currentOwner])
   const entry = root.runtimes.find((item) => resolveRuntimeTarget([item.profile], owner))
   const requestEffect = useCallback<WorkspaceRequestEffect>(
     (path, input, schema, method) =>
       Effect.gen(function* () {
-        const result = yield* readRuntimeEffect(owner, path, input, schema, method)
+        const target = currentOwner.current
+        const result = yield* readRuntimeEffect(target, path, input, schema, method)
         if (method === 'PATCH' && path === '/api/workspace')
-          yield* Effect.tryPromise({ try: () => refreshRuntime(owner), catch: connectionError })
+          yield* Effect.tryPromise({ try: () => refreshRuntime(target), catch: connectionError })
         return result
       }),
-    [owner, readRuntimeEffect, refreshRuntime],
+    [currentOwner, readRuntimeEffect, refreshRuntime],
   )
   const request = useCallback<WorkspaceRequest>(
     (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),

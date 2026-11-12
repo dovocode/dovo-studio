@@ -33,6 +33,7 @@ export function ScreenHeader({
   title: screenTitle,
   titleContent,
   titleMenu = false,
+  titleMenuDisabled = false,
   subtitle,
   leading,
   actions,
@@ -46,6 +47,7 @@ export function ScreenHeader({
   title: string
   titleContent?: ReactNode
   titleMenu?: boolean
+  titleMenuDisabled?: boolean
   subtitle?: string
   leading?: ReactNode
   actions?: ReactNode
@@ -67,6 +69,8 @@ export function ScreenHeader({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Thread actions"
+      disabled={titleMenuDisabled}
+      accessibilityState={{ disabled: titleMenuDisabled }}
       onPress={() => setMenu(true)}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
     >

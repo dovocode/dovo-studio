@@ -5,6 +5,7 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const workspace = root + 'apps/mobile/src/workspace/'
 const mobile = root + 'apps/mobile/src/'
+const terminal = mobile + 'terminal/'
 const stubs = [
   {
     path: '../../modules/dovo-webkit-browser',
@@ -14,16 +15,17 @@ const stubs = [
   {
     path: '../runtime/preferences/app-preferences',
     importer: workspace,
-    contents: `export const useMobilePreferences=()=>({browserProfiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]});`,
+    contents: `export const setMobileThreadSectionCollapsed=()=>{};export const useMobilePreferences=()=>({threadSectionOrder:[],collapsedThreadSections:[],threadDensity:'compact',browserProfiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]});`,
   },
   {
     path: 'react-native',
     contents: `
-export const Keyboard={dismiss(){}};
+import {forwardRef,useImperativeHandle} from 'react';export const FlatList=forwardRef(({data,renderItem,keyExtractor},ref)=>{useImperativeHandle(ref,()=>({scrollToOffset(){}}));return <main>{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}</main>});export const Image=()=>null;export const Keyboard={dismiss(){}};
 export const View=({children})=><div>{children}</div>;
 export const ScrollView=View;
 export const KeyboardAvoidingView=View;
 export const Platform={OS:'web'};
+export const Alert={alert(){}};
 export const TextInput=({accessibilityLabel,value,onChangeText,editable,placeholder,maxLength,onFocus,onBlur})=><textarea aria-label={accessibilityLabel} value={value} onChange={e=>onChangeText(e.target.value)} disabled={editable===false} placeholder={placeholder} maxLength={maxLength} onFocus={onFocus} onBlur={onBlur}/>;
 export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;`,
   },
@@ -39,7 +41,7 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button
   {
     path: '../runtime/connection/provider',
     importer: workspace,
-    contents: `import {useSyncExternalStore} from 'react';export const RuntimeScope=({children})=>children;export function useRuntime(){useSyncExternalStore(window.subscribe,()=>window.version);return {activeId:'a',overviews:window.owners,readRuntime:window.request,refreshRuntime:window.refresh}};`,
+    contents: `import {useSyncExternalStore} from 'react';export const RuntimeScope=({children})=>children;export function useRuntime(){useSyncExternalStore(window.subscribe,()=>window.version);return {ready:window.runtimeReady??true,activeId:'a',profiles:window.owners.map(owner=>owner.profile),overviews:window.owners,readRuntime:window.request,refreshRuntime:window.refresh}};`,
   },
   {
     path: '../shell/navigation',
@@ -64,7 +66,8 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button
   {
     path: '../ui/layout/screen-header',
     importer: workspace,
-    contents: 'export const ScreenHeader=({title})=><h1>{title}</h1>;',
+    contents:
+      'export const ScreenHeader=({title,subtitle})=><header><h1>{title}</h1><p>{subtitle}</p></header>;',
   },
   {
     path: '../ui/layout/sheet',
@@ -117,6 +120,47 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button
     contents: `export const ThreadStarterModel=({onChange})=><button onClick={()=>onChange({agentId:'',harness:{provider:'claude',model:'chosen',permission:'ask',args:[],env:{},instructions:'',endpoint:'',reasoning:''},harnessCustomized:true})}>Choose test model</button>;`,
   },
 ]
+
+const runtimeStub = stubs.find((stub) => stub.path === '../runtime/connection/provider')
+const navigationStub = stubs.find((stub) => stub.path === '../shell/navigation')
+const preferencesStub = stubs.find((stub) => stub.path === '../runtime/preferences/app-preferences')
+for (const stub of [runtimeStub, navigationStub, preferencesStub])
+  stubs.push({ ...stub, importer: terminal })
+for (const [path, contents] of [
+  ['../runtime/state/app-active', 'export const useForegroundInterval=()=>{};'],
+  ['../shell/more-actions', 'export const useMoreActions=()=>[];'],
+  ['./workspace-modes', 'export const WorkspaceModes=()=>null;'],
+  ['./standalone-row', 'export const StandaloneRow=({item})=><p>{item.title}</p>;'],
+  ['./resource-actions', 'export const ResourceActions=()=>null;'],
+  ['../ui/controls/icon', 'export const Icon=()=>null;'],
+  ['../ui/controls/field', 'export const SearchField=()=>null;'],
+  ['../tasks/list/task-list-row', 'export const TaskListRow=()=>null;'],
+])
+  stubs.push({ path, importer: workspace, contents })
+for (const [path, contents] of [
+  [
+    '../workspace/resource-actions',
+    'export const ResourceActions=()=>null;export const useTerminalActions=()=>({disabled:true});',
+  ],
+  [
+    '../ui/content/empty-state',
+    'export const EmptyState=({title,description})=><section><h2>{title}</h2><p>{description}</p></section>;',
+  ],
+  ['./terminal-session', 'export const TerminalSession=()=>null;'],
+  ['../ui/controls/field', 'export const Field=()=>null;'],
+])
+  stubs.push({ path, importer: terminal, contents })
+for (const path of [
+  '../ui/theme',
+  '../ui/content/text',
+  '../ui/controls/action',
+  '../ui/layout/sheet',
+  '../ui/layout/screen-header',
+])
+  stubs.push({
+    ...stubs.find((stub) => stub.path === path && stub.importer === workspace),
+    importer: terminal,
+  })
 const built = await bundleBrowser(
   {
     stdin: {
@@ -126,10 +170,16 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {BrowserWorkspaceProvider,useBrowserWorkspace} from './apps/mobile/src/browser/browser-workspace';
 import {WorkspaceStarter} from './apps/mobile/src/workspace/workspace-starter';
+import {WorkspaceOverview} from './apps/mobile/src/workspace/workspace-overview';
+import {WorkspaceTerminalScreen} from './apps/mobile/src/terminal/workspace-terminal-screen';
+import {WorkspaceViewProvider} from './apps/mobile/src/workspace/workspace-view';
+import {decode,snapshotSchema} from '@dovo/protocol';
+window.emptySnapshot=decode(snapshotSchema,{revision:1,owner:false,approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],workspace:{version:1,runtimeAddress:'',automations:[],repositories:[],agents:[],tasks:[]}});
 window.storage={};window.routes=[];window.requests=[];window.focused=true;window.version=0;const listeners=new Set();window.subscribe=fn=>{listeners.add(fn);return()=>listeners.delete(fn)};
 const owner=id=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'private-'+id}},connected:true,snapshot:{terminalRecoverySupported:true,workspace:{repositories:[{id:'general-'+id,name:'General',kind:'scratch',path:'/scratch',branch:''},{id:'project',name:'Project '+id,path:'/project',branch:'main'}],agents:[],tasks:[{id:'existing-'+id,title:'Existing '+id}]}}});window.owners=[owner('a'),owner('b')];
 window.publish=()=>{window.version++;listeners.forEach(fn=>fn())};
-window.refresh=async()=>{if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}};
+window.addTerminal=()=>{window.owners=window.owners.map((owner,index)=>index?owner:{...owner,snapshot:{...owner.snapshot,terminals:[{id:'created-terminal',taskId:'studio:terminals',title:'Created shell',exited:false}]}});window.publish()};
+window.refresh=async()=>{if(window.refreshPublishes){window.addTerminal();await new Promise(resolve=>window.finishRefresh=resolve)}if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}};
 window.request=async(profile,path,input,schema,method,options)=>{window.requests.push({owner:profile.id,path,input:JSON.parse(JSON.stringify(input)),defer:!!options?.defer});
 if(path==='/api/tasks/workspace/route'){if(window.selectionMode)return {mode:window.selectionMode,reason:'GLiClass suggestion',selections:input.catalogs?.runtime?{runtime:'runtime:b'}:input.catalogs?.project?{project:window.selectionMode==='terminal'?'none':'project:project'}:input.catalogs?.model?{model:input.catalogs.model.find(item=>item.label.includes('Opus')).id}:{profile:'profile:work'}};if(window.holdRoute)await new Promise(resolve=>window.finishRoute=resolve);return window.decision??{mode:'terminal',reason:'A shell command'}};
 if(path==='/api/previews/browser/profiles/read')return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};
@@ -140,9 +190,9 @@ if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:
 if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/worktree-'+profile.id,branch:'branch-'+profile.id}]};
 if(path==='/api/terminals/workspace')return {id:'created-terminal',taskId:'studio:terminals',title:'Shell',exited:false};
 if(path==='/api/workspace')return {revision:1,outcome:'applied'};
-if(path==='/api/tasks/message'){if(window.failMessage){window.failMessage=false;throw Error('Lost message response')}return {ok:true}};
+if(path==='/api/tasks/message'){if(window.holdMessage)await new Promise(resolve=>window.finishMessage=resolve);if(window.failMessage){window.failMessage=false;throw Error('Lost message response')}return {ok:true}};
 throw Error('Unexpected endpoint '+path)};
-function App(){const[key,setKey]=useState(0);window.reset=()=>{window.requests=[];window.routes=[];window.focused=true;window.holdRoute=false;setKey(k=>k+1)};const browser=useBrowserWorkspace();window.tabs=browser.state.tabs;return <><WorkspaceStarter key={key} initialMode="auto"/><output aria-label="Saved tabs">{browser.state.tabs.length}</output></>};
+function App(){const[key,setKey]=useState(0);const[screen,setScreen]=useState('starter');window.showScreen=setScreen;window.reset=()=>{window.requests=[];window.routes=[];window.focused=true;window.holdRoute=false;setKey(k=>k+1)};const browser=useBrowserWorkspace();window.tabs=browser.state.tabs;return <><WorkspaceViewProvider>{screen==='overview'?<WorkspaceOverview/>:screen==='terminal'?<WorkspaceTerminalScreen runtimeId="a" terminalId="created-terminal"/>:<WorkspaceStarter key={key} initialMode="auto"/>}</WorkspaceViewProvider><output aria-label="Saved tabs">{browser.state.tabs.length}</output></>};
 createRoot(document.getElementById('app')).render(<BrowserWorkspaceProvider><App/></BrowserWorkspaceProvider>);`,
     },
     bundle: true,
@@ -403,6 +453,125 @@ try {
   assert.equal(tab.runtimeId, 'b')
   assert.equal(tab.profileId, 'default')
   assert.equal(tab.url, 'http://app.lan:3000/?lol=1')
+
+  // Route learning must not change draft/model or in-flight submission ownership.
+  await reset()
+  await page.getByLabel('Destination', { exact: true }).selectOption('thread')
+  await request.fill('Keep the selected model through route learning')
+  await page.getByRole('button', { name: 'Choose test model', exact: true }).click()
+  await page.evaluate(() => {
+    window.holdMessage = true
+    window.owners = window.owners.map((owner) => ({
+      ...owner,
+      snapshot: { ...owner.snapshot, threadStartSupported: true },
+    }))
+    window.publish()
+  })
+  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishMessage)
+  await page.evaluate(() => {
+    window.owners = window.owners.map((owner) => ({
+      ...owner,
+      profile: {
+        ...owner.profile,
+        connection: { ...owner.profile.connection, alternateAddresses: ['http://100.64.0.1:8787'] },
+      },
+    }))
+    window.publish()
+  })
+  await page.evaluate(() => window.finishMessage())
+  await page.waitForFunction(() => window.routes.length === 1)
+  const sent = await page.evaluate(() =>
+    window.requests.filter((request) => request.path === '/api/tasks/message'),
+  )
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].input.createTask.harness.model, 'chosen')
+
+  // Use the real overview and starter. Its own first terminal must not cancel navigation.
+  await page.evaluate(() => {
+    window.owners = [window.owners[0]].map((owner) => ({
+      ...owner,
+      connected: true,
+      error: null,
+      snapshot: window.emptySnapshot,
+    }))
+    window.requests = []
+    window.routes = []
+    window.showScreen('overview')
+    window.publish()
+  })
+  const command = page.getByRole('textbox', { name: 'Terminal command', exact: true })
+  await command.fill('echo keep this command')
+  await page.evaluate(() => window.addTerminal())
+  assert.equal(await command.inputValue(), 'echo keep this command')
+  await page.evaluate(() => {
+    window.owners = window.owners.map((owner) => ({
+      ...owner,
+      snapshot: { ...owner.snapshot, terminals: [] },
+    }))
+    window.publish()
+    window.refreshPublishes = true
+  })
+  await page.getByRole('button', { name: 'Run command', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishRefresh)
+  assert.equal(await command.count(), 1)
+  await page.evaluate(() => window.finishRefresh())
+  await page.waitForFunction(() => window.routes.length === 1)
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((request) => request.path === '/api/terminals/workspace').length,
+    ),
+    1,
+  )
+
+  // Missing is a fact only after an online snapshot confirms absence.
+  await page.evaluate(() => {
+    window.showScreen('terminal')
+    window.owners = window.owners.map((owner) => ({
+      ...owner,
+      connected: false,
+      error: null,
+      snapshot: null,
+    }))
+    window.publish()
+  })
+  await page.getByRole('heading', { name: 'Loading terminal…', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.owners = window.owners.map((owner) => ({ ...owner, connected: true }))
+    window.publish()
+  })
+  await page.getByRole('heading', { name: 'Loading terminal…', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.owners = window.owners.map((owner) => ({ ...owner, snapshot: window.emptySnapshot }))
+    window.publish()
+  })
+  await page.getByText('This standalone terminal may have been closed.', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.owners = window.owners.map((owner) => ({
+      ...owner,
+      connected: false,
+      error: 'Unauthorized',
+      unauthorized: true,
+    }))
+    window.publish()
+  })
+  await page
+    .getByText('This computer rejected its saved pairing. Pair it again in Computers.', {
+      exact: true,
+    })
+    .waitFor()
+  await page.evaluate(() => {
+    window.runtimeReady = false
+    window.owners = []
+    window.publish()
+  })
+  await page.getByText('Loading computer…', { exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Loading terminal…', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.runtimeReady = true
+    window.publish()
+  })
+  await page.getByText('This computer is no longer paired.', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile workspace: AI review/override, HTTP pages, remote shells, home/worktrees, recovery settings, safe retries, thread continuation and stale routing checks pass. Native controls use browser adapters.',

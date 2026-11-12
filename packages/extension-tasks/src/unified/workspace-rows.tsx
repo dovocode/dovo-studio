@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useId, type ReactNode, type ComponentProps } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useId, type ReactNode } from 'react'
 import {
   AlarmClock,
   Check,
@@ -6,6 +6,7 @@ import {
   FolderOpen,
   Pin,
   SquareTerminal,
+  MessageSquare,
   type LucideIcon,
 } from 'lucide-react'
 import type { Task } from '@dovo/studio-core'
@@ -118,7 +119,20 @@ function RowFrame({
 /**
  * The thread list's own row, with its existing project, status and terminal identity.
  */
-export function WorkspaceThreadRow({
+export type WorkspaceThreadCommands = {
+  open: (key: string) => void
+  pin: (key: string) => void
+  settle: (key: string) => void
+  snooze: (key: string, until: string | null) => void
+  create: (key: string, templateId?: string) => void
+  filter: (key: string) => void
+  deselect: () => void
+  error: (message: string) => void
+}
+
+export const WorkspaceThreadRow = memo(function WorkspaceThreadRow({
+  rowKey,
+  commands,
   task,
   owner,
   needsInput,
@@ -126,15 +140,27 @@ export function WorkspaceThreadRow({
   title,
   selected,
   disabled,
-  onSelect,
-  actions,
+  pinned,
+  settled,
+  snoozedUntil,
+  actionDisabled,
+  settleDisabled,
   thread,
   selectedThreadKey,
   searching,
   search,
   revealSearch,
-  menu,
-}: RowShell & {
+}: {
+  rowKey: string
+  commands: WorkspaceThreadCommands
+  title: string
+  selected: boolean
+  disabled: boolean
+  pinned: boolean
+  settled: boolean
+  snoozedUntil?: string
+  actionDisabled: boolean
+  settleDisabled?: boolean
   task: Task
   owner: TaskOwner
   needsInput: boolean
@@ -144,11 +170,32 @@ export function WorkspaceThreadRow({
   searching: boolean
   search?: ThreadSearchFilter
   revealSearch?: boolean
-  menu: Pick<
-    ComponentProps<typeof TaskContextMenu>,
-    'onCreate' | 'onTemplate' | 'onFilter' | 'onDeselect' | 'onError' | 'onSplit'
-  >
 }) {
+  const onSelect = useCallback(() => commands.open(rowKey), [commands, rowKey])
+  const actions = useMemo<WorkspaceResourceMenuProps>(
+    () => ({
+      title,
+      pinned,
+      settled,
+      snoozedUntil,
+      disabled: actionDisabled,
+      settleDisabled,
+      onPin: () => commands.pin(rowKey),
+      onSettle: () => commands.settle(rowKey),
+      onSnooze: (until) => commands.snooze(rowKey, until),
+    }),
+    [commands, rowKey, title, pinned, settled, snoozedUntil, actionDisabled, settleDisabled],
+  )
+  const menu = useMemo(
+    () => ({
+      onCreate: () => commands.create(rowKey),
+      onTemplate: (templateId: string) => commands.create(rowKey, templateId),
+      onFilter: () => commands.filter(rowKey),
+      onDeselect: commands.deselect,
+      onError: commands.error,
+    }),
+    [commands, rowKey],
+  )
   const compact = task.archived || !!task.archivedAt
   return (
     <RowFrame
@@ -171,6 +218,7 @@ export function WorkspaceThreadRow({
       )}
     >
       <TaskRow
+        titleIcon={<KindMark icon={MessageSquare} />}
         task={task}
         owner={owner}
         selected={selected}
@@ -187,7 +235,7 @@ export function WorkspaceThreadRow({
       />
     </RowFrame>
   )
-}
+})
 
 /** BrowserPane portals its own row here, keeping every native menu action and dialog. */
 export function WorkspacePageRow({

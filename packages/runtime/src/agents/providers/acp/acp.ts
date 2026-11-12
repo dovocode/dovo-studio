@@ -1,6 +1,6 @@
 import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
-import { legacyAcpModels } from './acp-models.js'
+import { acpModelOption, legacyAcpModels } from './acp-models.js'
 import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { acpMcpHttp } from './acp-mcp.js'
@@ -461,7 +461,7 @@ export function createAcpAdapter(): AgentAdapter {
           }
           let configOptions = session.configOptions
           if (run.agent.model) {
-            const model = session.configOptions?.find((option) => option.category === 'model')
+            const model = acpModelOption(session.configOptions)
             if (!model) {
               if (
                 !legacyAcpModels(session)?.availableModels.some(

@@ -4,6 +4,7 @@ import { router } from 'expo-router'
 import {
   responses,
   runtimeComputerName,
+  runtimeReachability,
   STUDIO_TERMINAL_SCOPE,
   terminalStatus,
 } from '@dovo/protocol'
@@ -33,6 +34,10 @@ export function WorkspaceTerminalScreen({
   const { unifiedWorkspaceEnabled } = useMobilePreferences()
   const { styles } = useTheme()
   const owner = runtime.overviews.find((entry) => entry.profile.id === runtimeId)
+  const loading =
+    !runtime.ready ||
+    (!!owner &&
+      (runtimeReachability(owner) === 'connecting' || (owner.connected && !owner.snapshot)))
   const terminal = owner?.snapshot?.terminals.find(
     (entry) => entry.id === terminalId && entry.taskId === STUDIO_TERMINAL_SCOPE,
   )
@@ -81,7 +86,9 @@ export function WorkspaceTerminalScreen({
         subtitle={
           owner
             ? `${runtimeComputerName(owner)}${status ? ` · ${status.label}` : ''}`
-            : 'Unpaired computer'
+            : runtime.ready
+              ? 'Unpaired computer'
+              : 'Loading computer…'
         }
         onBack={back}
         buttons={
@@ -133,13 +140,17 @@ export function WorkspaceTerminalScreen({
       {!terminal ? (
         <EmptyState
           icon="terminal"
-          title="Terminal unavailable"
+          title={loading ? 'Loading terminal…' : 'Terminal unavailable'}
           description={
-            !owner
-              ? 'This computer is no longer paired.'
-              : !owner.connected
-                ? 'Reconnect to this computer to resume its terminals.'
-                : 'This standalone terminal may have been closed.'
+            loading
+              ? 'Waiting for this computer’s terminal sessions.'
+              : !owner
+                ? 'This computer is no longer paired.'
+                : owner.unauthorized
+                  ? 'This computer rejected its saved pairing. Pair it again in Computers.'
+                  : !owner.connected
+                    ? 'Reconnect to this computer to resume its terminals.'
+                    : 'This standalone terminal may have been closed.'
           }
           action={<Action secondary label="Back to workspace" onPress={back} />}
         />

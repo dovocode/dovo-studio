@@ -63,7 +63,7 @@
     "test:command-palette:browser": "node scripts/check-command-palette-browser.mjs",
     "test:change-summary:browser": "node scripts/check-change-summary-browser.mjs && node scripts/check-mobile-change-summary-browser.mjs",
     "test:thread-servers:browser": "node scripts/check-thread-servers-browser.mjs",
-    "test:thread-scroll:browser": "node scripts/check-thread-scroll-browser.mjs",
+    "test:thread-scroll:browser": "node scripts/check-thread-scroll-browser.mjs && node scripts/check-conversation-readiness-browser.mjs",
     "test:thread-streaming:browser": "node scripts/check-thread-streaming-browser.mjs && node scripts/check-startup-performance-browser.mjs",
     "test:task-callbacks:browser": "node scripts/check-task-callbacks-browser.mjs",
     "test:composer-server-switch:browser": "node scripts/check-composer-server-switch-browser.mjs",

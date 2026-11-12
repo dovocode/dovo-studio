@@ -1,11 +1,33 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { decodeRuntimeRegistry, mergeRuntimeRegistry } from './runtime-registry'
+import {
+  decodeRuntimeRegistry,
+  mergeRuntimeRegistry,
+  retainRuntimeRegistry,
+} from './runtime-registry'
 vi.mock('./read-cache', () => ({
   readWorkspaceDocument: async (key: string) => localStorage.getItem(key),
   captureRegistryCacheChange: async () => [],
   commitRegistryCacheChange: async () => {},
 }))
 const connection = { address: 'http://remote:8787/', token: 'a-valid-runtime-token-123456' }
+it('preserves unchanged computers and connections across registry decoding and selection', () => {
+  const before = decodeRuntimeRegistry(null, JSON.stringify(connection))
+  expect(retainRuntimeRegistry(before, structuredClone(before))).toBe(before)
+  const selected = retainRuntimeRegistry(before, { ...structuredClone(before), activeId: null })
+  expect(selected.activeId).toBeNull()
+  expect(selected.profiles[0]).toBe(before.profiles[0])
+  const renamed = retainRuntimeRegistry(before, {
+    ...structuredClone(before),
+    profiles: [{ ...structuredClone(before.profiles[0]), name: 'Renamed' }],
+  })
+  expect(renamed.profiles[0].name).toBe('Renamed')
+  expect(renamed.profiles[0].connection).toBe(before.profiles[0].connection)
+  const changed = structuredClone(before)
+  changed.profiles[0].connection.token = 'replacement-runtime-token-123456'
+  expect(retainRuntimeRegistry(before, changed).profiles[0].connection).toBe(
+    changed.profiles[0].connection,
+  )
+})
 it("preserves another tab's pairing when a stale tab changes selection", () => {
   const before = decodeRuntimeRegistry(null, JSON.stringify(connection))
   const other = decodeRuntimeRegistry(

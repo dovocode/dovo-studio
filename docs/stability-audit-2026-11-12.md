@@ -118,7 +118,8 @@ pnpm exec vp test packages/studio-core/src/workspace/runtime-updates.test.ts pac
 
 The probe uses synthetic drafts and temporary files. It does not open user runtime storage. Its
 output reports observations; successful exit does not mean that the findings are fixed. Heap numbers
-vary by runtime. The close probe currently reports `stored: null` and `restored: null`.
+vary by runtime. The original close probe reported `stored: null` and `restored: null`. The current
+probe preserves both values after the recovery changes.
 
 No full-app soak test, physical phone test, production fault injection, disk-full test or hosted CI
 run was performed. The draft journal follow-up is described below. Measure mobile and Unified
@@ -211,3 +212,125 @@ Nightly .824 also had an interrupted npm grammar download before shard 0 started
 The pinned archive downloads in full on a fresh request. All 14 asset-repair tests and all 45 shard
 0 browser suites pass locally through the CI runner. Hosted reruns and package checks remain
 required.
+
+## Desktop and mobile performance and visual follow-up
+
+Unified thread rows now keep stable commands and reuse unchanged row props. Commands resolve the
+latest committed task and computer. The host API also keeps its identity across browser-tab updates.
+Selection updates only the previous and next root, including their retained Home copies.
+
+The Chromium fixture streams 30 updates into a thread in the closed Working section. Its 99
+unchanged mounted rows produced 2,970 `TaskRow` execution-icon renders before the fix and zero after
+it. Changing one visible title produces one render. Thirty browser-title updates keep one host API
+identity. These are render counts in a controlled fixture, not app frame-time measurements.
+
+Desktop and mobile now separate loading, offline, cache-read failure, failed recovery and confirmed
+pairing rejection. Retry reads the cache again and refreshes the selected computer. Busy recovery
+keeps a disabled action visible. Mobile recovery state belongs to the exact computer, connection,
+thread and connection state, so old errors cannot return after reconnecting. Desktop main, split and
+browser thread panels expose recovery. The read-only share view keeps its existing behavior.
+
+Mobile keeps the two-line, 44-point title area, Back action, runtime subtitle and toolbar positions
+while history loads. Saved file edits keep Changes available in the header. Pending controls stay
+disabled, including the title menu. Unified Thread, Browser and Terminal titles use inline 14-pixel
+type icons with a 6-pixel gap. Mobile resource rows use the normal menu icon and a browser favicon
+when the tab supplies one.
+
+Mobile working-tree review refresh now requests `includeFiles: false` and decodes
+`responses.changesRefresh`. Live sync still supplies the authoritative files. Branch and linked
+checkout reads retain file bodies. The real mobile review action passes checks with both lightweight
+and old-runtime file replies.
+
+Clean inactive mobile draft records now leave memory after the final subscriber and serialized
+operation finish. Disk drafts stay intact. Dirty text, pending writes, queued operations and
+recovery journals stay in memory. Published typing also stays if reading the prior disk record
+failed. The 44 storage tests cover rehydration, write failure, concurrent append/typing and receipt
+deduplication. The current 500-draft Node probe retained about 0.39 MiB after collection. The
+original audit recorded 23.33 MiB for the same synthetic workload; that baseline was not rerun in
+this follow-up. This does not measure native phone memory.
+
+Opus and Fable 5.2 completed a second source review and checked the corrections. Their findings led
+to the scoped recovery action, stable host identity, selection scope, failed-read draft guard and
+pending-header fixes. They found no further concrete defects in their final source pass. The parent
+ran the checks; the reviewers did not run native tests.
+
+Run the focused checks from the repository root:
+
+```sh
+pnpm exec playwright install chromium
+pnpm exec vp test apps/mobile/src/tasks/draft/storage.test.ts packages/runtime/src/http/scm-mutations.test.ts packages/protocol/src/runtime/connection/runtime-fleet.test.ts --maxWorkers=1
+DOVO_WORKSPACE_SCREENSHOTS=1 node scripts/check-unified-workspace-browser.mjs
+pnpm test:thread-scroll:browser
+node scripts/check-mobile-draft-transition-browser.mjs
+node scripts/check-mobile-workspace-overview-browser.mjs
+pnpm test:mobile-task-list-rendering:browser
+node scripts/investigate-workspace-stability.mjs
+pnpm --filter @dovo/studio-core --filter @dovo/extension-tasks -r typecheck
+pnpm --filter @dovo/mobile typecheck
+pnpm exec vp check
+git diff --check
+```
+
+The focused unit checks pass 70 tests. Browser fixtures mount production components with isolated
+runtime, storage and native-control adapters. They cover failed cache reads, recovery busy/error
+states, automatic reconnect, pairing guidance, saved file edits and old-runtime refresh replies. The
+runtime boundary test distinguishes HTTP 401 from 503 and preserves last-known data. It does not
+inject a provider-level 401 or live-sync fault through the complete desktop UI.
+
+The current changes have no hosted CI or full native-app verification. Device Hub found simulators,
+but no current full-app install was tested. Native header geometry, gestures, physical-phone resume,
+long-session Unified view retention and end-to-end frame times still need measurements. No lifetime
+cap or transport redesign was added without that evidence.
+
+## Third review: fixes and verification
+
+The third Opus and Fable 5.2 review led to these fixes:
+
+| Finding                                                                                                            | Change                                                                                                                                       | Local evidence                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The mobile empty-workspace starter lost typed commands or skipped terminal navigation when the first item arrived. | Keep the starter mounted while it has text, focus, options, an error or pending work.                                                        | A real overview/starter fixture retains the command after an external terminal arrives. Its own terminal refresh also completes navigation once.                                                                   |
+| Learning alternate network routes hid mobile instructions and invalidated starter ownership.                       | Key those drafts and receipts by computer ID, primary address and token. Desktop instructions use the same rule.                             | Both instruction editors retain the visible draft. A delayed starter send retains its model, sends once and opens its thread after route learning.                                                                 |
+| Mobile Unified rows rendered on every streamed update.                                                             | Retain tree nodes, stable row commands and stable row projections. Pass child attention separately.                                          | For 100 unchanged mounted rows and 30 hidden-thread updates, row-menu renders fall from 3,000 to zero. One renamed row renders once and opens the correct thread. Remote-child attention still updates its parent. |
+| Decoded desktop registries reset scoped transport effects.                                                         | Retain equal profiles and connections. A computer rename keeps its request callback. A replacement connection gets a separate request owner. | The real workspace provider keeps the scoped effect mounted after an unrelated registry write and a rename. A retained old callback rejects requests after credential replacement.                                 |
+| Mobile terminal routes reported unavailable or closed before loading finished.                                     | Use runtime reachability and snapshot readiness. Show pairing rejection separately.                                                          | Connecting and online-without-snapshot states show Loading. Only a loaded snapshot confirms absence.                                                                                                               |
+| Desktop fallback history stopped loading when its revision changed.                                                | Read the aggregate cache again when the summary history revision changes.                                                                    | The cache fixture loads revision 1 automatically. This helps only when the cache contains the matching history.                                                                                                    |
+
+The mobile render counts come from Chromium adapters that mount all rows. They do not measure native
+FlatList frame times. The desktop transport check measures effect identity, not a live PTY or
+terminal replay. Native phone behavior and hosted CI remain unverified for these changes.
+
+Antigravity now has a built-in agent profile, `dovo:antigravity`. Its configuration calls the
+installed `agy` CLI with `acp`. Dovo ships the configuration; installation, updates and Google login
+remain on the runtime host. Existing profile overrides still apply. Model discovery and execution
+also accept an ACP model option with ID `model` when its optional category is absent, as in T3's
+Antigravity support tests.
+
+The Antigravity subprocess test uses a temporary executable named `agy` on PATH. It verifies the
+actual ACP transport, model discovery/selection, streamed text and session cleanup. It does not
+contact Google. This POSIX fixture skips Windows; a real Windows CLI was not tested. No real `agy`
+installation is available in this checkout, so real sign-in and model access remain unverified. See
+[Antigravity setup](server-setup.md#antigravity-through-the-installed-cli).
+
+Run these checks from the repository root:
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-mobile-workspace-browser.mjs
+node scripts/check-mobile-workspace-overview-browser.mjs
+node scripts/check-mobile-task-list-rendering-browser.mjs
+node scripts/check-harness-instructions-browser.mjs
+node scripts/check-conversation-readiness-browser.mjs
+node scripts/check-workspace-recovery-browser.mjs
+node scripts/check-unified-workspace-browser.mjs
+node scripts/check-scoped-agents-browser.mjs
+pnpm exec vp test packages/protocol/src/tasks/agent-presets.test.ts packages/protocol/src/runtime/connection/scoped-settings.test.ts packages/protocol/src/tasks/model-catalog-cache.test.ts packages/runtime/src/agents/providers/acp packages/runtime/src/agents/catalogs/acp.test.ts packages/runtime/src/agents/configuration/registry.test.ts packages/runtime/src/http/endpoints/agents-routes.test.ts packages/studio-core/src/workspace/runtime-registry.test.ts
+pnpm --filter @dovo/protocol --filter @dovo/runtime --filter @dovo/studio-core --filter @dovo/extension-agents -r typecheck
+pnpm --filter @dovo/mobile typecheck
+pnpm exec vp check
+git diff --check
+```
+
+The focused unit run passes 96 tests. The 49 ACP tests also pass after adding support for model
+options without a category. The listed browser checks and five package type checks pass. Repository
+checks report zero errors and 31 existing warnings. The compiled protocol package contains the
+Antigravity profile with `agy` / `acp` and needs no separate configuration file.

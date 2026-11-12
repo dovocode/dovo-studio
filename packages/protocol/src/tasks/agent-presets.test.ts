@@ -1,5 +1,10 @@
 import { expect, it } from 'vite-plus/test'
-import { builtInAgentPresets, pendingAgentPresets } from './agent-presets'
+import {
+  builtInAgentPresets,
+  builtInAgentDefinition,
+  pendingAgentPresets,
+  providerDisplayName,
+} from './agent-presets'
 import { agentSchema, defaultTaskHarness } from '../workspace'
 import { decode } from '../shared/schema'
 import { runtimeDefaultsSchema } from '../runtime/connection/runtime-setup'
@@ -25,17 +30,28 @@ it('provides ready-to-configure profiles with stable identities and provider-own
     'Hermes',
     'Grok Build',
     'Muse',
+    'Antigravity',
   ])
   expect(new Set(presets.map((agent) => agent.id)).size).toBe(presets.length)
   for (const preset of presets) {
     expect(decode(agentSchema, preset)).toEqual(preset)
     expect(preset.model).toBe('')
-    expect(preset.endpoint).toBe('')
+    expect(preset.endpoint).toBe(preset.id === 'dovo:antigravity' ? 'agy' : '')
     expect(preset.executablePath).toBeUndefined()
     expect(preset.configDirectory).toBeUndefined()
   }
   presets[0].instructions = 'Do not share mutable state'
   expect(builtInAgentPresets()[0].instructions).toBe('')
+})
+
+it('ships the Antigravity ACP configuration without a managed CLI installation or model pin', () => {
+  const agent = builtInAgentPresets().find((entry) => entry.id === 'dovo:antigravity')!
+  expect(agent).toMatchObject({ provider: 'acp', endpoint: 'agy', args: ['acp'], model: '' })
+  expect(agent.acpInstallationId).toBeUndefined()
+  expect(builtInAgentDefinition(agent.id)?.name).toBe('Antigravity')
+  expect(providerDisplayName('acp')).toBe('ACP agent')
+  agent.args!.push('--changed')
+  expect(builtInAgentPresets().find((entry) => entry.id === agent.id)?.args).toEqual(['acp'])
 })
 
 it('inherits built-in profiles, overrides them by ID and restores them when an override is removed', () => {

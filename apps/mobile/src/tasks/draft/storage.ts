@@ -87,6 +87,25 @@ export function createDraftStorage(storage: Storage) {
   let revision = 0
   const appendedAt = new Map<string, number>()
   const dirty = new Set<string>()
+  const releaseInactive = (key: string) => {
+    const record = records.get(key)
+    if (
+      listeners.has(key) ||
+      dirty.has(key) ||
+      pendingWrites.has(key) ||
+      locks.has(key) ||
+      (publishedText.has(key) && publishedText.get(key) !== record?.text) ||
+      record?.submission ||
+      record?.fork ||
+      record?.restore ||
+      record?.sideThreadCreation
+    )
+      return
+    // Disk remains authoritative. Receipts and unsent text reload on the next visit.
+    records.delete(key)
+    publishedText.delete(key)
+    appendedAt.delete(key)
+  }
   const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>, coalescing = false) =>
     Effect.suspend(() => {
       // Reads, appends and delivery records separate text batches. Later typing must
@@ -101,7 +120,10 @@ export function createDraftStorage(storage: Storage) {
           Effect.uninterruptible,
           Effect.ensuring(
             Effect.sync(() => {
-              if (--lock.users === 0) locks.delete(key)
+              if (--lock.users === 0) {
+                locks.delete(key)
+                releaseInactive(key)
+              }
             }),
           ),
         )
@@ -454,6 +476,7 @@ export function createDraftStorage(storage: Storage) {
       return () => {
         subscribers.delete(listener)
         if (!subscribers.size) listeners.delete(key)
+        releaseInactive(key)
       }
     },
     readRecordEffect,

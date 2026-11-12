@@ -1,4 +1,4 @@
-import { legacyAcpModels } from '../providers/acp/acp-models.js'
+import { acpModelOption, legacyAcpModels } from '../providers/acp/acp-models.js'
 import { homedir } from 'node:os'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { methods, type SessionConfigOption } from '@agentclientprotocol/sdk/unstable'
@@ -11,7 +11,10 @@ import {
 } from '../providers/acp/acp-connection.js'
 
 function options(config: SessionConfigOption[] | null | undefined, category: string) {
-  const entry = config?.find((item) => item.category === category && item.type === 'select')
+  const entry =
+    category === 'model'
+      ? acpModelOption(config)
+      : config?.find((item) => item.category === category && item.type === 'select')
   return entry?.type === 'select'
     ? entry.options
         .flatMap((item) => ('options' in item ? item.options : [item]))
@@ -79,7 +82,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
           description: model.description ?? undefined,
           isDefault: model.modelId === legacy?.currentModelId,
         }))
-    const modelOption = config?.find((item) => item.category === 'model' && item.type === 'select')
+    const modelOption = acpModelOption(config)
     if (agent.model && modelOption && modelOption.currentValue !== agent.model) {
       config = (
         await acpControl(

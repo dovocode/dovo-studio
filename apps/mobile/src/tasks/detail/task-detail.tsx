@@ -103,6 +103,109 @@ type StartupControls = {
   onNewThread: () => void
   onSelectRemote: NonNullable<ComponentProps<typeof Composer>['onSelectRemote']>
 }
+
+function threadHasChanges(task: Task, localRepository: boolean) {
+  return (
+    localRepository ||
+    !!task.pullStatus ||
+    !!task.linkedPullRequests?.length ||
+    task.files.length > 0 ||
+    !!task.linkedCheckouts?.length ||
+    !!task.historyTotals?.hasChanges ||
+    (task.turns ?? []).some((turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0)
+  )
+}
+
+/** Keep the title and context at the same size before and after history arrives. */
+function ThreadHeaderTitle({
+  title,
+  subtitle,
+  status,
+  width,
+}: {
+  title: string
+  subtitle: string
+  status: string
+  width: number
+}) {
+  const { colors } = useTheme()
+  return (
+    <View
+      accessibilityLabel={[title, subtitle, status].filter(Boolean).join('. ')}
+      style={{
+        minHeight: 44,
+        justifyContent: 'center',
+        width: Math.max(80, Math.min(420, width)),
+        minWidth: 0,
+      }}
+    >
+      <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
+        {title}
+      </Text>
+      <Text
+        testID="Task device subtitle"
+        accessibilityLabel={subtitle}
+        numberOfLines={1}
+        style={{ color: colors.muted, fontSize: 11, lineHeight: 15 }}
+      >
+        {[subtitle, status].filter(Boolean).join(' · ')}
+      </Text>
+    </View>
+  )
+}
+
+/** A new computer, thread or connection state starts a fresh recovery action. */
+function PendingConversation({
+  connected,
+  unauthorized,
+  historyError,
+  runtimeHost,
+  onRetry,
+}: {
+  connected: boolean
+  unauthorized: boolean
+  historyError: string
+  runtimeHost: string
+  onRetry: () => Promise<void>
+}) {
+  const { styles } = useTheme()
+  const recovery = useAction()
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', gap: 12, padding: 20 }}>
+      {connected && !historyError && !recovery.error && !unauthorized && <ActivityIndicator />}
+      <Text accessibilityRole={historyError ? 'alert' : undefined} style={styles.muted}>
+        {unauthorized
+          ? 'This computer rejected this device’s pairing. Open Computers to pair it again.'
+          : historyError ||
+            (connected
+              ? recovery.error
+                ? 'Could not load the conversation.'
+                : 'Loading conversation…'
+              : `This conversation is not cached. Connect ${runtimeHost} to load it.`)}
+      </Text>
+      {!!recovery.error && !unauthorized && (
+        <Text accessibilityRole="alert" style={styles.muted}>
+          {recovery.error}
+        </Text>
+      )}
+      {!unauthorized && (historyError || recovery.error || recovery.busy || !connected) && (
+        <Action
+          label={
+            recovery.busy
+              ? connected
+                ? 'Retrying…'
+                : 'Reconnecting…'
+              : connected
+                ? 'Retry'
+                : 'Reconnect'
+          }
+          disabled={recovery.busy}
+          onPress={() => recovery.act(onRetry)}
+        />
+      )}
+    </View>
+  )
+}
 export function TaskDetail({
   task,
   onBack,
@@ -118,9 +221,30 @@ export function TaskDetail({
   startup?: StartupControls
   parentNavigation?: ReactNode
 }) {
-  const { styles } = useTheme()
+  const { width } = useWindowDimensions()
 
-  const { profile, snapshot, connected, refresh, readCache } = useRuntime()
+  const {
+    profile,
+    profiles,
+    overviews,
+    connection,
+    snapshot,
+    connected,
+    refresh,
+    readCache,
+    activeId,
+  } = useRuntime()
+  const panes = useTaskPanes()
+  const car = useCarMode()
+  const recoveryScope = JSON.stringify([
+    profile?.id,
+    connection?.address,
+    connection?.token,
+    task.id,
+    connected,
+  ])
+  const unauthorized =
+    overviews.find((entry) => entry.profile.id === profile?.id)?.unauthorized ?? false
   const { focused } = useNavigation()
   const [locallyCreated] = useState(() => !!startup?.temporary)
   useEffect(() => {
@@ -137,6 +261,7 @@ export function TaskDetail({
     error: string
   } | null>(null)
   const [cached, setCached] = useState<{ cache: typeof readCache; task: Task } | null>(null)
+  const [cacheRetry, setCacheRetry] = useState(0)
   const revision = task.historyRevision ?? 0
   const replica = readCache ? cachedRuntimeThread(readCache, task.id) : undefined
   const retained = replica && (replica.historyRevision ?? 0) === revision ? replica : undefined
@@ -162,29 +287,90 @@ export function TaskDetail({
     return () => {
       stopped = true
     }
-  }, [loaded, readCache, task.id, revision, retained])
+  }, [loaded, readCache, task.id, revision, retained, cacheRetry])
   const available =
     !readCache?.closed &&
     cached?.cache === readCache &&
     cached?.task.id === task.id &&
     (cached.task.historyRevision ?? 0) === revision
   const history = retained ?? (available ? cached?.task : undefined)
+  const historyError =
+    cacheError?.cache === readCache && cacheError.id === task.id ? cacheError.error : ''
+  const displayProject = taskDisplayProject(task, snapshot?.workspace.repositories ?? [])
+  const runtimeHost = runtimeComputerName({
+    profile,
+    snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
+  })
+  const subtitle = [
+    projectDisplayName(displayProject, ''),
+    profiles.length > 1 ? runtimeHost : undefined,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const hasProject = !!displayProject && displayProject.kind !== 'scratch'
+  const pendingFileEdit =
+    !loaded &&
+    !history &&
+    threadDrafts.read(detailDraftKey(connection, 'thread', activeId, task.id))?.file
+  const hasDiff =
+    !!pendingFileEdit ||
+    threadHasChanges(
+      task,
+      !!snapshot?.workspace.repositories.some(
+        (repo) => repo.id === task.repositoryId && !repo.kind,
+      ),
+    )
   if (!loaded && !history)
     return (
       <View style={{ flex: 1 }}>
-        <ScreenHeader title={task.title} onBack={onBack} />
+        <ScreenHeader
+          title={task.title}
+          leading={<Action secondary label="Back" onPress={onBack} />}
+          titleMenu
+          titleMenuDisabled
+          buttons={[
+            { label: 'Chat', icon: 'chat', overflow: true, disabled: true, onPress: () => {} },
+            ...(hasDiff
+              ? [
+                  {
+                    label: `Changes (${task.files.length})`,
+                    icon: 'changes' as const,
+                    overflow: car,
+                    disabled: true,
+                    onPress: () => {},
+                  },
+                ]
+              : []),
+            {
+              label: 'Thread info',
+              icon: 'info',
+              overflow: car || !hasProject,
+              disabled: true,
+              onPress: () => {},
+            },
+          ]}
+          titleContent={
+            <ThreadHeaderTitle
+              title={task.title}
+              subtitle={subtitle}
+              status={connected ? 'Loading conversation…' : 'Offline'}
+              width={(panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0)}
+            />
+          }
+        />
         {parentNavigation}
-        <View style={{ flex: 1, justifyContent: 'center', gap: 12, padding: 20 }}>
-          <ActivityIndicator />
-          <Text style={styles.muted}>
-            {cacheError?.cache === readCache && cacheError.id === task.id
-              ? cacheError.error
-              : connected
-                ? 'Loading conversation…'
-                : 'This conversation is not cached. Connect its computer to load it.'}
-          </Text>
-          <Action label="Retry" onPress={refresh} />
-        </View>
+        <PendingConversation
+          key={recoveryScope}
+          connected={connected}
+          unauthorized={unauthorized}
+          historyError={historyError}
+          runtimeHost={runtimeHost}
+          onRetry={() => {
+            setCacheError(null)
+            setCacheRetry((value) => value + 1)
+            return refresh()
+          }}
+        />
       </View>
     )
   return (
@@ -586,15 +772,7 @@ function TaskDetailContent({
     'chat' | 'diff' | 'files' | 'terminal' | 'browser' | 'devices' | 'agents'
   >('chat')
   // Keep Git controls reachable after committing, including push-only retries.
-  const hasDiff =
-    !!detailDraft.file ||
-    (!!repository && !repository.kind) ||
-    !!task.pullStatus ||
-    !!task.linkedPullRequests?.length ||
-    task.files.length > 0 ||
-    !!task.linkedCheckouts?.length ||
-    task.historyTotals?.hasChanges ||
-    (task.turns ?? []).some((turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0)
+  const hasDiff = !!detailDraft.file || threadHasChanges(task, !!repository && !repository.kind)
   useEffect(() => {
     if (pane === 'diff' && !hasDiff) setPane('chat')
   }, [pane, hasDiff])
@@ -656,36 +834,12 @@ function TaskDetailContent({
         titleMenu={!startup?.temporary}
         titleContent={
           startup?.temporary ? undefined : (
-            <View
-              accessibilityLabel={[task.title, subtitle, status].join('. ')}
-              style={{
-                minHeight: 44,
-                justifyContent: 'center',
-                width: Math.max(
-                  80,
-                  Math.min(
-                    420,
-                    (panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0),
-                  ),
-                ),
-                minWidth: 0,
-              }}
-            >
-              <Text
-                numberOfLines={1}
-                style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}
-              >
-                {task.title}
-              </Text>
-              <Text
-                testID="Task device subtitle"
-                accessibilityLabel={subtitle}
-                numberOfLines={1}
-                style={{ color: colors.muted, fontSize: 11, lineHeight: 15 }}
-              >
-                {subtitle} · {status}
-              </Text>
-            </View>
+            <ThreadHeaderTitle
+              title={task.title}
+              subtitle={subtitle}
+              status={status}
+              width={(panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0)}
+            />
           )
         }
         hidden={!!native || ((pane === 'browser' || pane === 'devices') && expandedPreview)}

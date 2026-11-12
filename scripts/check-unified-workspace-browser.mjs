@@ -39,6 +39,11 @@ window.root=createRoot(document.getElementById('app'));window.render=()=>window.
   },
   [
     {
+      path: '@dovo/studio-ui/runtime-icon',
+      importer: root + '/packages/extension-tasks/src/list/task-row.tsx',
+      contents: `import {RuntimeIcon as Actual} from '${root}/packages/studio-ui/src/runtime-icon';export const RuntimeIcon=props=>{window.threadRowRenders=(window.threadRowRenders??0)+1;return <Actual {...props}/>};`,
+    },
+    {
       path: '@dovo/studio-core',
       contents: `
 import React,{createContext,useContext,useState,useEffect,useCallback} from 'react';
@@ -53,6 +58,7 @@ export {formatDateTime} from '${root}/packages/studio-core/src/preferences';
 export const useRemoteBrowserProfiles=profile=>({profiles:[{id:'default',name:profile?.id==='remote'?'Remote Default':'Local Default'}],loading:false});
 export const resolveTaskDefaults=()=>({});
 const Store=createContext(null),Host=createContext(null);
+const fixtureHost={navigate:target=>window.navigation.push(target)};
 export const useWorkspace=()=>useContext(Store);
 export const useStudioHost=()=>useContext(Host);
 export const useAppPreferences=()=>({unifiedWorkspaceEnabled:true,sendWith:'enter',minimalComposer:true,taskSnoozeMinutes:[60,240,1440],taskSnoozeSchedule:{timeZone:'local',morningTime:'09:00',eveningTime:'18:00',weekStartsOn:1,presets:['later-today','tomorrow-morning','tomorrow-evening','next-week']},...window.composerPreferences});
@@ -80,7 +86,7 @@ const read=useCallback(async(profile,path,input)=>{
 },[]);
 const request=(path,input)=>read(active.profile,path,input);
 const store={activeRuntimeId:window.activeRuntimeId,runtimes:window.computers,runtimeRegistry:{profiles:window.computers.map(entry=>entry.profile)},snapshot:active.snapshot,workspace:active.snapshot.workspace,connected:active.connected,request,readRuntime:read,previewTask:async(_connection,_id,_updates,apply)=>apply(),refreshRuntime:async()=>{},refreshRuntimes:async()=>{},switchRuntime:async(id)=>{window.activeRuntimeId=id;window.refresh()},flush:async()=>{},setWorkspace:update=>{active.snapshot.workspace=update(active.snapshot.workspace);window.refresh()}};
-return <Host.Provider value={{navigate:target=>window.navigation.push(target)}}><Store.Provider value={store}>{children}</Store.Provider></Host.Provider>}
+return <Host.Provider value={fixtureHost}><Store.Provider value={store}>{children}</Store.Provider></Host.Provider>}
 `,
     },
     {
@@ -124,7 +130,7 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
     {
       path: '../view',
       importer: root + '/packages/extension-tasks/src/unified/',
-      contents: `import {useState,useEffect} from 'react';import {useWorkspace} from '@dovo/studio-core';export default function Thread({entityId}){const [draft,setDraft]=useState('');const store=useWorkspace();useEffect(()=>{window.effects.push('show-thread:'+entityId);return()=>window.effects.push('hide-thread:'+entityId)},[entityId]);return <div data-thread={entityId} data-owner={store.activeRuntimeId}><input aria-label="Thread draft" value={draft} onChange={event=>setDraft(event.target.value)}/></div>}`,
+      contents: `import {useState,useEffect} from 'react';import {useWorkspace,useStudioHost} from '@dovo/studio-core';export default function Thread({entityId}){const [draft,setDraft]=useState('');const store=useWorkspace();const host=useStudioHost();if(window.threadHosts){window.threadHosts.add(host);window.threadPaneRenders++};useEffect(()=>{window.effects.push('show-thread:'+entityId);return()=>window.effects.push('hide-thread:'+entityId)},[entityId]);return <div data-thread={entityId} data-owner={store.activeRuntimeId}><input aria-label="Thread draft" value={draft} onChange={event=>setDraft(event.target.value)}/></div>}`,
     },
     {
       path: './terminal-pane',
@@ -135,7 +141,7 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
       path: '../browser/browser-pane',
       importer: root + '/packages/extension-tasks/src/unified/',
       contents: `import {useEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
-import {BrowserTabRow} from '${root}/packages/extension-tasks/src/browser/browser-tab-row';
+import {BrowserTabRow} from '${root}/packages/extension-tasks/src/browser/browser-tab-row';import {Globe2} from 'lucide-react';
 import {SnoozeDialog} from '${root}/packages/extension-tasks/src/dialogs/snooze-dialog';
 import {readSharedBrowserTabs,saveSharedBrowserTabs} from '${root}/packages/extension-tasks/src/browser/shared-browser-tabs';
 import {isPrivateBrowserProfile,wakeBrowserTab,settleBrowserTab,snoozeBrowserTab} from '@dovo/protocol';
@@ -150,7 +156,7 @@ useEffect(()=>{control.onTabsChange(tabs,tabs.at(-1)?.id);saveSharedBrowserWorks
 useEffect(()=>{const req=control.lifecycleRequest;if(!req)return;setTabs(previous=>previous.map(tab=>tab.id!==req.tabId?tab:req.action==='pin'||req.action==='unpin'?{...wakeBrowserTab(tab),pinned:req.action==='pin'}:req.action==='settle'?settleBrowserTab(tab):req.action==='snooze'?snoozeBrowserTab(tab,req.until):wakeBrowserTab(tab)));control.onLifecycleHandled?.(req.requestId)},[control.lifecycleRequest?.requestId]);
 useEffect(()=>{if(!control.newTabRequest||opened.current===control.newTabRequest)return;opened.current=control.newTabRequest;const id='page-'+control.newTabRequest;setTabs(previous=>[...previous,{id,url:'',title:'New page',kind:'remote',profileId:'default'}]);control.onSelect(id)},[control.newTabRequest]);
 useEffect(()=>{if(!openLink)return;const id='link-'+openLink.id;setTabs(previous=>[...previous,{id,url:openLink.url,title:openLink.url,kind:'remote',profileId:'default'}]);window.openedUrls.push(openLink.url);control.onSelect(id);onLinkOpened()},[openLink?.id]);
-return <>{snoozing&&<SnoozeDialog name={snoozing.title} onClose={()=>setSnoozing(null)} onSnooze={until=>setTabs(previous=>previous.map(item=>item.id===snoozing.id?snoozeBrowserTab(item,until):item))}/>}<div data-browser={control.focusTabId}>Browser surface</div>{control.tabTargets?.map(target=>{const tab=tabs.find(tab=>tab.id===target.tabId);if(!tab)return null;return createPortal(<BrowserTabRow tab={tab} pinnedTile={target.pinnedTile} active={target.active} disabled={target.disabled} busy={target.disabled||!!tab.detached} state={activity[tab.id]} onMute={tab.kind==='web'?()=>{}:undefined} onError={()=>{}} onMenuOpen={()=>{}} onSelect={()=>{setTabs(previous=>previous.map(item=>item.id===tab.id?wakeBrowserTab(item):item));control.onSelect(tab.id)}} onPin={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?{...wakeBrowserTab(item),pinned:!item.pinned}:item))} onSettle={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?settleBrowserTab(item):item))} onSnooze={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?snoozeBrowserTab(item,Date.now()+3600000):item))} onCustomSnooze={()=>window.openBrowserSnooze(tab)} onClose={()=>setTabs(previous=>previous.filter(item=>item.id!==tab.id))} onHome={tab.pinned?()=>{}:undefined} onEditHome={tab.pinned?()=>{}:undefined} onKeepAwake={()=>{}} onMove={()=>{}} windows={[{id:2,title:'Other window'}]} studioId={'studio:local:browser:workspace:'+tab.id} />,target.element,target.key)})}</>}`,
+return <>{snoozing&&<SnoozeDialog name={snoozing.title} onClose={()=>setSnoozing(null)} onSnooze={until=>setTabs(previous=>previous.map(item=>item.id===snoozing.id?snoozeBrowserTab(item,until):item))}/>}<div data-browser={control.focusTabId}>Browser surface</div>{control.tabTargets?.map(target=>{const tab=tabs.find(tab=>tab.id===target.tabId);if(!tab)return null;return createPortal(<BrowserTabRow tab={tab} titleIcon={!target.pinnedTile?<span aria-hidden="true" data-workspace-kind-icon className="pointer-events-none inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"><Globe2 className="size-3.5"/></span>:undefined} pinnedTile={target.pinnedTile} active={target.active} disabled={target.disabled} busy={target.disabled||!!tab.detached} state={activity[tab.id]} onMute={tab.kind==='web'?()=>{}:undefined} onError={()=>{}} onMenuOpen={()=>{}} onSelect={()=>{setTabs(previous=>previous.map(item=>item.id===tab.id?wakeBrowserTab(item):item));control.onSelect(tab.id)}} onPin={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?{...wakeBrowserTab(item),pinned:!item.pinned}:item))} onSettle={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?settleBrowserTab(item):item))} onSnooze={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?snoozeBrowserTab(item,Date.now()+3600000):item))} onCustomSnooze={()=>window.openBrowserSnooze(tab)} onClose={()=>setTabs(previous=>previous.filter(item=>item.id!==tab.id))} onHome={tab.pinned?()=>{}:undefined} onEditHome={tab.pinned?()=>{}:undefined} onKeepAwake={()=>{}} onMove={()=>{}} windows={[{id:2,title:'Other window'}]} studioId={'studio:local:browser:workspace:'+tab.id} />,target.element,target.key)})}</>}`,
     },
   ],
 )
@@ -278,6 +284,173 @@ try {
     }))
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.waitForFunction(() => typeof window.refresh === 'function')
+  // A stream in the closed Working section must not render unchanged Active rows.
+  await page.evaluate(() => {
+    window.savedComputers = window.computers
+    const owner = window.computers[0]
+    const tasks = Array.from({ length: 100 }, (_, index) => ({
+      id: 'render-' + index,
+      title: 'Render probe ' + index,
+      repositoryId: 'project',
+      status: index ? 'done' : 'running',
+      createdAt: '2026-11-03T10:00:00Z',
+      files: [],
+      messages: [{ id: 'prompt-' + index, role: 'user', text: 'Request' }],
+      turns: [
+        {
+          id: 'turn-' + index,
+          status: index ? 'completed' : 'running',
+          startedAt: '2026-11-03T10:00:00Z',
+          ...(index ? { finishedAt: '2026-11-03T10:01:00Z' } : {}),
+        },
+      ],
+    }))
+    window.computers = [
+      {
+        ...owner,
+        snapshot: { ...owner.snapshot, workspace: { ...owner.snapshot.workspace, tasks } },
+      },
+    ]
+    window.refresh()
+  })
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-workspace-kind="thread"]').length === 99,
+  )
+  await page.evaluate(() => {
+    window.threadRowRenders = 0
+  })
+  for (let frame = 0; frame < 30; frame++) {
+    await page.evaluate((frame) => {
+      const owner = window.computers[0],
+        workspace = owner.snapshot.workspace
+      window.computers = [
+        {
+          ...owner,
+          snapshot: {
+            ...owner.snapshot,
+            workspace: {
+              ...workspace,
+              tasks: workspace.tasks.map((task, index) =>
+                index
+                  ? task
+                  : {
+                      ...task,
+                      messages: [
+                        ...task.messages,
+                        { id: 'stream-' + frame, role: 'assistant', text: 'Chunk ' + frame },
+                      ],
+                    },
+              ),
+            },
+          },
+        },
+      ]
+      window.refresh()
+    }, frame)
+    await page.clock.runFor(20)
+  }
+  assert.equal(
+    await page.evaluate(() => window.threadRowRenders),
+    0,
+    'Closed-section streaming rendered unchanged thread rows',
+  )
+  await page.evaluate(() => {
+    const owner = window.computers[0],
+      workspace = owner.snapshot.workspace
+    window.computers = [
+      {
+        ...owner,
+        snapshot: {
+          ...owner.snapshot,
+          workspace: {
+            ...workspace,
+            tasks: workspace.tasks.map((task) =>
+              task.id === 'render-1' ? { ...task, title: 'Updated render probe' } : task,
+            ),
+          },
+        },
+      },
+    ]
+    window.refresh()
+  })
+  await page.getByRole('group', { name: 'Thread: Updated render probe', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.threadRowRenders),
+    1,
+    'One changed visible thread should render once',
+  )
+  const openProbe = (title) =>
+    page
+      .getByRole('complementary')
+      .getByRole('group', { name: 'Thread: ' + title, exact: true })
+      .locator('.studio-thread-card')
+      .evaluate((element) => element.click())
+  await openProbe('Updated render probe')
+  await page.evaluate(() => {
+    window.threadRowRenders = 0
+  })
+  for (let index = 0; index < 10; index++)
+    await openProbe(index % 2 ? 'Updated render probe' : 'Render probe 2')
+  const selectionRenders = await page.evaluate(() => window.threadRowRenders)
+  // Home keeps a second copy of open rows mounted to preserve its draft. Count both surfaces.
+  const selectionCopies = await page
+    .locator('[data-workspace-kind="thread"]')
+    .evaluateAll(
+      (rows) =>
+        rows.filter((row) =>
+          ['Thread: Updated render probe', 'Thread: Render probe 2'].includes(
+            row.getAttribute('aria-label'),
+          ),
+        ).length,
+    )
+  assert.equal(selectionCopies, 4)
+  assert.ok(
+    selectionRenders <= selectionCopies * 10,
+    `Thread selection should update only mounted copies of the previous and next root: ${selectionRenders} renders`,
+  )
+  await page.evaluate(() => {
+    window.threadHosts = new Set()
+    window.threadPaneRenders = 0
+    window.savedProbeTabs = window.sortTabs()
+  })
+  for (let frame = 0; frame < 30; frame++) {
+    await page.evaluate(
+      (frame) =>
+        window.sortSetTabs((previous) =>
+          previous.map((tab) =>
+            tab.id === 'page' ? { ...tab, title: 'Page update ' + frame } : tab,
+          ),
+        ),
+      frame,
+    )
+    await page.clock.runFor(20)
+  }
+  assert.ok(
+    await page.evaluate(() => window.threadPaneRenders >= 30),
+    'The probe must observe the mounted pane across browser updates',
+  )
+  assert.equal(
+    await page.evaluate(() => window.threadHosts.size),
+    1,
+    'Browser tab updates must preserve the thread host API',
+  )
+  await page.evaluate(() => {
+    delete window.threadHosts
+    window.sortSetTabs(window.savedProbeTabs)
+    delete window.savedProbeTabs
+  })
+  for (const title of ['Updated render probe', 'Render probe 2']) {
+    await openProbe(title)
+    await page.getByRole('button', { name: 'Hide ' + title, exact: true }).click()
+  }
+  await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
+  await page.evaluate(() => {
+    window.computers = window.savedComputers
+    delete window.savedComputers
+    window.refresh()
+  })
+  await page.getByRole('group', { name: 'Thread: local thread', exact: true }).waitFor()
   const workspaceInput = page.getByLabel('Workspace request')
   const savedWorkspace = () =>
     page.evaluate(() => JSON.parse(sessionStorage.getItem('dovo.unified-workspace.v1')))
@@ -604,7 +777,7 @@ try {
   )
   assert.equal(
     await pinnedSection.locator('[data-workspace-kind="thread"] .lucide-message-square').count(),
-    0,
+    2,
   )
   assert.equal(
     await pinnedSection.locator('[data-workspace-kind="terminal"] .lucide-square-terminal').count(),
@@ -621,8 +794,9 @@ try {
     }
   }
   assert.equal(await pinnedSection.getByRole('button', { name: /More|ellipsis/i }).count(), 0)
-  for (const row of await workspaceRows
-    .filter({ has: page.locator('[data-workspace-kind-icon]') })
+  for (const row of await page
+    .getByRole('complementary')
+    .locator('[data-workspace-kind]:not([data-pinned-page])')
     .all()) {
     const icon = row.locator('[data-workspace-kind-icon]')
     assert.equal(await icon.count(), 1, 'Each mixed row has one type icon')
@@ -1426,6 +1600,12 @@ try {
   await pinnedSelect.focus()
   await page.keyboard.press('Enter')
   await page.waitForSelector('[data-browser="pinned-0"]:visible')
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-pinned-page] [data-browser-tab-select]')
+        ?.getAttribute('aria-current') === 'page',
+  )
   assert.equal(await pinnedSelect.getAttribute('aria-current'), 'page')
   assert.equal(
     await page.evaluate(() => window.activeRuntimeId),
