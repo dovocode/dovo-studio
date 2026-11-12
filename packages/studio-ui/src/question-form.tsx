@@ -110,14 +110,14 @@ export function QuestionForm({
     <form
       ref={form}
       aria-label="Agent questions"
-      className="overflow-hidden rounded-xl border bg-card shadow-xs"
+      className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs"
       onSubmit={(event) => {
         event.preventDefault()
         void submit(questionDraftAnswers(drafts))
       }}
     >
-      <div className="flex items-center gap-2 border-b px-3 py-2 text-xs">
-        <MessageCircleQuestion className="size-3.5 shrink-0" />
+      <div className="flex items-center gap-2.5 border-b border-border/60 bg-muted/20 px-4 py-3 text-xs">
+        <MessageCircleQuestion className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 whitespace-pre-wrap font-medium">
           {request.prompt.title}
         </span>
@@ -129,7 +129,7 @@ export function QuestionForm({
         role="region"
         aria-label="Questions"
         tabIndex={0}
-        className="max-h-64 space-y-4 overflow-auto p-3"
+        className="max-h-[min(60dvh,28rem)] space-y-5 overflow-auto p-4"
       >
         {request.prompt.questions.map((q, index) => (
           <div key={q.id} className="space-y-2">
@@ -189,15 +189,7 @@ export function QuestionForm({
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2 border-t px-3 py-2">
-        <Button
-          type="submit"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={busy || !connected || attachmentsBusy}
-        >
-          {busy && <LoaderCircle className="size-3 animate-spin" />}Send answers
-        </Button>
+      <div className="flex flex-wrap items-center gap-2 border-t border-border/60 bg-muted/10 px-4 py-3">
         <Button
           type="button"
           variant="ghost"
@@ -228,6 +220,15 @@ export function QuestionForm({
         {!connected && (
           <span className="text-[0.625rem] text-muted-foreground">Reconnect to answer</span>
         )}
+        <span className="flex-1" />
+        <Button
+          type="submit"
+          size="sm"
+          className="h-8 rounded-[10px] px-3 text-xs"
+          disabled={busy || !connected || attachmentsBusy}
+        >
+          {busy && <LoaderCircle className="size-3 animate-spin" />}Send answers
+        </Button>
       </div>
       {error && (
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">

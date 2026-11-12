@@ -18,11 +18,13 @@ export function QuestionField({
 
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[styles.text, { fontWeight: '600', fontSize: 13 }]}>
+      <Text style={[styles.text, { color: colors.muted, fontWeight: '500', fontSize: 12 }]}>
         {q.header}
         {q.required ? '' : ' (optional)'}
       </Text>
-      <Text style={[styles.text, { fontSize: 13 }]}>{q.question}</Text>
+      <Text style={[styles.text, { fontSize: 14, lineHeight: 20, fontWeight: '600' }]}>
+        {q.question}
+      </Text>
       {q.multiple && <Text style={[styles.muted, { fontSize: 11 }]}>Select all that apply</Text>}
       {q.options.map((option) => (
         <Pressable
@@ -36,24 +38,53 @@ export function QuestionField({
           style={{
             borderWidth: 1,
             borderColor: draft.selected.includes(option.value) ? colors.accent : colors.border,
-            backgroundColor: colors.surface,
-            borderRadius: 8,
-            padding: 8,
+            backgroundColor: draft.selected.includes(option.value)
+              ? colors.selection
+              : colors.surface,
+            borderRadius: 12,
+            minHeight: 48,
+            padding: 12,
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: 10,
             opacity: disabled ? 0.5 : 1,
           }}
         >
-          <Text style={[styles.text, { fontSize: 13 }]}>
-            {draft.selected.includes(option.value) ? '✓ ' : ''}
-            {option.label}
-          </Text>
-          {!!option.description && (
-            <Text style={[styles.muted, { fontSize: 11, marginTop: 3 }]}>{option.description}</Text>
-          )}
+          <View
+            style={{
+              width: 18,
+              height: 18,
+              marginTop: 1,
+              borderRadius: q.multiple ? 4 : 9,
+              borderWidth: 1,
+              borderColor: draft.selected.includes(option.value) ? colors.accent : colors.muted,
+              backgroundColor: draft.selected.includes(option.value)
+                ? colors.accent
+                : 'transparent',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {draft.selected.includes(option.value) && (
+              <Text style={{ color: colors.onAccent, fontSize: 12, lineHeight: 16 }}>✓</Text>
+            )}
+          </View>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={[styles.text, { fontSize: 13, lineHeight: 19, fontWeight: '500' }]}>
+              {option.label}
+            </Text>
+            {!!option.description && (
+              <Text style={[styles.muted, { fontSize: 12, lineHeight: 18 }]}>
+                {option.description}
+              </Text>
+            )}
+          </View>
         </Pressable>
       ))}
       {q.custom && (
         <Field
           label={`Answer: ${q.header || q.question}`}
+          hideLabel
           placeholder={q.options.length ? 'Or write your own answer…' : 'Your answer…'}
           secureTextEntry={q.secret}
           keyboardType={q.inputType === 'number' ? 'numbers-and-punctuation' : 'default'}

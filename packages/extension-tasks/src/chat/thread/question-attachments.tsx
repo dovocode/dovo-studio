@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Attachment } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
+import { Paperclip } from 'lucide-react'
 import { useAttachments } from '../composer/use-attachments'
 
 export function QuestionAttachments({
@@ -75,12 +76,15 @@ export function QuestionAttachments({
       ))}
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
+        aria-label="Attach files to answer"
+        className="h-7 gap-1.5 px-1 text-[0.6875rem] text-muted-foreground"
         disabled={disabled || count >= 5}
         onClick={() => input.current?.click()}
       >
-        {attachments.busy ? 'Attaching…' : 'Attach files to answer'}
+        <Paperclip className="size-3" />
+        {attachments.busy ? 'Attaching…' : 'Attach files'}
       </Button>
       {attachments.error && (
         <p role="alert" className="text-xs text-destructive">
