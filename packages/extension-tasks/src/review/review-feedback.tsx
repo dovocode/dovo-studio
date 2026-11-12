@@ -1,10 +1,10 @@
 import { randomUUID } from '@dovo/protocol'
-import { useApplicationState } from '@dovo/studio-core/state'
+import { useReviewDraftText } from './review-drafts'
 import { useWorkspace, updateTask, type Task, type ChangedFile } from '@dovo/studio-core'
 import { Button, Textarea } from '@dovo/studio-ui'
 export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }) {
   const { setWorkspace } = useWorkspace()
-  const [feedback, setFeedback] = useApplicationState('')
+  const [feedback, setFeedback] = useReviewDraftText(task, `feedback:${file.path}`)
   return (
     <div className="shrink-0 space-y-2 border-t p-3">
       <form

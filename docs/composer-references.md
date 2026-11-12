@@ -32,6 +32,47 @@ formatting before it undoes the text. Attachments carry the input font and text 
 and deletions restore the typing style, including when the last chip is deleted before JavaScript
 acknowledges the edit.
 
+## Sent user messages
+
+Sent user messages show the same file, skill, MCP server and model references. The final token is
+complete even without trailing whitespace. Code examples and authored links keep their normal
+rendering. Assistant messages do not turn mentions into chips. Resource lookup uses the thread's
+scoped agents and settings.
+
+Desktop uses the composer's chip styles and icons. Mobile uses the same native attachment/span
+renderer as the composer in a read-only, selectable view. The message grows to fit its text. It does
+not open the keyboard or add an inner scroll area. Native selection copy keeps the full source. The
+message Copy action also uses the unchanged source. PR links still use the app's link chooser. Text
+sizing follows Dynamic Type and car mode.
+
+This mobile change needs a new native app build. The module reports support through
+`supportsReferenceMessages`. Older installed modules keep literal, selectable message text and PR
+links until the native update arrives. The stored message format does not change.
+
+Run the sent-message checks from the repository root:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/protocol build
+pnpm test:rich-composer:browser
+node scripts/check-native-composer-bridge-browser.mjs
+node scripts/check-thread-pull-links-browser.mjs
+node scripts/check-chat-files-browser.mjs
+```
+
+The browser checks cover labels, icons, scoped models, final tokens, code/link exclusions, wrapping,
+source retention, file previews and PR actions. The native JavaScript test replaces the Expo/RN
+event boundary. The UIKit harness and Android instrumentation tests exercise production native text
+views. They cover read-only selection, source copy or source selection, keyboard suppression and
+source offsets. The UIKit harness also checks link routing and scaled text. These checks do not
+establish physical-device behavior, VoiceOver/TalkBack behavior or the complete Expo message list.
+
+This change passed 16 parser/editor unit tests, the listed browser checks, four package type checks,
+52 UIKit simulator checks, six Android emulator tests and real Expo module builds on both platforms.
+The UIKit simulator also verified tap and long-press actions on the displayed PR link. Repository
+checks report zero errors and 31 existing warnings. These results apply to this local change. They
+are separate from the hosted checks for nightly `.829`.
+
 ## Build
 
 No new JavaScript dependency is required. Native users need a new app build. A JavaScript update

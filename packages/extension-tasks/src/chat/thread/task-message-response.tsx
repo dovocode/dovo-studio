@@ -13,6 +13,8 @@ import {
   artifactTemplatePrompt,
   randomUUID,
   parsePdfViewerMessage,
+  taskResources,
+  resolveScopedAgents,
   type PdfViewState,
 } from '@dovo/protocol'
 import { TaskVisualization } from './task-visualization'
@@ -36,7 +38,12 @@ import {
   DialogContent,
   DialogTitle,
 } from '@dovo/studio-ui'
-import { useWorkspaceSelector, sameWorkspaceFields, useStudioHost } from '@dovo/studio-core'
+import {
+  useWorkspaceSelector,
+  sameWorkspaceFields,
+  useStudioHost,
+  type useWorkspace,
+} from '@dovo/studio-core'
 
 const markdownParts = cachedMarkdownParts(richMarkdown)
 
@@ -105,17 +112,58 @@ function TaskImage({
 export function TaskMessageResponse({
   taskId,
   onUseTemplate,
+  userMessage = false,
   children,
   ...props
 }: ComponentProps<typeof MessageResponse> & {
   taskId: string
   onUseTemplate?: (prompt: string) => void
+  userMessage?: boolean
 }) {
   const { request, connection, connected } = useWorkspaceSelector(
     selectConversationConnection,
     sameWorkspaceFields,
   )
   const { openExternalLink } = useStudioHost()
+  const referenceState = useWorkspaceSelector(
+    useCallback(
+      (value: ReturnType<typeof useWorkspace>) => {
+        const task = userMessage
+          ? value.workspace.tasks.find((task) => task.id === taskId)
+          : undefined
+        return {
+          id: task?.id,
+          repositoryId: task?.repositoryId,
+          agentId: task?.agentId,
+          agentOverrides: task?.agentOverrides,
+          harness: task?.harness,
+          agents: userMessage ? value.workspace.agents : undefined,
+          repositories: userMessage ? value.workspace.repositories : undefined,
+          defaults: userMessage ? value.snapshot?.defaults : undefined,
+        }
+      },
+      [taskId, userMessage],
+    ),
+    sameWorkspaceFields,
+  )
+  const referenceResources = useMemo(() => {
+    if (!userMessage) return undefined
+    const { agents = [], repositories = [], defaults } = referenceState
+    const task = {
+      ...referenceState,
+      id: referenceState.id ?? taskId,
+      agentId: referenceState.agentId ?? '',
+      repositoryId: referenceState.repositoryId ?? '',
+    }
+    return {
+      ...taskResources(task, { agents, repositories }, defaults),
+      agents: resolveScopedAgents(
+        defaults,
+        repositories.find((repository) => repository.id === task.repositoryId),
+        agents,
+      ),
+    }
+  }, [referenceState, taskId, userMessage])
   const [error, setError] = useState('')
   const [previewPath, setPreviewPath] = useState<string>()
   const openFile = useCallback(
@@ -218,7 +266,11 @@ export function TaskMessageResponse({
       {parts.map((part) => (
         <div key={part.offset} className="min-w-0 max-w-full">
           {part.kind === 'markdown' ? (
-            <MessageResponse {...props} localFiles={localFiles}>
+            <MessageResponse
+              {...props}
+              localFiles={localFiles}
+              referenceResources={referenceResources}
+            >
               {part.text}
             </MessageResponse>
           ) : part.kind === 'visualization' ? (

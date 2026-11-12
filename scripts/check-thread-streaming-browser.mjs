@@ -6,7 +6,7 @@ const mocks = {
   '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
   './pull-link-actions': `export const PullLinkActions=()=>null;`,
   '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol'; const store={workspace:{tasks:[]},connected:true,request:async()=>({ok:true})}; export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>({...store,connected:window.fixtureConnected!==false}); export const useStudioHost=()=>({}); export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens',themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';export const completedStreamingText=text=>text;`,
-  '@dovo/studio-ui': `export {cn} from '../studio-ui/src/lib/utils';export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';export {FileTypeIcon} from '../studio-ui/src/file-tree';export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';import React from 'react';export * as ContextMenu from '@radix-ui/react-context-menu';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=Conversation;export const ConversationHistory=Conversation;export const Message=({children,id})=><div id={id}>{children}</div>;export const MessageContent=Conversation;export const MessageResponse=({children})=>{window.markdownRenders++;return <p>{children}</p>};export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=Button;`,
+  '@dovo/studio-ui': `export {cn} from '../studio-ui/src/lib/utils';export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';export {FileTypeIcon} from '../studio-ui/src/file-tree';export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';import React from 'react';export * as ContextMenu from '@radix-ui/react-context-menu';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=Conversation;export const ConversationHistory=Conversation;export const Message=({children,id})=><div id={id}>{children}</div>;export const MessageContent=Conversation;export const MessageResponse=({children})=>{window.markdownRenders++;return <p>{children}</p>};export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,...props})=><Button aria-label={label} {...props}/>;`,
   './deferred-turn': `export const DeferredTurn=({children})=>children();`,
   './task-activity': `import {useSyncExternalStore} from 'react';import {createRecentTools} from '@dovo/protocol';const project=createRecentTools();const listeners=new Set();let tools=[];window.updateTools=next=>{tools=project(next);for(const listener of listeners)listener()};const subscribe=listener=>{listeners.add(listener);return()=>listeners.delete(listener)};export const useTaskActivity=()=>({tools:useSyncExternalStore(subscribe,()=>tools),error:''});export const TaskActivity=({working})=>working?<p role='status'>Working</p>:null;`,
 }
@@ -37,7 +37,7 @@ import {createRoot} from 'react-dom/client';import {useState} from 'react';impor
 window.markdownRenders=0;window.timelineCalls=0;
 const messages=Array.from({length:500},(_,index)=>({id:String(index),role:index%2?'assistant':'user',text:'Message '+index}));
 const turns=messages.filter(m=>m.role==='assistant').map((m,index)=>({id:'turn-'+index,assistantId:m.id,status:index===249?'running':'completed',startedAt:'2026-10-02T12:00:00Z',finishedAt:index===249?undefined:'2026-10-02T12:00:01Z'}));
-function App(){const [reveal,setReveal]=useState();window.reveal=id=>setReveal('message-thread-'+id);const [task,setTask]=useState({id:'thread',status:'running',messages,turns});window.setFeedbackConnected=connected=>{window.fixtureConnected=connected;setTask(old=>({...old}))};window.feedbackCase=mode=>setTask(old=>({...old,status:mode==='done'?'completed':'running',turns:mode==='assistant'?turns:[]}));window.stream=()=>setTask(old=>({...old,messages:old.messages.map((message,index)=>index===499?{...message,text:message.text+'x'}:message)}));window.complete=()=>setTask(old=>({...old,status:'completed',turns:old.turns.map(turn=>turn.status==='running'?{...turn,status:'completed'}:turn)}));return <ChatThread task={task} revealMessage={reveal} onRevealHandled={()=>setReveal(undefined)}/>;}
+function App(){const [reveal,setReveal]=useState();window.reveal=id=>setReveal('message-thread-'+id);const [task,setTask]=useState({id:'thread',status:'running',messages,turns});window.setFeedbackConnected=connected=>{window.fixtureConnected=connected;setTask(old=>({...old}))};window.feedbackCase=mode=>setTask(old=>({...old,status:mode==='done'?'completed':'running',turns:mode==='assistant'?turns:[]}));window.stream=()=>setTask(old=>({...old,messages:old.messages.map((message,index)=>index===499?{...message,text:message.text+'x'}:message)}));window.complete=()=>setTask(old=>({...old,status:'completed',turns:old.turns.map(turn=>turn.status==='running'?{...turn,status:'completed'}:turn)}));return <><button id="search-opener" onClick={()=>window.dispatchEvent(new CustomEvent('dovo:search-thread',{detail:'thread'}))}>Find in thread</button><textarea data-task-id="thread" aria-label="Message"/><ChatThread task={task} revealMessage={reveal} onRevealHandled={()=>setReveal(undefined)}/></>;}
 createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -163,6 +163,26 @@ try {
   await page.evaluate(() => window.complete())
   await page.waitForFunction(() =>
     document.getElementById('message-thread-499').textContent.includes('Message 499'),
+  )
+  const search = page.getByRole('searchbox', { name: 'Search this thread' })
+  for (const close of ['escape', 'button']) {
+    await page.getByRole('button', { name: 'Find in thread', exact: true }).click()
+    await search.waitFor()
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('aria-label') === 'Search this thread',
+    )
+    if (close === 'escape') await search.press('Escape')
+    else await page.getByRole('button', { name: 'Close thread search' }).click()
+    await search.waitFor({ state: 'detached' })
+    if ((await page.evaluate(() => document.activeElement?.id)) !== 'search-opener')
+      throw Error('Search did not restore opener focus')
+  }
+  await page.getByRole('button', { name: 'Find in thread', exact: true }).click()
+  await search.waitFor()
+  await page.evaluate(() => document.getElementById('search-opener').remove())
+  await search.press('Escape')
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('data-task-id') === 'thread',
   )
   await page.evaluate(() => {
     window.jumps = []

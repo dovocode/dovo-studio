@@ -97,6 +97,10 @@ export function TaskConversation({
     taskId: string
   } | null>(null)
   const pendingTemplate = templateInsert?.taskId === task.id ? templateInsert : null
+  const useTemplate = useCallback(
+    (text: string) => setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id }),
+    [task.id],
+  )
   const [composerCollapsed, setComposerCollapsed] = useState(false)
   const [projectMoving, setProjectMoving] = useState(false)
   const composer = useRef<HTMLDivElement>(null)
@@ -291,9 +295,7 @@ export function TaskConversation({
                     />
                   ) : undefined
                 }
-                onUseTemplate={(text) =>
-                  setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
-                }
+                onUseTemplate={useTemplate}
                 footer={
                   <>
                     {!!task.watchCounts?.pipelines && (

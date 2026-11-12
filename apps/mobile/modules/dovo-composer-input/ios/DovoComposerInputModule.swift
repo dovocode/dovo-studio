@@ -14,15 +14,27 @@ struct ComposerContentRecord: Record {
   @Field var revision: String = ""
   @Field var eventCount: Int = 0
   @Field var references: [ComposerReferenceRecord] = []
+  @Field var links: [ComposerLinkRecord] = []
+}
+struct ComposerLinkRecord: Record {
+  @Field var start: Int = 0
+  @Field var end: Int = 0
+  @Field var url: String = ""
 }
 public class DovoComposerInputModule: Module {
   public func definition() -> ModuleDefinition {
     Name("DovoComposerInput")
+    Constants(["supportsReferenceMessages": true, "supportsDraftSnapshot": true])
     AsyncFunction("blur") { await MainActor.run { DovoComposerInputView.active?.input.resignFirstResponder() } }
     View(DovoComposerInputView.self) {
-      Events("onTextChange", "onSourceSelection", "onFocus", "onBlur", "onSize")
+      AsyncFunction("readText") { (view: DovoComposerInputView) -> [String: Any] in view.readText() }
+      Events("onTextChange", "onSourceSelection", "onFocus", "onBlur", "onSize", "onLink")
       Prop("content") { (view: DovoComposerInputView, content: ComposerContentRecord) in view.receive(content) }
       Prop("editable") { (view: DovoComposerInputView, value: Bool) in view.input.isEditable = value }
+      Prop("displayOnly") { (view: DovoComposerInputView, value: Bool) in view.setDisplayOnly(value) }
+      Prop("messageFontSize") { (view: DovoComposerInputView, value: Double) in view.messageFontSize = CGFloat(value); view.refreshStyle() }
+      Prop("messageLineHeight") { (view: DovoComposerInputView, value: Double) in view.messageLineHeight = CGFloat(value); view.refreshStyle() }
+      Prop("linkColor") { (view: DovoComposerInputView, value: UIColor) in view.input.linkTextAttributes = [.foregroundColor: value] }
       Prop("placeholder") { (view: DovoComposerInputView, value: String) in view.placeholder.text = value }
       Prop("focusKey") { (view: DovoComposerInputView, value: String) in
         if !value.isEmpty && value != view.focusKey { view.focusKey = value; view.input.becomeFirstResponder() }
@@ -52,19 +64,20 @@ final class ReferenceAttachment: NSTextAttachment {
     let iconWidth: CGFloat = glyph == nil ? 0 : 20
     // Bound chip width to the input. Long names truncate visually; copy always keeps source.
     let width = min(250, ceil(title.size(withAttributes: attributes).width) + 14 + iconWidth)
-    let size = CGSize(width: width, height: 24)
+    let height = max(24, ceil(font.lineHeight) + 4)
+    let size = CGSize(width: width, height: height)
     image = UIGraphicsImageRenderer(size: size).image { _ in
       background.setFill()
       UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 5).fill()
       if let glyph {
         let image = iconTemplate ? glyph.withTintColor(foreground, renderingMode: .alwaysOriginal) : glyph
-        image.draw(in: CGRect(x: 7, y: 4, width: 16, height: 16))
+        image.draw(in: CGRect(x: 7, y: (height - 16) / 2, width: 16, height: 16))
       }
       let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
       var drawing = attributes; drawing[.paragraphStyle] = paragraph
-      title.draw(in: CGRect(x: 7 + iconWidth, y: 2, width: width - 14 - iconWidth, height: 22), withAttributes: drawing)
+      title.draw(in: CGRect(x: 7 + iconWidth, y: 2, width: width - 14 - iconWidth, height: height - 4), withAttributes: drawing)
     }
-    bounds = CGRect(x: 0, y: -5, width: width, height: 24)
+    bounds = CGRect(x: 0, y: font.descender - 1, width: width, height: height)
   }
   required init?(coder: NSCoder) { return nil }
 }
@@ -118,6 +131,8 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
   let onFocus = EventDispatcher()
   let onBlur = EventDispatcher()
   let onSize = EventDispatcher()
+  let onLink = EventDispatcher()
+  private var displayOnly = false
   var foreground = UIColor.label
   var chipColor = UIColor.secondarySystemBackground
   var focusKey = ""
@@ -127,8 +142,19 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
   private var pending: ComposerContentRecord?
   private var projectionUndoSource: String?
   private var height: CGFloat = 0
-  private let font = UIFont.preferredFont(forTextStyle: .body)
-  private var textAttributes: [NSAttributedString.Key: Any] { [.font: font, .foregroundColor: foreground] }
+  var messageFontSize: CGFloat = 17
+  var messageLineHeight: CGFloat = 25
+  private let inputFont = UIFont.preferredFont(forTextStyle: .body)
+  private var font: UIFont { displayOnly ? .systemFont(ofSize: messageFontSize) : inputFont }
+  private var textAttributes: [NSAttributedString.Key: Any] {
+    var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: foreground]
+    if displayOnly {
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.minimumLineHeight = messageLineHeight
+      attributes[.paragraphStyle] = paragraph
+    }
+    return attributes
+  }
 
   private func restoreTypingStyle() {
     guard input.markedTextRange == nil else { return }
@@ -164,12 +190,27 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
     if window != nil && !focusKey.isEmpty { input.becomeFirstResponder() }
     if window == nil { input.resignFirstResponder() }
   }
+  func setDisplayOnly(_ value: Bool) {
+    displayOnly = value
+    input.isEditable = !value
+    input.isScrollEnabled = !value
+    input.textContainerInset = value ? .zero : UIEdgeInsets(top: 11, left: 7, bottom: 11, right: 7)
+    input.textContainer.lineFragmentPadding = value ? 0 : 5
+    input.accessibilityLabel = value ? nil : "Message"
+    input.accessibilityIdentifier = value ? "User message" : "Message"
+    if let content = pending { apply(content, forceStyle: true) }
+    measure()
+  }
   func receive(_ content: ComposerContentRecord) {
     guard content.eventCount >= eventCount else { return }
     pending = content
     // Leave IME marked text alone. Apply only when composition has committed.
     guard input.markedTextRange == nil else { return }
     apply(content)
+  }
+  func readText() -> [String: Any] {
+    input.unmarkText()
+    return ["text": input.source(), "eventCount": eventCount, "revision": revision ?? ""]
   }
   private func apply(_ content: ComposerContentRecord, forceStyle: Bool = false) {
     let source = input.source()
@@ -179,7 +220,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
     if external { projectionUndoSource = nil }
     // Do not recreate an autoformat step that the user has just undone.
     if !external && projectionUndoSource == source { return }
-    if !forceStyle && source == content.text && matches(content.references) {
+    if !forceStyle && source == content.text && matches(content.references) && !displayOnly {
       restoreTypingStyle()
       placeholder.isHidden = !source.isEmpty
       measure()
@@ -192,6 +233,13 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
     defer { changing = false }
     let text = NSMutableAttributedString(string: content.text, attributes: textAttributes)
     let length = text.length
+    if displayOnly {
+      for link in content.links {
+        guard link.start >= 0, link.end > link.start, link.end <= length,
+          let url = URL(string: link.url) else { continue }
+        text.addAttribute(.link, value: url, range: NSRange(location: link.start, length: link.end - link.start))
+      }
+    }
     var nextStart = length
     for reference in content.references.reversed() {
       guard reference.start >= 0, reference.end > reference.start, reference.end <= nextStart else { continue }
@@ -278,6 +326,13 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
   }
   func textViewDidBeginEditing(_ textView: UITextView) { restoreTypingStyle(); Self.active = self; onFocus([:]) }
   func textViewDidEndEditing(_ textView: UITextView) { if Self.active === self { Self.active = nil }; onBlur([:]) }
+  func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange,
+    interaction: UITextItemInteraction) -> Bool {
+    guard displayOnly else { return true }
+    // Route both a tap and the long-press menu through the existing app link chooser.
+    onLink(["url": URL.absoluteString])
+    return false
+  }
   private func measure() {
     guard bounds.width > 0 else { return }
     let next = ceil(input.sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude)).height)

@@ -131,3 +131,8 @@ export function composerReferences(
       found.push(reference)
   return found.sort((a, b) => a.start - b.start)
 }
+
+/** Sent text has no unfinished caret token. Keep offsets in the unchanged message source. */
+export function messageReferences(text: string, resources: ComposerReferenceResources) {
+  return composerReferences(`${text} `, resources)
+}

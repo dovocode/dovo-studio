@@ -1,4 +1,13 @@
-import { type ComponentRef, memo, useCallback, useLayoutEffect, useRef, useEffect } from 'react'
+import {
+  type ComponentRef,
+  type Ref,
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useEffect,
+  useImperativeHandle,
+} from 'react'
 import { Platform, type TextInput, type TextInputProps } from 'react-native'
 import Animated, { Easing, LinearTransition, ReduceMotion } from 'react-native-reanimated'
 import { Field } from '../../ui/controls/field'
@@ -6,6 +15,7 @@ import { useTheme } from '../../ui/theme'
 import type { DraftSelection } from './dictation-draft'
 import type { ComposerReferenceResources } from '@dovo/protocol'
 import { NativeComposerInput, nativeComposerAvailable } from './native-composer-input'
+import type { ComposerInputHandle } from './native-composer-input.types'
 
 const emptyResources: ComposerReferenceResources = { skills: [], mcpServers: [] }
 
@@ -19,6 +29,7 @@ export const ComposerField = memo(function ComposerField({
   revision,
   onChangeText,
   resources = emptyResources,
+  inputRef,
   ...props
 }: Pick<
   TextInputProps,
@@ -30,6 +41,7 @@ export const ComposerField = memo(function ComposerField({
   revision: string
   onSelectionChange: (selection: DraftSelection) => void
   resources?: ComposerReferenceResources
+  inputRef?: Ref<ComposerInputHandle>
 }) {
   const { styles, reduceMotion } = useTheme()
 
@@ -39,13 +51,26 @@ export const ComposerField = memo(function ComposerField({
   }, [focusKey])
   const initial = useRef(value)
   const nativeText = useRef(value)
+  const richInput = useRef<ComposerInputHandle>(null)
+  useImperativeHandle(
+    inputRef,
+    () => ({
+      readText: () => {
+        if (!nativeComposerAvailable) return Promise.resolve(nativeText.current)
+        if (!richInput.current)
+          return Promise.reject(new Error('The message input is not ready. Try Send again.'))
+        return richInput.current.readText()
+      },
+    }),
+    [],
+  )
   const appliedRevision = useRef(revision)
   useLayoutEffect(() => {
-    if (Platform.OS === 'web') return
     if (appliedRevision.current === revision) return
     appliedRevision.current = revision
     if (nativeText.current === value) return
     nativeText.current = value
+    if (Platform.OS === 'web') return
     // A fresh uncontrolled input already has an empty text prop. Writing that prop again can
     // be ignored by Fabric even after native typing; clear() uses the native text command.
     if (!value) {
@@ -81,6 +106,7 @@ export const ComposerField = memo(function ComposerField({
           resources={resources}
           focusKey={focusKey}
           expanded={showOptions}
+          inputRef={richInput}
           onChangeText={type}
           onSelectionChange={onSelectionChange}
         />

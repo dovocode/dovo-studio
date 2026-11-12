@@ -28,6 +28,43 @@ class ComposerInputTest {
     return input
   }
   private fun onMain(check: () -> Unit) = InstrumentationRegistry.getInstrumentation().runOnMainSync(check)
+  @Test fun sendSnapshotCommitsCompositionAndAcknowledgesAllNativeText() = onMain {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    // Exercise the native input without starting a JS runtime. Event forwarding is
+    // covered by the JS adapter check; only the absent Expo proxy is stubbed here.
+    val catalyst = java.lang.reflect.Proxy.newProxyInstance(
+      com.facebook.react.bridge.CatalystInstance::class.java.classLoader,
+      arrayOf(com.facebook.react.bridge.CatalystInstance::class.java)
+    ) { _, method, _ ->
+      check(method.name == "getNativeModule") { "Unexpected bridge call: ${method.name}" }
+      null
+    } as com.facebook.react.bridge.CatalystInstance
+    val react = object : com.facebook.react.bridge.BridgeReactContext(context) {
+      override fun getCatalystInstance() = catalyst
+    }
+    val modules = object : expo.modules.kotlin.ModulesProvider {
+      override fun getModulesMap(): Map<Class<out expo.modules.kotlin.modules.Module>, String?> = emptyMap()
+    }
+    val appContext = expo.modules.kotlin.AppContext(modules, expo.modules.core.ModuleRegistry(emptyList(), emptyList()), java.lang.ref.WeakReference(react))
+    val view = DovoComposerInputView(react, appContext)
+    view.receive(ComposerContentRecord().apply { text = source; revision = "snapshot" })
+    val input = view.getChildAt(0) as ComposerEditText
+    input.setSelection(source.length)
+    val connection = input.onCreateInputConnection(EditorInfo())!!
+    connection.commitText(" complete 🚀", 1)
+    connection.setComposingText("に", 1)
+    val full = input.text.toString()
+    val snapshot = view.readText()
+    assertEquals(full, snapshot["text"])
+    assertTrue(full.startsWith(source))
+    assertTrue(full.endsWith("に"))
+    assertEquals(-1, BaseInputConnection.getComposingSpanStart(input.text))
+    assertEquals("snapshot", snapshot["revision"])
+    val count = snapshot["eventCount"] as Int
+    assertTrue(count > 0)
+    view.receive(ComposerContentRecord().apply { text = ""; revision = "sent"; eventCount = count })
+    assertEquals("", input.text.toString())
+  }
   @Test fun sourceAndSelectionStayInUtf16Coordinates() = onMain {
     val input = input()
     val start = source.indexOf('@')
@@ -67,6 +104,21 @@ class ComposerInputTest {
     assertTrue(input.text.toString().startsWith(source))
     connection.finishComposingText()
     assertEquals(source + "に", input.text.toString())
+  }
+  @Test fun sentMessageKeepsSourceSelectableWithoutEditingOrKeyboard() = onMain {
+    val input = input()
+    input.displayMessage(true)
+    assertTrue(input.isEnabled)
+    assertTrue(input.isTextSelectable)
+    assertFalse(input.showSoftInputOnFocus)
+    assertFalse(input.isCursorVisible)
+    assertEquals(0, input.paddingTop + input.paddingBottom + input.paddingLeft + input.paddingRight)
+    assertNull(input.onCreateInputConnection(EditorInfo()))
+    input.setSelection(source.indexOf(" please"))
+    input.onKeyDown(KeyEvent.KEYCODE_DEL, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
+    assertEquals(source, input.text.toString())
+    input.setSelection(0, source.length)
+    assertEquals(source, input.text!!.subSequence(input.selectionStart, input.selectionEnd).toString())
   }
   @Test fun modelIconReservesSpaceAndUsesBrandOrThemeColor() = onMain {
     val image = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)

@@ -15,7 +15,7 @@ import {importCodeTheme} from '${root}/packages/studio-core/src/code-themes.ts';
 import {updateAppPreferences} from '${root}/packages/studio-core/src/preferences.ts';
 window.saved=[];window.selectTheme=selection=>updateAppPreferences({codeTheme:selection});
 window.importTheme=()=>{const theme=importCodeTheme(JSON.stringify({name:'Editor proof',type:'light',colors:{'editor.background':'#fefdfa','editor.foreground':'#123456'},tokenColors:[{scope:'keyword',settings:{foreground:'#c02d69'}}]}),'proof.json');updateAppPreferences({codeTheme:theme.name,importedCodeThemes:[theme]})};
-createRoot(document.getElementById('app')).render(<PierreEditor taskId="proof" file={{path:'hello.ts',before:'export const n = 1;\\n',after:'export const n = 2;\\n'}} comments={[]} onSave={contents=>window.saved.push(contents)} onComment={async()=>{}}/>);`,
+createRoot(document.getElementById('app')).render(<PierreEditor task={{id:"proof",repositoryId:"repo"}} file={{path:'hello.ts',before:'export const n = 1;\\n',after:'export const n = 2;\\n'}} comments={[]} onSave={contents=>window.saved.push(contents)} onComment={async()=>{}}/>);`,
     },
     bundle: true,
     write: false,
@@ -30,7 +30,7 @@ createRoot(document.getElementById('app')).render(<PierreEditor taskId="proof" f
   [
     {
       path: '@dovo/studio-core',
-      contents: `export * from '${root}/packages/studio-core/src/preferences.ts';export * from '${root}/packages/studio-core/src/themes.ts';`,
+      contents: `export const useWorkspace=()=>({connection:{address:'http://runtime',token:'test'},workspace:{repositories:[]}});export * from '${root}/packages/studio-core/src/preferences.ts';export * from '${root}/packages/studio-core/src/themes.ts';`,
     },
     {
       path: '@dovo/studio-core/state',

@@ -9,7 +9,15 @@ class ExpoView: UIView {
 }
 var bridgeEvents: [[String: Any]] = []
 struct EventDispatcher {
-  func callAsFunction(_ event: [String: Any]) { bridgeEvents.append(event) }
+  func callAsFunction(_ event: [String: Any]) {
+    bridgeEvents.append(event)
+    if event["url"] != nil {
+      let events = bridgeEvents.filter { $0["url"] != nil }
+      let report = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("composer-link-events.json")
+      try! JSONSerialization.data(withJSONObject: events).write(to: report)
+    }
+  }
 }
 
 @main class Harness: UIResponder, UIApplicationDelegate {}
@@ -45,6 +53,24 @@ struct EventDispatcher {
     let model = ComposerReferenceRecord(start: modelRange.location, end: NSMaxRange(modelRange), kind: "model", label: "gpt", icon: "__HARNESS_ICON_PNG__")
     view.receive(ComposerContentRecord(text: source, revision: "initial", eventCount: 0, references: [file, model]))
     let input = view.input
+    let snapshotView = DovoComposerInputView()
+    snapshotView.frame = CGRect(x: 0, y: 0, width: 350, height: 120)
+    surface.addSubview(snapshotView)
+    snapshotView.receive(ComposerContentRecord(text: source, revision: "snapshot", eventCount: 0, references: [file, model]))
+    snapshotView.input.becomeFirstResponder()
+    snapshotView.input.selectedRange = NSRange(location: snapshotView.input.textStorage.length, length: 0)
+    snapshotView.input.insertText(" complete 🚀")
+    snapshotView.input.setMarkedText("に", selectedRange: NSRange(location: 1, length: 0))
+    let completeSource = snapshotView.input.source()
+    let snapshot = snapshotView.readText()
+    expect(snapshot["text"] as? String == completeSource, "Send snapshot lost pending typing or chip source")
+    expect(snapshotView.input.markedTextRange == nil, "Send snapshot did not commit IME composition")
+    expect(snapshot["revision"] as? String == "snapshot", "Send snapshot lost draft identity")
+    let snapshotCount = snapshot["eventCount"] as? Int ?? -1
+    expect(snapshotCount > 0, "Send snapshot did not acknowledge native events")
+    snapshotView.receive(ComposerContentRecord(text: "", revision: "sent", eventCount: snapshotCount, references: []))
+    expect(snapshotView.input.source().isEmpty, "Acknowledged send left text in the composer")
+    snapshotView.removeFromSuperview()
     let modelChip = input.textStorage.attribute(.attachment, at: input.displayOffset(modelRange.location), effectiveRange: nil) as? ReferenceAttachment
     let plainModel = ReferenceAttachment(source: "`model:codex/gpt`", label: "gpt", foreground: .label, background: .secondarySystemBackground, font: .preferredFont(forTextStyle: .body))
     expect(modelChip?.image != nil && modelChip!.bounds.width == plainModel.bounds.width + 20, "Model icon did not reserve drawing space")
@@ -159,9 +185,52 @@ struct EventDispatcher {
           expectTypingStyle("Pasting into the cleared composer")
           styledInput.resignFirstResponder()
           styled.removeFromSuperview()
+          let message = DovoComposerInputView()
+          message.frame = CGRect(x: 16, y: 300, width: 230, height: 200)
+          surface.addSubview(message)
+          message.setDisplayOnly(true)
+          let url = "https://github.com/team/repo/pull/42"
+          let sent = "🚀 Read @src/file.ts\n" + url
+          let sentText = sent as NSString
+          let sentFile = sentText.range(of: "@src/file.ts")
+          let sentLink = sentText.range(of: url)
+          message.receive(ComposerContentRecord(text: sent, revision: "sent", references: [
+            ComposerReferenceRecord(start: sentFile.location, end: NSMaxRange(sentFile), kind: "file", label: "file.ts")
+          ], links: [ComposerLinkRecord(start: sentLink.location, end: NSMaxRange(sentLink), url: url)]))
+          message.layoutIfNeeded()
+          expect(!message.input.isEditable && message.input.isSelectable, "Sent message must be read-only and selectable")
+          expect(!message.input.isScrollEnabled && message.input.textContainerInset == .zero, "Sent message retained input scroll or padding")
+          expect(message.input.source() == sent, "Sent message projection changed source")
+          message.input.selectedRange = NSRange(location: 0, length: message.input.textStorage.length)
+          message.input.copy(nil)
+          expect(UIPasteboard.general.string == sent, "Sent message copy lost source")
+          let displayLink = message.input.displayOffset(sentLink.location)
+          expect((message.input.textStorage.attribute(.link, at: displayLink, effectiveRange: nil) as? URL)?.absoluteString == url, "PR link shifted after chip projection")
+          for interaction in [UITextItemInteraction.invokeDefaultAction, .presentActions] {
+            let handled = message.textView(message.input, shouldInteractWith: URL(string: url)!,
+              in: NSRange(location: displayLink, length: sentLink.length), interaction: interaction)
+            expect(!handled && bridgeEvents.last?["url"] as? String == url, "Sent PR link did not use app chooser")
+          }
+          message.messageFontSize = 30
+          message.messageLineHeight = 44
+          message.refreshStyle()
+          expect((message.input.textStorage.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize == 30,
+            "Sent message did not apply scaled text size")
+          let scaledChip = message.input.textStorage.attribute(.attachment,
+            at: message.input.displayOffset(sentFile.location), effectiveRange: nil) as? ReferenceAttachment
+          expect((scaledChip?.bounds.height ?? 0) >= UIFont.systemFont(ofSize: 30).lineHeight,
+            "Scaled chip clipped its label")
+          expect(message.input.source() == sent, "Scaling a sent message changed source")
+          message.messageFontSize = 17
+          message.messageLineHeight = 25
+          message.refreshStyle()
+          let sentLabel = UILabel(frame: CGRect(x: 16, y: 275, width: 300, height: 22))
+          sentLabel.text = "Sent user message"
+          sentLabel.font = .preferredFont(forTextStyle: .caption1)
+          surface.addSubview(sentLabel)
           let report: [String: Any] = ["checks": checks, "failures": failures]
-          let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("composer-results.json")
-          try! JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: url)
+          let reportURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("composer-results.json")
+          try! JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: reportURL)
           let label = UILabel(frame: CGRect(x: 16, y: 60, width: 360, height: 44))
           label.text = "\(checks) checks · \(failures.count) failures"
           label.textColor = failures.isEmpty ? .systemGreen : .systemRed

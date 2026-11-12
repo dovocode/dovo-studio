@@ -10,6 +10,7 @@
     "./projects": "./src/connections/projects-menu.tsx",
     "./connections": "./src/connections/forge-connections.tsx",
     "./pull-detail": "./src/pulls/detail/detail.tsx",
+    "./work-drafts": "./src/work/work-drafts.ts",
     "./repository-actions": "./src/connections/repository-actions.tsx"
   },
   "scripts": {

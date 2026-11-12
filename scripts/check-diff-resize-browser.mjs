@@ -15,7 +15,7 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {PierreEditor} from './src/review/pierre-editor';import {ResizableSidebar} from './src/detail/resizable-sidebar';
 const lines=Array.from({length:1000},(_,i)=>'export const value'+i+' = '+i+';');const before=lines.join('\\n');lines[10]='export const changed = '+JSON.stringify('long '.repeat(200))+';';lines[800]='export const other = false;';const file={path:'fixture.ts',before,after:lines.join('\\n'),viewed:false};
 const noop=()=>{};const comment=async(body,range)=>{window.postedComment={body,range}};window.renderCount=0;
-function App(){const[current,setFile]=useState(file);window.loadLarge=()=>setFile({...file,before:'',after:Array.from({length:5000},(_,i)=>'export const large'+i+' = '+JSON.stringify('text '.repeat(30))+';').join('\\n')});const[focus,setFocus]=useState(undefined);window.setFocus=setFocus;window.renderCount++;return <main className="dark flex h-screen min-w-0 overflow-hidden"><section className="flex min-h-0 min-w-0 flex-1 flex-col"><PierreEditor file={current} taskId="task" comments={[]} onSave={contents=>{window.savedContents=contents;setFile(current=>({...current,after:contents}))}} onComment={comment} onEditingChange={noop} focusedLine={focus}/></section><ResizableSidebar preference="diffFilesSidebarWidth" label="diff files pane" side="right" maxFraction={0.4} maxWidth={640} className="border-l">Files</ResizableSidebar></main>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[current,setFile]=useState(file);window.loadLarge=()=>setFile({...file,before:'',after:Array.from({length:5000},(_,i)=>'export const large'+i+' = '+JSON.stringify('text '.repeat(30))+';').join('\\n')});const[focus,setFocus]=useState(undefined);window.setFocus=setFocus;window.renderCount++;return <main className="dark flex h-screen min-w-0 overflow-hidden"><section className="flex min-h-0 min-w-0 flex-1 flex-col"><PierreEditor file={current} task={{id:"task",repositoryId:"repo"}} comments={[]} onSave={contents=>{window.savedContents=contents;setFile(current=>({...current,after:contents}))}} onComment={comment} onEditingChange={noop} focusedLine={focus}/></section><ResizableSidebar preference="diffFilesSidebarWidth" label="diff files pane" side="right" maxFraction={0.4} maxWidth={640} className="border-l">Files</ResizableSidebar></main>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
     bundle: true,
@@ -50,7 +50,7 @@ function App(){const[current,setFile]=useState(file);window.loadLarge=()=>setFil
     },
     {
       path: '@dovo/studio-core',
-      contents: `export const defaultAppPreferences={diffFilesSidebarWidth:260};export const readAppPreferences=()=>defaultAppPreferences;export const updateAppPreferences=value=>Object.assign(defaultAppPreferences,value);`,
+      contents: `export const useWorkspace=()=>({connection:{address:'http://runtime',token:'test'},workspace:{repositories:[]}});export const defaultAppPreferences={diffFilesSidebarWidth:260};export const readAppPreferences=()=>defaultAppPreferences;export const updateAppPreferences=value=>Object.assign(defaultAppPreferences,value);`,
     },
     {
       path: '@dovo/studio-ui',
@@ -158,6 +158,20 @@ try {
   await page.locator('[data-column-number="4500"] [data-utility-button]').click()
   const comment = page.getByRole('textbox', { name: 'Line comment', exact: true })
   await comment.fill('Keep this steering draft through resizing')
+  await page.getByRole('button', { name: 'Suggest code change', exact: true }).click()
+  const replacement = page.getByRole('textbox', { name: 'Suggested replacement' })
+  await replacement.fill('replacement after reopening')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => window.setFocus(4501))
+  await page.locator('[data-column-number="4501"] [data-utility-button]').click()
+  assert.equal(await comment.inputValue(), '')
+  await comment.fill('Other range draft')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => window.setFocus(4500))
+  await page.locator('[data-column-number="4500"] [data-utility-button]').click()
+  assert.equal(await comment.inputValue(), 'Keep this steering draft through resizing')
+  assert.equal(await replacement.inputValue(), 'replacement after reopening')
+  await page.getByRole('button', { name: 'Remove suggestion', exact: true }).click()
   for (const width of [800, 400, 1400]) await page.setViewportSize({ width, height: 800 })
   assert.equal(await comment.inputValue(), 'Keep this steering draft through resizing')
   await page.getByRole('button', { name: 'Add steering to chat', exact: true }).click()

@@ -19,6 +19,13 @@ import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { useAction } from '../../ui/controls/use-action'
 import { useTheme } from '../../ui/theme'
+import {
+  createDetailDrafts,
+  detailDraftKey,
+  useDetailDraft,
+} from '../../runtime/state/detail-drafts'
+
+const commitDrafts = createDetailDrafts<{ message: string }>({ isClean: (draft) => !draft.message })
 
 const messageSchema = mutableStruct({ message: Schema.String })
 const commitSchema = mutableStruct({
@@ -34,7 +41,6 @@ export function CommitSection({ task }: { task: Task }) {
   const foreground = useAppActive()
   const { act, busy, error } = useAction()
   const [suggestion, setSuggestion] = useApplicationState('')
-  const [message, setMessage] = useApplicationState('')
   const [status, setStatus] = useApplicationState('')
   const repo = snapshot?.workspace.repositories.find((item) => item.id === task.repositoryId)
   const ready =
@@ -53,6 +59,10 @@ export function CommitSection({ task }: { task: Task }) {
     task.existingWorktreePath,
     task.checkoutBranch,
   ])
+  const draftKey = detailDraftKey(profile?.connection ?? null, 'task-commit', key)
+  const { draft, setField } = useDetailDraft(commitDrafts, draftKey, () => ({ message: '' }))
+  const message = draft.message
+  const setMessage = (message: string) => setField('message', message)
   const [result, setResult] = useApplicationState<{
     key: string
     state: GitState | null
@@ -110,17 +120,19 @@ export function CommitSection({ task }: { task: Task }) {
   const pullUrl = task.pullRequest?.url ?? task.linkedPullRequests?.[0]?.url
   const primary = gitPrimaryAction(git, !!pullUrl)
   const commit = (push: boolean) =>
-    act(() =>
-      (message.trim()
-        ? Effect.succeed({ message: message.trim() })
-        : callEffect('/api/tasks/commit-message', { id: task.id }, messageSchema)
+    act(() => {
+      const submitted = commitDrafts.read(draftKey)
+      return (
+        message.trim()
+          ? Effect.succeed({ message: message.trim() })
+          : callEffect('/api/tasks/commit-message', { id: task.id }, messageSchema)
       ).pipe(
         Effect.flatMap(({ message }) =>
           callEffect('/api/tasks/commit', { id: task.id, message, push }, commitSchema),
         ),
         Effect.tap((value) =>
           Effect.sync(() => {
-            setMessage('')
+            if (commitDrafts.read(draftKey) === submitted) setMessage('')
             setStatus(
               value.pushError
                 ? `Committed ${value.commit.slice(0, 8)}, but push failed: ${value.pushError}`
@@ -129,8 +141,8 @@ export function CommitSection({ task }: { task: Task }) {
           }),
         ),
         Effect.ensuring(refresh().pipe(Effect.catch(() => Effect.void))),
-      ),
-    )
+      )
+    })
   const push = () =>
     act(() =>
       callEffect(
@@ -186,7 +198,7 @@ export function CommitSection({ task }: { task: Task }) {
               callEffect('/api/tasks/commit-message', { id: task.id }, messageSchema).pipe(
                 Effect.tap((value) =>
                   Effect.sync(() => {
-                    if (!message.trim()) setMessage(value.message)
+                    if (!commitDrafts.read(draftKey)?.message.trim()) setMessage(value.message)
                     else setSuggestion(value.message)
                   }),
                 ),

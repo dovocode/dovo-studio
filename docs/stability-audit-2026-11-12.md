@@ -334,3 +334,126 @@ The focused unit run passes 96 tests. The 49 ACP tests also pass after adding su
 options without a category. The listed browser checks and five package type checks pass. Repository
 checks report zero errors and 31 existing warnings. The compiled protocol package contains the
 Antigravity profile with `agy` / `acp` and needs no separate configuration file.
+
+## Fourth review: Changes drafts and hidden thread rendering
+
+Opus reviewed visual and interaction behavior. Fable 5.2 reviewed performance paths. Both reviews
+used source at `136af8c9`. The parent checked the cited callers and ran the render probe below.
+These are follow-up findings. This round implements sent-message chips; it does not change these
+draft or view-lifetime paths.
+
+| Priority | Finding                                                                                           | Evidence                                                                 | Smallest next change                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| P1       | Changes can discard unsent commit messages, file feedback and line comments when controls unmount | Source-confirmed on desktop and mobile                                   | Store drafts by runtime, checkout/thread and file/range; clear only the submitted revision after success       |
+| P2       | Hidden Unified thread bodies render during updates to another thread                              | Measured in a Chromium fixture; production propagation checked in source | First memoize cached history reconstruction, then measure view subscriptions before changing hidden-view state |
+| P2       | Closing thread search removes the focused control without restoring focus                         | Source-confirmed; no keyboard interaction test in this round             | Return focus to its opener or the composer                                                                     |
+
+### Preserve Changes drafts first
+
+Desktop `review/commit-bar.tsx` keeps its message in component state. Closing the action tray
+removes it in `review/review-pane.tsx`. Switching away from Changes removes the pane in `view.tsx`.
+`ReviewFeedback` also keeps local text and remounts for each `file.path`. `pierre-editor.tsx` mounts
+`LineCommentForm` by range without passing its supported external draft props. On mobile,
+`tasks/detail/commit-section.tsx` keeps the message in a component-local application-state atom.
+Closing the Change actions sheet in `task-review.tsx` removes the component. That hook creates a new
+atom on each mount; it is not a durable keyed draft store.
+
+Reuse the existing Changes/detail draft stores. Keep runtime and checkout boundaries. Verify close
+and reopen, file/range changes, offline use, app restart and delayed submit acknowledgements before
+claiming recovery. This is the recommended next implementation slice because it protects user work.
+
+### Hidden thread render probe
+
+The production Unified workspace retains visited thread bodies under React `Activity`. Hidden
+effects stop, but broad workspace context reads still allow background rendering. `TasksView` reads
+that context. `use-cached-task.ts` also rebuilds `cachedThread(summary, history)` without
+memoization. That call can allocate new task, file and turn projections for unchanged history.
+
+The probe reuses the real `TasksView` fixture with zero or eight hidden thread bodies. It sends 30
+updates to the visible parent thread. Panels and `ChatThread` remain test adapters. One measured
+pair returned:
+
+| Hidden threads | Visible chat calls | Hidden chat calls | Total chat calls |
+| -------------- | ------------------ | ----------------- | ---------------- |
+| 0              | 30                 | 0                 | 30               |
+| 8              | 30                 | 140               | 170              |
+
+Counts vary with React background scheduling. The fixture confirms extra renders, not a measured
+frame-rate or memory regression. Its snapshots omit `detailTaskIds`, so it does not measure the
+additional cached-history reconstruction cost. The scope provider is also an adapter. Do not infer
+an end-to-end speedup from these counts or freeze workspace contexts without checking updates,
+drafts, reconnects and pending work on reactivation.
+
+Reproduce from the repository root:
+
+```sh
+pnpm exec playwright install chromium
+HIDDEN=0 node scripts/investigate-hidden-thread-rendering.mjs | node --input-type=module
+HIDDEN=8 node scripts/investigate-hidden-thread-rendering.mjs | node --input-type=module
+```
+
+The inline `onUseTemplate` callback in `detail/task-conversation.tsx` is a separate render-cost
+lead. It reaches memoized messages, but this round does not isolate its cost. The branch-plus-local
+Changes source also reloads full diff bodies through `useLiveRefresh` every 15 seconds while active.
+Its payload and runtime cost remain unmeasured. Neither lead justifies a redesign yet.
+
+## Fourth review fixes and mobile Send
+
+The three follow-up findings are now fixed locally. These changes are not part of nightly `.829`.
+
+Changes retains desktop commit messages, file feedback and line comments in the existing draft
+store. Line comments retain the comment, replacement text and suggestion toggle together. Mobile
+commit messages use the existing detail draft cache. Keys include the computer pairing, thread,
+checkout and file/range where needed. A successful request clears only the draft entry it submitted.
+A new edit with the same text has a different entry identity and survives an older acknowledgement.
+Generated commit messages cannot replace text entered after a panel reopened.
+
+This retention lasts while the app process stays open. It does not add disk storage or app-restart
+recovery for Changes drafts. Mobile retains its existing capacity limit and reports when all
+retained drafts are dirty. Desktop never evicts unsaved text.
+
+Send now reads the rich native input before it creates a message attempt. The native view commits
+IME composition and returns full source text, its event count and draft revision. The adapter
+rejects reads that cross a draft/view change. It acknowledges the snapshot count and ignores older
+queued keyboard events. Read failures keep the draft and report an error. The existing action
+semaphore blocks repeat taps. Delayed delivery keeps text entered after the snapshot. Older
+installed native modules use the standard input until the app binary includes the new snapshot
+method.
+
+Hidden Unified threads retain their last workspace context until activation. The scope stays outside
+React Activity so host ownership checks stay current. Token replacement bypasses the retained
+context. Old optimistic callbacks fail after host switches, token replacement or removal. Cached
+history reconstruction and the template callback now keep stable identities for unchanged inputs.
+
+The updated Chromium probe uses the real scope and memoized thread view. Eight hidden threads
+received zero ChatThread calls during 30 updates to the visible thread; the visible thread
+received 30. The earlier fixture counted 140 hidden calls. These are adapted render counts, not
+frame rate or memory measurements. Broad context consumers can still render in React's hidden
+background work; the focused cache check confirms that this does not reconstruct unchanged history.
+Activation checks preserve input and scroll state and show the latest workspace.
+
+Thread search now focuses its input. Escape and Close return focus to its opener, or the composer if
+the opener no longer exists. An explicit message reveal keeps its own navigation behavior.
+
+Verification commands:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:stability-recovery:browser
+node scripts/check-diff-resize-browser.mjs
+node scripts/check-thread-streaming-browser.mjs
+node scripts/check-mobile-settled-send-browser.mjs
+node scripts/check-native-composer-bridge-browser.mjs
+node scripts/check-workspace-recovery-browser.mjs
+node scripts/check-mobile-draft-transition-browser.mjs
+node scripts/check-unified-workspace-browser.mjs
+HIDDEN=8 node scripts/investigate-hidden-thread-rendering.mjs | node --input-type=module
+pnpm --filter @dovo/extension-scm --filter @dovo/studio-core --filter @dovo/extension-tasks --filter @dovo/mobile -r typecheck
+```
+
+On the authorized Mac, the UIKit simulator harness passed 57 checks, including source text behind
+chips, pending native edits, IME commit and acknowledged clear. The Android emulator passed seven
+instrumentation tests. Those tests stub the absent JS runtime at the event boundary. Both real Expo
+module builds passed. JS adapter and conversation-action browser checks cover full payloads, late
+events, duplicate taps, read failures, scope changes, retries and new edits during delivery. A full
+Expo app send on physical hardware and hosted CI for this local diff remain unverified.

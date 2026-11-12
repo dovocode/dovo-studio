@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   cachedThread,
   cachedRuntimeThread,
@@ -92,8 +92,12 @@ export function useCachedTask(summary: Task | undefined) {
     cached.task.id === summary.id &&
     (cached.task.historyRevision ?? 0) === (summary.historyRevision ?? 0)
   const history = retained ?? (available ? cached?.task : undefined)
+  const task = useMemo(
+    () => (summary && !live && history ? cachedThread(summary, history) : summary),
+    [summary, live, history],
+  )
   return {
-    task: summary && !live && history ? cachedThread(summary, history) : summary,
+    task,
     loaded: live || !!history,
     error:
       !live && !history && failure?.cache === readCache && failure.id === id ? failure.error : '',

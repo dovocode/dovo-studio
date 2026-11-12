@@ -4,6 +4,7 @@ import {
   composerReferenceIcon,
   composerReferences,
   composerTextReferences,
+  messageReferences,
 } from './composer-references'
 import type { ResourceSettings } from '../../shared/resources'
 import { resolveScopedAgents } from '../../runtime/connection/scoped-settings'
@@ -26,6 +27,16 @@ const resources: ResourceSettings = {
     },
   ],
 }
+it('renders completed message references at the end without changing composer typing rules', () => {
+  for (const text of ['Read @src/file.ts', '$review', '@docs', '`model:harness%3Acodex/gpt`']) {
+    const [reference] = messageReferences(text, resources)
+    expect(reference).toBeDefined()
+    expect(reference.end).toBe(text.length)
+  }
+  expect(composerReferences('@src/file.ts', resources)).toEqual([])
+  for (const text of ['`@src/file.ts`', '```\n@src/file.ts\n```', '[@docs](https://example.com)'])
+    expect(messageReferences(text, resources)).toEqual([])
+})
 it('recognizes completed references with UTF-16 source offsets, without changing the draft', () => {
   const text = '🚀 @src/file.ts $review @docs `model:harness%3Acodex/gpt%2Fexact` '
   const references = composerReferences(text, resources)

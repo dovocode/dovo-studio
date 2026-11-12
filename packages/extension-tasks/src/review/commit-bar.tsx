@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Schema } from 'effect'
 import { GitCommitHorizontal, Sparkles } from 'lucide-react'
 import { mutableStruct, responses } from '@dovo/protocol'
 import { useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, Textarea } from '@dovo/studio-ui'
+import { useReviewDraftText } from './review-drafts'
 
 const messageSchema = mutableStruct({ message: Schema.String })
 const commitSchema = mutableStruct({
@@ -15,13 +16,11 @@ const commitSchema = mutableStruct({
  * write from the conversation and the diff. */
 export function CommitBar({ task }: { task: Task }) {
   const { request, connected } = useWorkspace()
-  const [message, setMessage] = useState('')
+  const [message, setMessage, readDraft] = useReviewDraftText(task, 'commit')
   const [busy, setBusy] = useState<'' | 'write' | 'commit' | 'push'>('')
   const [status, setStatus] = useState('')
   const [suggestion, setSuggestion] = useState('')
   const [pushPending, setPushPending] = useState(false)
-  const messageRef = useRef(message)
-  messageRef.current = message
   if (!task.files.length && !status) return null
   const idle = connected && !busy && task.status !== 'running'
   const write = () => {
@@ -31,20 +30,23 @@ export function CommitBar({ task }: { task: Task }) {
     setStatus('')
     void request('/api/tasks/commit-message', { id: task.id }, messageSchema)
       .then((result) => {
-        if (!messageRef.current.trim()) setMessage(result.message)
-        else setSuggestion(result.message)
+        setMessage((current) => {
+          if (!current.trim()) return result.message
+          setSuggestion(result.message)
+          return current
+        })
       })
       .catch((cause: unknown) => setStatus(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(''))
   }
   const commit = (push: boolean) => {
     if (!idle || !message.trim()) return
-    const submitted = message
+    const submitted = readDraft()
     setBusy('commit')
     setStatus('')
     void request('/api/tasks/commit', { id: task.id, message, push }, commitSchema)
       .then((result) => {
-        setMessage((current) => (current === submitted ? '' : current))
+        setMessage((current) => (readDraft() === submitted ? '' : current))
         setSuggestion('')
         setPushPending(!!result.pushError)
         setStatus(

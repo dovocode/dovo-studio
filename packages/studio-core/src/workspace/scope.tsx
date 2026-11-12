@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { resolveRuntimeTarget, type RuntimeProfile } from '@dovo/protocol'
@@ -19,9 +19,11 @@ const connectionError = (cause: unknown): Error =>
 export function WorkspaceScope({
   profile,
   children,
+  suspended = false,
 }: {
   profile: RuntimeProfile
   children: ReactNode
+  suspended?: boolean
 }) {
   const root = useWorkspace()
   const { readRuntimeEffect, refreshRuntime, runtimeReadCache, setWorkspace } = root
@@ -50,13 +52,22 @@ export function WorkspaceScope({
     [requestEffect],
   )
   const active = isActiveRuntime(owner, root.activeRuntimeId, root.connection)
+  // A hidden view can finish earlier work. Check the current host before optimistic writes.
+  const access = useMemo(() => ({ current: { active: false, setWorkspace } }), [id, connection])
+  useLayoutEffect(() => {
+    access.current = { active: active && !!entry, setWorkspace }
+    return () => {
+      access.current.active = false
+    }
+  }, [access, active, entry, setWorkspace])
   const scopedSetWorkspace = useCallback<WorkspaceContextValue['setWorkspace']>(
     (update) => {
       // Legacy optimistic editors use the active outbox. Remote settings use awaited PATCH requests.
-      if (!active) throw new Error('Use an explicit workspace patch to edit this computer.')
-      setWorkspace(update)
+      if (!access.current.active)
+        throw new Error('Use an explicit workspace patch to edit this computer.')
+      access.current.setWorkspace(update)
     },
-    [active, setWorkspace],
+    [access],
   )
   const contextValue = useMemo(
     () => ({
@@ -91,6 +102,13 @@ export function WorkspaceScope({
     }),
     [root, id, active, entry, owner, runtimeReadCache, request, requestEffect, scopedSetWorkspace],
   )
+  const retained = useRef({ owner, value: contextValue })
+  const sameOwner =
+    retained.current.owner.id === id && retained.current.owner.connection === connection
+  const visibleValue = suspended && sameOwner ? retained.current.value : contextValue
+  useLayoutEffect(() => {
+    if (!suspended || !sameOwner) retained.current = { owner, value: contextValue }
+  }, [suspended, sameOwner, owner, contextValue])
   if (!entry) return null
-  return <WorkspaceValueProvider value={contextValue}>{children}</WorkspaceValueProvider>
+  return <WorkspaceValueProvider value={visibleValue}>{children}</WorkspaceValueProvider>
 }

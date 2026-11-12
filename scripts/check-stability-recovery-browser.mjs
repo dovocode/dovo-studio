@@ -29,12 +29,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     format: 'iife',
     jsx: 'automatic',
   },
-  [
-    {
-      path: '@dovo/studio-core/state',
-      contents: "export {useState as useApplicationState} from 'react';",
-    },
-  ],
+  [],
 )
 const browser = await chromium.launch()
 try {

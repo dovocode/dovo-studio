@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert } from 'react-native'
 import { jiraDestination } from '../../scm/source-key'
 import { clientScopeKey } from '@dovo/client-runtime'
@@ -16,7 +16,18 @@ export function createDetailDrafts<A>({
   isClean?: (value: A) => boolean
 } = {}) {
   const entries = new Map<string, A>()
+  const listeners = new Map<string, Set<() => void>>()
+  const notify = (key: string) => listeners.get(key)?.forEach((listener) => listener())
   return {
+    subscribe(key: string, listener: () => void) {
+      const entry = listeners.get(key) ?? new Set<() => void>()
+      entry.add(listener)
+      listeners.set(key, entry)
+      return () => {
+        entry.delete(listener)
+        if (!entry.size) listeners.delete(key)
+      }
+    },
     read(key: string) {
       const value = entries.get(key)
       if (value !== undefined) {
@@ -34,10 +45,12 @@ export function createDetailDrafts<A>({
       }
       entries.delete(key)
       entries.set(key, value)
+      notify(key)
       return true
     },
     remove(key: string) {
       entries.delete(key)
+      notify(key)
     },
   }
 }
@@ -54,19 +67,36 @@ export function useDetailDraft<A>(
   const [state, setState] = useState(() => ({ key, value: cache.read(key) ?? initial() }))
   // A changed pairing or entity must never reuse another owner's draft.
   const value = state.key === key ? state.value : (cache.read(key) ?? initial())
-  const current = useRef(value)
-  current.current = value
+  const current = useRef({ key, value })
+  current.current = { key, value }
   if (state.key !== key) setState({ key, value })
+  const initialize = useRef(initial)
+  initialize.current = initial
+  useEffect(() => {
+    const refresh = () => {
+      if (current.current.key !== key) return
+      const value = cache.read(key) ?? initialize.current()
+      current.current = { key, value }
+      setState({ key, value })
+    }
+    const unsubscribe = cache.subscribe(key, refresh)
+    // A delayed result can arrive between render and subscription.
+    refresh()
+    return unsubscribe
+  }, [cache, key])
   const setField = <K extends keyof A>(field: K, next: A[K]) => {
-    const previous = current.current
+    const previous =
+      cache.read(key) ?? (current.current.key === key ? current.current.value : value)
     const updated = { ...previous, [field]: next }
     if (!cache.write(key, updated)) {
       setState({ key, value: previous })
       Alert.alert('Draft limit reached', detailDraftPressureMessage)
       return
     }
-    current.current = updated
-    setState({ key, value: updated })
+    if (current.current.key === key) {
+      current.current = { key, value: updated }
+      setState({ key, value: updated })
+    }
   }
   return { draft: value, setField, clear: () => cache.remove(key) }
 }

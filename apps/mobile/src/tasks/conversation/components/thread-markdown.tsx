@@ -9,8 +9,7 @@ import {
 import { Markdown } from '../../../ui/content/markdown'
 import { useLinkOrigin } from '../../../ui/content/link-origin'
 import { openAppLink } from '../../../ui/content/open-link'
-import { Text } from '../../../ui/content/text'
-import { useTheme } from '../../../ui/theme'
+import { UserMessageText } from './user-message-text'
 import { useConversationSelector, useAppendConversationTemplate } from '../state/provider'
 
 const selectLinkActions = (value: ReturnType<typeof useRuntime>) => ({
@@ -24,8 +23,6 @@ export function ThreadMarkdown({
 }: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress' | 'onLinkPress'> & {
   plainText?: boolean
 }) {
-  const { styles, colors } = useTheme()
-
   const appendTemplate = useAppendConversationTemplate()
   const taskId = useConversationSelector((value) => value.task.id)
   const origin = useLinkOrigin(taskId)
@@ -79,29 +76,12 @@ export function ThreadMarkdown({
   return (
     <>
       {plainText ? (
-        <Text selectable style={styles.chatText}>
-          {plainParts.map((part, index) =>
-            part.url ? (
-              <Text
-                key={index}
-                accessibilityRole="link"
-                style={{ color: colors.accent }}
-                onPress={() => {
-                  const url = part.url
-                  if (url && !choose(url)) open(url)
-                }}
-                onLongPress={() => {
-                  const url = part.url
-                  if (url && !choose(url)) open(url)
-                }}
-              >
-                {part.text}
-              </Text>
-            ) : (
-              part.text
-            ),
-          )}
-        </Text>
+        <UserMessageText
+          text={props.text}
+          onLink={(url) => {
+            if (!choose(url)) open(url)
+          }}
+        />
       ) : (
         <Markdown
           {...props}

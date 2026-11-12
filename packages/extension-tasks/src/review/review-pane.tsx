@@ -613,7 +613,7 @@ function PrimaryReviewPane({
                   ) : (
                     <PierreEditor
                       key={`${task.id}:${sourceLabel}:${file.path}`}
-                      taskId={task.id}
+                      task={task}
                       onEditingChange={editingChanged}
                       onReference={onReference}
                       readOnly={source.kind !== 'working'}

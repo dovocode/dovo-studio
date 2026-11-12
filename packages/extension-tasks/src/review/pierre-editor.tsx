@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type ComponentProps } from 'react'
 import {
   parseDiffFromFile,
   getFiletypeFromFileName,
@@ -16,16 +16,18 @@ import {
   type FileDiffOptions,
 } from '@pierre/diffs/react'
 import { Button, LineCommentForm, MessageResponse } from '@dovo/studio-ui'
-import type { CodeFinding } from '@dovo/protocol'
+import { decode, mutableStruct, type CodeFinding } from '@dovo/protocol'
 import type { ChangedFile, Task } from '@dovo/studio-core'
 import { formatCodeReference } from '../detail/code-reference'
+import { useReviewDraftText } from './review-drafts'
+import { Schema } from 'effect'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
   new Editor(type, options, key)
 // Match .studio-code so unrendered rows have the same height as measured rows.
 const diffMetrics = { ...DEFAULT_VIRTUAL_FILE_METRICS, lineHeight: 22 }
 export function PierreEditor({
   file,
-  taskId,
+  task,
   readOnly = false,
   onSave,
   comments,
@@ -41,7 +43,7 @@ export function PierreEditor({
   focusedLine?: number
   onFixFinding?: (finding: CodeFinding) => void
   onEditingChange?: (editing: boolean) => void
-  taskId: string
+  task: Task
   readOnly?: boolean
   comments: Task['messages']
   onComment: (
@@ -55,6 +57,7 @@ export function PierreEditor({
   onSave: (contents: string) => void
   onReference?: (text: string) => void
 }) {
+  const taskId = task.id
   const [ready, setReady] = useApplicationState(false)
   const [loadError, setLoadError] = useApplicationState<Error | null>(null)
   useEffect(() => {
@@ -343,7 +346,15 @@ export function PierreEditor({
                     !readOnly &&
                     selection.side === annotation.side &&
                     selection.end === annotation.lineNumber && (
-                      <LineCommentForm
+                      <ReviewLineComment
+                        task={task}
+                        field={JSON.stringify([
+                          'line',
+                          file.path,
+                          selection.side,
+                          selection.start,
+                          selection.end,
+                        ])}
                         key={`${selection.side}:${selection.start}:${selection.end}`}
                         selectedCode={
                           selection.side === 'additions'
@@ -404,5 +415,36 @@ export function PierreEditor({
             : 'Drag line numbers or Shift-click for a range · Click + for one line · Edit changes file contents'}
       </div>
     </div>
+  )
+}
+
+const lineDraftSchema = mutableStruct({
+  body: Schema.String,
+  replacement: Schema.String,
+  suggesting: Schema.Boolean,
+})
+function ReviewLineComment({
+  task,
+  field,
+  ...props
+}: ComponentProps<typeof LineCommentForm> & { task: Task; field: string }) {
+  const initial = JSON.stringify({
+    body: '',
+    replacement: props.selectedCode ?? '',
+    suggesting: false,
+  })
+  const [saved, setDraft, readDraft] = useReviewDraftText(task, field, initial)
+  const draft = decode(lineDraftSchema, JSON.parse(saved))
+  return (
+    <LineCommentForm
+      {...props}
+      draft={draft}
+      onDraft={(draft) => setDraft(JSON.stringify(draft))}
+      onSubmit={async (text) => {
+        const submitted = readDraft()
+        await props.onSubmit(text)
+        setDraft((current) => (readDraft() === submitted ? initial : current))
+      }}
+    />
   )
 }

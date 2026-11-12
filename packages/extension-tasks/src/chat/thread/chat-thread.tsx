@@ -179,19 +179,35 @@ export function ChatThread({
   }, [bookmarkJump])
   const [searchOpen, setSearchOpen] = useState(false)
   const searchInput = useRef<HTMLInputElement>(null)
+  const searchOpener = useRef<HTMLElement | null>(null)
+  const openSearch = useCallback(() => {
+    const focused = document.activeElement
+    if (focused instanceof HTMLElement && focused !== searchInput.current)
+      searchOpener.current = focused
+    setSearchOpen(true)
+    requestAnimationFrame(() => {
+      searchInput.current?.focus()
+      searchInput.current?.select()
+    })
+  }, [])
+  const closeSearch = () => {
+    setSearchOpen(false)
+    const opener = searchOpener.current
+    if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true })
+    else
+      document
+        .querySelector<HTMLElement>(`[data-task-id="${CSS.escape(task.id)}"]`)
+        ?.focus({ preventScroll: true })
+  }
   useEffect(() => {
     const open = (event: Event) => {
       if (event instanceof CustomEvent && event.detail === task.id) {
-        setSearchOpen(true)
-        requestAnimationFrame(() => {
-          searchInput.current?.focus()
-          searchInput.current?.select()
-        })
+        openSearch()
       }
     }
     window.addEventListener('dovo:search-thread', open)
     return () => window.removeEventListener('dovo:search-thread', open)
-  }, [task.id])
+  }, [task.id, openSearch])
   const [query, setQuery] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const filter = useDeferredValue(searchOpen ? query : '')
@@ -353,6 +369,7 @@ export function ChatThread({
       {searchOpen && (
         <div className="flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1">
           <input
+            ref={searchInput}
             type="search"
             autoFocus
             aria-label="Search this thread"
@@ -365,7 +382,7 @@ export function ChatThread({
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.stopPropagation()
-                setSearchOpen(false)
+                closeSearch()
               }
               if (event.key === 'Enter' && matches.length)
                 setMatchIndex(
@@ -404,11 +421,7 @@ export function ChatThread({
           >
             <ChevronDown size={14} />
           </IconButton>
-          <IconButton
-            label="Close thread search"
-            className="size-7"
-            onClick={() => setSearchOpen(false)}
-          >
+          <IconButton label="Close thread search" className="size-7" onClick={closeSearch}>
             <X size={14} />
           </IconButton>
         </div>
@@ -429,10 +442,7 @@ export function ChatThread({
       <ThreadLinkMenu
         key={linkScope}
         task={{ ...task, repositoryId: fullTask?.repositoryId }}
-        onSearch={() => {
-          setSearchOpen(true)
-          requestAnimationFrame(() => searchInput.current?.focus())
-        }}
+        onSearch={openSearch}
         onCopyThread={copyThread}
         copying={copying}
         canBookmark={(id) => connected && turns.get(id)?.status !== 'running'}

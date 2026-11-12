@@ -1,5 +1,6 @@
 import {
   Activity,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -110,6 +111,8 @@ import {
   workspaceTabKey,
   type WorkspaceTab,
 } from './workspace-tabs'
+
+const WorkspaceThreadView = memo(TasksView)
 
 type ResourceStatus = WorkspaceRowStatus | 'needs-input' | 'working' | 'waiting'
 /** One sidebar row; every kind exposes the same Pin / Settle / Snooze workflow. */
@@ -1412,17 +1415,12 @@ function WorkspaceContent() {
                 const key = workspaceTabKey(tab),
                   selected = state.active === key
                 const owner = computers.find((entry) => entry.profile.id === tab.runtimeId)
-                return (
-                  <Activity
-                    key={key}
-                    mode={
-                      selected &&
-                      !creatingTerminal &&
-                      (tab.kind !== 'thread' || !owner || store.activeRuntimeId === tab.runtimeId)
-                        ? 'visible'
-                        : 'hidden'
-                    }
-                  >
+                const visible =
+                  selected &&
+                  !creatingTerminal &&
+                  (tab.kind !== 'thread' || !owner || store.activeRuntimeId === tab.runtimeId)
+                const content = (
+                  <Activity key={key} mode={visible ? 'visible' : 'hidden'}>
                     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                       {tab.kind === 'terminal' ? (
                         <WorkspaceTerminalSurface
@@ -1441,13 +1439,11 @@ function WorkspaceContent() {
                           onLifecycleError={setLifecycleError}
                         />
                       ) : owner ? (
-                        <WorkspaceScope profile={owner.profile}>
-                          <TasksView
-                            embedded
-                            entityId={tab.id || undefined}
-                            {...threadNavigation.current.get(key)}
-                          />
-                        </WorkspaceScope>
+                        <WorkspaceThreadView
+                          embedded
+                          entityId={tab.id || undefined}
+                          {...threadNavigation.current.get(key)}
+                        />
                       ) : (
                         <p role="status" className="p-6 text-sm text-muted-foreground">
                           This thread’s computer is no longer paired.
@@ -1455,6 +1451,15 @@ function WorkspaceContent() {
                       )}
                     </div>
                   </Activity>
+                )
+                // Keep the scope outside Activity so host ownership guards stay current while
+                // the hidden body retains its last snapshot and local editor state.
+                return tab.kind === 'thread' && owner ? (
+                  <WorkspaceScope key={key} profile={owner.profile} suspended={!visible}>
+                    {content}
+                  </WorkspaceScope>
+                ) : (
+                  content
                 )
               })}
             <div

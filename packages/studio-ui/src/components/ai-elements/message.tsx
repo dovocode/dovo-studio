@@ -9,7 +9,17 @@ import {
   type ComponentProps,
   type HTMLAttributes,
 } from 'react'
-import { resolveMarkdownLink, localMarkdownURL, markdownURLLocalPath } from '@dovo/protocol'
+import {
+  resolveMarkdownLink,
+  localMarkdownURL,
+  markdownURLLocalPath,
+  messageReferences,
+  composerReferenceIcon,
+  composerIconMasks,
+  harnessIconData,
+  type ComposerReference,
+  type ComposerReferenceResources,
+} from '@dovo/protocol'
 import { Streamdown, defaultComponents } from 'streamdown'
 import { createPierreCodePlugin } from '../../pierre-code-plugin'
 import { resolveCodeTheme } from '@dovo/studio-core/code-themes'
@@ -28,6 +38,7 @@ const markdownControls = {
 // its thread and application click handlers can present the single chooser.
 const markdownLinkSafety = { enabled: false }
 export { Message, MessageContent } from '@dovo/web-ui/message'
+const noReferenceChips: ReadonlyMap<string, ComposerReference & { source: string }> = new Map()
 
 export const MessageResponse = memo(function MessageResponse({
   children,
@@ -36,6 +47,7 @@ export const MessageResponse = memo(function MessageResponse({
   baseURL,
   fileBaseURL,
   localFiles,
+  referenceResources,
 }: {
   children: string
   isStreaming?: boolean
@@ -47,8 +59,26 @@ export const MessageResponse = memo(function MessageResponse({
     image: (path: string, alt: string) => ReactNode
     remoteImage?: (uri: string, alt: string) => ReactNode
   }
+  referenceResources?: ComposerReferenceResources
 }) {
   const { themePalette, codeTheme, importedCodeThemes } = useAppPreferences()
+  const referenced = useMemo(() => {
+    if (!referenceResources) return { text: children, chips: noReferenceChips }
+    const chips = new Map<string, ComposerReference & { source: string }>()
+    // Keep authored links separate from the links used only by this render.
+    let prefix = 'https://dovo-reference.invalid/'
+    while (children.includes(prefix)) prefix += '_/'
+    let text = ''
+    let offset = 0
+    for (const reference of messageReferences(children, referenceResources)) {
+      const href = `${prefix}${chips.size}`
+      chips.set(href, { ...reference, source: children.slice(reference.start, reference.end) })
+      const label = reference.label.replace(/[\\[\]]/g, '\\$&')
+      text += `${children.slice(offset, reference.start)}[${label}](${href})`
+      offset = reference.end
+    }
+    return { text: text + children.slice(offset), chips: chips.size ? chips : noReferenceChips }
+  }, [children, referenceResources])
   const markdownPlugins = useMemo(
     () => ({
       code: createPierreCodePlugin([
@@ -60,6 +90,7 @@ export const MessageResponse = memo(function MessageResponse({
   )
   const urlTransform = useCallback(
     (url: string) => {
+      if (referenced.chips.has(url)) return url
       if (localFiles && !baseURL && !fileBaseURL) {
         if (markdownURLLocalPath(url) !== undefined) return url
         const local = localMarkdownURL(url)
@@ -67,7 +98,7 @@ export const MessageResponse = memo(function MessageResponse({
       }
       return resolveMarkdownLink(url, baseURL, fileBaseURL) ?? ''
     },
-    [baseURL, fileBaseURL, localFiles],
+    [baseURL, fileBaseURL, localFiles, referenced.chips],
   )
   const rehypePlugins = useMemo(
     () => markdownPluginsForLinks(baseURL, fileBaseURL, !!localFiles),
@@ -75,11 +106,13 @@ export const MessageResponse = memo(function MessageResponse({
   )
   const components = useMemo(
     () =>
-      localFiles
+      localFiles || referenced.chips.size
         ? {
             a: (props: ComponentProps<'a'>) => {
+              const reference = props.href && referenced.chips.get(props.href)
+              if (reference) return <MessageReference reference={reference} />
               const path = props.href ? markdownURLLocalPath(props.href) : undefined
-              return path !== undefined ? (
+              return path !== undefined && localFiles ? (
                 <button
                   type="button"
                   title={path}
@@ -95,9 +128,9 @@ export const MessageResponse = memo(function MessageResponse({
             },
             img: ({ src, alt }: ComponentProps<'img'>) => {
               const path = typeof src === 'string' ? markdownURLLocalPath(src) : undefined
-              return path !== undefined ? (
+              return path !== undefined && localFiles ? (
                 localFiles.image(path, alt ?? 'Image')
-              ) : typeof src === 'string' && localFiles.remoteImage ? (
+              ) : typeof src === 'string' && localFiles?.remoteImage ? (
                 localFiles.remoteImage(src, alt ?? 'Image')
               ) : (
                 <defaultComponents.img src={src} alt={alt} />
@@ -105,7 +138,7 @@ export const MessageResponse = memo(function MessageResponse({
             },
           }
         : undefined,
-    [localFiles],
+    [localFiles, referenced.chips],
   )
   const props = {
     className: cn(
@@ -122,7 +155,7 @@ export const MessageResponse = memo(function MessageResponse({
     rehypePlugins,
     mode: isStreaming ? ('streaming' as const) : ('static' as const),
     isAnimating: isStreaming,
-    children,
+    children: referenced.text,
     components,
   }
   const markdown = <Streamdown {...props} />
@@ -134,6 +167,44 @@ export const MessageResponse = memo(function MessageResponse({
     markdown
   )
 })
+function MessageReference({ reference }: { reference: ComposerReference & { source: string } }) {
+  const icon = reference.provider && harnessIconData[reference.provider]
+  return (
+    <span
+      className="dovo-composer-reference"
+      data-reference-kind={reference.kind}
+      title={reference.source}
+      aria-label={`${reference.kind}: ${reference.source}`}
+    >
+      {icon ? (
+        <svg
+          className="dovo-composer-reference-icon"
+          data-harness={reference.provider}
+          viewBox={icon.viewBox}
+          fill={icon.fill ?? 'currentColor'}
+          aria-hidden="true"
+        >
+          {icon.paths.map((path, index) => (
+            <path key={index} d={path.d} opacity={path.opacity} />
+          ))}
+        </svg>
+      ) : (
+        <span
+          className="dovo-composer-reference-icon"
+          data-reference-icon={composerReferenceIcon(reference)}
+          aria-hidden="true"
+          style={{
+            maskImage: `url("${composerIconMasks[composerReferenceIcon(reference)]}")`,
+            maskSize: 'contain',
+            maskRepeat: 'no-repeat',
+            backgroundColor: 'currentColor',
+          }}
+        />
+      )}
+      {reference.label}
+    </span>
+  )
+}
 export function MessageActions({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cn('flex items-center gap-1 group-[.is-user]:ml-auto', className)} {...props} />

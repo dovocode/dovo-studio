@@ -35,6 +35,7 @@ import { useAttachmentPicker } from '../../composer/attachment-picker'
 import { useComposerDictation } from '../../composer/use-composer-dictation'
 import { useComposerHistory } from '../../composer/use-composer-history'
 import { createSendAttempts, type SendAttempt } from '../../composer/send-attempts'
+import type { ComposerInputHandle } from '../../composer/native-composer-input.types'
 const sendAttempts = createSendAttempts(randomUUID)
 export type BackgroundStart = {
   /** The message is durably saved locally or acknowledged by its computer. */
@@ -42,6 +43,7 @@ export type BackgroundStart = {
   settled: (outcome: 'failed' | 'pending' | 'confirmed') => void
 }
 export function useConversationActions(task: Task) {
+  const composerInput = useRef<ComposerInputHandle>(null)
   const {
       call,
       connected,
@@ -204,6 +206,7 @@ export function useConversationActions(task: Task) {
       return
     }
     composerHistory.cancel()
+    latestDraftText.current = text
     sendAttempts.textChanged(scope, text)
     storedDraft.update(text, source)
   }
@@ -464,7 +467,7 @@ export function useConversationActions(task: Task) {
     firstMessage && defaultSendMode === 'queue' && (!retryAttempt || retryAttempt.mode === 'queue')
   const submit = (
     mode: 'queue' | 'steer' | 'stage' | 'direct' = defaultSendMode,
-    input = draft.text,
+    providedInput?: string,
     startInBackground?: (attemptId: string) => BackgroundStart,
   ) => {
     let submittedId: string | undefined
@@ -517,6 +520,15 @@ export function useConversationActions(task: Task) {
         return yield* Effect.fail(
           new Error('Queue this message to plan before the agent changes anything.'),
         )
+      const draftKey = storedDraft.key
+      const editId = editSession.current
+      const input =
+        providedInput ??
+        (yield* nativeEffect(() =>
+          composerInput.current ? composerInput.current.readText() : Promise.resolve(draft.text),
+        ))
+      if (currentDraftKey.current !== draftKey || editSession.current !== editId)
+        return yield* Effect.fail(new Error('The thread changed before sending. Try Send again.'))
       const deferSend =
         (mode === 'queue' || mode === 'stage') &&
         (snapshot?.messageSetupSupported === true || !connected)
@@ -821,6 +833,7 @@ export function useConversationActions(task: Task) {
     busy,
   ])
   return {
+    composerInput,
     editing,
     restoreQueuedMessage: (message: NonNullable<Task['queue']>[number]) =>
       run(() =>

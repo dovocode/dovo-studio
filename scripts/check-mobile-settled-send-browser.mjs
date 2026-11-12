@@ -57,7 +57,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../draft/use-draft',
       importer: actions,
-      contents: `import {useState,useRef} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[text,setText]=useState('');const[pendingRestore,setPendingRestore]=useState();const restore=useRef();return {key:'computer:settled',text,ready:true,pendingRestore,stageRestoreEffect:value=>Effect.sync(()=>{restore.current=value;setPendingRestore(value)}),confirmRestoreEffect:()=>Effect.sync(()=>{setText(text=>[text,restore.current?.text].filter(Boolean).join('\\n\\n'));setPendingRestore(undefined)}),discardRestoreEffect:()=>Effect.void,revision:text,update:setText,appendEffect:value=>Effect.sync(()=>setText(text=>[text,value].filter(Boolean).join('\\n\\n'))),stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.sync(()=>{if(clear)setText('')})}};`,
+      contents: `import {useState,useRef} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[text,setText]=useState('');const[pendingRestore,setPendingRestore]=useState();const restore=useRef();return {key:window.draftScope??'computer:settled',text,ready:true,pendingRestore,stageRestoreEffect:value=>Effect.sync(()=>{restore.current=value;setPendingRestore(value)}),confirmRestoreEffect:()=>Effect.sync(()=>{setText(text=>[text,restore.current?.text].filter(Boolean).join('\\n\\n'));setPendingRestore(undefined)}),discardRestoreEffect:()=>Effect.void,revision:text,update:setText,appendEffect:value=>Effect.sync(()=>setText(text=>[text,value].filter(Boolean).join('\\n\\n'))),stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.sync(()=>{if(clear)setText('')})}};`,
     },
     {
       path: '../../composer/attachment-picker',
@@ -347,6 +347,95 @@ try {
     await page.evaluate(() => window.requests.at(-1).input.text),
     'Keep this offline message',
   )
+  await page.evaluate(() => {
+    window.offline = false
+    window.fail = false
+    window.finish = null
+    window.setTask((task) => ({ ...task }))
+  })
+  await input.fill('First half')
+  await page.evaluate(
+    () =>
+      (window.actions.composerInput.current = {
+        readText: async () => {
+          const full = 'First half and the rest 🚀\n第二行'
+          window.actions.draft.update(full, 'keyboard')
+          return full
+        },
+      }),
+  )
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  assert.equal(
+    await page.evaluate(() => window.requests.at(-1).input.text),
+    'First half and the rest 🚀\n第二行',
+  )
+  await page.evaluate(() => window.finish())
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), '')
+  // New edits after the snapshot belong to the next message.
+  await input.fill('Next request')
+  await page.evaluate(() => {
+    window.finish = null
+    window.actions.composerInput.current = { readText: async () => 'Next request' }
+  })
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  await page.evaluate(() => window.actions.draft.update('Keep this newer draft', 'keyboard'))
+  await page.evaluate(() => window.finish())
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), 'Keep this newer draft')
+  const beforeReadFailure = await page.evaluate(() => window.requests.length)
+  await page.evaluate(
+    () =>
+      (window.actions.composerInput.current = {
+        readText: async () => {
+          throw Error('Snapshot unavailable')
+        },
+      }),
+  )
+  await send.click()
+  await page.getByRole('status').filter({ hasText: 'Snapshot unavailable' }).waitFor()
+  assert.equal(await page.evaluate(() => window.requests.length), beforeReadFailure)
+  assert.equal(await input.inputValue(), 'Keep this newer draft')
+  // The action semaphore rejects a second tap while the native read is pending.
+  await page.evaluate(() => {
+    window.finish = null
+    window.readCount = 0
+    window.actions.composerInput.current = {
+      readText: () =>
+        new Promise((resolve) => {
+          window.readCount++
+          window.finishRead = resolve
+        }),
+    }
+    void window.actions.run(() => window.actions.submit())
+    void window.actions.run(() => window.actions.submit())
+  })
+  await page.waitForFunction(() => window.readCount === 1)
+  await page.evaluate(() => window.finishRead('Keep this newer draft'))
+  await page.waitForFunction(() => window.finish !== null)
+  assert.equal(await page.evaluate(() => window.requests.length), beforeReadFailure + 1)
+  await page.evaluate(() => window.finish())
+  await page.waitForFunction(() => !window.actions.busy)
+  // Scope changes during a native read must not send either thread's draft.
+  await input.fill('Do not send after switching')
+  await page.evaluate(() => {
+    window.finish = null
+    window.actions.composerInput.current = {
+      readText: () => new Promise((resolve) => (window.finishRead = resolve)),
+    }
+    void window.actions.run(() => window.actions.submit())
+  })
+  await page.waitForFunction(() => window.actions.busy)
+  await page.evaluate(() => {
+    window.draftScope = 'computer:other-thread'
+    window.setTask((task) => ({ ...task }))
+  })
+  await page.evaluate(() => window.finishRead('Do not send after switching'))
+  await page.getByRole('status').filter({ hasText: 'thread changed before sending' }).waitFor()
+  assert.equal(await page.evaluate(() => window.requests.length), beforeReadFailure + 1)
+  assert.equal(await input.inputValue(), 'Do not send after switching')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile settled-thread submission: drafting, rejected send, stable retries, attachment-only input and archived-thread guard passed.',

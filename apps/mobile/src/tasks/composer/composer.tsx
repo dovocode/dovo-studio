@@ -1210,6 +1210,7 @@ export function Composer({
                 }}
               >
                 <ComposerField
+                  inputRef={actions.composerInput}
                   resources={chipResources}
                   focusKey={editing?.message.id ?? draftFocus}
                   key={draft.key}

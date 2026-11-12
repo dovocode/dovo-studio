@@ -241,6 +241,7 @@ export const ChatMessage = memo(function ChatMessage({
                   onUseTemplate={onUseTemplate}
                   taskId={taskId}
                   preserveLineBreaks
+                  userMessage={message.role === 'user'}
                 >
                   {message.text}
                 </TaskMessageResponse>

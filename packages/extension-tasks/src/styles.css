@@ -113,7 +113,7 @@
   padding: 0;
   background: none;
 }
-.dovo-rich-composer .dovo-composer-reference {
+.dovo-composer-reference {
   display: inline-flex;
   align-items: baseline;
   gap: 0.3em;
