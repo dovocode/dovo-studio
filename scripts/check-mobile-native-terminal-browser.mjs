@@ -12,7 +12,7 @@ const built = await bundleBrowser(
   {
     stdin: {
       contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TerminalSession} from './src/terminal/terminal-session.native.tsx';import {WorkspaceTerminalScreen} from './src/terminal/workspace-terminal-screen.tsx';import {runtimeProfile} from '${root}packages/protocol/src/index.ts';
-window.tickets=0;window.runtime={connection:runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'}).connection,call:async(path,input)=>{if(path!=='/api/terminals/ticket'||input.id!=='terminal')throw Error('Unexpected request '+path);window.tickets++;return {ticket:'ticket-'+window.tickets}}};
+window.tickets=0;window.runtime={ready:true,connection:runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'}).connection,call:async(path,input)=>{if(path!=='/api/terminals/ticket'||input.id!=='terminal')throw Error('Unexpected request '+path);window.tickets++;return {ticket:'ticket-'+window.tickets}}};
 window.focused=true;window.runtime.connected=true;window.runtime.overviews=[{profile:{id:'computer',name:'Computer',connection:window.runtime.connection},connected:true,snapshot:{terminals:[{id:'terminal',taskId:'studio:terminals',title:'Shell'}]}}];
 const node=createRoot(document.getElementById('app'));window.renderTerminal=(visible=true)=>flushSync(()=>node.render(<TerminalSession id="terminal" visible={visible}/>));window.renderStandalone=()=>flushSync(()=>node.render(<WorkspaceTerminalScreen runtimeId="computer" terminalId="terminal"/>));window.renderTerminal();`,
       loader: 'tsx',
@@ -463,8 +463,20 @@ try {
     window.renderStandalone()
   })
   await standalone.waitForFunction((previous) => window.mounts === previous + 1, mounts)
+  // An empty registry during startup does not yet confirm that the pairing is gone.
   await standalone.evaluate(() => {
+    window.runtime.ready = false
     window.runtime.overviews = []
+    window.renderStandalone()
+  })
+  await standalone.getByText('Loading terminal…', { exact: true }).waitFor()
+  assert.equal(
+    await standalone.getByText('This computer is no longer paired.', { exact: true }).count(),
+    0,
+  )
+  assert.equal(await standalone.getByTestId('ghostty').count(), 0)
+  await standalone.evaluate(() => {
+    window.runtime.ready = true
     window.renderStandalone()
   })
   await standalone.getByText('This computer is no longer paired.', { exact: true }).waitFor()
