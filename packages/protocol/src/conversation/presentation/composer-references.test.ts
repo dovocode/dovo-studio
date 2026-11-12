@@ -1,5 +1,9 @@
 import { expect, it } from 'vite-plus/test'
-import { composerReferences, composerTextReferences } from './composer-references'
+import {
+  composerModelReference,
+  composerReferences,
+  composerTextReferences,
+} from './composer-references'
 import type { ResourceSettings } from '../../shared/resources'
 const resources: ResourceSettings = {
   skills: [{ name: 'review', enabled: true, description: 'Review', content: 'Review changes' }],
@@ -53,4 +57,29 @@ it('keeps complete paths containing Markdown punctuation', () => {
   const [reference] = composerReferences(text, resources)
   expect(text.slice(reference.start, reference.end)).toBe('@src/__tests__/my_file.ts')
   expect(reference.label).toBe('my_file.ts')
+})
+
+it('uses the referenced harness for model icons, including custom agents and ACP installs', () => {
+  const agents = [{ id: 'work', provider: 'claude' as const }]
+  for (const [harness, provider] of [
+    ['harness:codex', 'codex'],
+    ['harness:opencode', 'opencode'],
+    ['agent:work', 'claude'],
+    ['acp:my-install', 'acp'],
+  ]) {
+    const reference = `model:${encodeURIComponent(harness)}/same-model`
+    expect(composerModelReference(reference, agents)?.provider).toBe(provider)
+    const source = `Use \`${reference}\` please`
+    const [chip] = composerReferences(source, { ...resources, agents })
+    expect(chip.provider).toBe(provider)
+    expect(source.slice(chip.start, chip.end)).toBe(`\`${reference}\``)
+  }
+  // An unknown or removed harness keeps its model text without a guessed brand.
+  expect(composerModelReference('model:agent%3Amissing/same-model', agents)).toEqual({
+    start: 0,
+    end: 32,
+    kind: 'model',
+    label: 'same-model',
+  })
+  expect(composerModelReference('model:harness%3Aunknown/same-model')?.provider).toBeUndefined()
 })

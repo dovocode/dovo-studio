@@ -560,14 +560,16 @@ export function Composer({
       })
   }
   const resources = useMemo(
-    () =>
-      taskResources(
+    () => ({
+      ...taskResources(
         turnSettings?.harness
           ? { ...task, agentId: '', agentOverrides: undefined, harness: turnSettings.harness }
           : task,
         workspace,
         snapshot?.defaults,
       ),
+      agents: workspace.agents,
+    }),
     [
       task.id,
       task.agentId,

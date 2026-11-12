@@ -15,7 +15,7 @@ import { Fragment, Slice, type MarkType, type Node } from 'prosemirror-model'
 import { EditorState, Plugin, Selection, TextSelection, type Command } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import { cn } from '@dovo/studio-ui'
-import type { ResourceSettings } from '@dovo/protocol'
+import type { ComposerReferenceResources } from '@dovo/protocol'
 import { contextReferences, expandReferences, referenceNodeView } from './composer-references'
 import { registerComposerInput } from './composer-input'
 import {
@@ -39,7 +39,7 @@ export type RichKeyContext = { atStart: boolean; collapsed: boolean }
 
 export type RichComposerEditorProps = {
   value: string
-  resources: ResourceSettings
+  resources: ComposerReferenceResources
   onChange: (text: string) => void
   input: RefObject<HTMLElement | null>
   handle: RefObject<RichComposerHandle | null>

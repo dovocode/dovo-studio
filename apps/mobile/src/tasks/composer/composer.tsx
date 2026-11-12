@@ -286,8 +286,9 @@ export function Composer({
       mcpServers: serverNames
         ? serverNames.split('\n').map((name) => ({ name, enabled: true }))
         : [],
+      agents: snapshot?.workspace.agents,
     }),
-    [skillNames, serverNames],
+    [skillNames, serverNames, snapshot?.workspace.agents],
   )
   const [draftFocus, setDraftFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)

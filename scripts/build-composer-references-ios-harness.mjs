@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { harnessIconImages } from '../apps/mobile/src/agents/harness-icon-images.ts'
 if (process.platform !== 'darwin')
   throw new Error('Build this UIKit harness on the authorized macOS Device Hub host.')
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -16,7 +17,10 @@ const records = source
   .replaceAll(': Record', '')
   .replaceAll('@Field ', '')
 const views = source.slice(source.indexOf('final class ReferenceAttachment'))
-const harness = await readFile(join(moduleRoot, 'tests/ios-harness.swift'), 'utf8')
+const harness = (await readFile(join(moduleRoot, 'tests/ios-harness.swift'), 'utf8')).replaceAll(
+  '__HARNESS_ICON_PNG__',
+  harnessIconImages.codex.png,
+)
 const work = await mkdtemp(join(tmpdir(), 'dovo-composer-reference-ios-'))
 const app = join(work, 'DovoComposerReferenceQA.app')
 await mkdir(app)

@@ -1,6 +1,11 @@
 package expo.modules.dovocomposerinput
 
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.util.Base64
+import java.io.ByteArrayOutputStream
 import android.text.Spanned
 import android.view.KeyEvent
 import android.view.inputmethod.BaseInputConnection
@@ -62,5 +67,22 @@ class ComposerInputTest {
     assertTrue(input.text.toString().startsWith(source))
     connection.finishComposingText()
     assertEquals(source + "に", input.text.toString())
+  }
+  @Test fun modelIconReservesSpaceAndUsesBrandOrThemeColor() = onMain {
+    val image = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+    image.eraseColor(Color.RED)
+    val bytes = ByteArrayOutputStream()
+    image.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+    val icon = Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 17f }
+    val plain = ReferenceSpan("MODEL gpt", Color.LTGRAY, Color.BLUE, { 300f }, 1f)
+    for (template in listOf(true, false)) {
+      val span = ReferenceSpan("MODEL gpt", Color.LTGRAY, Color.BLUE, { 300f }, 1f, icon, template)
+      assertEquals(20, span.getSize(paint, source, 0, source.length, null) - plain.getSize(paint, source, 0, source.length, null))
+      val rendered = Bitmap.createBitmap(300, 60, Bitmap.Config.ARGB_8888)
+      span.draw(Canvas(rendered), source, 0, source.length, 0f, 0, 30, 60, paint)
+      val centerY = (30 + (paint.ascent() + paint.descent()) / 2).toInt()
+      assertEquals(if (template) Color.BLUE else Color.RED, rendered.getPixel(15, centerY))
+    }
   }
 }

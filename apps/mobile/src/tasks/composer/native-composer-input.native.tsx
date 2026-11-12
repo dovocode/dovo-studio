@@ -3,10 +3,16 @@ import { composerReferences, type ComposerReference } from '@dovo/protocol'
 import { Keyboard, type TextInputProps, type ViewProps } from 'react-native'
 import { useMemo, useState, type ComponentType } from 'react'
 import { useTheme } from '../../ui/theme'
+import { harnessIconImages } from '../../agents/harness-icon-images'
 import type { NativeComposerInputProps } from './native-composer-input.types'
 
 type InputProps = ViewProps & {
-  content: { text: string; revision: string; eventCount: number; references: ComposerReference[] }
+  content: {
+    text: string
+    revision: string
+    eventCount: number
+    references: (ComposerReference & { icon?: string; iconTemplate?: boolean })[]
+  }
   editable: boolean
   placeholder: string
   focusKey: string
@@ -44,7 +50,14 @@ export function NativeComposerInput({
   const { colors } = useTheme()
   const [eventCount, setEventCount] = useState(0)
   const [height, setHeight] = useState(44)
-  const references = useMemo(() => composerReferences(value, resources), [value, resources])
+  const references = useMemo(
+    () =>
+      composerReferences(value, resources).map((reference) => {
+        const image = reference.provider && harnessIconImages[reference.provider]
+        return image ? { ...reference, icon: image.png, iconTemplate: image.template } : reference
+      }),
+    [value, resources],
+  )
   if (!Input) return null
   return (
     <Input

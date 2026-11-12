@@ -17,7 +17,7 @@ import { selectComposerInput, composerSelection } from './src/chat/composer/comp
 const controller = createComposerDraft('', () => {}, console.error);
 window.editorRenders = 0; window.controller = controller; window.submits = []; window.alternatives = 0; window.commands = [];
 const messages = [{ role: 'user', text: 'First message' }, { role: 'user', text: 'Second **message**' }];
-const resources = { skills: [{ name: 'review', enabled: true }], mcpServers: [{ name: 'docs', enabled: true }] };
+const resources = { skills: [{ name: 'review', enabled: true }], mcpServers: [{ name: 'docs', enabled: true }], agents: [{ id: 'work', provider: 'claude' }] };
 const history = () => messages;
 const command = id => window.commands.push(id);
 const alternative = () => window.alternatives++;
@@ -327,6 +327,11 @@ try {
     '@src/file.ts',
   )
   assert.match(await editor.locator('[data-reference-kind="model"]').innerText(), /gpt\/exact/)
+  const modelIcon = editor.locator('[data-reference-kind="model"] svg[data-harness="codex"]')
+  await modelIcon.waitFor()
+  assert.equal(await modelIcon.getAttribute('aria-hidden'), 'true')
+  const iconBounds = await modelIcon.boundingBox()
+  assert.ok(iconBounds && iconBounds.width > 0 && iconBounds.height > 0)
   assert.equal(await text(), chipDraft, 'Chips must not rewrite saved Markdown')
   await editor.press('ControlOrMeta+a')
   const copied = await editor.evaluate((element) => {
@@ -384,6 +389,15 @@ try {
     await text(),
     '# Heading @src/file.ts here\n\nCode `@src/file.ts `\n\n[`model:codex/gpt`](https://example.com)',
   )
+  const harnessDraft =
+    '`model:agent%3Awork/same-model` `model:acp%3Amy-install/same-model` `model:agent%3Amissing/same-model`'
+  await setDraft(harnessDraft)
+  await editor.locator('svg[data-harness="claude"]').waitFor()
+  assert.equal(await editor.locator('svg[data-harness="claude"]').getAttribute('fill'), '#d97757')
+  assert.equal(await editor.locator('svg[data-harness="acp"]').count(), 1)
+  assert.equal(await editor.locator('[data-reference-kind="model"]').count(), 3)
+  assert.equal(await editor.locator('[data-reference-kind="model"] svg').count(), 2)
+  assert.equal(await text(), harnessDraft)
   assert.deepEqual(errors, [])
   console.log('Rich composer browser checks passed')
 } finally {

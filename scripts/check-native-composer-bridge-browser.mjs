@@ -19,7 +19,7 @@ const result = await build({
 import {NativeComposerInput,nativeComposerAvailable,dismissComposerKeyboard} from './apps/mobile/src/tasks/composer/native-composer-input.native';
 window.available=nativeComposerAvailable;window.dismiss=dismissComposerKeyboard;
 const resources={skills:[{name:'review'}],mcpServers:[{name:'docs',enabled:true}]};
-function App(){const [value,setValue]=useState('🚀 @src/file.ts $review @docs '+String.fromCharCode(96)+'model:codex/gpt'+String.fromCharCode(96)+' ');const [revision,setRevision]=useState('first');
+function App(){const [value,setValue]=useState('🚀 @src/file.ts $review @docs '+String.fromCharCode(96)+'model:harness%3Acodex/gpt'+String.fromCharCode(96)+' ');const [revision,setRevision]=useState('first');
 window.external=text=>flushSync(()=>{setRevision('next');setValue(text)});
 return <NativeComposerInput value={value} revision={revision} resources={resources} expanded={false} focusKey="focus-1" editable placeholder="Message" onChangeText={setValue} onSelectionChange={value=>window.selection=value}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -73,6 +73,10 @@ try {
         ['file', 'skill', 'mcp', 'model'],
       )
       assert.equal(await page.evaluate(() => window.nativeProps.content.references[0].start), 3)
+      const model = await page.evaluate(() => window.nativeProps.content.references[3])
+      assert.equal(model.provider, 'codex')
+      assert.ok(model.icon.startsWith('iVBOR'), 'The native bridge must receive bundled PNG data')
+      assert.equal(model.iconTemplate, true)
       await page.evaluate(() =>
         window.nativeProps.onTextChange({
           nativeEvent: { text: 'Fast native typing 🚀', eventCount: 7 },

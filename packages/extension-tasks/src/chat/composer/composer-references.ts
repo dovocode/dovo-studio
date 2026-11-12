@@ -1,14 +1,17 @@
 import {
   composerModelReference,
   composerTextReferences,
-  type ResourceSettings,
+  harnessIconData,
+  providerSchema,
+  type ComposerReference,
+  type ComposerReferenceResources,
 } from '@dovo/protocol'
 import { Fragment, type Node } from 'prosemirror-model'
 import { Plugin, type EditorState } from 'prosemirror-state'
 import { richSchema } from './rich-markdown'
 
-function referenceTransaction(state: EditorState, resources: ResourceSettings) {
-  const matches: { start: number; end: number; kind: string; label: string }[] = []
+function referenceTransaction(state: EditorState, resources: ComposerReferenceResources) {
+  const matches: ComposerReference[] = []
   state.doc.descendants((block, position) => {
     if (!block.isTextblock) return true
     // Headings and code blocks deliberately accept text only.
@@ -31,7 +34,9 @@ function referenceTransaction(state: EditorState, resources: ResourceSettings) {
       if (!node.isText || code || linked) {
         flush()
         const model =
-          code && !linked && node.isText ? composerModelReference(node.text ?? '') : undefined
+          code && !linked && node.isText
+            ? composerModelReference(node.text ?? '', resources.agents)
+            : undefined
         if (model) matches.push({ ...model, start, end: start + node.nodeSize })
         return
       }
@@ -48,7 +53,7 @@ function referenceTransaction(state: EditorState, resources: ResourceSettings) {
       match.start,
       match.end,
       richSchema.nodes.context_reference.create(
-        { kind: match.kind, label: match.label },
+        { kind: match.kind, label: match.label, provider: match.provider ?? null },
         state.doc.slice(match.start, match.end).content,
       ),
     )
@@ -56,7 +61,7 @@ function referenceTransaction(state: EditorState, resources: ResourceSettings) {
 }
 
 /** Chips are an editing view over the existing Markdown, with no second saved draft format. */
-export function contextReferences(resources: () => ResourceSettings) {
+export function contextReferences(resources: () => ComposerReferenceResources) {
   return new Plugin({
     appendTransaction: (transactions, _before, state) =>
       transactions.some((tr) => tr.docChanged) ? referenceTransaction(state, resources()) : null,
@@ -94,6 +99,23 @@ export function referenceNodeView(node: Node) {
   dom.contentEditable = 'false'
   dom.title = node.textContent
   dom.setAttribute('aria-label', `${node.attrs.kind}: ${node.textContent}`)
+  const provider = providerSchema.literals.find((provider) => provider === node.attrs.provider)
+  if (node.attrs.kind === 'model' && provider) {
+    const data = harnessIconData[provider]
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    icon.classList.add('dovo-composer-reference-icon')
+    icon.dataset.harness = provider
+    icon.setAttribute('viewBox', data.viewBox)
+    icon.setAttribute('fill', data.fill ?? 'currentColor')
+    icon.setAttribute('aria-hidden', 'true')
+    for (const path of data.paths) {
+      const element = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      element.setAttribute('d', path.d)
+      if (path.opacity !== undefined) element.setAttribute('opacity', String(path.opacity))
+      icon.append(element)
+    }
+    dom.append(icon)
+  }
   const kind = document.createElement('span')
   kind.className = 'dovo-composer-reference-kind'
   kind.textContent = String(node.attrs.kind === 'mcp' ? 'MCP' : node.attrs.kind)

@@ -2,9 +2,13 @@ package expo.modules.dovocomposerinput
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
+import android.util.Base64
 import android.text.Editable
 import android.text.Spanned
 import android.text.TextUtils
@@ -35,6 +39,8 @@ class ComposerReferenceRecord : Record {
   @Field var end: Int = 0
   @Field var kind: String = ""
   @Field var label: String = ""
+  @Field var icon: String = ""
+  @Field var iconTemplate: Boolean = true
 }
 class ComposerContentRecord : Record {
   @Field var text: String = ""
@@ -62,8 +68,14 @@ class DovoComposerInputModule : Module() {
 }
 
 class ReferenceSpan(private val title: String, private val background: Int, private val foreground: Int,
-  private val maximumWidth: () -> Float, private val density: Float) : ReplacementSpan() {
-  private fun width(paint: Paint) = min(max(30f * density, maximumWidth()), paint.measureText(title) + 14 * density)
+  private val maximumWidth: () -> Float, private val density: Float,
+  icon: String = "", private val iconTemplate: Boolean = true) : ReplacementSpan() {
+  private val glyph = if (icon.isEmpty()) null else {
+    val bytes = Base64.decode(icon, Base64.DEFAULT)
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+  }
+  private val iconWidth = if (glyph == null) 0f else 20 * density
+  private fun width(paint: Paint) = min(max(30f * density, maximumWidth()), paint.measureText(title) + 14 * density + iconWidth)
   override fun getSize(paint: Paint, text: CharSequence, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int = ceil(width(paint)).toInt()
   override fun draw(canvas: Canvas, text: CharSequence, start: Int, end: Int, x: Float,
     top: Int, y: Int, bottom: Int, paint: Paint) {
@@ -72,8 +84,14 @@ class ReferenceSpan(private val title: String, private val background: Int, priv
     paint.color = background
     canvas.drawRoundRect(RectF(x, y + paint.ascent() - 2 * density, x + width, y + paint.descent() + 2 * density), 5 * density, 5 * density, paint)
     paint.color = foreground
-    val label = TextUtils.ellipsize(title, android.text.TextPaint(paint), max(1f, width - 14 * density), TextUtils.TruncateAt.END).toString()
-    canvas.drawText(label, x + 7 * density, y.toFloat(), paint)
+    glyph?.let { image ->
+      val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+      if (iconTemplate) iconPaint.colorFilter = PorterDuffColorFilter(foreground, PorterDuff.Mode.SRC_IN)
+      val iconTop = y + (paint.ascent() + paint.descent() - 16 * density) / 2
+      canvas.drawBitmap(image, null, RectF(x + 7 * density, iconTop, x + 23 * density, iconTop + 16 * density), iconPaint)
+    }
+    val label = TextUtils.ellipsize(title, android.text.TextPaint(paint), max(1f, width - 14 * density - iconWidth), TextUtils.TruncateAt.END).toString()
+    canvas.drawText(label, x + 7 * density + iconWidth, y.toFloat(), paint)
     paint.color = color
   }
 }
@@ -231,7 +249,8 @@ class DovoComposerInputView(context: Context, appContext: AppContext) : ExpoView
     content.references.forEach { reference ->
       if (reference.start >= end && reference.end > reference.start && reference.end <= value.length) {
         value.setSpan(ReferenceSpan(reference.kind.uppercase() + " " + reference.label, chipColor, input.currentTextColor,
-          { max(30f * density, input.width - input.paddingLeft - input.paddingRight.toFloat()) }, density), reference.start, reference.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+          { max(30f * density, input.width - input.paddingLeft - input.paddingRight.toFloat()) }, density,
+          reference.icon, reference.iconTemplate), reference.start, reference.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         end = reference.end
       }
     }

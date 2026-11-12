@@ -1,8 +1,10 @@
 import { fromMarkdown } from 'mdast-util-from-markdown'
+import { providerSchema, type Agent, type TaskHarness } from '../../workspace.js'
 
 export type ComposerReferenceResources = {
   skills: readonly { name: string }[]
   mcpServers: readonly { name: string; enabled: boolean }[]
+  agents?: readonly Pick<Agent, 'id' | 'provider'>[]
 }
 
 export type ComposerReference = {
@@ -10,6 +12,7 @@ export type ComposerReference = {
   end: number
   kind: 'file' | 'model' | 'skill' | 'mcp'
   label: string
+  provider?: TaskHarness['provider']
 }
 
 export function composerTextReferences(
@@ -40,7 +43,10 @@ export function composerTextReferences(
   return found
 }
 
-export function composerModelReference(text: string): ComposerReference | undefined {
+export function composerModelReference(
+  text: string,
+  agents: ComposerReferenceResources['agents'] = [],
+): ComposerReference | undefined {
   const match = /^model:([^\s/]{1,600})\/([^\s]{1,1000})$/.exec(text)
   if (!match) return
   try {
@@ -55,7 +61,18 @@ export function composerModelReference(text: string): ComposerReference | undefi
       })
     )
       return
-    return { start: 0, end: text.length, kind: 'model', label: model }
+    const provider = harness.startsWith('acp:')
+      ? 'acp'
+      : harness.startsWith('agent:')
+        ? agents.find((agent) => agent.id === harness.slice(6))?.provider
+        : providerSchema.literals.find((provider) => harness === `harness:${provider}`)
+    return {
+      start: 0,
+      end: text.length,
+      kind: 'model',
+      label: model,
+      ...(provider ? { provider } : {}),
+    }
   } catch {
     return
   }
@@ -86,7 +103,7 @@ export function composerReferences(
       )
         excluded.push({ start, end })
       if (node.type === 'inlineCode') {
-        const reference = composerModelReference(node.value)
+        const reference = composerModelReference(node.value, resources.agents)
         if (reference) found.push({ ...reference, start, end })
         return
       }

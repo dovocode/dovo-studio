@@ -13,7 +13,12 @@ import {
 } from 'react'
 import { useAppPreferences } from '@dovo/studio-core'
 import { ComposerTextarea } from '@dovo/studio-ui'
-import type { ConversationPage, ResourceSettings, SavedPrompt } from '@dovo/protocol'
+import type {
+  ComposerReferenceResources,
+  ConversationPage,
+  ResourceSettings,
+  SavedPrompt,
+} from '@dovo/protocol'
 import { useFileMentions, type ComposerCommandId } from './file-mentions'
 import type { createComposerDraft } from './composer-draft'
 import { selectComposerInput } from './composer-input'
@@ -73,7 +78,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   controller: ReturnType<typeof createComposerDraft>
   taskId: string
   input: RefObject<HTMLElement | null>
-  resources: ResourceSettings
+  resources: ResourceSettings & ComposerReferenceResources
   provider?: string
   prompts?: readonly SavedPrompt[]
   onCommand?: (id: ComposerCommandId) => void

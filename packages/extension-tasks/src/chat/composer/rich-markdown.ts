@@ -21,7 +21,7 @@ export const richSchema = new Schema({
       group: 'inline',
       content: 'text*',
       atom: true,
-      attrs: { kind: {}, label: {} },
+      attrs: { kind: {}, label: {}, provider: { default: null } },
       // The clipboard HTML contains the full reference. Only the live node view shortens it.
       toDOM: () => ['span', 0],
     })

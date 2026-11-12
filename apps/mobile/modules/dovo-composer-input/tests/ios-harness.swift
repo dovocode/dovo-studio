@@ -42,9 +42,16 @@ struct EventDispatcher {
     let fileRange = nsSource.range(of: "@src/file.ts")
     let modelRange = nsSource.range(of: "`model:codex/gpt`")
     let file = ComposerReferenceRecord(start: fileRange.location, end: NSMaxRange(fileRange), kind: "file", label: "file.ts")
-    let model = ComposerReferenceRecord(start: modelRange.location, end: NSMaxRange(modelRange), kind: "model", label: "gpt")
+    let model = ComposerReferenceRecord(start: modelRange.location, end: NSMaxRange(modelRange), kind: "model", label: "gpt", icon: "__HARNESS_ICON_PNG__")
     view.receive(ComposerContentRecord(text: source, revision: "initial", eventCount: 0, references: [file, model]))
     let input = view.input
+    let modelChip = input.textStorage.attribute(.attachment, at: input.displayOffset(modelRange.location), effectiveRange: nil) as? ReferenceAttachment
+    let plainModel = ReferenceAttachment(source: "`model:codex/gpt`", label: "MODEL gpt", foreground: .label, background: .secondarySystemBackground, font: .preferredFont(forTextStyle: .body))
+    expect(modelChip?.image != nil && modelChip!.bounds.width == plainModel.bounds.width + 20, "Model icon did not reserve drawing space")
+    expect(modelChip?.icon == model.icon && modelChip?.iconTemplate == true, "Model icon did not reach attachment")
+    view.foreground = .systemBlue
+    view.refreshStyle()
+    expect(input.source() == source, "Icon theme update changed source")
     expect(input.source() == source, "Initial reference source changed")
     expect(input.textStorage.length == nsSource.length - fileRange.length - modelRange.length + 2, "References did not collapse into attachments")
     expect(input.sourceOffset(input.displayOffset(fileRange.location)) == fileRange.location, "UTF-16 chip start mapping failed")

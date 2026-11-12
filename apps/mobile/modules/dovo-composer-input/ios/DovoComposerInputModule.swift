@@ -6,6 +6,8 @@ struct ComposerReferenceRecord: Record {
   @Field var end: Int = 0
   @Field var kind: String = ""
   @Field var label: String = ""
+  @Field var icon: String = ""
+  @Field var iconTemplate: Bool = true
 }
 struct ComposerContentRecord: Record {
   @Field var text: String = ""
@@ -35,21 +37,32 @@ public class DovoComposerInputModule: Module {
 final class ReferenceAttachment: NSTextAttachment {
   let source: String
   let label: String
-  init(source: String, label: String, foreground: UIColor, background: UIColor, font: UIFont) {
+  let icon: String
+  let iconTemplate: Bool
+  init(source: String, label: String, foreground: UIColor, background: UIColor, font: UIFont,
+    icon: String = "", iconTemplate: Bool = true) {
     self.source = source
     self.label = label
+    self.icon = icon
+    self.iconTemplate = iconTemplate
     super.init(data: nil, ofType: nil)
     let title = label as NSString
     let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: foreground]
+    let glyph = Data(base64Encoded: icon).flatMap { UIImage(data: $0) }
+    let iconWidth: CGFloat = glyph == nil ? 0 : 20
     // Bound chip width to the input. Long names truncate visually; copy always keeps source.
-    let width = min(250, ceil(title.size(withAttributes: attributes).width) + 14)
+    let width = min(250, ceil(title.size(withAttributes: attributes).width) + 14 + iconWidth)
     let size = CGSize(width: width, height: 24)
     image = UIGraphicsImageRenderer(size: size).image { _ in
       background.setFill()
       UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 5).fill()
+      if let glyph {
+        let image = iconTemplate ? glyph.withTintColor(foreground, renderingMode: .alwaysOriginal) : glyph
+        image.draw(in: CGRect(x: 7, y: 4, width: 16, height: 16))
+      }
       let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
       var drawing = attributes; drawing[.paragraphStyle] = paragraph
-      title.draw(in: CGRect(x: 7, y: 2, width: width - 14, height: 22), withAttributes: drawing)
+      title.draw(in: CGRect(x: 7 + iconWidth, y: 2, width: width - 14 - iconWidth, height: 22), withAttributes: drawing)
     }
     bounds = CGRect(x: 0, y: -5, width: width, height: 24)
   }
@@ -177,7 +190,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
       let range = NSRange(location: reference.start, length: reference.end - reference.start)
       let source = (content.text as NSString).substring(with: range)
       let chip = ReferenceAttachment(source: source, label: reference.kind.uppercased() + " " + reference.label,
-        foreground: foreground, background: chipColor, font: font)
+        foreground: foreground, background: chipColor, font: font, icon: reference.icon, iconTemplate: reference.iconTemplate)
       text.replaceCharacters(in: range, with: NSAttributedString(attachment: chip))
       nextStart = reference.start
     }
@@ -215,14 +228,14 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
     }
   }
   private func matches(_ references: [ComposerReferenceRecord]) -> Bool {
-    var actual: [(Int, Int, String)] = []
+    var actual: [(Int, Int, String, String, Bool)] = []
     input.textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: input.textStorage.length)) { value, range, _ in
       if let chip = value as? ReferenceAttachment {
-        actual.append((input.sourceOffset(range.location), input.sourceOffset(NSMaxRange(range)), chip.label))
+        actual.append((input.sourceOffset(range.location), input.sourceOffset(NSMaxRange(range)), chip.label, chip.icon, chip.iconTemplate))
       }
     }
     return actual.count == references.count && zip(actual, references).allSatisfy { value, reference in
-      value.0 == reference.start && value.1 == reference.end && value.2 == reference.kind.uppercased() + " " + reference.label
+      value.0 == reference.start && value.1 == reference.end && value.2 == reference.kind.uppercased() + " " + reference.label && value.3 == reference.icon && value.4 == reference.iconTemplate
     }
   }
   func refreshStyle() {
