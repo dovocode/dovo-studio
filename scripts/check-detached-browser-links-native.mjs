@@ -92,7 +92,37 @@ app.whenReady().then(async()=>{
   assert.match(await nested.evaluate(() => document.cookie), /preview-session=kept/)
   await open(source, 'Open delayed', '/delayed')
   const auth = await open(source, 'Open auth', '/auth')
-  await auth.getByText('Complete auth', { exact: true }).click()
+  const complete = auth.getByText('Complete auth', { exact: true })
+  await complete.click({ trial: true })
+  const bounds = await complete.boundingBox()
+  assert.ok(bounds, 'The auth control must be visible')
+  const authWindow = await app.browserWindow(auth)
+  try {
+    // This click closes its renderer. Send native input from the surviving main
+    // process, then check closure and the opener callback instead of a click reply.
+    await Promise.all([
+      auth.waitForEvent('close', { timeout: 10000 }),
+      authWindow.evaluate(
+        (popup, point) => {
+          popup.webContents.sendInputEvent({
+            type: 'mouseDown',
+            button: 'left',
+            clickCount: 1,
+            ...point,
+          })
+          popup.webContents.sendInputEvent({
+            type: 'mouseUp',
+            button: 'left',
+            clickCount: 1,
+            ...point,
+          })
+        },
+        { x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2) },
+      ),
+    ])
+  } finally {
+    await authWindow.dispose()
+  }
   await source.waitForFunction(() => document.querySelector('#draft').value === 'Auth complete')
   await open(source, 'Submit form', '/submitted')
   assert.deepEqual(submissions, [{ method: 'POST', body: 'draft=Keep+this+value' }])
