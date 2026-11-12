@@ -42,6 +42,12 @@ const mocks = {
     'export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;',
   '../../ui/controls/icon': 'export const Icon=()=>null;',
   'react-native': `
+    import {useImperativeHandle,useRef} from 'react';
+    export function TextInput({ref,accessibilityLabel,secureTextEntry,editable,onChangeText,onEndEditing,onSubmitEditing}){
+      const field=useRef(null);
+      useImperativeHandle(ref,()=>({clear:()=>{if(field.current)field.current.value=''},isFocused:()=>document.activeElement===field.current,blur:()=>field.current.blur()}));
+      return <input ref={field} aria-label={accessibilityLabel} type={secureTextEntry?'password':'text'} disabled={!editable} onChange={event=>onChangeText?.(event.target.value)} onBlur={event=>onEndEditing?.({nativeEvent:{text:event.target.value}})} onKeyDown={event=>{if(event.key==='Enter')onSubmitEditing?.({nativeEvent:{text:field.current.value}})}}/>;
+    }
     export const StyleSheet={hairlineWidth:1};
     export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{ListFooterComponent}</div>;
     export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityLabel})=><button role={accessibilityRole} aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;
@@ -245,6 +251,7 @@ const built = await build({
         window.setParams=params=>{setRoute(route=>({...route,params:{...route.params,...params}}));if(params.runtimeId)setActiveId(params.runtimeId)};
         window.openRoute=href=>setRoute(route=>({href:typeof href==='string'?href:href.pathname,params:typeof href==='string'?{}:href.params,key:route.key+1}));
         window.publish=(runtimeId,task,detailed=true)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],detailTaskIds:detailed?[task.id]:[],workspace:{...s[runtimeId].workspace,tasks:[task]}}}));
+        window.publishSecureInputs=(runtimeId,secureInputs)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],secureInputs}}));
         window.online=setOnline;
         window.clearSnapshots=()=>setSnapshots(saved=>{window.snapshotBackup=saved;return {a:null,b:null}});
         window.restoreSnapshots=()=>setSnapshots(window.snapshotBackup);
@@ -942,6 +949,46 @@ try {
   await input.waitFor()
   assert.equal(await input.inputValue(), 'Mobile draft while reading a child')
   assert.equal(await input.evaluate((element) => element === window.nativeParentEditor), true)
+  // The real secure-input panel must mount through TaskDetail and discard private text
+  // when this retained conversation loses focus or changes panes.
+  await page.evaluate(() =>
+    window.publishSecureInputs('a', [
+      {
+        id: 'secure-input:continuity',
+        taskId: window.task.id,
+        title: 'Private sign-in',
+        prompt: 'Enter a private value',
+        destination: {
+          kind: 'command',
+          command: '/fixture/private-login',
+          args: [],
+          appendNewline: false,
+        },
+        directory: '/fixture',
+        publicKey: '11'.repeat(32),
+        expiresAt: new Date(Date.now() + 600000).toISOString(),
+        status: 'pending',
+      },
+    ]),
+  )
+  const privateInput = page.getByLabel('Private value', { exact: true })
+  await privateInput.waitFor()
+  assert.equal(await privateInput.getAttribute('type'), 'password')
+  await privateInput.fill('synthetic-focus-private-value')
+  await page.evaluate(() => window.setFocused(false))
+  await privateInput.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setFocused(true))
+  await privateInput.waitFor()
+  assert.equal(await privateInput.inputValue(), '')
+  await privateInput.fill('synthetic-pane-private-value')
+  await page.getByRole('button', { name: 'Agents', exact: true }).click()
+  await privateInput.waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await privateInput.waitFor()
+  assert.equal(await privateInput.inputValue(), '')
+  assert.equal(await input.inputValue(), 'Mobile draft while reading a child')
+  assert.ok(!JSON.stringify(await page.evaluate(() => window.requests)).includes('private-value'))
+  await page.evaluate(() => window.publishSecureInputs('a', []))
   // A remote child route retains its parent, including when the child is unavailable.
   await page.evaluate(() =>
     window.openRoute({
@@ -967,7 +1014,7 @@ try {
   })
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile draft transition: creation, delayed snapshots, upload retry, restoration and offline startup; decoded cache reuse, revision invalidation, cold hydration, computer isolation, guarded conversation copying and file drafts across pane switches, binary refresh and removal passed.',
+    'Mobile draft transition: creation, delayed snapshots, upload retry, restoration and offline startup; decoded cache reuse, revision invalidation, cold hydration, computer isolation, guarded conversation copying, private-input masking and navigation clearing, and file drafts across pane switches, binary refresh and removal passed.',
   )
 } finally {
   await browser.close()
