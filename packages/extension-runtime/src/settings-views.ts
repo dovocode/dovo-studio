@@ -127,6 +127,7 @@ export const runtimeSettings: readonly StudioView[] = [
       'Share retrieval with paired computers',
       'Preferred retrieval computer',
       'PR feedback watcher (experimental)',
+      'PR babysitting',
       'Pipeline watcher (experimental)',
     ],
     navigationGroup: 'settings',
@@ -136,7 +137,7 @@ export const runtimeSettings: readonly StudioView[] = [
     order: 3.5,
     settingsSection: 'coding',
     keywords:
-      'code review findings verification approval pr feedback watcher watching monitoring experimental pipeline checks linking settle archive merged closed draft merge squash rebase create method',
+      'code review findings verification approval pr feedback watcher watching monitoring experimental pipeline checks linking settle archive merged closed draft merge squash rebase create method babysitting update branch target approvals',
     load: () => import('./pull-request-settings-view'),
   },
   {

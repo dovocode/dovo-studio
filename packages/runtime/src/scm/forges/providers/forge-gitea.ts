@@ -585,6 +585,8 @@ export class GiteaForge implements ForgeAdapter {
     const pull = await this.current(input.number, input.headSha)
     const path = `${this.path}/pulls/${input.number}`
     let status: 'updated' | 'submitted' | 'merged' = 'updated'
+    if (input.action === 'update-branch')
+      throw new HttpError(400, 'Update branch is not available for this forge.')
     switch (input.action) {
       case 'comment':
         await this.http.json(`${this.path}/issues/${input.number}/comments`, {

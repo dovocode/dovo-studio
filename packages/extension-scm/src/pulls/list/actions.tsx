@@ -61,6 +61,7 @@ const titles: Record<ActionKind, string> = {
   merge: 'Merge pull request',
   draft: 'Change draft status',
   'auto-merge': 'Change auto-merge',
+  'update-branch': 'Update branch',
   close: 'Close pull request',
   reopen: 'Reopen pull request',
 }
@@ -82,6 +83,7 @@ export function PullActions(
     'reviewers',
     'draft',
     'auto-merge',
+    'update-branch',
     'merge',
     'close',
     'reopen',
@@ -176,7 +178,7 @@ export function PullActions(
                   setAction(item)
                 }}
                 disabled={
-                  ['merge', 'draft', 'auto-merge'].includes(item) &&
+                  ['merge', 'draft', 'auto-merge', 'update-branch'].includes(item) &&
                   (!!props.detail.stale || !!props.detail.refreshError)
                 }
                 className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
@@ -409,6 +411,7 @@ function PullActionDialog({
         return { ...scope, action: kind, draft: !detail.pull.draft }
       case 'auto-merge':
         return { ...scope, action: kind, enabled: !detail.pull.autoMergeEnabled, method }
+      case 'update-branch':
       case 'close':
       case 'reopen':
         return {
@@ -806,6 +809,13 @@ function PullActionDialog({
                 {detail.pull.draft
                   ? 'Mark this pull request ready and notify its reviewers?'
                   : 'Return this pull request to draft while work continues?'}
+              </p>
+            )}
+            {kind === 'update-branch' && (
+              <p className="text-sm text-muted-foreground">
+                Use GitHub Update branch to merge the latest {detail.pull.base} into this PR.
+                Published commits stay intact. Repository rules determine whether approvals remain
+                valid.
               </p>
             )}
             {kind === 'auto-merge' && detail.pull.autoMergeEnabled && (

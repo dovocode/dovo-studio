@@ -425,7 +425,7 @@ export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?:
       </SettingsGroup>
       <SettingsGroup
         title="Monitoring (experimental)"
-        description="Agents must explicitly start a watch. Finished watched threads move to Waiting. Paused queues stay paused; settling or archiving cancels watches."
+        description="Agents start watches. PR babysitting also starts watches for linked editing PRs. Finished watched threads move to Waiting. Paused queues stay paused; settling or archiving cancels watches."
       >
         <SettingRow
           label="PR feedback watcher (experimental)"
@@ -436,6 +436,22 @@ export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?:
             checked={value?.enablePullRequestWatching ?? false}
             disabled={disabled}
             onChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="PR babysitting"
+          description="Maintain the PR for an editing thread: fix CI and review feedback, test and push fixes, and use GitHub Update branch to stay current. Merge approval stays manual. This uses agent tokens. Stop a PR watch to opt out for that thread."
+        >
+          <Toggle
+            label="PR babysitting"
+            checked={!!value?.enablePullRequestWatching && !!value?.enablePullRequestBabysitting}
+            disabled={disabled}
+            onChange={(enablePullRequestBabysitting) =>
+              save({
+                enablePullRequestBabysitting,
+                ...(enablePullRequestBabysitting ? { enablePullRequestWatching: true } : {}),
+              })
+            }
           />
         </SettingRow>
         <SettingRow

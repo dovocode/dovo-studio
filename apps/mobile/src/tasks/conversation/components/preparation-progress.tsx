@@ -1,7 +1,7 @@
 import { useAppActive, useForegroundInterval } from '../../../runtime/state/app-active'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Animated, Easing, Platform, StyleSheet, View } from 'react-native'
-import { preparationElapsed, type TaskPreparation } from '@dovo/protocol'
+import { preparationElapsed, preparationActivity, type TaskPreparation } from '@dovo/protocol'
 import { Text } from '../../../ui/content/text'
 import { Icon } from '../../../ui/controls/icon'
 import { useTheme, type MobileColors } from '../../../ui/theme'
@@ -25,12 +25,15 @@ export function PreparationProgress({
   const { colors, reduceMotion: prefersReducedMotion } = useTheme()
   const local = useMemo(() => preparationStyles(colors), [colors])
   const { failed } = preparation
+  const activity = preparationActivity(preparation)
+  const activityId = activity?.id
   const appActive = useAppActive()
   const reduceMotion = prefersReducedMotion || failed || !appActive
   const [now, setNow] = useState(() => Date.now())
   const [trackWidth, setTrackWidth] = useState(0)
   const progress = useRef(new Animated.Value(preparation.progress)).current
   const sweep = useRef(new Animated.Value(0)).current
+  const pulse = useRef(new Animated.Value(0)).current
   useForegroundInterval(() => setNow(Date.now()), failed ? null : 1000)
   useEffect(() => {
     if (reduceMotion) {
@@ -60,9 +63,39 @@ export function PreparationProgress({
     loop.start()
     return () => loop.stop()
   }, [reduceMotion, trackWidth, sweep])
+  useEffect(() => {
+    pulse.setValue(0)
+    if (reduceMotion || !activityId) return
+    const loop = Animated.loop(
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 3200,
+        easing: (value) => Easing.linear(value),
+        useNativeDriver: true,
+      }),
+    )
+    loop.start()
+    return () => loop.stop()
+  }, [reduceMotion, activityId, pulse])
   const active = preparation.steps.find(
     (step) => step.state === 'active' || step.state === 'failed',
   )
+  const activityIcon = activity
+    ? ({
+        scope: 'scope',
+        tune: 'tune',
+        maestro: 'maestro',
+        worktree: 'changes',
+        restore: 'restore',
+        fetch: 'moveDown',
+        pull: 'pulls',
+        setup: 'terminal',
+        models: 'filters',
+        agent: 'agents',
+        other: 'loader',
+      } as const)
+    : undefined
+  const stepIndex = preparation.steps.findIndex((step) => step === active)
   const elapsed = failed ? '' : preparationElapsed(preparation.startedAt, now)
   return (
     <View
@@ -79,6 +112,60 @@ export function PreparationProgress({
         <Text style={local.title}>{failed ? 'Thread startup stopped' : 'Starting thread'}</Text>
         {!!elapsed && <Text style={local.elapsed}>{elapsed}</Text>}
       </View>
+      {activity && activityIcon && (
+        <View style={local.activity}>
+          <View
+            style={local.activityIcon}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Animated.View
+              style={[
+                local.activityHalo,
+                {
+                  opacity: pulse.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.04, 0.14, 0.04],
+                  }),
+                  transform: [
+                    {
+                      scale: pulse.interpolate({
+                        inputRange: [0, 0.5, 1],
+                        outputRange: [1, 1.22, 1],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            />
+            {!failed && (
+              <Animated.View
+                style={[
+                  local.activityOrbit,
+                  {
+                    transform: [
+                      {
+                        rotate: pulse.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '360deg'],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            )}
+            <Icon name={activityIcon[activity.id]} size={22} color={colors.accent} />
+          </View>
+          <View style={local.stepText}>
+            <Text style={local.activityStep}>
+              Step {stepIndex + 1} of {preparation.steps.length}
+            </Text>
+            <Text style={local.activityTitle}>{failed ? activity.stopped : activity.title}</Text>
+            <Text style={local.activityDescription}>{activity.description}</Text>
+          </View>
+        </View>
+      )}
       <View style={local.steps}>
         {preparation.steps.map((step) => (
           <View key={step.id} style={local.step}>
@@ -199,6 +286,52 @@ function preparationStyles(colors: MobileColors) {
       paddingHorizontal: 12,
       paddingTop: 12,
     },
+    activity: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 4,
+    },
+    activityIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.elevated,
+    },
+    activityHalo: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      borderRadius: 16,
+      backgroundColor: colors.accent,
+    },
+    activityOrbit: {
+      position: 'absolute',
+      top: -4,
+      bottom: -4,
+      left: -4,
+      right: -4,
+      borderRadius: 28,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderTopColor: colors.accent,
+      borderBottomColor: colors.accent,
+    },
+    activityStep: {
+      color: colors.muted,
+      fontSize: 10,
+      fontWeight: '500',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+    activityTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
+    activityDescription: { color: colors.muted, fontSize: 12, lineHeight: 17 },
     title: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
     elapsed: { color: colors.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
     steps: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
@@ -223,7 +356,7 @@ function preparationStyles(colors: MobileColors) {
     stepText: { flex: 1, minHeight: 20, justifyContent: 'center', gap: 2 },
     label: { color: colors.muted, fontSize: 14, lineHeight: 20 },
     activeLabel: { color: colors.text, fontWeight: '600' },
-    doneLabel: { textDecorationLine: 'line-through' },
+    doneLabel: { color: colors.muted },
     detail: { color: colors.muted, fontSize: 12, fontFamily: monospace },
     track: { height: 3, backgroundColor: colors.elevated, overflow: 'hidden' },
     hidden: { display: 'none' },

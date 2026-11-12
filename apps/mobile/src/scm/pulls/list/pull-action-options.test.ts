@@ -127,3 +127,16 @@ describe('mobile PR action placement', () => {
     })
   })
 })
+
+it('offers the supported server Update branch action for an open PR only', () => {
+  const open: PullDetail = {
+    ...detail,
+    capabilities: { actions: ['update-branch'], mergeMethods: [], reviewDecisions: [] },
+  }
+  expect(pullActionOptions(open).secondary).toEqual([
+    { action: 'update-branch', label: 'Update branch' },
+  ])
+  expect(pullActionOptions({ ...open, pull: { ...open.pull, state: 'closed' } }).secondary).toEqual(
+    [],
+  )
+})

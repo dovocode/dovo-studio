@@ -468,6 +468,27 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
+                  label="PR babysitting"
+                  value={
+                    !!value?.enablePullRequestWatching && !!value?.enablePullRequestBabysitting
+                  }
+                  disabled={disabled}
+                  onValueChange={(enablePullRequestBabysitting) =>
+                    save({
+                      enablePullRequestBabysitting,
+                      ...(enablePullRequestBabysitting ? { enablePullRequestWatching: true } : {}),
+                    })
+                  }
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Maintain the PR for an editing thread. Fix CI and review feedback, test and push
+                  fixes, and use GitHub Update branch to stay current. Merge approval stays manual.
+                  This uses agent tokens. Stop a PR watch to opt out for that thread.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
                   label="Enable experimental pipeline watcher"
                   value={value?.enablePipelineWatching ?? false}
                   disabled={disabled}

@@ -1,6 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import {
   decode,
+  defaultTaskHarness,
   runtimeProfile,
   snapshotSchema,
   taskSchema,
@@ -8,7 +9,65 @@ import {
   type RuntimeTask,
   type Subagent,
 } from '@dovo/protocol'
-import { taskListProjection, mobileThreadTree } from './task-list-projection'
+import {
+  taskListProjection,
+  mobileThreadTree,
+  mobileThreadListSources,
+} from './task-list-projection'
+
+it('uses complete cached owner rows during startup, then keeps shared copies available on failure', () => {
+  const owner = overview()
+  owner.connected = false
+  owner.profile.connection.runtimeId = 'owner'
+  owner.snapshot!.runtimeId = 'owner'
+  owner.snapshot!.workspace.tasks[0].harness = defaultTaskHarness('claude')
+  owner.snapshot!.workspace.repositories[0].iconOverride = 'data:image/png;base64,cmVhbA=='
+  const peer: RuntimeOverview = {
+    ...overview(),
+    profile: runtimeProfile({
+      address: 'http://peer.lan',
+      token: 'peer-private-token-at-least-32-characters',
+      runtimeId: 'peer',
+    }),
+  }
+  peer.snapshot!.runtimeId = 'peer'
+  peer.snapshot!.workspace.tasks = [
+    {
+      ...task('copy'),
+      repositoryId: '',
+      status: 'draft',
+      replica: {
+        ownerRuntimeId: 'owner',
+        threadId: 'running',
+        ownerName: 'Owner',
+        projectName: 'Project',
+      },
+    },
+  ]
+  const sources = mobileThreadListSources([peer, owner], true)
+  const rows = [...taskListProjection(sources.entries, now).values()]
+  expect(rows.map(({ row }) => row.task.id)).toEqual(['running', 'untouched'])
+  expect(rows[0].row.task.harness?.provider).toBe('claude')
+  expect(rows[0].owner.displayProject?.iconOverride).toBe('data:image/png;base64,cmVhbA==')
+  expect(sources.waiting).toBe(false)
+  expect(mobileThreadListSources([peer, { ...owner, snapshot: null }], true).waiting).toBe(true)
+  const failed = mobileThreadListSources([peer, { ...owner, error: 'Timed out' }], true)
+  expect(
+    [...taskListProjection(failed.entries, now).values()].some(({ row }) => row.task.replica),
+  ).toBe(true)
+  // Manual refresh, unpaired owners and offline-only saved copies do not wait for a request.
+  expect(mobileThreadListSources([peer, owner], false).entries).toEqual([peer, owner])
+  expect(mobileThreadListSources([peer], true).entries[0]).toBe(peer)
+  expect(
+    mobileThreadListSources(
+      [
+        { ...peer, connected: false },
+        { ...owner, snapshot: null },
+      ],
+      true,
+    ).waiting,
+  ).toBe(false)
+})
 
 it('retains mobile pill data across native agent payload updates but refreshes visible activity', () => {
   const source = overview()

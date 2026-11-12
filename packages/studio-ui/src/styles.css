@@ -2438,6 +2438,17 @@ select:focus-visible,
     left: 100%;
   }
 }
+@keyframes dovo-activity-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.22);
+    opacity: 0.9;
+  }
+}
 @keyframes dovo-fade-in {
   from {
     opacity: 0;

@@ -1283,3 +1283,63 @@ reload, Escape and unsaved-change close guards. The browser fixtures use control
 transports. Their scan and write counts are regression measurements, not production latency claims.
 Native input was checked on Linux X11. macOS, Windows, a real Wayland session, physical iPhone wake
 and real Google sign-in with extensions remain unverified.
+
+## Mobile thread startup and selector feedback, 2026-11-12
+
+The selected computer now starts live sync while saved history loads. A slow disk read no longer
+blocks a live baseline. Saved rows from other computers load at the same time, with three cache
+reads at most. Late saved data cannot replace newer live data.
+
+The default reduced refresh mode now reads inactive computers' thread summaries once at launch,
+including on cellular. It does not scan pull requests at launch. Its recurring network policy stays
+the same. Manual refresh mode still makes no automatic fleet reads. While an owner connects, the
+thread list uses its full saved row, with the real project and agent icons. If no full row exists,
+it waits for the bounded owner request. A failed request restores the shared-copy fallback. Offline
+saved copies remain available.
+
+Controlled Chromium checks held the selected cache read open. Before this change, live startup did
+not complete within the 30-second fixture deadline. After the change, live rows became usable while
+the cache read was still held. Separate checks confirm stable row identity, icons, status, offline
+fallback and initial fleet reads. These checks measure controlled behavior, not physical phone
+startup time.
+
+Thread taps and message search results navigate before saving the selected computer. Each thread
+route uses its own computer scope for cached history, drafts and requests. Saving the selection runs
+in the background. An inactive computer's history request also starts before that save finishes,
+after pairing recovery completes. A save failure shows a retry action and keeps the thread usable.
+Committing a new thread still keeps the same composer mounted.
+
+Controlled Chromium checks hold the selection save open. The old route could not show cached history
+within the two-second check deadline. The new route shows that history and accepts draft edits
+before the save finishes. Separate checks cover thread taps, message reveal scope, matching thread
+IDs on different computers, save failure and retry, and draft retention after saving. Native
+controls and secure storage use test adapters. These checks do not measure physical phone latency.
+
+Tune, Scope and Maestro now show their own icon, a soft animated border and the current runtime
+step. The progress track still follows reported startup steps; it does not estimate selection time.
+Reduced motion removes the animation. Mobile animations stop when the app leaves the foreground or a
+step fails. Successful harness changes dismiss Agent & model through its sheet lifecycle and keep
+the composer draft.
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-mobile-registry-recovery-browser.mjs
+node scripts/check-mobile-task-list-rendering-browser.mjs
+node scripts/check-mobile-draft-transition-browser.mjs
+node scripts/check-mobile-integration-continuity-browser.mjs
+node scripts/check-inline-harness-handoff-browser.mjs
+node scripts/check-mobile-composer-actions-browser.mjs
+node scripts/check-preparation-progress-browser.mjs
+node scripts/check-mobile-energy-browser.mjs
+```
+
+Build desktop assets before the selector visual check. The mobile browser checks use native control
+adapters. They do not verify UIKit, Android rendering or physical-device timing.
+
+Startup progress now uses a soft pulse and rotating ring around the current step icon. It covers
+Scope, Tune, Maestro, model discovery, fetch, worktree creation, restore, setup and agent startup.
+The step count and labels follow runtime state. Completed steps stay readable. Reduced motion stops
+the effects. Mobile also stops them while the app is in the background or startup has failed. Run
+`node scripts/check-preparation-progress-browser.mjs` after a desktop build, and
+`node scripts/check-mobile-energy-browser.mjs` to check these states. Browser checks use native
+adapters for mobile; they do not establish visual quality on a physical phone.

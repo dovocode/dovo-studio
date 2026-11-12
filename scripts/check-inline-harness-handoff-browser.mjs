@@ -6,10 +6,11 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const desktop = root + 'packages/extension-tasks/src/chat/composer/'
 const mobile = root + 'apps/mobile/src/tasks/detail/'
 const controls = `
+import {useImperativeHandle} from 'react';
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole==='alert'?'alert':undefined}>{children}</span>;
 export const View=({children})=><div>{children}</div>;
-export const Sheet=({children})=><section>{children}</section>;
+export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:onClose}),[onClose]);return <section>{children}</section>};
 export const Choice=()=>null;export const Field=()=>null;
 export const useTheme=()=>({styles:{error:{},muted:{}}});
 export const PermissionPolicyControls=()=>null;export const permissionPolicyUIIssue=()=>undefined;
@@ -17,8 +18,8 @@ export const ModelSettings=()=>null;
 `
 const browser = await chromium.launch()
 try {
-  for (const variant of ['thread', 'turn', 'mobile']) {
-    const isMobile = variant === 'mobile'
+  for (const variant of ['thread', 'turn', 'mobile', 'mobile-sheet']) {
+    const isMobile = variant.startsWith('mobile')
     const entry = isMobile
       ? mobile + 'harness-settings.tsx'
       : desktop + (variant === 'turn' ? 'turn-model-controls.tsx' : 'composer-harness-controls.tsx')
@@ -78,13 +79,13 @@ try {
           contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';import {${isMobile ? 'HarnessSettings' : variant === 'turn' ? 'TurnModelControls' : 'ComposerHarnessControls'} as Controls} from '${entry}';
-window.calls=[];window.flushes=0;window.fail=false;window.hold=false;window.settings=null;
+window.calls=[];window.flushes=0;window.fail=false;window.hold=false;window.settings=null;window.closes=0;
 const original={id:'thread',title:'Thread',agentId:'',harness:defaultTaskHarness('codex'),providerLock:'codex',status:'review',checkoutLocked:true,createdAt:'',messages:[{id:'m',role:'user',text:'Saved context'}],files:[],draft:'Unsent draft'};
-function App(){const[task,setTask]=useState(original),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true),[scope,setScope]=useState('owner');window.task=task;window.setTask=patch=>setTask(t=>({...t,...patch}));window.setConnected=setConnected;window.setSupported=setSupported;window.setScope=setScope;window.reset=()=>{window.settings=null;window.calls=[];setTask({...original});setScope('owner');setConnected(true);setSupported(true)};
+function App(){const[open,setOpen]=useState(true),[task,setTask]=useState(original),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true),[scope,setScope]=useState('owner');window.task=task;window.setTask=patch=>setTask(t=>({...t,...patch}));window.setConnected=setConnected;window.setSupported=setSupported;window.setScope=setScope;window.reset=()=>{setOpen(true);window.settings=null;window.calls=[];setTask({...original});setScope('owner');setConnected(true);setSupported(true)};
 const request=async(path,input)=>{window.calls.push({path,input:structuredClone(input),scope});if(window.hold)await new Promise(resolve=>window.release=resolve);if(window.fail){window.fail=false;setTask(t=>({...t,status:'review'}));throw Error('Reply lost')}setTask(t=>({...t,harness:input.harness,providerLock:input.harness.provider,status:'review'}));return{ok:true}};
 const workspace={tasks:[task],agents:[],repositories:[]};const snapshot={workspace,threadHandoffsSupported:supported,permissionPolicySupported:true,acpInstallations:[]};
 window.store={snapshot,workspace,connected,activeRuntimeId:scope,profile:{id:scope,connection:{address:'http://'+scope+'.local'}},connection:{address:'http://'+scope+'.local'},request,flush:async()=>{window.flushes++},setWorkspace:change=>{const next=change(workspace);setTask(next.tasks[0])},callEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:e=>e})};
-return <><Controls task={task} turn={task.status==='running'?{value:null,onChange:value=>window.settings=value}:undefined} agent={{...task.harness,id:'task',name:'Codex'}} disabled={false} value={window.settings} onChange={value=>window.settings=value} onClose={()=>{}} inline/><output aria-label="Draft">{task.draft}</output><output aria-label="Provider">{task.harness.provider}</output></>}
+return <>{(!${isMobile}||open)&&<Controls task={task} turn={task.status==='running'?{value:null,onChange:value=>window.settings=value}:undefined} agent={{...task.harness,id:'task',name:'Codex'}} disabled={false} value={window.settings} onChange={value=>window.settings=value} onClose={()=>{window.closes++;setOpen(false)}} inline={${variant !== 'mobile-sheet'}}/>}<textarea aria-label="Message" value={task.draft} onChange={event=>setTask(task=>({...task,draft:event.target.value}))}/><output aria-label="Draft">{task.draft}</output><output aria-label="Provider">{task.harness.provider}</output></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
         bundle: true,
@@ -110,9 +111,20 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     const choose = page.getByRole('button', { name: 'Choose Claude', exact: true })
     await choose.click()
     await page.getByLabel('Provider').filter({ hasText: 'claude' }).waitFor()
+    if (isMobile) {
+      await page.waitForFunction(() => window.closes > 0)
+      assert.equal(await page.getByText(/Harness switched\./).count(), 0)
+    }
     assert.equal(await page.getByLabel('Draft').textContent(), 'Unsent draft')
     assert.equal(await page.evaluate(() => window.task.messages[0].text), 'Saved context')
     assert.equal(await page.evaluate(() => window.calls[0].input.stop), false)
+    if (isMobile) {
+      assert.equal(await choose.count(), 0, 'Completed harness panel must dismiss')
+      await page
+        .getByRole('textbox', { name: 'Message', exact: true })
+        .fill('Next message after switch')
+      assert.equal(await page.getByLabel('Draft').textContent(), 'Next message after switch')
+    }
     await page.evaluate(() => {
       window.reset()
       window.setTask({ status: 'running' })

@@ -114,6 +114,7 @@ export function PullActionSheet({
     merge: 'Merge pull request',
     draft: detail.pull.draft ? 'Mark ready for review' : 'Convert to draft',
     'auto-merge': detail.pull.autoMergeEnabled ? 'Disable auto-merge' : 'Enable auto-merge',
+    'update-branch': 'Update branch',
     close: 'Close pull request',
     reopen: 'Reopen pull request',
   }
@@ -345,6 +346,12 @@ export function PullActionSheet({
           {detail.pull.draft
             ? 'Mark this pull request ready and notify its reviewers?'
             : 'Return this pull request to draft while work continues?'}
+        </Text>
+      )}
+      {target.action === 'update-branch' && (
+        <Text style={styles.muted}>
+          Use GitHub Update branch to merge the latest {detail.pull.base} into this PR. Published
+          commits stay intact. Repository rules determine whether approvals remain valid.
         </Text>
       )}
       {target.action === 'auto-merge' && detail.pull.autoMergeEnabled && (

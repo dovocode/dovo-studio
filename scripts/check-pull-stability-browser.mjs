@@ -256,7 +256,7 @@ try {
   await page.evaluate(() => {
     window.savedReads.clear()
     window.detail.capabilities = {
-      actions: ['comment', 'review', 'merge', 'auto-merge'],
+      actions: ['comment', 'review', 'merge', 'auto-merge', 'update-branch'],
       reviewDecisions: ['comment', 'approve', 'request-changes'],
       mergeMethods: ['squash'],
     }
@@ -305,6 +305,19 @@ try {
   const mergeWrite = await page.evaluate(() => window.writes.at(-1).input)
   assert.equal(mergeWrite.headSha, 'a'.repeat(40))
   assert.equal(mergeWrite.expectedDestination, 'verified-project-account')
+  // The Update branch action targets the reviewed head and account, without a rebase.
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Update branch', exact: true }).click()
+  const updateBranch = page.getByRole('dialog')
+  await updateBranch
+    .getByText(/Repository rules determine whether approvals remain valid/)
+    .waitFor()
+  await updateBranch.getByRole('button', { name: 'Update branch', exact: true }).click()
+  await updateBranch.waitFor({ state: 'detached' })
+  const updateWrite = await page.evaluate(() => window.writes.at(-1).input)
+  assert.equal(updateWrite.action, 'update-branch')
+  assert.equal(updateWrite.headSha, 'f'.repeat(40))
+  assert.equal(updateWrite.expectedDestination, 'verified-project-account')
   // Enabling auto-merge uses the same readiness loading and recovery flow.
   await page.evaluate(() => {
     window.savedReads.clear()

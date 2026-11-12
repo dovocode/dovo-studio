@@ -127,6 +127,7 @@ export const pullDetailSchema = mutableStruct({
       deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       changedFiles: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       mergeable: Schema.NullOr(Schema.Boolean),
+      behindBy: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
       mergeStateStatus: Schema.optional(Schema.String),
       mergeReadinessError: Schema.optional(Schema.String),
       autoMergeEnabled: Schema.optional(Schema.Boolean),
@@ -239,6 +240,7 @@ export function combinePullSections(
       checksState: status ? status.pull.checksState : overview.pull.checksState,
       reviewDecision: status ? status.pull.reviewDecision : overview.pull.reviewDecision,
       statusError: status ? status.pull.statusError : overview.pull.statusError,
+      behindBy: lifecycleStatus ? lifecycleStatus.pull.behindBy : overview.pull.behindBy,
       mergeStateStatus: lifecycleStatus
         ? lifecycleStatus.pull.mergeStateStatus
         : overview.pull.mergeStateStatus,

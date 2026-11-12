@@ -64,7 +64,8 @@ export class RuntimePreferences {
         .run('runtime-preferences', JSON.stringify(stored))
     if (
       previous.enablePipelineWatching !== settings.enablePipelineWatching ||
-      previous.enablePullRequestWatching !== settings.enablePullRequestWatching
+      previous.enablePullRequestWatching !== settings.enablePullRequestWatching ||
+      previous.enablePullRequestBabysitting !== settings.enablePullRequestBabysitting
     )
       this.onWatchSettingsChange?.()
     return settings

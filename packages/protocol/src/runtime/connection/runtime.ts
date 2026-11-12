@@ -628,6 +628,10 @@ export const runtimePreferencesSchema = mutableStruct({
   enablePullRequestWatching: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
+  /** Opt-in: maintain linked editing PRs through CI, review feedback and target updates. */
+  enablePullRequestBabysitting: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
   /** Experimental: let agents hand pipeline run monitoring to this runtime. */
   enablePipelineWatching: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),

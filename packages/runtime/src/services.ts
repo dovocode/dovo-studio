@@ -101,7 +101,10 @@ export function createServices(
   const commands = new Commands(db)
   const preferences = new RuntimePreferences(
     db,
-    () => store.update((workspace) => workspace),
+    () => {
+      store.update((workspace) => workspace)
+      if (preferences.get().enablePullRequestBabysitting) pullRequestWatch.refresh()
+    },
     policy,
   )
   const deviceHostUploads = new DeviceHostUploads()
@@ -270,6 +273,7 @@ export function createServices(
       (id, text, signal) => modelSelection.resolveEffect(id, text, signal),
       () => enabledStudioTools(preferences.get()),
       () => preferences.get().enableLinkedProjectsTool,
+      () => preferences.get().enablePullRequestBabysitting,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy)
   const secureInputs = new SecureInputs(

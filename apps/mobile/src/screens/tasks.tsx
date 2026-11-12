@@ -21,7 +21,7 @@ import {
 } from '@dovo/protocol'
 import { SectionOrderSheet } from '../tasks/list/section-order-sheet'
 import { useForegroundInterval } from '../runtime/state/app-active'
-import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
+import { nativeEffect } from '../runtime/state/native-effect'
 import {
   updateMobilePreferences,
   setMobileThreadSectionCollapsed,
@@ -62,6 +62,7 @@ import { ProjectThreadFilter } from '../tasks/list/project-thread-filter'
 import { TaskListRow, type TaskListRowActions } from '../tasks/list/task-list-row'
 import {
   taskListProjection,
+  mobileThreadListSources,
   mobileThreadTree,
   type TaskListRowData,
 } from '../tasks/list/task-list-projection'
@@ -78,7 +79,6 @@ import { Sheet, type SheetHandle } from '../ui/layout/sheet'
 import { Icon } from '../ui/controls/icon'
 import { IconButton } from '../ui/controls/icon-button'
 import { ScreenHeader } from '../ui/layout/screen-header'
-import { useAction } from '../ui/controls/use-action'
 import { useTheme } from '../ui/theme'
 type TaskListItem =
   | { kind: 'history'; count: number }
@@ -90,9 +90,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   const panes = useTaskPanes()
 
   const { navigate, focused } = useNavigation(),
-    { refreshAll, overviews, profiles, activeId, selectRuntimeEffect, readRuntime, ready } =
-      useRuntime(),
-    { busy, error, act } = useAction()
+    { refreshAll, overviews, profiles, activeId, readRuntime, ready } = useRuntime()
   const { view, setView, scrollOffset } = useTaskListView()
   const car = useCarMode() && !archived
   const searchInput = useRef<ComponentRef<typeof TextInput>>(null)
@@ -213,9 +211,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     [projectGroups, project],
   )
   const previousRows = useRef<ReadonlyMap<string, TaskListRowData>>(new Map())
+  const threadSources = useMemo(
+    () => mobileThreadListSources(overviews, preferences.computerRefresh !== 'manual'),
+    [overviews, preferences.computerRefresh],
+  )
   const rowData = useMemo(
-    () => taskListProjection(overviews, now, previousRows.current),
-    [overviews, now],
+    () => taskListProjection(threadSources.entries, now, previousRows.current),
+    [threadSources.entries, now],
   )
   useLayoutEffect(() => {
     previousRows.current = rowData
@@ -632,26 +634,15 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   const openTask = (item: (typeof allTasks)[number]) => {
     retainPosition()
     setDetails('')
-    if (item.runtimeId === activeId) navigate('tasks', item.task.id, item.runtimeId)
-    else
-      act(() =>
-        mobileWorkflow(function* () {
-          yield* selectRuntimeEffect(item.runtimeId)
-          navigate('tasks', item.task.id, item.runtimeId)
-        }),
-      )
+    // The route owns its computer scope. Saving a global selection must not delay a tap.
+    navigate('tasks', item.task.id, item.runtimeId)
   }
   const openMessage = (hit: (typeof historySearch.hits)[number]) => {
     const owner = entries.find((entry) => entry.profile.id === hit.runtimeId)
     if (!owner?.connected) return
     retainPosition()
-    act(() =>
-      mobileWorkflow(function* () {
-        if (hit.runtimeId !== activeId) yield* selectRuntimeEffect(hit.runtimeId)
-        requestMessageReveal(owner.profile.connection, hit.taskId, hit.messageId)
-        navigate('tasks', hit.taskId, hit.runtimeId)
-      }),
-    )
+    requestMessageReveal(owner.profile.connection, hit.taskId, hit.messageId)
+    navigate('tasks', hit.taskId, hit.runtimeId)
   }
   const messageHits = historySearch.hits.flatMap((hit) => {
     const owner = entries.find((entry) => entry.profile.id === hit.runtimeId)
@@ -926,9 +917,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ]}
         ListHeaderComponent={
           <View style={{ gap: 4 }}>
-            {!!(error || refreshError || historySearch.error) && (
+            {!!(refreshError || historySearch.error) && (
               <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 10 }]}>
-                {error || refreshError || historySearch.error}
+                {refreshError || historySearch.error}
               </Text>
             )}
             {historySearch.loading && (
@@ -949,7 +940,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     key={JSON.stringify([hit.runtimeId, hit.taskId, hit.messageId])}
                     accessibilityRole="button"
                     accessibilityLabel={`Open ${hit.role} message in ${hit.task?.title ?? 'thread'} on ${hit.owner.profile.name}`}
-                    disabled={busy || !hit.owner.connected}
+                    disabled={!hit.owner.connected}
                     onPress={() => openMessage(hit)}
                     style={{
                       padding: 12,
@@ -1035,7 +1026,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 testID={
                   profiles.length === 1 ? `Task ${item.entry.task.id}` : `Task ${item.entry.key}`
                 }
-                disabled={busy || bulkBusy}
+                disabled={bulkBusy}
                 showDevice={profiles.length > 1}
                 selectionActive={selecting}
                 selected={selected.has(item.entry.key)}
@@ -1085,14 +1076,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               title={
                 filtersActive
                   ? 'No matching threads'
-                  : entries.some((entry) => !entry.snapshot)
+                  : threadSources.waiting || entries.some((entry) => !entry.snapshot)
                     ? 'Waiting for your computers'
                     : 'Ready for your next idea'
               }
               description={
                 filtersActive
                   ? 'Try a different search or clear your filters.'
-                  : entries.some((entry) => !entry.snapshot)
+                  : threadSources.waiting || entries.some((entry) => !entry.snapshot)
                     ? 'Threads will appear when your computer connects.'
                     : 'Start with a question, a fix, or something you want to build.'
               }
@@ -1109,7 +1100,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 ) : (
                   <Action
                     label="New thread"
-                    disabled={busy || !overviews.some((entry) => entry.connected)}
+                    disabled={!overviews.some((entry) => entry.connected)}
                     onPress={() => router.push('/new', { withAnchor: true })}
                   />
                 )
@@ -1146,7 +1137,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           </Text>
           <LifecycleActions task={detail.task} runtimeId={detail.runtimeId} allowReadState />
           {detail.runtimeId !== activeId && (
-            <Action label="Open task" disabled={busy} onPress={() => openTask(detail)} />
+            <Action label="Open task" onPress={() => openTask(detail)} />
           )}
         </Sheet>
       )}

@@ -8,6 +8,7 @@ const labels = {
   merge: 'Merge',
   draft: 'Change draft status',
   'auto-merge': 'Change auto-merge',
+  'update-branch': 'Update branch',
   close: 'Close PR',
   reopen: 'Reopen PR',
 } satisfies Partial<Record<PullAction['action'], string>>

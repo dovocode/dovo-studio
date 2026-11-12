@@ -104,8 +104,13 @@ export async function taskWaiting(
           label: `PR #${watch.number}`,
           project: watch.source?.repository ?? project(watch.repositoryId),
           url: watch.url,
-          status: 'Waiting for PR feedback',
-          pausedReason: pausedReason(settings.enablePullRequestWatching),
+          status: settings.enablePullRequestBabysitting
+            ? (watch.careStatus ?? 'Waiting for PR feedback')
+            : 'Waiting for PR feedback',
+          pausedReason:
+            watch.carePaused && settings.enablePullRequestBabysitting
+              ? 'PR babysitting paused after repeated feedback. Restart the PR watch to continue.'
+              : pausedReason(settings.enablePullRequestWatching),
           checkedAt: watch.checkedAt,
           error: watch.error,
         })),

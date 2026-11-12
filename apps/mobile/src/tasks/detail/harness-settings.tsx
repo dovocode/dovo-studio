@@ -18,7 +18,7 @@ import {
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
 import { resolveScopedAgents, decode } from '@dovo/protocol'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Action } from '../../ui/controls/action'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -40,7 +40,7 @@ import {
 } from '../../agents/permission-policy-controls'
 import { ModelSettings } from '../../agents/model-settings'
 import { useHarnessAvailability } from '../../agents/use-harness-availability'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
@@ -72,6 +72,8 @@ export function HarnessSettings({
   const { styles } = useTheme()
   const [turnError, setTurnError] = useState('')
   const [advanced, setAdvanced] = useState(false)
+  const sheet = useRef<SheetHandle>(null)
+  const completed = useRef(false)
 
   const { snapshot, connected, profile, callEffect, previewTaskEffect } = useRuntime(),
     { act, busy, error } = useAction()
@@ -83,6 +85,17 @@ export function HarnessSettings({
     request: (input) =>
       runClientEffect(callEffect('/api/tasks/continue-harness', input, responses.ok)),
   })
+  useEffect(() => {
+    // A completed switch returns to the composer. Do not leave a success panel over input.
+    if (!handoff.notice) {
+      completed.current = false
+      return
+    }
+    if (completed.current) return
+    completed.current = true
+    if (inline) onClose()
+    else sheet.current?.dismiss()
+  }, [handoff.notice, inline, onClose])
   useEffect(() => {
     // An inline editor must keep its enclosing sheet mounted until saving finishes.
     onBusyChange?.(busy || handoff.busy)
@@ -362,11 +375,6 @@ export function HarnessSettings({
           {handoff.error}
         </Text>
       )}
-      {!!handoff.notice && (
-        <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          {handoff.notice}
-        </Text>
-      )}
       {(turn || (task.modelSelection !== 'auto' && task.modelSelection !== 'smart')) && (
         <>
           {!advanced && (
@@ -549,7 +557,12 @@ export function HarnessSettings({
       {content}
     </View>
   ) : (
-    <Sheet title={advanced ? 'Model settings' : 'Agent & model'} onClose={onClose} busy={busy}>
+    <Sheet
+      ref={sheet}
+      title={advanced ? 'Model settings' : 'Agent & model'}
+      onClose={onClose}
+      busy={busy || handoff.busy}
+    >
       {content}
     </Sheet>
   )

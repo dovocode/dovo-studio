@@ -293,3 +293,59 @@ the missing sections are reported and previously cached sections remain availabl
 - [GraphQL review threads](https://docs.github.com/en/graphql/reference/pulls)
 - [Pull requests and merging](https://docs.github.com/en/rest/pulls/pulls)
 - [Check runs and annotations](https://docs.github.com/en/rest/checks/runs)
+
+## PR babysitting
+
+Open **Settings → Pull requests & pipelines** on desktop or mobile. Select the owning computer.
+Enable **PR babysitting**. The setting is off by default. Enabling it also enables the PR feedback
+watcher. This permits agent runs, tests and pushes for the thread's authorized task and uses agent
+tokens. Merge approval stays manual.
+
+Dovo starts a durable watch for a linked open PR when it matches an editing thread's checkout branch
+and verified repository identity. It excludes review checkouts, read-only threads, paused queues and
+settled or archived threads. An agent can also register an authorized PR through
+`pull_request_watch`. A watch for an unrelated branch remains a feedback watch and does not start
+automatic checkout work. The thread's project information shows the current babysitting status. Stop
+its PR watch there to opt out for that thread. Stopped watches survive restarts and do not start
+again on their own.
+
+The runtime checks active PRs every 30 seconds while babysitting is enabled. Normal feedback
+watching keeps its two-minute interval. New check failures, review feedback, conflicts and target
+branch changes wake the thread's agent. Passing checks produce one readiness update per changed
+state. Missing or failed reads never establish success. Ten consecutive feedback-only wakeups pause
+babysitting to stop reply loops. Explicitly restart the watch after reviewing the loop.
+
+For GitHub, Dovo reads the comparison against the current target branch. When the PR is behind and
+the thread is idle, it uses GitHub's **Update branch** action. It requests `MERGE` and sends
+`expectedHeadOid`. It does not run a local rebase or force-push. The same Update branch action is
+available in the PR action menu on desktop and mobile when GitHub permits it. Published commits stay
+intact. Repository rules decide whether approvals remain valid.
+
+After a server update, the agent must fetch and synchronize its checkout before making more fixes.
+It must retain local commits and uncommitted work. A blocked or uncertain update produces an agent
+notification. Dovo does not repeat the same mutation for the same head/target pair. Refresh the PR
+and explicitly restart its watch to retry that pair. A missing action is checked again without
+replaying an issued mutation. Mutation outcomes survive queue admission failures. Disabling
+babysitting during an update retains its outcome and does not queue new fix work. Other forges
+retain CI/review monitoring; Dovo reports when branch freshness or the server update action is
+unavailable.
+
+This follows the durable-watch and expected-head update approach in T3 Code, inspected at
+`4fd40e1a`: `apps/server/src/orchestration-v2/pullRequestWatch.ts` and
+`packages/source-control-github/src/server/GitHubPullRequestApi.ts`. No T3 skill is required.
+
+Verification:
+
+```sh
+pnpm exec vp test packages/runtime/src/scm/tasks/pull-request-watch.test.ts packages/runtime/src/scm/forges/providers/github-lifecycle.test.ts
+pnpm --filter @dovo/runtime... -r build
+pnpm exec playwright install chromium
+node scripts/check-runtime-settings-browser.mjs
+node scripts/check-mobile-settings-layout-browser.mjs --navigation-only
+node scripts/check-pull-stability-browser.mjs
+node scripts/check-mobile-integration-continuity-browser.mjs
+```
+
+Tests cover mocked GitHub mutation boundaries and real local runtime queues. They do not change a
+live PR or prove that a repository will retain approvals. Native mobile layout still needs device
+verification.

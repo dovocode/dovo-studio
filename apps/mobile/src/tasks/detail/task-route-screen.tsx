@@ -1,9 +1,14 @@
-import { taskParentReference, resolveThreadRuntime, watchRuntimeTask } from '@dovo/protocol'
+import {
+  taskParentReference,
+  resolveThreadRuntime,
+  watchRuntimeTask,
+  runtimeSyncOnline,
+} from '@dovo/protocol'
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { randomUUID } from 'expo-crypto'
 import { ActivityIndicator, Keyboard, View } from 'react-native'
-import { useRuntime } from '../../runtime/connection/provider'
+import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { PairComputer } from '../../runtime/connection/pair-computer'
 import { StartupThread } from '../creation/startup-thread'
 import { useNavigation } from '../../shell/navigation'
@@ -23,33 +28,64 @@ function backToTasks() {
   else router.replace('/')
 }
 
-export function TaskRouteScreen() {
-  const { colors, styles } = useTheme()
+type ThreadRouteParams = {
+  runtimeId: string
+  taskId: string
+  runtimeIdentity?: string
+  parentRuntimeIdentity?: string
+  parentRuntimeId?: string
+  parentTaskId?: string
+  parentTitle?: string
+  nativeAgentKey?: string
+  questionId?: string
+  draft?: string
+}
 
-  const params = useLocalSearchParams<{
-    runtimeId: string
-    taskId: string
-    runtimeIdentity?: string
-    parentRuntimeIdentity?: string
-    parentRuntimeId?: string
-    parentTaskId?: string
-    parentTitle?: string
-    nativeAgentKey?: string
-    questionId?: string
-    draft?: string
-  }>()
-  // This route owns the draft and its live conversation for the whole screen lifetime.
-  // Clearing the creation flag updates the URL, without replacing the page or its composer.
+export function TaskRouteScreen() {
+  const { styles } = useTheme()
+  const params = useLocalSearchParams<ThreadRouteParams>()
+  // Keep creation mounted when committing clears the draft flag in the URL.
   const [startup] = useState(() => params.draft === 'true')
+  const { profiles, overviews, activeId, refreshRuntime, recovering } = useRuntime()
+  const { focused } = useNavigation()
+  const owner = resolveThreadRuntime(params, profiles, overviews)
+  // Remember the selected computer in the background. The route can use its cached
+  // workspace and owner-bound requests before secure storage finishes.
+  const switching = useRouteComputer(owner?.id ?? '')
+  useEffect(() => {
+    if (!owner || !focused || startup) return
+    const stop = watchRuntimeTask(owner.connection, params.taskId)
+    // An inactive computer has no selected live stream yet. Load this thread now,
+    // including its history, while the selected-computer save is still in progress.
+    if (!recovering && owner.id !== activeId && !runtimeSyncOnline(owner.connection))
+      // The provider publishes request failures on the owning computer's overview.
+      void refreshRuntime(owner).catch(() => undefined)
+    return stop
+  }, [owner?.connection, focused, startup, params.taskId, activeId, refreshRuntime, recovering])
+  const content = <TaskRouteContent startup={startup} />
+  return (
+    <>
+      {!!switching.error && (
+        <View style={styles.content}>
+          <Text accessibilityRole="alert" style={styles.error}>
+            Could not save the selected computer. {switching.error}
+          </Text>
+          <Action label="Retry saving computer" disabled={!focused} onPress={switching.retry} />
+        </View>
+      )}
+      {owner && !startup ? <RuntimeScope runtimeId={owner.id}>{content}</RuntimeScope> : content}
+    </>
+  )
+}
+
+function TaskRouteContent({ startup }: { startup: boolean }) {
+  const { colors, styles } = useTheme()
+  const params = useLocalSearchParams<ThreadRouteParams>()
   const { ready, activeId, profiles, overviews, snapshot, refresh, connected } = useRuntime()
   const { focused } = useNavigation()
   const { busy, error, act } = useAction()
   const [pairing, setPairing] = useState(false)
   const owner = resolveThreadRuntime(params, profiles, overviews)
-  const switching = useRouteComputer(owner?.id ?? '')
-  useEffect(() => {
-    if (owner && focused && !startup) return watchRuntimeTask(owner.connection, params.taskId)
-  }, [owner?.connection, focused, startup, params.taskId])
   useEffect(() => {
     if (ready && focused && owner && owner.id !== params.runtimeId)
       router.setParams({ runtimeId: owner.id })
@@ -184,20 +220,6 @@ export function TaskRouteScreen() {
                   />
                 ))}
               </>
-            )}
-          </>
-        ) : activeId !== owner.id ? (
-          <>
-            <Text style={styles.title}>Opening on {owner.name}…</Text>
-            {switching.error ? (
-              <>
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {switching.error}
-                </Text>
-                <Action label="Try again" disabled={!focused} onPress={switching.retry} />
-              </>
-            ) : (
-              <ActivityIndicator color={colors.accent} />
             )}
           </>
         ) : (

@@ -376,6 +376,8 @@ export class GitLabForge implements ForgeAdapter {
       throw new HttpError(409, 'This merge request changed. Refresh before submitting this action.')
     const path = `${this.path}/merge_requests/${input.number}`
     let status: 'updated' | 'submitted' | 'merged' = 'updated'
+    if (input.action === 'update-branch')
+      throw new HttpError(400, 'Update branch is not available for this forge.')
     switch (input.action) {
       case 'comment':
         await this.http.json(`${path}/notes`, { method: 'POST', body: { body: input.body } })

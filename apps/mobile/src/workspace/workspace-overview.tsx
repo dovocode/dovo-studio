@@ -27,7 +27,11 @@ import { WorkspaceStarter } from './workspace-starter'
 import { ResourceActions } from './resource-actions'
 import { StandaloneRow } from './standalone-row'
 import { TaskListRow, type TaskListRowActions } from '../tasks/list/task-list-row'
-import { taskListProjection, mobileThreadTree } from '../tasks/list/task-list-projection'
+import {
+  taskListProjection,
+  mobileThreadTree,
+  mobileThreadListSources,
+} from '../tasks/list/task-list-projection'
 import { useListScroll } from '../ui/layout/use-list-scroll'
 import { contentColumn } from '../ui/layout/content-column'
 import { Sheet } from '../ui/layout/sheet'
@@ -65,9 +69,13 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   const [starterActive, setStarterActive] = useState(false)
   const previousTree = useRef<ReturnType<typeof mobileThreadTree>['nodes']>(new Map())
   useForegroundInterval(() => setNow(Date.now()), focused ? 15000 : null)
+  const threadSources = useMemo(
+    () => mobileThreadListSources(runtime.overviews, preferences.computerRefresh !== 'manual'),
+    [runtime.overviews, preferences.computerRefresh],
+  )
   const threadRows = useMemo(
-    () => taskListProjection(runtime.overviews, now, previousThreads.current),
-    [runtime.overviews, now],
+    () => taskListProjection(threadSources.entries, now, previousThreads.current),
+    [threadSources.entries, now],
   )
   const tree = useMemo(
     () =>
@@ -270,7 +278,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           {error || browser.storageError}
         </Text>
       )}
-      {starterActive || (!allItems.length && !filtered) ? (
+      {starterActive || (!allItems.length && !filtered && !threadSources.waiting) ? (
         <WorkspaceStarter
           initialMode={unified ? 'auto' : 'terminal'}
           embedded
@@ -309,14 +317,26 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           }}
           ListEmptyComponent={
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-              <Icon name="search" size={28} color={colors.muted} />
-              <Text style={styles.title}>No matching items</Text>
-              <Text style={styles.muted}>Try another title, project or computer.</Text>
-              <Action
-                secondary
-                label="Clear filters"
-                onPress={() => setView({ search: '', kind: 'all', computer: 'all' })}
+              <Icon
+                name={threadSources.waiting ? 'tasks' : 'search'}
+                size={28}
+                color={colors.muted}
               />
+              <Text style={styles.title}>
+                {threadSources.waiting ? 'Loading threads…' : 'No matching items'}
+              </Text>
+              <Text style={styles.muted}>
+                {threadSources.waiting
+                  ? 'Connecting to your computers.'
+                  : 'Try another title, project or computer.'}
+              </Text>
+              {!threadSources.waiting && (
+                <Action
+                  secondary
+                  label="Clear filters"
+                  onPress={() => setView({ search: '', kind: 'all', computer: 'all' })}
+                />
+              )}
             </View>
           }
           renderItem={({ item: row }) =>

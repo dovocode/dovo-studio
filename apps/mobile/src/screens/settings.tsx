@@ -199,7 +199,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           path: '/settings/pull-requests',
           group: 'Task workflow',
           keywords:
-            'smart linking settle merge closed archive watcher monitoring checks pipeline pr pull requests feedback',
+            'smart linking settle merge closed archive watcher monitoring checks pipeline pr pull requests feedback babysitting update branch target approvals',
         },
       ],
     },

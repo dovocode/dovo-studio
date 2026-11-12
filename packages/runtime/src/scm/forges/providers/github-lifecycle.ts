@@ -11,6 +11,16 @@ const lifecycle = mutableStruct({
   mergeStateStatus: Schema.String,
   isInMergeQueue: Schema.Boolean,
   viewerCanUpdate: Schema.Boolean,
+  viewerCanUpdateBranch: Schema.optional(Schema.Boolean),
+  baseRef: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        compare: Schema.NullOr(
+          mutableStruct({ behindBy: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) }),
+        ),
+      }),
+    ),
+  ),
   viewerCanEnableAutoMerge: Schema.Boolean,
   viewerCanDisableAutoMerge: Schema.Boolean,
   autoMergeRequest: Schema.NullOr(mutableStruct({ mergeMethod: Schema.String })),
@@ -25,8 +35,17 @@ export async function githubLifecycle(json: GithubJSON, repo: GithubLocation, nu
     await githubGraphql(
       json,
       repo,
-      `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid state isDraft mergeStateStatus isInMergeQueue viewerCanUpdate viewerCanEnableAutoMerge viewerCanDisableAutoMerge autoMergeRequest{mergeMethod}}}}`,
-      ['-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`],
+      `query($owner:String!,$name:String!,$number:Int!,$head:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid state isDraft mergeStateStatus isInMergeQueue viewerCanUpdate viewerCanUpdateBranch baseRef{compare(headRef:$head){behindBy}} viewerCanEnableAutoMerge viewerCanDisableAutoMerge autoMergeRequest{mergeMethod}}}}`,
+      [
+        '-f',
+        `owner=${owner}`,
+        '-f',
+        `name=${name}`,
+        '-F',
+        `number=${number}`,
+        '-f',
+        `head=refs/pull/${number}/head`,
+      ],
     ),
   ).data.repository.pullRequest
 }
@@ -108,4 +127,47 @@ export async function changeGithubLifecycle(
         (input.enabled && response.autoMergeRequest?.mergeMethod !== input.method.toUpperCase()))
   )
     throw new Error('GitHub did not confirm this PR update. Refresh before retrying.')
+}
+
+/** GitHub's Update branch button uses a merge, so published commits stay intact. */
+export async function updateGithubBranch(
+  json: GithubJSON,
+  repo: GithubLocation,
+  input: Extract<PullAction, { action: 'update-branch' }>,
+) {
+  const current = await githubLifecycle(json, repo, input.number)
+  if (current.headRefOid !== input.headSha)
+    throw new HttpError(409, 'This PR changed. Refresh before continuing.')
+  if (current.state !== 'OPEN' || current.isInMergeQueue)
+    throw new HttpError(409, 'This PR is closed or in the merge queue.')
+  const behind = current.baseRef?.compare?.behindBy
+  if (behind === 0) return
+  if (behind === undefined)
+    throw new HttpError(409, 'GitHub could not compare this branch. Refresh before continuing.')
+  if (!current.viewerCanUpdateBranch)
+    throw new HttpError(
+      403,
+      'GitHub cannot update this branch. Check branch permissions or conflicts.',
+    )
+  const result = decode(
+    mutableStruct({
+      data: mutableStruct({
+        updatePullRequestBranch: Schema.NullOr(
+          mutableStruct({
+            pullRequest: Schema.NullOr(
+              mutableStruct({ id: Schema.String, headRefOid: Schema.String }),
+            ),
+          }),
+        ),
+      }),
+    }),
+    await githubGraphql(
+      json,
+      repo,
+      'mutation($id:ID!,$head:GitObjectID!){updatePullRequestBranch(input:{pullRequestId:$id,expectedHeadOid:$head,updateMethod:MERGE}){pullRequest{id headRefOid}}}',
+      ['-f', `id=${current.id}`, '-f', `head=${input.headSha}`],
+    ),
+  ).data.updatePullRequestBranch?.pullRequest
+  if (result?.id !== current.id || !result.headRefOid || result.headRefOid === input.headSha)
+    throw new Error('GitHub did not confirm the branch update. Refresh before retrying.')
 }

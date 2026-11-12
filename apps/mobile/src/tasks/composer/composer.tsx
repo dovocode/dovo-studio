@@ -81,7 +81,7 @@ import { ComposerField } from './composer-field'
 import { dismissComposerKeyboard } from './native-composer-input'
 import { ComposerActivity } from './composer-activity'
 import { ComposerHistoryGesture } from './composer-history-gesture'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -211,6 +211,7 @@ export function Composer({
   const { activeId: stashRuntimeId } = useRuntime()
   const checkoutAction = useAction()
   const [turnModelOpen, setTurnModelOpen] = useApplicationState(false)
+  const turnModelSheet = useRef<SheetHandle>(null)
   const [advanced, setAdvanced] = useApplicationState(false)
   useEffect(() => setAdvanced(false), [task.id, task.repositoryId, setAdvanced])
   const [machineMoving, setMachineMoving] = useApplicationState(false)
@@ -1366,12 +1367,16 @@ export function Composer({
                 }}
               >
                 {turnModelOpen && agent && (
-                  <Sheet title="Agent & model" onClose={() => setTurnModelOpen(false)}>
+                  <Sheet
+                    ref={turnModelSheet}
+                    title="Agent & model"
+                    onClose={() => setTurnModelOpen(false)}
+                  >
                     {snapshot?.fullTurnSettingsSupported ? (
                       <HarnessSettings
                         inline
                         task={task}
-                        onClose={() => setTurnModelOpen(false)}
+                        onClose={() => turnModelSheet.current?.dismiss()}
                         turn={{
                           value: turnSettings,
                           onChange: setTurnSettings,

@@ -169,6 +169,7 @@ export class Tasks {
     ) => Effect.Effect<void, RuntimeFailure> = () => Effect.void,
     studioTools: () => StudioTools = noStudioTools,
     linkedProjectsEnabled: () => boolean = () => true,
+    pullRequestBabysittingEnabled: () => boolean = () => false,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -187,6 +188,7 @@ export class Tasks {
       deviceHubEnabled,
       studioTools,
       linkedProjectsEnabled,
+      pullRequestBabysittingEnabled,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.runner.setNativeSessions(

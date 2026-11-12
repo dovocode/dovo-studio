@@ -3015,7 +3015,7 @@ function BrowserContent({
             <Home size={15} />
           </IconButton>
         )}
-        {shared && mode === 'web' && (
+        {mode === 'web' && (
           <BrowserSiteControls
             key={`${browserKey}:${history.url || url}`}
             tabKey={browserKey}
@@ -3127,7 +3127,7 @@ function BrowserContent({
         {shared && mode === 'web' && browser && (
           <BrowserDownloadsPanel key={profileId} profileId={profileId} tabKey={browserKey} />
         )}
-        {shared && mode === 'web' && !isPrivateBrowserProfile(profileId) && (
+        {mode === 'web' && !isPrivateBrowserProfile(profileId) && (
           <BrowserExtensions
             key={`${profileId}:${browserKey}`}
             profileId={profileId}

@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Check, GitFork, LoaderCircle, RotateCcw, X } from 'lucide-react'
-import { preparationElapsed, type TaskPreparation } from '@dovo/protocol'
+import {
+  Bot,
+  Check,
+  Download,
+  GitPullRequest,
+  ListFilter,
+  Terminal,
+  GitFork,
+  LoaderCircle,
+  RotateCcw,
+  ScanSearch,
+  SlidersHorizontal,
+  WandSparkles,
+  X,
+} from 'lucide-react'
+import { preparationElapsed, preparationActivity, type TaskPreparation } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 
 /** Step-by-step progress while the runtime selects projects/models and prepares the agent. */
@@ -26,6 +40,23 @@ export function PreparationProgress({
   const active = preparation.steps.find(
     (step) => step.state === 'active' || step.state === 'failed',
   )
+  const activity = preparationActivity(preparation)
+  const ActivityIcon = activity
+    ? {
+        scope: ScanSearch,
+        tune: SlidersHorizontal,
+        maestro: WandSparkles,
+        worktree: GitFork,
+        restore: RotateCcw,
+        fetch: Download,
+        pull: GitPullRequest,
+        setup: Terminal,
+        models: ListFilter,
+        agent: Bot,
+        other: LoaderCircle,
+      }[activity.id]
+    : LoaderCircle
+  const stepIndex = preparation.steps.findIndex((step) => step === active)
   const elapsed = failed ? '' : preparationElapsed(preparation.startedAt, now)
   return (
     <section
@@ -46,6 +77,39 @@ export function PreparationProgress({
             </span>
           )}
         </div>
+        {activity && (
+          <div
+            className="flex items-center gap-4 bg-gradient-to-br from-primary/5 to-transparent px-4 pb-1 pt-4"
+            data-activity={activity.id}
+          >
+            <div
+              className="relative flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary"
+              aria-hidden
+            >
+              {!failed && (
+                <>
+                  <span className="absolute inset-0 rounded-2xl bg-primary/10 motion-safe:animate-[dovo-activity-breathe_3.2s_ease-in-out_infinite]" />
+                  <span
+                    className="absolute -inset-1 rounded-full border border-primary/15 border-t-primary/70 border-b-primary/40 motion-safe:animate-[spin_3.2s_linear_infinite]"
+                    data-activity-orbit
+                  />
+                </>
+              )}
+              <ActivityIcon className="relative size-5" />
+            </div>
+            <div className="min-w-0 flex-1 py-1">
+              <p className="mb-1 text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">
+                Step {stepIndex + 1} of {preparation.steps.length}
+              </p>
+              <p className="text-sm font-semibold" key={activity.id}>
+                {failed ? activity.stopped : activity.title}
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                {activity.description}
+              </p>
+            </div>
+          </div>
+        )}
         <ol className="space-y-1.5 px-3 py-3">
           {preparation.steps.map((step) => (
             <li
@@ -76,7 +140,7 @@ export function PreparationProgress({
                       ? 'font-medium text-destructive'
                       : step.state === 'active'
                         ? 'font-medium text-foreground'
-                        : 'text-muted-foreground line-through decoration-muted-foreground/40'
+                        : 'text-muted-foreground'
                 }
               >
                 {step.label}
