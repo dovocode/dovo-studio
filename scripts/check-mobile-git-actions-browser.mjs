@@ -4,6 +4,7 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
+  export const Alert={alert:(...args)=>window.alerts.push(args)};
   export const View=({children})=><div>{children}</div>;
   export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
   export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
@@ -18,14 +19,16 @@ const built = await build({
       import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
       import {CommitSection} from './src/tasks/detail/commit-section';
       const initial={id:'task',repositoryId:'repo',title:'Task',status:'done',execution:'main',messages:[],files:[]};
-      window.reads=[];window.writes=[];window.links=[];window.foreground=true;
+      // Keep the pairing identity stable across renders, as the runtime provider does.
+      const profile={id:'local',connection:{address:'http://runtime',token:'fixture-device'}};
+      window.alerts=[];window.reads=[];window.writes=[];window.links=[];window.foreground=true;
       function App(){
-        const [revision,setRevision]=useState(0),[task,setTask]=useState(initial),[connected,setConnected]=useState(true);
+        const [shown,setShown]=useState(true);window.showCommit=setShown;const [revision,setRevision]=useState(0),[task,setTask]=useState(initial),[connected,setConnected]=useState(true);
         window.configure=changes=>{if('connected'in changes)setConnected(changes.connected);if('foreground'in changes)window.foreground=changes.foreground;if('task'in changes)setTask({...initial,...changes.task});setRevision(value=>value+1)};
-        window.runtime={connected,profile:{id:'local',connection:{address:'http://runtime'}},snapshot:{workspace:{repositories:[{id:'repo',path:'/repo',name:'Project'}]}},
+        window.runtime={connected,profile,snapshot:{workspace:{repositories:[{id:'repo',path:'/repo',name:'Project'}]}},
           readEffect:(path,input)=>Effect.tryPromise({try:()=>new Promise((resolve,reject)=>window.reads.push({resolve,reject,input,revision})),catch:cause=>cause}),
           callEffect:(path,input)=>Effect.sync(()=>{window.writes.push({path,input});if(path==='/api/tasks/commit-message')return {message:'Generated message'};if(path==='/api/tasks/commit')return {commit:'123456789',pushError:input.push?'Fixture push failed':undefined};return {ok:true}})};
-        return <CommitSection task={task}/>;
+        return shown?<CommitSection task={task}/>:null;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -177,9 +180,27 @@ try {
   await countReads(10)
   assert.equal(await action.isDisabled(), true)
   await finish(9, clean)
+  const message = page.getByRole('textbox', { name: 'Commit message' })
+  await message.fill('Retain this Changes draft')
+  await page.evaluate(() => window.showCommit(false))
+  await message.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.showCommit(true))
+  await message.waitFor()
+  assert.equal(await message.inputValue(), 'Retain this Changes draft')
+  await countReads(11)
+  await finish(10, clean)
+  await page.evaluate(() => window.configure({ task: { id: 'third' } }))
+  await countReads(12)
+  await finish(11, clean)
+  assert.equal(await message.inputValue(), '')
+  await page.evaluate(() => window.configure({ task: { id: 'second' } }))
+  await countReads(13)
+  await finish(12, clean)
+  assert.equal(await message.inputValue(), 'Retain this Changes draft')
+  assert.deepEqual(await page.evaluate(() => window.alerts), [])
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile Git controls: status-aware commit/push/PR, manual messages, push-only retry, busy refresh, errors, foreground polling and task isolation passed.',
+    'Mobile Git controls: status-aware commit/push/PR, manual messages, push-only retry, busy refresh, errors, foreground polling, retained drafts across remounts and task isolation passed.',
   )
 } finally {
   await browser.close()

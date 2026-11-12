@@ -418,20 +418,25 @@ try {
   assert.equal(await page.evaluate(() => window.requests.length), beforeReadFailure + 1)
   await page.evaluate(() => window.finish())
   await page.waitForFunction(() => !window.actions.busy)
+  // Slow React work so native reads cannot rely on navigation committing in the next tick.
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
   // Scope changes during a native read must not send either thread's draft.
   await input.fill('Do not send after switching')
   await page.evaluate(() => {
     window.finish = null
+    window.finishRead = null
     window.actions.composerInput.current = {
       readText: () => new Promise((resolve) => (window.finishRead = resolve)),
     }
     void window.actions.run(() => window.actions.submit())
   })
-  await page.waitForFunction(() => window.actions.busy)
+  await page.waitForFunction(() => window.actions.busy && typeof window.finishRead === 'function')
   await page.evaluate(() => {
     window.draftScope = 'computer:other-thread'
     window.setTask((task) => ({ ...task }))
   })
+  await page.waitForFunction(() => window.actions.draft.key === 'computer:other-thread')
   await page.evaluate(() => window.finishRead('Do not send after switching'))
   await page.getByRole('status').filter({ hasText: 'thread changed before sending' }).waitFor()
   assert.equal(await page.evaluate(() => window.requests.length), beforeReadFailure + 1)

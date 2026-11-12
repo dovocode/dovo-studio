@@ -34,7 +34,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const desktopFile = join(root, 'packages/extension-tasks/src/chat/thread/task-message-response.tsx')
 const mobileFile = join(root, 'apps/mobile/src/ui/content/rich-file.tsx')
 const mocks = {
-  '@dovo/protocol': `export {parsePdfViewerMessage} from '${root}/packages/protocol/src/conversation/pdf-view-state.ts';export const createRuntimeClient=c=>({url:p=>new URL(p,c.address).href});export const taskFileShareSchema={},taskImageReadSchema={};export const randomUUID=()=>crypto.randomUUID();export const localMarkdownPath=p=>p,markdownFileName=p=>p.split('/').pop(),artifactTemplatePrompt=()=>'',richMarkdown=()=>[],cachedMarkdownParts=()=>()=>[];`,
+  '@dovo/protocol': `export {taskResources,resolveScopedAgents} from '${root}/packages/protocol/src/index.ts';export {parsePdfViewerMessage} from '${root}/packages/protocol/src/conversation/pdf-view-state.ts';export const createRuntimeClient=c=>({url:p=>new URL(p,c.address).href});export const taskFileShareSchema={},taskImageReadSchema={};export const randomUUID=()=>crypto.randomUUID();export const localMarkdownPath=p=>p,markdownFileName=p=>p.split('/').pop(),artifactTemplatePrompt=()=>'',richMarkdown=()=>[],cachedMarkdownParts=()=>()=>[];`,
   '@dovo/studio-core/repository-open': 'export const useRepositoryOpen=()=>()=>{};',
   '@dovo/studio-core':
     'export const useWorkspace=()=>window.runtime;export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});',
