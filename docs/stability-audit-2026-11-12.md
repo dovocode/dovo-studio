@@ -201,3 +201,13 @@ two later runs passed without changes. This does not prove that the check cannot
 
 These are test fixes. Signed package checks and nightly publication still depend on hosted CI for
 the replacement tag.
+
+The recovery browser fixture now subscribes directly to preference snapshots and selects the source
+textarea explicitly. It waits for the replacement controller after each remount and for a new saved
+workspace snapshot after retyping. This prevents it from editing an old editor or checking a send
+acknowledgement before the new draft has saved. The complete recovery browser check passes locally.
+
+Nightly .824 also had an interrupted npm grammar download before shard 0 started its browser tests.
+The pinned archive downloads in full on a fresh request. All 14 asset-repair tests and all 45 shard
+0 browser suites pass locally through the CI runner. Hosted reruns and package checks remain
+required.

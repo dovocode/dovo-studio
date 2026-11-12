@@ -119,12 +119,14 @@ context.setWorkspace=writerFor(context.connection);
 export const change = changes => {if(changes.identity){window.identity=changes.identity;changes.connection={address:'http://lan:3000',token:changes.identity};delete changes.identity}context={...context,...changes};if(changes.connection)context.setWorkspace=writerFor(changes.connection);emit()};
 window.questionRequest=question;
 window.removeQuestion=()=>change({snapshot:{...context.snapshot,questions:[]}});
-export const useWorkspace=()=>useSyncExternalStore(listener=>{listeners.add(listener);return()=>listeners.delete(listener)},()=>context);
+const subscribe=listener=>{listeners.add(listener);return()=>listeners.delete(listener)};
+export const useWorkspace=()=>useSyncExternalStore(subscribe,()=>context);
+window.savedWorkspace=()=>context.workspace;
 export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});
 let preferences={richTextComposer:localStorage.getItem('source')!=='true',sendWith:'enter'};
 export const readAppPreferences=()=>preferences;
 export const updateAppPreferences=changes=>{preferences={...preferences,...changes};localStorage.setItem('source',String(!preferences.richTextComposer));emit()};
-export const useAppPreferences=()=>{useWorkspace();return preferences};
+export const useAppPreferences=()=>useSyncExternalStore(subscribe,()=>preferences);
 export const useResolvedTheme=()=> 'dark';
 `,
         }))
@@ -188,7 +190,7 @@ try {
     })),
     { secure: false, randomUUID: 'undefined', protocol: 'http:' },
   )
-  const source = page.getByRole('textbox', { name: 'Message thread', exact: true })
+  const source = page.locator('textarea[aria-label="Message thread"]')
   await page.getByText('Rich editor could not load.', { exact: false }).waitFor()
   // Close before the runtime debounce or a lifecycle flush can be relied on.
   await page.evaluate(() => window.draft.controller.update('Offline draft before debounce'))
@@ -233,20 +235,29 @@ try {
   assert.deepEqual(await page.evaluate(() => window.caret()), { start: 7, end: 13 })
   // Switch back to source and preserve a newer edit against a left composer's send result.
   await page.getByRole('button', { name: /Markdown source/ }).click()
-  await page.evaluate(() => {
-    window.oldDraft = window.draft
-    window.remount()
-  })
   await source.waitFor()
+  const remountComposer = async () => {
+    await page.evaluate(() => {
+      window.oldDraft = window.draft
+      window.remountedFrom = window.draft.controller
+      window.remount()
+    })
+    await page.waitForFunction(() => window.draft.controller !== window.remountedFrom)
+    await source.waitFor()
+  }
+  await remountComposer()
   await source.fill('Same text typed again')
+  await remountComposer()
   await page.evaluate(() => {
-    window.oldDraft = window.draft
-    window.remount()
+    window.beforeRetype = window.savedWorkspace()
   })
-  await source.waitFor()
   await source.fill('')
   await source.fill('Same text typed again')
-  await page.waitForTimeout(350)
+  await page.waitForFunction(
+    () =>
+      window.savedWorkspace() !== window.beforeRetype &&
+      window.savedWorkspace().tasks[0].draft === 'Same text typed again',
+  )
   await page.evaluate(() => window.oldDraft.accept('Same text typed again'))
   assert.equal(await source.inputValue(), 'Same text typed again')
   // Credential switches mount a distinct controller and never replay the previous identity.
