@@ -8,9 +8,11 @@ not change the selected model or runtime.
 Chips show an icon and name, with no type prefix. File chips use the file tree's code, data, text,
 image, config, terminal or generic file icon. Skills use a sparkles icon. MCP servers use a plug
 icon. Model chips use the referenced harness icon. Custom agent references use that agent's harness.
-ACP installation references use the ACP icon. Unknown or removed harnesses use a generic model icon.
-Native inputs use bundled images from the same Lucide and harness icon data and keep brand colors or
-apply the current text color as appropriate.
+Lookup uses the same built-in and scoped agents as the model picker. Desktop chips also refresh when
+those settings arrive or change, without a draft edit. ACP installation references use the ACP icon.
+Unknown or removed harnesses use a generic model icon. Native inputs use bundled images from the
+same Lucide and harness icon data and keep brand colors or apply the current text color as
+appropriate.
 
 Use the existing mention menu to insert a reference. A completed file token such as `@src/app.ts `
 becomes a file chip. Skill and MCP tokens must match available resource names. Model chips use the
@@ -24,7 +26,9 @@ Desktop/web users can switch to Markdown source with the existing source toggle 
 over the original text and marks. Android keeps source text under replacement spans. iOS uses
 attachments and translates between display and source offsets. Both native inputs leave IME
 composition alone and reject stale JavaScript text updates. On iOS, Undo can first undo chip
-formatting before it undoes the text.
+formatting before it undoes the text. Attachments carry the input font and text color. Cursor moves
+and deletions restore the typing style, including when the last chip is deleted before JavaScript
+acknowledges the edit.
 
 ## Build
 
@@ -84,13 +88,13 @@ The Android instrumentation tests exercise the production EditText and InputConn
 UTF-16 positions, whole-chip hardware/software deletion and IME composition. The desktop browser
 fixture checks source preservation, clipboard source, deletion, undo and source-mode changes.
 
-Local validation passed the rich-composer browser fixture, native JavaScript adapter fixture, 23
+Local validation passed the rich-composer browser fixture, native JavaScript adapter fixture, 42
 UIKit simulator checks, five Android emulator instrumentation tests and the real Expo module builds
 on both platforms. The JavaScript adapter fixture mocks the native event boundary.
 
 The complete iOS Release app also built on Dominic's MacBook with the existing development signing
-identity. It installed over `com.dovo.studio` on Dominic's physical iPhone and launched to the
-existing thread list. This checks build, signing, install and startup. It does not establish full
-composer behavior on physical hardware. Real hardware keyboards, physical-device IMEs, accessibility
-tools and the full Expo event/render loop still need an installed-app interaction pass. Do not ship
-solely on the isolated module tests.
+identity. Earlier builds installed over `com.dovo.studio` on Dominic's physical iPhone and launched
+to the existing thread list. The later icon build installed, but the locked phone blocked its launch
+check. These checks do not establish full composer behavior on physical hardware. Real hardware
+keyboards, physical-device IMEs, accessibility tools and the full Expo event/render loop still need
+an installed-app interaction pass. Do not ship solely on the isolated module tests.

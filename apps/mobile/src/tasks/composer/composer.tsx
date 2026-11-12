@@ -66,6 +66,7 @@ import {
   contextMeter,
   responses,
   taskResources,
+  resolveScopedAgents,
   worktreeChoicesSchema,
   type WorktreeChoices,
   type Task,
@@ -259,6 +260,7 @@ export function Composer({
     setDraftTools(undefined)
     setToolsAnchor(null)
   }, [task.id, stashRuntimeId])
+  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const composerResources = taskResources(
     turnSettings?.harness
       ? {
@@ -286,9 +288,9 @@ export function Composer({
       mcpServers: serverNames
         ? serverNames.split('\n').map((name) => ({ name, enabled: true }))
         : [],
-      agents: snapshot?.workspace.agents,
+      agents: resolveScopedAgents(snapshot?.defaults, repository, snapshot?.workspace.agents ?? []),
     }),
-    [skillNames, serverNames, snapshot?.workspace.agents],
+    [skillNames, serverNames, snapshot?.defaults, repository, snapshot?.workspace.agents],
   )
   const [draftFocus, setDraftFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
@@ -394,7 +396,6 @@ export function Composer({
     !!task.archivedAt ||
     !task.sessionId ||
     !!task.queue?.length
-  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const hasGit = !!repository && !repository.kind
   const notificationBlocked = !!(
     turnModelOpen ||

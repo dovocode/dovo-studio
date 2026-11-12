@@ -9,7 +9,7 @@ const built = await build({
   stdin: {
     contents: `
 import { createRoot } from 'react-dom/client';
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useMemo, useSyncExternalStore } from 'react';
 import { ComposerEditor } from './src/chat/composer/composer-editor.tsx';
 import { ComposerModeToggle } from './src/chat/composer/composer-mode.tsx';
 import { createComposerDraft } from './src/chat/composer/composer-draft.ts';
@@ -23,6 +23,8 @@ const command = id => window.commands.push(id);
 const alternative = () => window.alternatives++;
 const dismissSuggestion = () => window.setSuggestion('');
 function Composer() {
+  const [agents,setAgents] = useState(resources.agents); window.setReferenceAgents = setAgents;
+  const chipResources = useMemo(() => ({...resources,agents}), [agents]);
   const [suggestion,setSuggestion] = useState(''); window.setSuggestion = setSuggestion;
   const [provider,setProvider] = useState('codex'); window.setGoalProvider = setProvider;
   const [menu, setMenu] = useState(false); window.setMenuMode = setMenu;
@@ -33,7 +35,7 @@ function Composer() {
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   return <form data-suggestion={suggestion} data-has-text={hasText} data-runtime-tick={tick} onSubmit={event => { event.preventDefault(); window.submits.push(controller.text) }}>
     <ComposerModeToggle input={input} menu={menu} />
-    <ComposerEditor provider={provider} controller={controller} taskId="task" input={input} resources={resources}
+    <ComposerEditor provider={provider} controller={controller} taskId="task" input={input} resources={chipResources}
       suggestion={suggestion} onDismissSuggestion={dismissSuggestion}
       messages={history} onCommand={command} onAlternativeSubmit={alternative}
       autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
@@ -404,6 +406,13 @@ try {
   assert.equal(await editor.locator('svg[data-harness="acp"]').count(), 1)
   assert.equal(await editor.locator('[data-reference-kind="model"]').count(), 3)
   assert.equal(await editor.locator('[data-reference-kind="model"] svg').count(), 2)
+  assert.equal(await text(), harnessDraft)
+  // Existing chips must resolve again when scoped settings arrive, with no draft edit.
+  await page.evaluate(() => window.setReferenceAgents([]))
+  await editor.locator('svg[data-harness="claude"]').waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setReferenceAgents([{ id: 'work', provider: 'opencode' }]))
+  await editor.locator('svg[data-harness="opencode"]').waitFor()
+  assert.equal(await editor.locator('[data-reference-kind="model"]').count(), 3)
   assert.equal(await text(), harnessDraft)
   assert.deepEqual(errors, [])
   console.log('Rich composer browser checks passed')

@@ -17,9 +17,10 @@ const result = await build({
     loader: 'tsx',
     contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';
 import {NativeComposerInput,nativeComposerAvailable,dismissComposerKeyboard} from './apps/mobile/src/tasks/composer/native-composer-input.native';
+import {resolveScopedAgents} from '@dovo/protocol';
 window.available=nativeComposerAvailable;window.dismiss=dismissComposerKeyboard;
-const resources={skills:[{name:'review'}],mcpServers:[{name:'docs',enabled:true}]};
-function App(){const [value,setValue]=useState('🚀 @src/file.ts $review @docs '+String.fromCharCode(96)+'model:harness%3Acodex/gpt'+String.fromCharCode(96)+' ');const [revision,setRevision]=useState('first');
+const resources={skills:[{name:'review'}],mcpServers:[{name:'docs',enabled:true}],agents:resolveScopedAgents(undefined,undefined,[])};
+function App(){const [value,setValue]=useState('🚀 @src/file.ts $review @docs '+String.fromCharCode(96)+'model:agent%3Adovo%3Acodex/gpt'+String.fromCharCode(96)+' ');const [revision,setRevision]=useState('first');
 window.external=text=>flushSync(()=>{setRevision('next');setValue(text)});
 return <NativeComposerInput value={value} revision={revision} resources={resources} expanded={false} focusKey="focus-1" editable placeholder="Message" onChangeText={setValue} onSelectionChange={value=>window.selection=value}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,

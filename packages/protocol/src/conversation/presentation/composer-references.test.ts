@@ -6,6 +6,10 @@ import {
   composerTextReferences,
 } from './composer-references'
 import type { ResourceSettings } from '../../shared/resources'
+import { resolveScopedAgents } from '../../runtime/connection/scoped-settings'
+import { runtimeDefaultsSchema } from '../../runtime/connection/runtime-setup'
+import { decode } from '../../shared/schema'
+import { defaultTaskHarness, type Repository } from '../../workspace'
 const resources: ResourceSettings = {
   skills: [{ name: 'review', enabled: true, description: 'Review', content: 'Review changes' }],
   mcpServers: [
@@ -101,4 +105,23 @@ it('identifies the file type and reference kind without adding a label prefix', 
   ])
   expect(composerReferenceIcon({ kind: 'skill', label: 'review' })).toBe('skill')
   expect(composerReferenceIcon({ kind: 'mcp', label: 'docs' })).toBe('mcp')
+})
+
+it('resolves built-in and scoped agent model references with the same settings as the picker', () => {
+  const project: Repository = { id: 'project', name: 'Project', path: '/project', branch: 'main' }
+  const defaults = decode(runtimeDefaultsSchema, {
+    scopedSettings: {
+      environment: { agents: [{ ...defaultTaskHarness('codex'), id: 'work', name: 'Work' }] },
+      shared: [],
+    },
+  })
+  const agents = resolveScopedAgents(defaults, project, [])
+  expect(composerModelReference('model:agent%3Adovo%3Acodex/gpt', agents)?.provider).toBe('codex')
+  expect(composerModelReference('model:agent%3Awork/gpt', agents)?.provider).toBe('codex')
+  const overridden = resolveScopedAgents(
+    defaults,
+    { ...project, agents: [{ ...defaultTaskHarness('claude'), id: 'work', name: 'Work' }] },
+    [],
+  )
+  expect(composerModelReference('model:agent%3Awork/gpt', overridden)?.provider).toBe('claude')
 })

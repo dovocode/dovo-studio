@@ -121,6 +121,44 @@ struct EventDispatcher {
           expect(input.textStorage.length == 13, "Bridge reapplied an undone chip conversion")
           input.undoManager?.undo()
           expect(input.source() == "@src/file.ts", "Async typing undo lost source: \(input.source())")
+          // Use a non-default color so UIKit's small black fallback cannot pass unnoticed.
+          let styled = DovoComposerInputView()
+          styled.frame = CGRect(x: 16, y: 280, width: 350, height: 80)
+          styled.foreground = .systemPurple
+          surface.addSubview(styled)
+          styled.layoutIfNeeded()
+          let styledInput = styled.input
+          let bodyFont = UIFont.preferredFont(forTextStyle: .body)
+          func expectTypingStyle(_ operation: String) {
+            expect((styledInput.typingAttributes[.font] as? UIFont) == bodyFont, "\(operation) lost the typing font")
+            expect((styledInput.typingAttributes[.foregroundColor] as? UIColor) == styled.foreground, "\(operation) lost the typing color")
+            if styledInput.textStorage.length > 0 {
+              let attributes = styledInput.textStorage.attributes(at: styledInput.textStorage.length - 1, effectiveRange: nil)
+              expect((attributes[.font] as? UIFont) == bodyFont, "\(operation) inserted the wrong font")
+              expect((attributes[.foregroundColor] as? UIColor) == styled.foreground, "\(operation) inserted the wrong color")
+            }
+          }
+          styled.receive(ComposerContentRecord(text: "@src/file.ts", revision: "style", references: [token]))
+          styledInput.becomeFirstResponder()
+          styledInput.selectedRange = NSRange(location: 1, length: 0)
+          expectTypingStyle("Caret after chip")
+          styledInput.insertText("x")
+          expectTypingStyle("Typing after chip")
+          let styleCount = bridgeEvents.compactMap { $0["eventCount"] as? Int }.max() ?? 0
+          styled.receive(ComposerContentRecord(text: "@src/file.ts", revision: "delete-style", eventCount: styleCount, references: [token]))
+          styledInput.selectedRange = NSRange(location: 1, length: 0)
+          styledInput.deleteBackward()
+          expect(styledInput.source().isEmpty, "Sole chip deletion left text behind")
+          expectTypingStyle("Deleting the last chip")
+          styledInput.insertText("After")
+          expectTypingStyle("Typing before the deletion reaches JS")
+          styledInput.selectedRange = NSRange(location: 0, length: styledInput.textStorage.length)
+          styledInput.deleteBackward()
+          UIPasteboard.general.string = "Pasted"
+          styledInput.paste(nil)
+          expectTypingStyle("Pasting into the cleared composer")
+          styledInput.resignFirstResponder()
+          styled.removeFromSuperview()
           let report: [String: Any] = ["checks": checks, "failures": failures]
           let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("composer-results.json")
           try! JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: url)

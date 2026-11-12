@@ -16,7 +16,12 @@ import { EditorState, Plugin, Selection, TextSelection, type Command } from 'pro
 import { EditorView } from 'prosemirror-view'
 import { cn } from '@dovo/studio-ui'
 import type { ComposerReferenceResources } from '@dovo/protocol'
-import { contextReferences, expandReferences, referenceNodeView } from './composer-references'
+import {
+  contextReferences,
+  contextReferencesKey,
+  expandReferences,
+  referenceNodeView,
+} from './composer-references'
 import { registerComposerInput } from './composer-input'
 import {
   parseRichMarkdown,
@@ -360,6 +365,14 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
         : { ...parsed.value, blocks: [], pieces: [], separators: [] }
     if (focused) editor.focus()
   }, [props.value])
+  // A scoped agent can arrive after the draft, or its harness can change without a text edit.
+  useLayoutEffect(() => {
+    const editor = view.current
+    if (editor)
+      editor.dispatch(
+        editor.state.tr.setMeta(contextReferencesKey, true).setMeta('addToHistory', false),
+      )
+  }, [props.resources])
   // Attributes and editability follow props without recreating the editor.
   useLayoutEffect(() => {
     view.current?.setProps({})

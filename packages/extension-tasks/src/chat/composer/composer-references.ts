@@ -9,11 +9,14 @@ import {
   type ComposerReferenceResources,
 } from '@dovo/protocol'
 import { Fragment, type Node } from 'prosemirror-model'
-import { Plugin, type EditorState } from 'prosemirror-state'
+import { Plugin, PluginKey, type EditorState } from 'prosemirror-state'
 import { richSchema } from './rich-markdown'
+
+export const contextReferencesKey = new PluginKey('context-references')
 
 function referenceTransaction(state: EditorState, resources: ComposerReferenceResources) {
   const matches: ComposerReference[] = []
+  const updates: { position: number; node: Node; provider: ComposerReference['provider'] }[] = []
   state.doc.descendants((block, position) => {
     if (!block.isTextblock) return true
     // Headings and code blocks deliberately accept text only.
@@ -35,6 +38,12 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
       const linked = node.marks.some((mark) => mark.type === richSchema.marks.link)
       if (!node.isText || code || linked) {
         flush()
+        if (node.type === richSchema.nodes.context_reference && node.attrs.kind === 'model') {
+          const reference = composerModelReference(node.textContent, resources.agents)
+          if (reference && node.attrs.provider !== (reference.provider ?? null))
+            updates.push({ position: start, node, provider: reference.provider })
+          return
+        }
         const model =
           code && !linked && node.isText
             ? composerModelReference(node.text ?? '', resources.agents)
@@ -48,8 +57,10 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
     flush()
     return false
   })
-  if (!matches.length) return null
+  if (!matches.length && !updates.length) return null
   const tr = state.tr
+  for (const { position, node, provider } of updates)
+    tr.setNodeMarkup(position, undefined, { ...node.attrs, provider: provider ?? null })
   for (const match of matches.reverse())
     tr.replaceWith(
       match.start,
@@ -65,8 +76,11 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
 /** Chips are an editing view over the existing Markdown, with no second saved draft format. */
 export function contextReferences(resources: () => ComposerReferenceResources) {
   return new Plugin({
+    key: contextReferencesKey,
     appendTransaction: (transactions, _before, state) =>
-      transactions.some((tr) => tr.docChanged) ? referenceTransaction(state, resources()) : null,
+      transactions.some((tr) => tr.docChanged || tr.getMeta(contextReferencesKey))
+        ? referenceTransaction(state, resources())
+        : null,
   })
 }
 

@@ -128,12 +128,19 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
   private var projectionUndoSource: String?
   private var height: CGFloat = 0
   private let font = UIFont.preferredFont(forTextStyle: .body)
+  private var textAttributes: [NSAttributedString.Key: Any] { [.font: font, .foregroundColor: foreground] }
+
+  private func restoreTypingStyle() {
+    guard input.markedTextRange == nil else { return }
+    input.typingAttributes = textAttributes
+  }
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
     input.delegate = self
     input.backgroundColor = .clear
     input.font = font
+    restoreTypingStyle()
     input.textContainerInset = UIEdgeInsets(top: 11, left: 7, bottom: 11, right: 7)
     input.autocorrectionType = .no
     input.spellCheckingType = .no
@@ -173,6 +180,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
     // Do not recreate an autoformat step that the user has just undone.
     if !external && projectionUndoSource == source { return }
     if !forceStyle && source == content.text && matches(content.references) {
+      restoreTypingStyle()
       placeholder.isHidden = !source.isEmpty
       measure()
       return
@@ -182,7 +190,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
     let end = external ? start : input.sourceOffset(NSMaxRange(selected))
     changing = true
     defer { changing = false }
-    let text = NSMutableAttributedString(string: content.text, attributes: [.font: font, .foregroundColor: foreground])
+    let text = NSMutableAttributedString(string: content.text, attributes: textAttributes)
     let length = text.length
     var nextStart = length
     for reference in content.references.reversed() {
@@ -191,7 +199,11 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
       let source = (content.text as NSString).substring(with: range)
       let chip = ReferenceAttachment(source: source, label: reference.label,
         foreground: foreground, background: chipColor, font: font, icon: reference.icon, iconTemplate: reference.iconTemplate)
-      text.replaceCharacters(in: range, with: NSAttributedString(attachment: chip))
+      // UIKit inherits attributes from the adjacent attachment when moving the caret.
+      // Give the attachment the same base style as text, even though it draws its own image.
+      let attachment = NSMutableAttributedString(attachment: chip)
+      attachment.addAttributes(textAttributes, range: NSRange(location: 0, length: attachment.length))
+      text.replaceCharacters(in: range, with: attachment)
       nextStart = reference.start
     }
     if !input.attributedText.isEqual(to: text) {
@@ -203,7 +215,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
       }
       input.textStorage.setAttributedString(text)
       input.selectedRange = NSRange(location: input.displayOffset(start), length: max(0, input.displayOffset(end) - input.displayOffset(start)))
-      input.typingAttributes = [.font: font, .foregroundColor: foreground]
+      restoreTypingStyle()
     }
     placeholder.isHidden = !content.text.isEmpty
     input.accessibilityValue = content.text
@@ -218,7 +230,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
       view.changing = true
       view.input.textStorage.setAttributedString(before)
       view.input.selectedRange = selection
-      view.input.typingAttributes = [.font: view.font, .foregroundColor: view.foreground]
+      view.restoreTypingStyle()
       view.changing = false
       if source == view.input.source() {
         view.projectionUndoSource = source
@@ -240,10 +252,12 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
   }
   func refreshStyle() {
     input.textColor = foreground
+    restoreTypingStyle()
     if let content = pending, content.text == input.source(), input.markedTextRange == nil { apply(content, forceStyle: true) }
   }
   func textViewDidChange(_ textView: UITextView) {
     guard !changing else { return }
+    restoreTypingStyle()
     projectionUndoSource = nil
     eventCount += 1
     let source = input.source()
@@ -255,13 +269,14 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
   }
   func textViewDidChangeSelection(_ textView: UITextView) {
     guard !changing else { return }
+    restoreTypingStyle()
     selection()
     if input.markedTextRange == nil, let content = pending, content.eventCount >= eventCount { apply(content) }
   }
   private func selection() {
     onSourceSelection(["start": input.sourceOffset(input.selectedRange.location), "end": input.sourceOffset(NSMaxRange(input.selectedRange))])
   }
-  func textViewDidBeginEditing(_ textView: UITextView) { Self.active = self; onFocus([:]) }
+  func textViewDidBeginEditing(_ textView: UITextView) { restoreTypingStyle(); Self.active = self; onFocus([:]) }
   func textViewDidEndEditing(_ textView: UITextView) { if Self.active === self { Self.active = nil }; onBlur([:]) }
   private func measure() {
     guard bounds.width > 0 else { return }

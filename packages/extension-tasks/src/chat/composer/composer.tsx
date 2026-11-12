@@ -57,7 +57,7 @@ import type { ComposerCommandId } from './file-mentions'
 import { ComposerEditor } from './composer-editor'
 import { ComposerModeToggle } from './composer-mode'
 import { SavedPromptsDialog } from '../../dialogs/saved-prompts-dialog'
-import { REVIEW_PROMPT, contextMeter, taskResources } from '@dovo/protocol'
+import { REVIEW_PROMPT, contextMeter, taskResources, resolveScopedAgents } from '@dovo/protocol'
 import { ContextMeter } from '../thread/context-meter'
 import {
   ArrowUp,
@@ -568,7 +568,11 @@ export function Composer({
         workspace,
         snapshot?.defaults,
       ),
-      agents: workspace.agents,
+      agents: resolveScopedAgents(
+        snapshot?.defaults,
+        workspace.repositories.find((repository) => repository.id === task.repositoryId),
+        workspace.agents,
+      ),
     }),
     [
       task.id,
