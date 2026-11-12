@@ -79,13 +79,13 @@ try {
           contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';import {${isMobile ? 'HarnessSettings' : variant === 'turn' ? 'TurnModelControls' : 'ComposerHarnessControls'} as Controls} from '${entry}';
-window.calls=[];window.flushes=0;window.fail=false;window.hold=false;window.settings=null;window.closes=0;
+window.calls=[];window.flushes=0;window.fail=false;window.hold=false;window.settings=null;window.closes=0;window.deferDismissal=false;
 const original={id:'thread',title:'Thread',agentId:'',harness:defaultTaskHarness('codex'),providerLock:'codex',status:'review',checkoutLocked:true,createdAt:'',messages:[{id:'m',role:'user',text:'Saved context'}],files:[],draft:'Unsent draft'};
 function App(){const[open,setOpen]=useState(true),[task,setTask]=useState(original),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true),[scope,setScope]=useState('owner');window.task=task;window.setTask=patch=>setTask(t=>({...t,...patch}));window.setConnected=setConnected;window.setSupported=setSupported;window.setScope=setScope;window.reset=()=>{setOpen(true);window.settings=null;window.calls=[];setTask({...original});setScope('owner');setConnected(true);setSupported(true)};
 const request=async(path,input)=>{window.calls.push({path,input:structuredClone(input),scope});if(window.hold)await new Promise(resolve=>window.release=resolve);if(window.fail){window.fail=false;setTask(t=>({...t,status:'review'}));throw Error('Reply lost')}setTask(t=>({...t,harness:input.harness,providerLock:input.harness.provider,status:'review'}));return{ok:true}};
 const workspace={tasks:[task],agents:[],repositories:[]};const snapshot={workspace,threadHandoffsSupported:supported,permissionPolicySupported:true,acpInstallations:[]};
 window.store={snapshot,workspace,connected,activeRuntimeId:scope,profile:{id:scope,connection:{address:'http://'+scope+'.local'}},connection:{address:'http://'+scope+'.local'},request,flush:async()=>{window.flushes++},setWorkspace:change=>{const next=change(workspace);setTask(next.tasks[0])},callEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:e=>e})};
-return <>{(!${isMobile}||open)&&<Controls task={task} turn={task.status==='running'?{value:null,onChange:value=>window.settings=value}:undefined} agent={{...task.harness,id:'task',name:'Codex'}} disabled={false} value={window.settings} onChange={value=>window.settings=value} onClose={()=>{window.closes++;setOpen(false)}} inline={${variant !== 'mobile-sheet'}}/>}<textarea aria-label="Message" value={task.draft} onChange={event=>setTask(task=>({...task,draft:event.target.value}))}/><output aria-label="Draft">{task.draft}</output><output aria-label="Provider">{task.harness.provider}</output></>}
+return <>{(!${isMobile}||open)&&<Controls task={task} turn={task.status==='running'?{value:null,onChange:value=>window.settings=value}:undefined} agent={{...task.harness,id:'task',name:'Codex'}} disabled={false} value={window.settings} onChange={value=>window.settings=value} onClose={()=>{window.closes++;if(window.deferDismissal)window.finishDismissal=()=>setOpen(false);else setOpen(false)}} inline={${variant !== 'mobile-sheet'}}/>}<textarea aria-label="Message" value={task.draft} onChange={event=>setTask(task=>({...task,draft:event.target.value}))}/><output aria-label="Draft">{task.draft}</output><output aria-label="Provider">{task.harness.provider}</output></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
         bundle: true,
@@ -109,17 +109,34 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     const choose = page.getByRole('button', { name: 'Choose Claude', exact: true })
+    const editor = await page.getByRole('textbox', { name: 'Message', exact: true }).elementHandle()
+    if (isMobile)
+      await page.evaluate(() => {
+        window.deferDismissal = true
+      })
     await choose.click()
     await page.getByLabel('Provider').filter({ hasText: 'claude' }).waitFor()
     if (isMobile) {
-      await page.waitForFunction(() => window.closes > 0)
+      await page.waitForFunction(() => window.closes > 0 && !!window.finishDismissal)
+      // A close callback is not a committed unmount. Hold the parent dismissal to
+      // exercise that boundary, then wait for the actual panel to leave the DOM.
+      assert.equal(await choose.count(), 1)
+      await page.evaluate(() => {
+        window.deferDismissal = false
+        window.finishDismissal()
+      })
+      await choose.waitFor({ state: 'detached' })
       assert.equal(await page.getByText(/Harness switched\./).count(), 0)
     }
     assert.equal(await page.getByLabel('Draft').textContent(), 'Unsent draft')
     assert.equal(await page.evaluate(() => window.task.messages[0].text), 'Saved context')
     assert.equal(await page.evaluate(() => window.calls[0].input.stop), false)
     if (isMobile) {
-      assert.equal(await choose.count(), 0, 'Completed harness panel must dismiss')
+      assert.equal(
+        await editor.evaluate((element) => element.isConnected),
+        true,
+        'Dismissal must retain the mounted composer',
+      )
       await page
         .getByRole('textbox', { name: 'Message', exact: true })
         .fill('Next message after switch')
@@ -136,6 +153,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       await page.getByRole('button', { name: 'Stop and switch harness', exact: true }).click()
       await page.getByLabel('Provider').filter({ hasText: 'claude' }).waitFor()
       assert.equal(await page.evaluate(() => window.calls[0].input.stop), true)
+      if (isMobile) await choose.waitFor({ state: 'detached' })
     }
     await page.evaluate(() => {
       window.reset()
@@ -147,6 +165,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     await page.getByRole('button', { name: 'Retry harness switch', exact: true }).click()
     await page.getByLabel('Provider').filter({ hasText: 'claude' }).waitFor()
     assert.deepEqual(await page.evaluate(() => window.calls[1].input), first)
+    if (isMobile) await choose.waitFor({ state: 'detached' })
     await page.evaluate(() => {
       window.reset()
       window.hold = true
