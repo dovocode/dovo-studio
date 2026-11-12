@@ -36,17 +36,24 @@ async function bundle(mobile) {
     './device-manager': 'export const DeviceManager=()=>null;',
     './pairing-client': `export const PairingClient=({discovered})=>discovered?<div>Pairing credentials required {window.store.runtimeRegistry.profiles.map(p=><span key={p.id}>{p.name}</span>)}</div>:null;`,
     '../../runtime/connection/pair-computer': `export const PairComputer=()=> <div>Pairing credentials required {window.store.profiles.map(p=><span key={p.id}>{p.name}</span>)}</div>;`,
-    '../../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
+    '../../runtime/connection/provider': `
+      import {createContext,useContext} from 'react';
+      const Scope=createContext(null);
+      export const useRuntime=()=>useContext(Scope)??window.store;
+      export const RuntimeScope=({runtimeId,children})=>{
+        const root=useRuntime();
+        const entry=root.overviews.find(source=>source.profile.id===runtimeId);
+        return entry?<Scope.Provider value={{...root,activeId:runtimeId,profile:entry.profile,connection:entry.profile.connection,snapshot:entry.snapshot,connected:entry.connected}}><section data-runtime-owner={runtimeId}>{children}</section></Scope.Provider>:null;
+      };`,
     '../../shell/navigation':
       'export const useNavigation=()=>({focused:window.focused??true,navigate:()=>{}});',
-    '../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
+    '../runtime/connection/provider': `export * from '../../runtime/connection/provider';`,
     './navigation': 'export const useNavigation=()=>({focused:window.focused??true});',
     '../runtime/state/application-state': `import {useState} from 'react';export const useApplicationState=useState;`,
     '../runtime/state/native-effect':
       'import {Effect} from "effect";export const nativeEffect=fn=>Effect.tryPromise(fn);',
     '../creation/startup-thread': 'export const StartupThread=()=>null;',
-    './task-detail':
-      'export const TaskDetail=({task,parentNavigation})=><div><h2>{task.title}</h2>{parentNavigation}</div>;',
+    './task-detail': `import {useRuntime} from '../../runtime/connection/provider';export const TaskDetail=({task,parentNavigation})=><div data-opened-owner={useRuntime().activeId}><h2>{task.title}</h2>{parentNavigation}</div>;`,
     '../../ui/controls/use-action':
       'export const useAction=()=>({busy:false,error:"",act:fn=>fn()});',
   }
@@ -54,8 +61,8 @@ async function bundle(mobile) {
     ${mobile ? `import {TaskRouteScreen as Screen} from '${root}/apps/mobile/src/tasks/detail/task-route-screen.tsx';` : `import Screen from '${root}/packages/extension-runtime/src/view.tsx';`}
     window.destination={runtimeId:'foreign-profile',runtimeIdentity:'child-identity',threadId:'selected-child',title:'Selected child',parent:{runtimeId:'parent-profile',runtimeIdentity:'parent-identity',threadId:'coordinator',title:'Parent thread'}};
     window.params={runtimeId:'foreign-profile',runtimeIdentity:'child-identity',taskId:'selected-child',parentRuntimeId:'parent-profile',parentRuntimeIdentity:'parent-identity',parentTaskId:'coordinator',parentTitle:'Parent thread'};
-    window.routes=[];window.switches=[];window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
-    window.store={runtimeRegistry:{profiles:[]},runtimes:[],profiles:[],overviews:[],ready:true,activeId:'local',snapshot:null,connected:true,selectRuntime:()=>{},selectRuntimeEffect:id=>Effect.sync(()=>{window.switches.push(id);window.store={...window.store,activeId:id,snapshot:window.store.overviews.find(s=>s.profile.id===id)?.snapshot};window.render()})};
+    window.routes=[];window.switches=[];window.refreshes=[];window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
+    window.store={runtimeRegistry:{profiles:[]},runtimes:[],profiles:[],overviews:[],ready:true,activeId:'local',snapshot:null,connected:true,refreshRuntime:async profile=>{window.refreshes.push(profile.id)},selectRuntime:()=>{},selectRuntimeEffect:id=>Effect.sync(()=>{window.switches.push(id);window.store={...window.store,activeId:id,snapshot:window.store.overviews.find(s=>s.profile.id===id)?.snapshot};window.render()})};
     const root=createRoot(document.getElementById('app'));
     window.render=()=>root.render(${mobile ? '<Screen/>' : '<Screen threadConnection={window.destination}/>'});
     window.pair=(id,identity,name)=>{
@@ -118,7 +125,8 @@ try {
       })
     await page.evaluate(() => window.pair('new-profile', 'child-identity', 'Correct computer'))
     if (mobile) {
-      await page.getByText('Opening on Correct computer…', { exact: true }).waitFor()
+      await page.locator('[data-runtime-owner="new-profile"]').waitFor()
+      assert.equal(await page.getByRole('heading', { name: 'Opened selected child' }).count(), 0)
       assert.equal(await page.evaluate(() => window.params.runtimeId), 'foreign-profile')
       assert.deepEqual(await page.evaluate(() => window.switches), [])
       await page.evaluate(() => {
@@ -130,6 +138,8 @@ try {
       await page.getByRole('heading', { name: 'Opened selected child' }).waitFor()
       assert.equal(await page.evaluate(() => window.params.runtimeId), 'new-profile')
       assert.deepEqual(await page.evaluate(() => window.switches), ['new-profile'])
+      assert.equal(await page.locator('[data-opened-owner="new-profile"]').count(), 1)
+      assert.ok(await page.evaluate(() => window.refreshes.every((id) => id === 'new-profile')))
       await page
         .getByRole('button', { name: 'Back to parent · Parent thread', exact: true })
         .click()
