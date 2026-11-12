@@ -36,58 +36,6 @@ const noAgents: readonly Agent[] = []
 const noInstallations: RuntimeSnapshot['acpInstallations'] = []
 const noSubagents: readonly SubagentListItem[] = []
 
-/** Do not flash a basic shared copy while its paired owner loads the complete row. */
-export function mobileThreadListSources(
-  overviews: readonly RuntimeOverview[],
-  waitForOwners: boolean,
-) {
-  if (!waitForOwners) return { entries: overviews, waiting: false }
-  const owners = new Map(
-    overviews.flatMap((source) => {
-      const identity = source.snapshot?.runtimeId ?? source.profile.connection.runtimeId
-      return identity
-        ? [
-            [
-              identity,
-              {
-                source,
-                originals: new Set(
-                  source.snapshot?.workspace.tasks
-                    .filter((task) => !task.replica)
-                    .map((task) => task.id),
-                ),
-              },
-            ] as const,
-          ]
-        : []
-    }),
-  )
-  let waiting = false
-  const entries = overviews.map((source) => {
-    if (!source.snapshot) return source
-    const tasks = source.snapshot.workspace.tasks.filter((task) => {
-      if (!task.replica) return true
-      const candidate = owners.get(task.replica.ownerRuntimeId)
-      const owner = candidate?.source
-      if (!owner || owner === source || owner.connected || owner.error || owner.unauthorized)
-        return true
-      const original = candidate?.originals.has(task.replica.threadId)
-      // An offline-only saved copy remains usable. A live copy can wait for the owner's
-      // bounded initial request; a failed request admits it again without losing history.
-      if (!original && !source.connected) return true
-      if (!original) waiting = true
-      return false
-    })
-    return tasks.length === source.snapshot.workspace.tasks.length
-      ? source
-      : {
-          ...source,
-          snapshot: { ...source.snapshot, workspace: { ...source.snapshot.workspace, tasks } },
-        }
-  })
-  return { entries, waiting }
-}
-
 /** Retain unchanged row facts, dropping removed rows on every projection. */
 export function taskListProjection(
   overviews: readonly RuntimeOverview[],

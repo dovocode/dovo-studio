@@ -126,33 +126,15 @@ function App(){const[task,setTask]=useState(project(selected,undefined,false));c
       await page.getByRole('button', { name: 'Load older messages', exact: true }).count(),
       0,
     )
-    await page.evaluate(() => window.remoteRename('Remote title'))
-    await page.waitForFunction(
-      () => document.querySelector('input[aria-label="Thread title"]').value === 'Remote title',
-    )
-    await page.getByLabel('Thread title', { exact: true }).fill('Renamed shared thread')
-    await page.evaluate(() => window.remoteRename('Another remote title'))
+    assert.equal(await page.getByLabel('Thread title', { exact: true }).count(), 0)
     assert.equal(
-      await page.getByLabel('Thread title', { exact: true }).inputValue(),
-      'Renamed shared thread',
+      await page
+        .getByRole('button', { name: /^(Save title|Pin|Unpin|Run|Resume|Send|Stop)$/ })
+        .count(),
+      0,
     )
-    await page.getByRole('button', { name: 'Save title', exact: true }).click()
-    await page.getByRole('heading', { name: 'Renamed shared thread', exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Pin', exact: true }).click()
-    await page.getByRole('button', { name: 'Unpin', exact: true }).waitFor()
-    assert.deepEqual(
-      await page.evaluate(() => window.writes.map(({ field, value }) => ({ field, value }))),
-      [
-        { field: 'title', value: 'Renamed shared thread' },
-        { field: 'pinned', value: true },
-      ],
-    )
-    assert.equal(await page.getByRole('button', { name: /^(Run|Resume|Send|Stop)$/ }).count(), 0)
+    assert.deepEqual(await page.evaluate(() => window.writes), [])
     await page.evaluate(() => window.setConnection(false))
-    await page.waitForFunction(
-      () => document.querySelector('input[aria-label="Thread title"]')?.disabled === true,
-    )
-    assert.equal(await page.getByLabel('Thread title', { exact: true }).isDisabled(), true)
     if (!mobile) await page.locator('article').last().scrollIntoViewIfNeeded()
     await page.getByText('first message 84', { exact: true }).waitFor()
     await page.evaluate(() => {
@@ -178,10 +160,7 @@ function App(){const[task,setTask]=useState(project(selected,undefined,false));c
     })
     await page.getByText('first message 84', { exact: true }).waitFor()
     await page.evaluate(() => window.releaseRead())
-    assert.equal(
-      await page.getByRole('heading', { name: 'Renamed shared thread', exact: true }).count(),
-      1,
-    )
+    assert.equal(await page.getByRole('heading', { name: 'First thread', exact: true }).count(), 1)
     assert.equal(await page.getByText('second message 84', { exact: true }).count(), 0)
     await page.evaluate(() => {
       window.delayRead = true
@@ -219,7 +198,7 @@ function App(){const[task,setTask]=useState(project(selected,undefined,false));c
     assert.deepEqual(errors, [])
     await page.close()
     console.log(
-      `${mobile ? 'Mobile' : 'Desktop'} replicated thread: paging, metadata, offline display and stale response checks passed`,
+      `${mobile ? 'Mobile' : 'Desktop'} recovery archive: read-only paging, offline display and stale response checks passed`,
     )
   }
 } finally {

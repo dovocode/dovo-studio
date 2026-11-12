@@ -27,11 +27,7 @@ import { WorkspaceStarter } from './workspace-starter'
 import { ResourceActions } from './resource-actions'
 import { StandaloneRow } from './standalone-row'
 import { TaskListRow, type TaskListRowActions } from '../tasks/list/task-list-row'
-import {
-  taskListProjection,
-  mobileThreadTree,
-  mobileThreadListSources,
-} from '../tasks/list/task-list-projection'
+import { taskListProjection, mobileThreadTree } from '../tasks/list/task-list-projection'
 import { useListScroll } from '../ui/layout/use-list-scroll'
 import { contentColumn } from '../ui/layout/content-column'
 import { Sheet } from '../ui/layout/sheet'
@@ -69,13 +65,12 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   const [starterActive, setStarterActive] = useState(false)
   const previousTree = useRef<ReturnType<typeof mobileThreadTree>['nodes']>(new Map())
   useForegroundInterval(() => setNow(Date.now()), focused ? 15000 : null)
-  const threadSources = useMemo(
-    () => mobileThreadListSources(runtime.overviews, preferences.computerRefresh !== 'manual'),
-    [runtime.overviews, preferences.computerRefresh],
+  const waitingForThreads = runtime.overviews.some(
+    (entry) => !entry.snapshot && !entry.error && !entry.unauthorized,
   )
   const threadRows = useMemo(
-    () => taskListProjection(threadSources.entries, now, previousThreads.current),
-    [threadSources.entries, now],
+    () => taskListProjection(runtime.overviews, now, previousThreads.current),
+    [runtime.overviews, now],
   )
   const tree = useMemo(
     () =>
@@ -278,7 +273,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           {error || browser.storageError}
         </Text>
       )}
-      {starterActive || (!allItems.length && !filtered && !threadSources.waiting) ? (
+      {starterActive || (!allItems.length && !filtered && !waitingForThreads) ? (
         <WorkspaceStarter
           initialMode={unified ? 'auto' : 'terminal'}
           embedded
@@ -317,20 +312,16 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           }}
           ListEmptyComponent={
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-              <Icon
-                name={threadSources.waiting ? 'tasks' : 'search'}
-                size={28}
-                color={colors.muted}
-              />
+              <Icon name={waitingForThreads ? 'tasks' : 'search'} size={28} color={colors.muted} />
               <Text style={styles.title}>
-                {threadSources.waiting ? 'Loading threads…' : 'No matching items'}
+                {waitingForThreads ? 'Loading threads…' : 'No matching items'}
               </Text>
               <Text style={styles.muted}>
-                {threadSources.waiting
+                {waitingForThreads
                   ? 'Connecting to your computers.'
                   : 'Try another title, project or computer.'}
               </Text>
-              {!threadSources.waiting && (
+              {!waitingForThreads && (
                 <Action
                   secondary
                   label="Clear filters"

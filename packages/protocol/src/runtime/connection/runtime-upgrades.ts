@@ -76,7 +76,7 @@ export function runtimeUpgradeBlocked(entry: RuntimeUpgradeEntry, interruptDeskt
       : 'Upgrade with the installer or package manager on the host.'
   if (
     !(interruptDesktop && entry.snapshot.releaseDistribution === 'desktop') &&
-    (entry.snapshot.workspace.tasks.some((task) => task.status === 'running') ||
+    (entry.snapshot.workspace.tasks.some((task) => !task.replica && task.status === 'running') ||
       entry.snapshot.runs.some((run) => run.status === 'running'))
   )
     return 'Finish running tasks and automations first.'

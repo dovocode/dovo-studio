@@ -1834,11 +1834,10 @@ try {
         const { peer, owner } = window.startupSources
         window.setListSources([peer, { ...owner, snapshot: null, error: 'Connection timed out' }])
       })
-      await (
-        overview
-          ? page.getByTestId('Workspace thread Startup real thread')
-          : page.getByTestId(copyId)
-      ).waitFor()
+      // A failed owner request never turns a stored mirror into a real thread.
+      assert.equal(await real.count(), 0)
+      assert.equal(await page.getByTestId(copyId).count(), 0)
+      assert.equal(await page.getByTestId('Draft highlight').count(), 0)
       await page.evaluate(() => {
         const { peer, owner } = window.startupSources
         window.setListSources([peer, owner])
@@ -1893,7 +1892,7 @@ try {
       window.releaseSelection?.()
     })
     console.log(
-      'Mobile startup rows: Tasks and Workspace use the real cached project/harness icons and status, retain the row at live arrival, wait for missing owners and restore shared copies after a connection failure.',
+      'Mobile startup rows: Tasks and Workspace use the real cached project/harness icons and status, retain the row at live arrival, show connection state for missing owners and never substitute shared copies after failure.',
     )
   }
   console.log(

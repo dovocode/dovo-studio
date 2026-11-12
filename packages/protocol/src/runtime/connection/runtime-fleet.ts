@@ -377,7 +377,7 @@ export function aggregateRuntimeTasks(
       runtimeId:
         entry.snapshot?.runtimeId ?? entry.profile.connection.runtimeId ?? entry.profile.id,
       connected: entry.connected,
-      tasks: entry.snapshot?.workspace.tasks ?? [],
+      tasks: entry.snapshot?.workspace.tasks.filter((task) => !task.replica) ?? [],
     })),
   )
   const tasks = entries.flatMap((entry) => {

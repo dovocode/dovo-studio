@@ -2,6 +2,43 @@ import { retainWorkspace } from './retain-workspace.js'
 import { getRuntimeSnapshotTag, copyRuntimeSnapshotTag } from '../../shared/client.js'
 import type { RuntimeOverview } from '../connection/runtime-fleet.js'
 import type { RuntimeConnection, RuntimeSnapshot } from '../connection/runtime.js'
+const ownedSnapshots = new WeakMap<RuntimeSnapshot, RuntimeSnapshot>()
+
+/** Older runtimes and saved caches can include foreign thread projections. Keep their
+ * original records intact, but never install them as this computer's workspace. */
+export function ownedRuntimeSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+  const cached = ownedSnapshots.get(snapshot)
+  if (cached) return cached
+  const tasks = snapshot.workspace.tasks.filter((task) => !task.replica)
+  const page = snapshot.olderSettled
+  const keys = page?.threadKeys?.filter((key) => {
+    if (!snapshot.runtimeId) return true
+    try {
+      const identity: unknown = JSON.parse(key)
+      return Array.isArray(identity) && identity.length === 2 && identity[0] === snapshot.runtimeId
+    } catch {
+      return false
+    }
+  })
+  const pageChanged = keys && keys.length !== page?.threadKeys?.length
+  if (tasks.length === snapshot.workspace.tasks.length && !pageChanged) return snapshot
+  const replicaIds = new Set(
+    snapshot.workspace.tasks.filter((task) => task.replica).map((task) => task.id),
+  )
+  const owned = {
+    ...snapshot,
+    workspace: { ...snapshot.workspace, tasks },
+    ...(page && pageChanged
+      ? { olderSettled: { ...page, threadKeys: keys, omitted: keys.length } }
+      : {}),
+    ...(snapshot.detailTaskIds
+      ? { detailTaskIds: snapshot.detailTaskIds.filter((id) => !replicaIds.has(id)) }
+      : {}),
+  }
+  copyRuntimeSnapshotTag(snapshot, owned)
+  ownedSnapshots.set(snapshot, owned)
+  return owned
+}
 export function sameRuntimeConnection(
   previous: RuntimeConnection | null | undefined,
   next: RuntimeConnection | null | undefined,
@@ -15,6 +52,8 @@ export function retainRuntimeSnapshot(
   next: RuntimeSnapshot | null,
   nextConnection: RuntimeConnection | null,
 ): RuntimeSnapshot | null {
+  previous = previous && ownedRuntimeSnapshot(previous)
+  next = next && ownedRuntimeSnapshot(next)
   if (!previous || !next || !sameRuntimeConnection(previousConnection, nextConnection)) return next
   // Revisions restart with the process; compare them only within the same instance.
   if (
@@ -34,10 +73,13 @@ export function retainRuntimeSnapshot(
   return retained
 }
 
-export function retainOverviewSnapshot(previous: RuntimeOverview, next: RuntimeOverview) {
+export function retainOverviewSnapshot(
+  previous: RuntimeOverview | undefined,
+  next: RuntimeOverview,
+) {
   const snapshot = retainRuntimeSnapshot(
-    previous.snapshot,
-    previous.profile.connection,
+    previous?.snapshot ?? null,
+    previous?.profile.connection ?? null,
     next.snapshot,
     next.profile.connection,
   )

@@ -402,6 +402,7 @@ export function ScopedAgents({
                 </Disclosure>
               </div>
               <AgentEditor
+                shared={scope === 'global' || scope === 'project'}
                 key={JSON.stringify(selected)}
                 initial={selected}
                 creating={false}
@@ -490,6 +491,7 @@ export function ScopedAgents({
       )}
       {editing && (
         <AgentEditor
+          shared={scope === 'global' || scope === 'project'}
           key={editing.id}
           initial={editing}
           creating

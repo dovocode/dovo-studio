@@ -62,7 +62,6 @@ import { ProjectThreadFilter } from '../tasks/list/project-thread-filter'
 import { TaskListRow, type TaskListRowActions } from '../tasks/list/task-list-row'
 import {
   taskListProjection,
-  mobileThreadListSources,
   mobileThreadTree,
   type TaskListRowData,
 } from '../tasks/list/task-list-projection'
@@ -211,13 +210,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     [projectGroups, project],
   )
   const previousRows = useRef<ReadonlyMap<string, TaskListRowData>>(new Map())
-  const threadSources = useMemo(
-    () => mobileThreadListSources(overviews, preferences.computerRefresh !== 'manual'),
-    [overviews, preferences.computerRefresh],
-  )
   const rowData = useMemo(
-    () => taskListProjection(threadSources.entries, now, previousRows.current),
-    [threadSources.entries, now],
+    () => taskListProjection(overviews, now, previousRows.current),
+    [overviews, now],
   )
   useLayoutEffect(() => {
     previousRows.current = rowData
@@ -1076,14 +1071,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               title={
                 filtersActive
                   ? 'No matching threads'
-                  : threadSources.waiting || entries.some((entry) => !entry.snapshot)
+                  : entries.some((entry) => !entry.snapshot)
                     ? 'Waiting for your computers'
                     : 'Ready for your next idea'
               }
               description={
                 filtersActive
                   ? 'Try a different search or clear your filters.'
-                  : threadSources.waiting || entries.some((entry) => !entry.snapshot)
+                  : entries.some((entry) => !entry.snapshot)
                     ? 'Threads will appear when your computer connects.'
                     : 'Start with a question, a fix, or something you want to build.'
               }

@@ -1,5 +1,6 @@
 import {
   catalogSkillSource,
+  sharedSettingsIssue,
   type ScopedSettingsValue,
   type SharedSettingsEntry,
 } from '@dovo/protocol'
@@ -54,28 +55,8 @@ export function prepareShared(value: ScopedSettingsValue): ScopedSettingsValue {
 }
 export function validateShared(value: ScopedSettingsValue) {
   validatePrompts(value)
-  for (const agent of value.agents ?? []) {
-    if (agent.acpInstallationId)
-      throw new HttpError(400, 'Installed ACP agents belong to one environment.')
-    validateShared({ resources: agent.resources })
-  }
-  if (value.resources?.skills.some((skill) => skill.sourcePath))
-    throw new HttpError(400, 'Shared skills cannot contain environment-specific file paths.')
-  if (
-    value.resources?.mcpServers.some(
-      (server) =>
-        Object.keys(server.envValues ?? {}).length || Object.keys(server.headerValues ?? {}).length,
-    )
-  )
-    throw new HttpError(
-      400,
-      'Shared MCP settings must reference environment variables. Keep literal credentials in environment-specific overrides.',
-    )
-  if (value.taskDefaults?.harness?.acpInstallationId)
-    throw new HttpError(
-      400,
-      'Installed ACP agents belong to one environment. Select them in an environment-specific scope.',
-    )
+  const issue = sharedSettingsIssue(value)
+  if (issue) throw new HttpError(400, issue)
 }
 export function validateSharedEntry(entry: SharedSettingsEntry) {
   if (entry.key !== 'global' && !/^project:[^/\s]+\/[^\r\n]+$/.test(entry.key))

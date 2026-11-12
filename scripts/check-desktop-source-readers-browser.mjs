@@ -313,48 +313,42 @@ try {
     'Rediscovery never moves the open detail to the replacement destination',
   )
   await changed.close()
+  // Issues and pipelines now use the same owner-bound path as PRs.
   for (const mode of ['issues', 'pipelines']) {
-    const rows = await browser.newPage()
-    rows.setDefaultTimeout(8000)
+    const page = await browser.newPage()
+    page.setDefaultTimeout(8000)
     const errors = []
-    rows.on('pageerror', (error) => errors.push(error.message))
-    await rows.setContent('<div id="app"></div>')
-    await rows.evaluate((mode) => {
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.setContent('<div id="app"></div>')
+    await page.clock.install()
+    await page.evaluate((mode) => {
       window.mode = 'work-rows'
       window.workMode = mode
     }, mode)
-    await rows.addScriptTag({ content: built.outputFiles[0].text })
-    await rows.waitForFunction(
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.waitForFunction(
       () => window.workResult?.pages[0]?.items.length && !window.workResult.busy,
     )
-    await rows.evaluate(() => {
+    await page.evaluate(() => {
+      window.commit(() => {
+        window.store = { ...window.store, connected: false }
+        window.sources = window.sources.map((source) => ({
+          ...source,
+          connected: source.runtimeId !== 'a',
+        }))
+        window.render(false)
+      })
       window.reads = []
-      window.cacheWrites = []
-      window.freshWorkRows = true
-      window.sources = window.sources.map((source) => ({
-        ...source,
-        connected: source.runtimeId !== 'a',
-      }))
-      window.render(false)
     })
-    await rows.waitForFunction(
-      () => window.workResult?.pages[0]?.reader.runtimeId === 'b' && !window.workResult.busy,
+    await page.waitForFunction(
+      () => window.workResult.pages[0]?.reader.connected === false && !window.workResult.busy,
     )
-    await rows.getByRole('button', { name: 'Refresh', exact: true }).click()
-    await rows.waitForFunction(
-      () => window.workResult.pages[0]?.items[0]?.id === '9' && !window.workResult.busy,
-    )
-    assert.equal(await rows.evaluate(() => window.workResult.pages[0].source.runtimeId), 'a')
+    await page.clock.runFor(30001)
+    assert.equal(await page.evaluate(() => window.workResult.pages[0].reader.runtimeId), 'a')
+    assert.equal(await page.evaluate(() => window.workResult.pages[0].items[0].id), '7')
+    assert.deepEqual(await page.evaluate(() => window.reads), [])
     assert.equal(
-      await rows.evaluate(() => window.workResult.pages[0].options.destination),
-      'dest-a',
-    )
-    assert.equal(
-      await rows.evaluate(() => window.workResult.pages[0].items[0].destination),
-      'dest-a',
-    )
-    assert.equal(
-      await rows
+      await page
         .getByRole('button', {
           name: mode === 'issues' ? 'New issue' : 'Run pipeline',
           exact: true,
@@ -362,101 +356,32 @@ try {
         .isDisabled(),
       true,
     )
-    for (const field of ['destination', 'account']) {
-      await rows.evaluate((field) => {
-        window.cacheWrites = []
-        window.dispatchRace = { id: 'b', field }
-        window.workResult.more(window.workResult.pages[0].source.key)
-      }, field)
-      await rows.waitForFunction(
-        () =>
-          window.workResult.pages[0]?.error?.includes('Source changed during dispatch') &&
-          !window.workResult.busy,
-      )
-      assert.equal(await rows.evaluate(() => window.workResult.pages[0].items.length), 1)
-      assert.deepEqual(
-        await rows.evaluate(() =>
-          window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'work'),
-        ),
-        [],
-        'Rejected work pagination cannot overwrite the origin cache',
-      )
-      await rows.evaluate(() => {
-        window.dispatchRace = undefined
-        window.workResult.refresh()
-      })
-      await rows.waitForFunction(() => !window.workResult.busy && !window.workResult.pages[0].error)
-    }
-    await rows.getByRole('button', { name: /Load more/ }).click()
-    await rows.waitForFunction(
-      () => window.workResult.pages[0]?.items.length === 2 && !window.workResult.busy,
-    )
-    assert.equal(
-      await rows.evaluate(() =>
-        window.workResult.pages[0].items.every((item) => item.destination === 'dest-a'),
-      ),
-      true,
-    )
-    assert.equal(
-      await rows.evaluate(() =>
-        window.reads.every(
-          (read) =>
-            read.id === 'b' &&
-            read.input.expectedReaderIdentity === 'same-account' &&
-            read.input.expectedDestination === 'dest-b',
-        ),
-      ),
-      true,
-    )
-    assert.equal(
-      await rows.evaluate(() =>
-        window.cacheWrites
-          .filter((write) => JSON.parse(write.key)[0] === 'work')
-          .every((write) => write.id === 'a' && JSON.parse(write.key)[1].repositoryId === 'repo-a'),
-      ),
-      true,
-    )
-    await rows
-      .getByRole('button', {
-        name: mode === 'issues' ? /New issue after handoff/ : /New run after handoff/,
-      })
-      .click()
-    await rows.waitForFunction(() => window.workDetail?.destination === 'dest-a')
-    assert.equal(
-      await rows.locator('[data-owner="a"]').count(),
-      1,
-      'A newly opened row retains its original runtime scope',
-    )
-    const action = mode === 'issues' ? 'Issue actions' : 'Pipeline actions'
-    const task = mode === 'issues' ? 'Start thread from issue' : 'Investigate run'
-    assert.equal(await rows.getByRole('button', { name: action, exact: true }).isDisabled(), true)
-    assert.equal(await rows.getByRole('button', { name: task, exact: true }).isDisabled(), true)
-    if (mode === 'issues')
-      assert.equal(
-        await rows.getByRole('button', { name: 'Edit issue', exact: true }).isDisabled(),
-        true,
-      )
-    assert.deepEqual(await rows.evaluate(() => window.writes), [])
-    await rows.evaluate(() => {
+    await page.evaluate(() => {
+      window.store = { ...window.store, connected: true }
       window.sources = window.sources.map((source) => ({ ...source, connected: true }))
       window.render(false)
     })
-    await rows.waitForFunction(
-      (action) => !document.querySelector('button[aria-label="' + action + '"]').disabled,
-      action,
+    await page.waitForFunction(
+      () => window.workResult.pages[0]?.reader.connected && !window.workResult.busy,
     )
-    await rows.waitForFunction(
+    await page
+      .getByRole('button', { name: mode === 'issues' ? /Listed issue/ : /Listed run/ })
+      .click()
+    await page.waitForFunction(() => window.workDetail?.destination === 'dest-a')
+    assert.equal(await page.locator('[data-owner="a"]').count(), 1)
+    const action = mode === 'issues' ? 'Issue actions' : 'Pipeline actions'
+    const task = mode === 'issues' ? 'Start thread from issue' : 'Investigate run'
+    await page.waitForFunction(
       (task) =>
         [...document.querySelectorAll('button')].some(
           (button) => button.textContent === task && !button.disabled,
         ),
       task,
     )
-    assert.equal(await rows.getByRole('button', { name: task, exact: true }).isEnabled(), true)
-    await rows.getByRole('button', { name: task, exact: true }).click()
-    await rows.waitForFunction(() => window.writes.length === 1)
+    await page.getByRole('button', { name: task, exact: true }).click()
+    await page.waitForFunction(() => window.writes.length === 1)
     assert.deepEqual(
-      await rows.evaluate(() =>
+      await page.evaluate(() =>
         window.writes.map((write) => [
           write.runtimeId,
           write.path,
@@ -466,158 +391,143 @@ try {
       ),
       [['a', '/api/scm/work/task', 'repo-a', 'dest-a']],
     )
+    assert.equal(await page.evaluate(() => window.reads.every((read) => read.id === 'a')), true)
     if (mode === 'pipelines') {
-      await rows.getByRole('button', { name: action, exact: true }).click()
-      await rows.getByRole('menuitem', { name: 'Rerun', exact: true }).click()
-      await rows.getByRole('button', { name: 'Confirm rerun', exact: true }).click()
-      await rows.waitForFunction(() => window.writes.length === 2)
-      assert.deepEqual(
-        await rows.evaluate(() =>
-          window.writes
-            .slice(1)
-            .map((write) => [
-              write.runtimeId,
-              write.path,
-              write.input.repositoryId,
-              write.input.expectedDestination,
-            ]),
-        ),
-        [['a', '/api/scm/work/pipelines/action', 'repo-a', 'dest-a']],
-      )
+      await page.getByRole('button', { name: action, exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Rerun', exact: true }).click()
+      await page.getByRole('button', { name: 'Confirm rerun', exact: true }).click()
+      await page.waitForFunction(() => window.writes.length === 2)
+      assert.equal(await page.evaluate(() => window.writes[1].runtimeId), 'a')
     }
     assert.deepEqual(errors, [])
-    await rows.close()
+    await page.close()
   }
   for (const mode of ['issues', 'pipelines']) {
-    const rebound = await browser.newPage()
-    rebound.setDefaultTimeout(8000)
+    const page = await browser.newPage()
+    page.setDefaultTimeout(8000)
     const errors = []
-    rebound.on('pageerror', (error) => errors.push(error.message))
-    await rebound.setContent('<div id="app"></div>')
-    await rebound.evaluate((mode) => {
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.setContent('<div id="app"></div>')
+    await page.clock.install()
+    await page.evaluate((mode) => {
       window.mode = 'work-rows'
       window.workMode = mode
     }, mode)
-    await rebound.addScriptTag({ content: built.outputFiles[0].text })
-    await rebound.waitForFunction(
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.waitForFunction(
       () => window.workResult?.pages[0]?.items.length && !window.workResult.busy,
     )
-    await rebound.evaluate(() => {
-      window.sources = window.sources.map((source) => ({
-        ...source,
-        connected: source.runtimeId !== 'a',
-      }))
-      window.render(false)
-    })
-    await rebound.waitForFunction(
-      () => window.workResult.pages[0]?.reader.runtimeId === 'b' && !window.workResult.busy,
+    for (const field of ['destination', 'account']) {
+      await page.evaluate((field) => {
+        window.cacheWrites = []
+        window.dispatchRace = { id: 'a', field }
+        window.workResult.more(window.workResult.pages[0].source.key)
+      }, field)
+      await page.waitForFunction(
+        () =>
+          window.workResult.pages[0]?.error?.includes('Source changed during dispatch') &&
+          !window.workResult.busy,
+      )
+      assert.equal(await page.evaluate(() => window.workResult.pages[0].items.length), 1)
+      assert.deepEqual(
+        await page.evaluate(() =>
+          window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'work'),
+        ),
+        [],
+      )
+      await page.evaluate(() => {
+        window.dispatchRace = undefined
+        window.workResult.refresh()
+      })
+      await page.waitForFunction(() => !window.workResult.busy && !window.workResult.pages[0].error)
+    }
+    await page.getByRole('button', { name: /Load more/ }).click()
+    await page.waitForFunction(
+      () => window.workResult.pages[0]?.items.length === 2 && !window.workResult.busy,
     )
-    await rebound.evaluate(() => {
-      window.reads = []
+    assert.equal(
+      await page.evaluate(() =>
+        window.workResult.pages[0].items.every((item) => item.destination === 'dest-a'),
+      ),
+      true,
+    )
+    assert.equal(await page.evaluate(() => window.reads.every((read) => read.id === 'a')), true)
+    await page.evaluate(() => {
       window.cacheWrites = []
-      window.destinations.b = 'unrelated-repository'
+      window.destinations.a = 'unrelated-repository'
       window.workResult.refresh()
     })
-    await rebound.waitForFunction(
+    await page.waitForFunction(
       () => !window.workResult.busy && window.workResult.pages[0]?.reader.connected === false,
     )
-    // The read carries the previously verified destination, so the runtime guard rejects it
-    // before provider access. It never adopts the rebound destination.
-    assert.ok(
-      (await rebound.evaluate(() => window.reads)).every(
-        (read) => read.input.expectedDestination === 'dest-b',
-      ),
-      'Work refresh rejects a reader rebind before provider access',
-    )
     assert.deepEqual(
-      await rebound.evaluate(() =>
+      await page.evaluate(() =>
         window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'work'),
       ),
       [],
-      'A rebound work reader cannot overwrite the origin cache',
     )
     assert.equal(
-      await rebound.evaluate(() => window.workResult.pages[0].items[0].destination),
+      await page.evaluate(() => window.workResult.pages[0].items[0].destination),
       'dest-a',
     )
     assert.deepEqual(errors, [])
-    await rebound.close()
+    await page.close()
   }
+  // Detail pagination waits for its owner, then resumes on that same computer.
   for (const mode of ['issues', 'pipelines']) {
-    const workPage = await browser.newPage()
-    const errors = []
-    workPage.on('pageerror', (error) => errors.push(error.message))
-    await workPage.setContent('<div id="app"></div>')
-    await workPage.addScriptTag({ content: built.outputFiles[0].text })
-    await workPage.evaluate((mode) => {
+    const page = await browser.newPage()
+    page.setDefaultTimeout(8000)
+    await page.setContent('<div id="app"></div>')
+    await page.clock.install()
+    await page.evaluate((mode) => {
       window.mode = 'work'
       window.workMode = mode
-      window.render(false)
     }, mode)
-    await workPage
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page
       .getByText(mode === 'issues' ? 'Kept issue' : 'Kept run', { exact: true })
       .first()
-      .waitFor({ timeout: 8000 })
-      .catch(async (error) => {
-        console.error({ errors, body: await workPage.locator('body').innerText() })
-        throw error
+      .waitFor()
+    await page.evaluate(() => {
+      window.commit(() => {
+        window.store = { ...window.store, connected: false }
+        window.sources = window.sources.map((source) => ({
+          ...source,
+          connected: source.runtimeId !== 'a',
+        }))
+        window.render(false)
       })
-    await workPage.evaluate(() => {
       window.reads = []
-      window.store = { ...window.store, connected: false }
-      window.sources = window.sources.map((source) => ({
-        ...source,
-        connected: source.runtimeId !== 'a',
-      }))
+    })
+    await page.clock.runFor(30001)
+    assert.deepEqual(await page.evaluate(() => window.reads), [])
+    await page.evaluate(() => {
+      window.store = { ...window.store, connected: true }
+      window.sources = window.sources.map((source) => ({ ...source, connected: true }))
       window.render(false)
     })
-    await workPage.waitForFunction(
-      () =>
-        window.reads.some((r) => r.id === 'b' && r.path.endsWith('/detail')) &&
-        window.workDetail?.next,
+    const more = page.getByRole('button', {
+      name: mode === 'issues' ? 'More comments' : 'More jobs',
+      exact: true,
+    })
+    await page.waitForFunction(
+      (name) =>
+        [...document.querySelectorAll('button')].some(
+          (button) => button.textContent === name && !button.disabled,
+        ),
+      mode === 'issues' ? 'More comments' : 'More jobs',
     )
-    await workPage
-      .getByRole('button', { name: mode === 'issues' ? 'More comments' : 'More jobs', exact: true })
-      .click()
-    await workPage.waitForFunction(
+    await more.click()
+    await page.waitForFunction(
       (mode) =>
         (mode === 'issues'
           ? window.workDetail?.comments.length
           : window.workDetail?.jobs.length) === 2,
       mode,
     )
-    assert.equal(await workPage.evaluate(() => window.workDetail.destination), 'dest-a')
-    assert.equal(
-      await workPage.evaluate(
-        (mode) =>
-          mode === 'issues'
-            ? window.workDetail.issue.destination
-            : window.workDetail.run.destination,
-        mode,
-      ),
-      'dest-a',
-      'Pagination keeps mutations on the original source',
-    )
-    assert.equal(
-      await workPage.evaluate(() =>
-        window.reads
-          .filter((r) => r.path.endsWith('/detail'))
-          .every((r) => r.id === 'b' && r.input.expectedReaderIdentity === 'same-account'),
-      ),
-      true,
-    )
-    assert.equal(
-      await workPage.getByRole('button', { name: 'Refresh', exact: true }).isDisabled(),
-      false,
-    )
-    if (mode === 'issues')
-      assert.equal(
-        await workPage.getByRole('button', { name: 'Edit issue', exact: true }).isDisabled(),
-        true,
-        'Reading through an alternate cannot enable origin mutations',
-      )
-    assert.deepEqual(errors, [])
-    await workPage.close()
+    assert.equal(await page.evaluate(() => window.workDetail.destination), 'dest-a')
+    assert.equal(await page.evaluate(() => window.reads.every((read) => read.id === 'a')), true)
+    await page.close()
   }
   const jira = await browser.newPage()
   const jiraErrors = []
@@ -710,7 +620,7 @@ try {
   assert.deepEqual(jiraErrors, [])
   await jira.close()
   console.log(
-    'Desktop source readers passed: account/destination dispatch and pagination guards; PRs stay on their selected machine through offline/remount/account changes; issue/pipeline rows retain the origin and cache; offline comments/merge/tasks disabled and reconnect writes remain on the origin; same-account handoff, remount, discovery failure and account recovery. Jira issue overview/options/discussion delays, failures, retries, comment pagination and scoped caches passed. Transport and UI primitives mocked; actual list/detail routing, issue layout and action controls exercised.',
+    'Desktop source readers passed: account/destination dispatch and pagination guards; PRs stay on their selected machine through offline/remount/account changes; issue/pipeline rows retain the origin and cache; offline comments/merge/tasks disabled and reconnect writes remain on the origin; owner-only Jira/pipeline reads, offline retention, reconnect, discovery failure and account recovery. Jira issue overview/options/discussion delays, failures, retries, comment pagination and scoped caches passed. Transport and UI primitives mocked; actual list/detail routing, issue layout and action controls exercised.',
   )
 } finally {
   await browser.close()

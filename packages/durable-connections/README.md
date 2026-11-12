@@ -226,65 +226,28 @@ Authenticated human clients can inspect `GET /api/state/status`, request history
 `POST /api/state/exchange` serves the generic request/response protocol for this one channel. These
 endpoints accept existing paired credentials; scoped agent-run credentials cannot use them.
 
-## Shared threads
+## Owner-scoped threads and retained archives
 
-`shared-threads:v1` is a separate application channel. The owning runtime writes thread status,
-metadata and message records into an immutable SQLite outbox **inside the workspace transaction**.
-The replica imports that outbox after commit, including after a crash. Runtime persistence appends
-normalized journal rows; it does not rewrite message bodies on disk for every checkpoint. Thread
-lists query metadata only; detail reads page 40 messages at a time.
+Each runtime owns its local conversations. Desktop/web and mobile connect directly to each paired
+runtime. Clients combine these lists and keep a separate bounded offline cache for each connection.
+Thread identity includes the computer and thread ID. The same thread ID on two computers stays
+separate. Settings still use the shared settings channel.
 
-Thread identity is `(ownerRuntimeId, threadId)`. Titles, pins and snooze times have independent
-latest-wins registers. Messages have stable IDs and separate records, so additions do not replace an
-entire conversation. Completed assistant messages are archived once; live tokens stay on the
-existing owner stream. Accepted user messages are archived immediately. Later edits/removals keep
-older versions; a reset revision invalidates loaded pages when existing history changes. Thread
-removal is an explicit retained record, preventing old delivery from resurrecting the thread. Shared
-titles are limited to 2,000 characters. A message over 1,048,576 UTF-16 code units has a clearly
-marked shortened shared copy, keeping even escaped text within transport limits; its complete
-authoritative text remains on the owner.
+Automatic `shared-threads:v1` mirroring is retired. Runtimes no longer capture, exchange or publish
+thread records. Older clients receive HTTP 410 from `/api/threads/state/*` and
+`/api/threads/metadata`. Clients filter old mirror rows from saved caches and older runtime
+snapshots. Update eligibility counts local tasks and automation runs only.
 
-Desktop/web and mobile persist a separate thread replica and bridge capability-advertising paired
-runtimes. Direct runtime sessions use existing Studio pairing grants. Data and receive checkpoints
-commit together. Known runtime identities resume persisted pull cursors on a fresh connection;
-outbound delivery may replay an already accepted prefix and is deduplicated. Backgrounding and
-removed/replaced pairings cancel app sessions and reject late replies. Older runtimes do not
-advertise `threadReplicationVersion: 1` and receive no thread replication from apps. A direct
-connection to an older runtime reports endpoint failure and retries with backoff; it never simulates
-acknowledgement or changes the older runtime's workspace.
+Existing SQLite journals and client archive documents stay on disk. They are not deleted or used as
+executable tasks. A paired human client can read retained runtime pages with
+`POST /api/threads/replica/read { ownerRuntimeId, threadId, before? }`. This endpoint uses the
+existing bearer token. Run-scoped agent credentials cannot read it. Stored recovery views are
+read-only. Connect to the owning computer to edit or continue a conversation. A recovery copy may be
+incomplete and is never a substitute for the owner's database or its backup.
 
-Lists prefer the connected owner, then a reachable shared copy, then cached originals/copies. A
-shared conversation has its own desktop/mobile view with paged text and title/pin editing. Copies
-never enter the executable workspace. Receiving a thread cannot launch, resume, steer or fail over
-an agent. Only the owner publishes its history and execution status; paired human clients may edit
-shared metadata. An owning runtime rejects foreign attempts to rewrite its descriptor or messages.
-Paired runtimes can forward another owner's records as trusted shared data; this is not a signed
-multi-tenant event system.
-
-The shared projection includes message text, title, pin, snooze, status, owner name and project
-name, including owner-controlled settlement/archive flags. It excludes structured credentials,
-sessions, permission grants, queues, unsent drafts, local paths, attachments, file contents and
-checkpoints. **Message text is shared as written**; it is not secret-redacted. Shared history
-remains in each replica after forgetting/revoking a pairing; revocation stops further
-synchronization, not previously delivered data. Historical revisions and removals remain retained.
-There is no journal compaction, account service, execution migration or file synchronization. The
-generic state still keeps its complete journal in memory and app storage uses snapshots: this
-version targets ordinary conversation archives, not unbounded token/event storage. Replicated
-conversation search and arbitrary historical-version restore UI are not part of this version.
-
-Authenticated human endpoints:
-
-- `GET /api/threads/state/status`: local journal revision and direct peer errors.
-- `POST /api/threads/state/exchange`: the durable bidirectional exchange protocol.
-- `POST /api/threads/replica/read { ownerRuntimeId, threadId, before? }`: a safe conversation page.
-- `POST /api/threads/metadata { ownerRuntimeId, threadId, field, value }`: title, pin or snooze
-  edit.
-
-Metadata submissions use existing mutation receipts when an action ID is supplied. A lost reply
-returns its original receipt; replay never creates a newer winning edit. If the process dies between
-commit and recording the response, recovery reports an uncertain action rather than blindly
-repeating it. Run-scoped agent credentials cannot access these endpoints. HTTP LAN/VPN connections
-and existing pairing requirements are preserved.
+This follows T3 Code's server-scoped thread routes and per-environment caches. See
+[the comparison and verification notes](../../docs/owner-scoped-threads.md). Existing pairings and
+HTTP LAN/VPN connections remain supported.
 
 ## Backup restore and request limits
 
@@ -304,11 +267,10 @@ Each replica saves the last accepted actor for a stable peer ID. Reconnects and 
 resume that actor's checkpoint. Outbound delivery can still replay its accepted prefix; the receiver
 deduplicates it. This keeps recovery safe when the receiver has also restored a backup.
 
-After restore, newer owner history received from a peer becomes a separate archived shared copy. Its
-owner name ends with `(recovered)`. The owner publishes its restored message values and removals to
-the current shared thread. The recovered copy keeps the newer text. It cannot start or resume work.
-Recovery copies, owner corrections and the receive checkpoint commit together. Repeated delivery
-does not create another copy. Shared preferences keep their latest-wins policy.
+Older versions could retain peer history as a separate recovery copy after restore. Existing copies
+stay in their archived journals. With thread mirroring retired, restore does not contact peers for
+thread history or publish corrections to them. Use the owner's database backup for thread recovery.
+Shared preferences keep their latest-wins policy.
 
 The runtime settings channel uses an incremental SQLite journal. It migrates the previous JSON
 document once and keeps that document for recovery. Browser and mobile adapters still write JSON

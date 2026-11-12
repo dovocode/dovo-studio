@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
+  taskSchema,
+  getRuntimeSnapshotTag,
   clearRuntimeRequestCache,
   decode,
   runtimeProfile,
@@ -10,6 +12,7 @@ import {
   type RuntimeSnapshot,
 } from '../../index.js'
 import {
+  ownedRuntimeSnapshot,
   retainOverviewSnapshot,
   retainRuntimeSnapshot,
   shouldPublishOverview,
@@ -238,4 +241,77 @@ it('retains unchanged workspace fields across changed validators and preserves t
   expect(retainRuntimeSnapshot(retained, profile.connection, repeated, profile.connection)).toBe(
     retained,
   )
+})
+
+const ownerTask = decode(taskSchema, {
+  id: 'thread',
+  title: 'Real title',
+  repositoryId: 'repo',
+  agentId: 'agent',
+  status: 'running',
+  createdAt: '2026-01-01',
+  messages: [{ id: 'm', role: 'user', text: 'Saved history' }],
+  files: [],
+  draft: 'Keep my draft',
+  example: false,
+})
+const mirrorTask = {
+  ...ownerTask,
+  id: 'mirror',
+  replica: {
+    ownerRuntimeId: 'other',
+    threadId: 'thread',
+    ownerName: 'Other',
+    projectName: 'Project',
+  },
+}
+it('filters old mirrors on first install and offline reconnect without changing saved input or ETags', async () => {
+  const old = {
+    ...snapshot,
+    runtimeId: 'owner',
+    workspace: { ...snapshot.workspace, tasks: [ownerTask, mirrorTask] },
+    detailTaskIds: ['thread', 'mirror', 'missing-owner-thread'],
+    olderSettled: {
+      limit: 25,
+      omitted: 2,
+      threadKeys: [JSON.stringify(['owner', 'older']), JSON.stringify(['other', 'foreign-older'])],
+    },
+  }
+  const tagged = await taggedSnapshot(profile.connection, old, '"old-server"')
+  const installed = retainOverviewSnapshot(undefined, overview(tagged))
+  expect(installed.snapshot?.workspace.tasks).toEqual([ownerTask])
+  expect(installed.snapshot?.workspace.tasks[0]?.draft).toBe('Keep my draft')
+  expect(installed.snapshot?.workspace.tasks[0]?.messages[0]?.text).toBe('Saved history')
+  expect(installed.snapshot?.detailTaskIds).toEqual(['thread', 'missing-owner-thread'])
+  expect(installed.snapshot?.olderSettled).toEqual({
+    limit: 25,
+    omitted: 1,
+    threadKeys: [JSON.stringify(['owner', 'older'])],
+  })
+  expect(getRuntimeSnapshotTag(installed.snapshot!)).toBe('"old-server"')
+  expect(ownedRuntimeSnapshot(tagged)).toBe(installed.snapshot)
+  expect(tagged.workspace.tasks).toHaveLength(2)
+  expect(retainOverviewSnapshot(installed, { ...installed, connected: false }).snapshot).toBe(
+    installed.snapshot,
+  )
+  const refreshed = retainOverviewSnapshot(
+    installed,
+    overview({
+      ...old,
+      revision: 2,
+      workspace: { ...old.workspace, tasks: [{ ...ownerTask, title: 'Live title' }] },
+    }),
+  )
+  expect(refreshed.snapshot?.workspace.tasks[0]?.title).toBe('Live title')
+  expect(refreshed.snapshot?.workspace.tasks[0]?.draft).toBe('Keep my draft')
+})
+it('drops foreign omitted rows even when no mirrors are in the visible page', () => {
+  const old = {
+    ...snapshot,
+    runtimeId: 'owner',
+    olderSettled: { limit: 25, omitted: 1, threadKeys: [JSON.stringify(['other', 'hidden'])] },
+  }
+  expect(ownedRuntimeSnapshot(old).olderSettled?.omitted).toBe(0)
+  const scalarOnly = { ...snapshot, olderSettled: { limit: 25, omitted: 8 } }
+  expect(ownedRuntimeSnapshot(scalarOnly)).toBe(scalarOnly)
 })

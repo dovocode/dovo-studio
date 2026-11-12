@@ -13,4 +13,3 @@ const storage = (key: string) =>
     update: (change) => updateWorkspaceDocument(key, change),
   })
 export const browserSharedStateStorage = storage('dovo.shared-state.v1')
-export const browserThreadStateStorage = storage('dovo.shared-threads.v1')

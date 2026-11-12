@@ -1,4 +1,4 @@
-import { mobileSharedStateStorage, mobileThreadStateStorage } from './shared-state-storage'
+import { mobileSharedStateStorage } from './shared-state-storage'
 import { randomUUID } from 'expo-crypto'
 import {
   createRuntimeClient,
@@ -10,7 +10,6 @@ import {
   runtimeHasCustomName,
   mergeSharedSettings,
   SharedStateSynchronization,
-  ThreadStateSynchronization,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
   recoverableMutation,
@@ -21,6 +20,7 @@ import {
   startRuntimeSync,
   runtimeSyncOnline,
   pendingAgentPresets,
+  sharedSettingsIssue,
   decode,
   saveRuntimePairing,
   cancelRuntimePairing,
@@ -209,7 +209,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   } | null>(null)
   const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
   const sharedStateSync = useRef<SharedStateSynchronization | null>(null)
-  const threadStateSync = useRef<ThreadStateSynchronization | null>(null)
   const peerVersion = useSyncExternalStore(
     subscribePeerConnections,
     peerConnectionVersion,
@@ -234,7 +233,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       if (selected && !entryRef.current[selected.id]?.unauthorized) {
         retryRuntimeSync(selected.connection)
         sharedStateSync.current?.retry()
-        threadStateSync.current?.retry()
       }
     }
     const network = Network.addNetworkStateListener((state) => {
@@ -798,7 +796,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     return mobileWorkflow(function* () {
       if (profile) {
         sharedStateSync.current?.retry()
-        threadStateSync.current?.retry()
         retryRuntimeSync(profile.connection)
         yield* refreshProfileEffect(profile)
       }
@@ -1562,7 +1559,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }),
       {
         interval: computerRefresh === 'reduced' ? 120000 : 30000,
-        // Fetch the other computers at launch, instead of showing their replicas for 30s.
+        // Fetch each computer at launch so its owned thread list is available promptly.
         immediate: true,
         onError: (error) => setStorageError(String(error)),
       },
@@ -1682,7 +1679,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     globalModelPreferencesUpdatedAt,
   } = useMobilePreferences()
   const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
-  const [threadSyncError, setThreadSyncError] = useApplicationState('')
   const presetRequests = useRef(new Set<string>())
   const failedPresetRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   useEffect(() => {
@@ -1712,6 +1708,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         modelPreferences,
         globalModelPreferencesUpdatedAt,
       ])
+      const issue = sharedSettingsIssue({ agents: presets })
+      if (issue) {
+        failedPresetRequests.current.set(entry.profile.id, { fingerprint, error: issue })
+        continue
+      }
       if (!presets.length && !retired.length && !modelPreferences) {
         failedPresetRequests.current.delete(entry.profile.id)
         continue
@@ -1793,24 +1794,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       request,
       refreshed: (profile) => refreshSharedProfile.current(profile),
     })
-    const threads = new ThreadStateSynchronization({
-      storage: mobileThreadStateStorage,
-      createReplicaId: () => `app:${randomUUID()}`,
-      request,
-      refreshed: (profile) => refreshSharedProfile.current(profile),
-      error: setThreadSyncError,
-      intervalMs:
-        computerRefresh === 'manual' ? null : computerRefresh === 'reduced' ? 120000 : 30000,
-    })
-    threadStateSync.current = threads
     sharedStateSync.current = synchronization
     const input = sharedStateInput.current
     synchronization.update(input.targets, input.ready && input.appActive)
-    threads.update(input.targets, input.ready && input.appActive)
     return () => {
       if (sharedStateSync.current === synchronization) sharedStateSync.current = null
-      if (threadStateSync.current === threads) threadStateSync.current = null
-      void threads.stop().catch((error) => console.error('Thread state cleanup failed', error))
       void synchronization
         .stop()
         .catch((error) => console.error('Shared state cleanup failed', error))
@@ -1818,7 +1806,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [computerRefresh, setSettingsSyncError])
   useEffect(() => {
     sharedStateSync.current?.update(overviews, ready && appActive)
-    threadStateSync.current?.update(overviews, ready && appActive)
   }, [overviews, sharedScopedSettings, ready, appActive])
   const pendingMessages = useCallback(
     (task: Task) => (connection ? mutations.pendingMessages(connection, task) : []),
@@ -1901,7 +1888,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       return
     }
     sharedStateSync.current?.retry()
-    threadStateSync.current?.retry()
     await refreshAll()
   }, [refreshAll])
   const readCache = useMemo(() => (profile ? cacheFor(profile) : null), [profile, cacheFor])
@@ -1909,7 +1895,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const error =
     storageError ||
     settingsSyncError ||
-    threadSyncError ||
     presetSyncError ||
     active?.error ||
     (registry.pendingPairings?.length

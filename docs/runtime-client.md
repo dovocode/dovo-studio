@@ -105,7 +105,8 @@ This follows the same approach as T3 Code's
 [per-thread resume state](https://github.com/pingdotgg/t3code/blob/79bca436/packages/client-runtime/src/state/threads.ts)
 and
 [bounded replay](https://github.com/pingdotgg/t3code/blob/79bca436/apps/server/src/orchestration-v2/ThreadStream.ts).
-Dovo retains its existing workspace patches, mutation receipts and shared-thread replication.
+Dovo retains its existing workspace patches and mutation receipts. Threads now stay on their owning
+runtime. See [owner-scoped threads](owner-scoped-threads.md).
 
 After building the runtime and its dependencies, verify the real browser boundary with:
 

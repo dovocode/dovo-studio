@@ -1,3 +1,4 @@
+import { validateShared } from '../../storage/shared-settings-validation.js'
 import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
 import {
   taskMessageSchema,
@@ -230,6 +231,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
+        validateShared({ agents: presets })
         s.store.update((workspace) => {
           const agents = workspace.agents.map((agent) =>
             retired?.includes(agent.id)

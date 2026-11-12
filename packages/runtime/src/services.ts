@@ -79,7 +79,7 @@ import { errorMessage } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
 import { ThreadReplicationJournal } from './storage/thread-replication-journal.js'
-import { ThreadReplication } from './storage/thread-replication.js'
+import { LegacyThreadArchive } from './storage/legacy-thread-archive.js'
 export function createServices(
   db: Database.Database,
   ownerToken: string,
@@ -133,9 +133,7 @@ export function createServices(
       : join(dirname(resolve(db.name)), 'acp'),
   )
   let artifacts: Artifacts | undefined
-  const threadJournal = new ThreadReplicationJournal(db, runtimeId)
   const store = new WorkspaceStore(db, (change) => {
-    threadJournal.capture(change)
     activity.workspace(change)
     artifacts?.workspace(change)
   })
@@ -569,7 +567,7 @@ export function createServices(
     retrieval,
     retrievalPeers,
     stateReplication: new SharedStateReplication(db, defaults, runtimeId, retrievalPeers),
-    threadReplication: new ThreadReplication(threadJournal, store, retrievalPeers),
+    threadArchive: new LegacyThreadArchive(new ThreadReplicationJournal(db, runtimeId)),
     db,
     titles,
     activity,
@@ -609,7 +607,7 @@ export function createServices(
 export interface Services {
   dictation: RuntimeDictation
   stateReplication: SharedStateReplication
-  threadReplication: ThreadReplication
+  threadArchive: LegacyThreadArchive
   policy: ManagedPolicy
   projectTransfers: ProjectTransfers
   remoteDesktop: RemoteDesktop

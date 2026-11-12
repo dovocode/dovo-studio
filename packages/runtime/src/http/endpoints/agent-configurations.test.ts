@@ -48,7 +48,6 @@ it('persists global agent baselines while keeping and resetting explicit server 
       permission: 'ask',
       endpoint: '',
       args: ['--verbose'],
-      env: { TEST_VALUE: 'global' },
     }
     expect((await call('/api/agents/presets/apply', { presets: [preset] })).status).toBe(200)
     expect(runtime.services.store.get().agents[0]).toMatchObject({
@@ -63,6 +62,20 @@ it('persists global agent baselines while keeping and resetting explicit server 
         serverOverride: true,
       })),
     }))
+    for (const privateFields of [
+      { env: { PRIVATE_TOKEN: 'private-agent-value' } },
+      { executablePath: '/private/codex' },
+      { configDirectory: '/private/account' },
+      { acpInstallationId: 'host-only' },
+      { envSecrets: { TOKEN: { provider: 'onepassword', reference: 'op://vault/item/password' } } },
+    ]) {
+      const rejected = await call('/api/agents/presets/apply', {
+        presets: [{ ...preset, ...privateFields }],
+      })
+      expect(rejected.status).toBe(400)
+      expect(await rejected.text()).not.toContain('private-agent-value')
+      expect(runtime.services.store.get().agents[0].endpoint).toBe('/server/codex')
+    }
     const changed = { ...preset, model: 'new-model' }
     expect((await call('/api/agents/presets/apply', { presets: [changed] })).status).toBe(200)
     expect(runtime.services.store.get().agents[0]).toMatchObject({
