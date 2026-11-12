@@ -15,6 +15,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useApplicationState} from '../studio-core/src/runtime/application-state';`,
   '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     export * from '@dovo/protocol';
+    export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
     export {WorkspaceContext,useWorkspace} from '../studio-core/src/workspace/context';
@@ -71,7 +72,6 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   '../chat/thread/chat-thread': `export const ChatThread=({task,emptyState})=>task.status==='draft'&&!task.messages.length&&emptyState?emptyState:<div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
-  './detail/live-refresh': 'export const useLiveRefresh=()=>null;',
 }
 for (const [path, names] of [
   ['@dovo/extension-scm/pull-detail', ['PullDetail']],
@@ -204,7 +204,13 @@ try {
     errors.push(error.message)
     console.error(error.stack)
   })
-  await page.setContent('<style>.hidden{display:none}</style><div id="app"></div>')
+  await page.route('http://startup-composer.test/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<style>.hidden{display:none}</style><div id="app"></div>',
+    }),
+  )
+  await page.goto('http://startup-composer.test')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const editor = page.getByLabel('Message thread', { exact: true })
   await editor.waitFor()

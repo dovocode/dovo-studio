@@ -24,14 +24,26 @@ it('formats accessibility trees as readable bounded snapshots', () => {
   expect(snapshot).toBe('- RootWebArea "Example"\n  - button "Save now"\n  - link "Docs"')
 })
 
-it('uses real Chromium page CDP to read a tree and target elements without screenshots', async () => {
+it('uses real Chromium page CDP to read a tree and target elements without screenshots', async ({
+  onTestFinished,
+}) => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-desktop-cdp-live-'))
   const profile = join(directory, 'chromium')
   const context = await chromium.launchPersistentContext(profile, {
     headless: true,
     args: ['--remote-debugging-port=0'],
   })
+  onTestFinished(async () => {
+    await context.close()
+    rmSync(directory, { recursive: true, force: true })
+  })
   const page = context.pages()[0]!
+  // Playwright's pipe can be ready before Chromium writes its HTTP CDP endpoint.
+  await expect
+    .poll(() => readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0], {
+      timeout: 10000,
+    })
+    .toMatch(/^[1-9]\d*$/)
   const port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]
   const discovered = decode(
     Schema.Array(mutableStruct({ type: Schema.String, webSocketDebuggerUrl: Schema.String })),
@@ -236,8 +248,6 @@ it('uses real Chromium page CDP to read a tree and target elements without scree
     else process.env.DOVO_DATABASE_PATH = previousDatabase
     for (const client of proxy.clients) client.terminate()
     await new Promise<void>((resolve) => proxy.close(() => resolve()))
-    await context.close()
-    rmSync(directory, { recursive: true, force: true })
   }
 }, 30000)
 

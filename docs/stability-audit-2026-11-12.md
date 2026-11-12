@@ -179,3 +179,25 @@ setup. No production sandbox setting was changed. Focused managed Chromium check
 behavior, computer updates and desktop/mobile watching lifecycles. The refresh notice also passed a
 visual check with the built desktop CSS at a 360-pixel viewport. Signed installer and
 physical-device checks remain outside this local verification.
+
+## Hosted browser gate follow-up
+
+The first nightly check stopped at stale browser fixtures. Startup and manual-model fixtures now
+export the real composer recovery helpers, use a storage-capable HTTP origin and load the real
+refresh hook. The shared mobile search fixture now uses the runtime's Effect read API. The side-chat
+fixture also uses the current recovery and refresh contracts. The checkpoint fixture verifies the
+128-pixel thumbnail request. The watching-panel fixture verifies the compact refresh notice, error
+details and Retry while keeping the mobile alert check.
+
+Artifact sharing and PDF export canaries use a unique localhost hostname. This separates browser
+requests from the host runtime's automatic port probes. Each check also sends a deliberate browser
+request to prove that the canary detects egress. Production sandbox rules remain unchanged.
+
+The hosted unit job also found a Chromium startup race. The real desktop CDP test now waits for
+`DevToolsActivePort` to contain a valid port. It also closes Chromium if endpoint discovery fails.
+All three tests in that file pass locally. The failed browser suites and their remaining shard
+checks pass locally in sequential segments. One workspace check timed out on the first local run;
+two later runs passed without changes. This does not prove that the check cannot be intermittent.
+
+These are test fixes. Signed package checks and nightly publication still depend on hosted CI for
+the replacement tag.

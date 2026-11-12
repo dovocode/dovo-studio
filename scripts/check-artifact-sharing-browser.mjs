@@ -24,12 +24,18 @@ const leaks = []
 try {
   connectOrigin = await listen(createServer((req, res) => broker.emit('request', req, res)))
   const origin = await listen(createServer((req, res) => host.emit('request', req, res)))
-  const leakOrigin = await listen(
+  // Runtime preview discovery probes listening ports with HEAD /. Give the browser
+  // egress target its own hostname so those host probes cannot contaminate this check.
+  const leakHost = `artifact-egress-${randomUUID()}.localhost`
+  const leakListener = await listen(
     createServer((req, res) => {
-      leaks.push(req.url)
+      if (req.headers.host?.split(':')[0] === leakHost) leaks.push(req.url)
       res.end('unexpected network access')
     }),
   )
+  const leakOrigin = leakListener.replace('127.0.0.1', leakHost)
+  await fetch(leakListener, { method: 'HEAD' })
+  assert.deepEqual(leaks, [])
   const identityOrigin = await listen(
     createServer((req, res) => {
       const url = new URL(req.url, 'http://identity.test')
@@ -300,6 +306,10 @@ try {
   await owner.goto(published.manageUrl)
   await owner.getByRole('button', { name: 'Sign in', exact: true }).waitFor()
   assert.deepEqual(leaks, [])
+  const control = await browser.newPage()
+  await control.goto(leakOrigin + '/control')
+  assert.deepEqual(leaks, ['/control'])
+  await control.close()
   console.log(
     'Hosted artifact browser: private publication, scoped browser sign-in, invitation/link revocation, mobile viewport, interactive sandbox, live data delivery/staleness/clearing and exfiltration isolation passed.',
   )

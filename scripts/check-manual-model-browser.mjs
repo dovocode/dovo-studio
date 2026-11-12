@@ -13,6 +13,7 @@ const mocks = {
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
   '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
+    export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
     export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';
@@ -74,7 +75,6 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
-  './detail/live-refresh': 'export const useLiveRefresh=()=>null;',
 }
 for (const [path, names] of [
   ['@dovo/extension-scm/pull-detail', ['PullDetail']],
@@ -194,7 +194,10 @@ try {
       errors.push(error.message)
       console.error(error.message)
     })
-    await page.setContent('<div id="app"></div>')
+    await page.route('http://manual-model.test/**', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+    )
+    await page.goto('http://manual-model.test')
     const assets = new URL('../apps/desktop/dist/assets/', import.meta.url)
     for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))
       await page.addStyleTag({ content: await readFile(new URL(file, assets), 'utf8') })

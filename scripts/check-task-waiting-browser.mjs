@@ -146,8 +146,19 @@ try {
       window.fail = true
     })
     await page.getByRole('button', { name: /Refresh/ }).click()
-    await page.getByRole('alert').waitFor()
-    assert.match(await page.getByRole('alert').innerText(), /Connection failed/)
+    const refreshFailure = mobile
+      ? page.getByRole('alert')
+      : page.getByRole('status').filter({ hasText: 'Some information could not refresh.' })
+    await refreshFailure.waitFor()
+    if (!mobile) {
+      assert.equal(
+        await page.getByRole('alert').count(),
+        0,
+        'Background refresh uses a compact notice',
+      )
+      await refreshFailure.locator('summary').click()
+    }
+    assert.match(await refreshFailure.innerText(), /Connection failed/)
     assert.equal(
       await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).count(),
       1,
@@ -155,8 +166,12 @@ try {
     await page.evaluate(() => {
       window.fail = false
     })
-    await page.getByRole('button', { name: /Refresh/ }).click()
-    await page.waitForFunction(() => !document.querySelector('[role=alert]'))
+    await (
+      mobile
+        ? page.getByRole('button', { name: /Refresh/ })
+        : refreshFailure.getByRole('button', { name: 'Retry', exact: true })
+    ).click()
+    await refreshFailure.waitFor({ state: 'hidden' })
     await page.evaluate(() => {
       window.items[0].pausedReason = 'Monitoring paused: watcher disabled in runtime settings'
     })

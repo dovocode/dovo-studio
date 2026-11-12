@@ -45,7 +45,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       {
         path: '../../runtime/connection/provider',
         importer: root + 'apps/mobile/src/tasks/list/',
-        contents: 'export const useRuntime=()=>({readRuntime:window.readSearch});',
+        contents: `import {Effect} from 'effect';export const useRuntime=()=>({readRuntimeEffect:(...args)=>Effect.tryPromise({try:()=>window.readSearch(...args),catch:error=>error})});`,
       },
       {
         path: '../../runtime/state/app-active',

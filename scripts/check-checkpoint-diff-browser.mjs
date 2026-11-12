@@ -27,7 +27,7 @@ const image={id:'image',name:'A very long screenshot attachment filename.png',mi
 const text={id:'text',name:'notes.txt',mime:'text/plain',size:32};
 window.imageData='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=';
 window.calls=[];window.edited=[];window.failSyntax=false;
-window.store={connected:true,request:async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return {attachment:input.id==='image'?image:text,data:input.id==='image'?window.imageData:btoa('Attachment preview text')};if(path==='/api/tasks/file/restore')return {ok:true};if(path==='/api/tasks/file/preview'){if(window.failFull&&input.full)throw Error('Diff read failed');const prefix='same line\\n'.repeat(20000);return {before:{kind:'text',size:prefix.length+12,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+12,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full}}};throw Error('Unexpected request '+path)}};
+window.store={connected:true,request:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/images/read')return {uri:'data:image/png;base64,'+window.imageData};if(path==='/api/attachments/read')return {attachment:input.id==='image'?image:text,data:input.id==='image'?window.imageData:btoa('Attachment preview text')};if(path==='/api/tasks/file/restore')return {ok:true};if(path==='/api/tasks/file/preview'){if(window.failFull&&input.full)throw Error('Diff read failed');const prefix='same line\\n'.repeat(20000);return {before:{kind:'text',size:prefix.length+12,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+12,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full}}};throw Error('Unexpected request '+path)}};
 const before='export function greeting(name: string) {\\n  return "Hello " + name;\\n}\\n';
 const after='export function greeting(name: string) {\\n  return \\x60Hello, \\x24{name}!\\x60;\\n}\\n';
 const turn={id:'turn',status:'completed',checkpoint:{before:'a'.repeat(40),after:'b'.repeat(40),files:[{path:'src/greeting.ts',before,after,viewed:false},{path:'src/added.ts',before:'',after:'export const added = true;\\n',viewed:false},{path:'src/removed.ts',before:'export const old = true;\\n',after:'',viewed:false},{path:'src/mode.ts',before:'same\\n',after:'same\\n',viewed:false}],omitted:[]}};
@@ -185,6 +185,15 @@ try {
   )
   const sent = page.getByRole('region', { name: 'Sent message' })
   await sent.locator('img').waitFor()
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.calls
+        .filter((call) => call.path === '/api/tasks/images/read')
+        .map((call) => call.input),
+    ),
+    [{ taskId: 'task', attachmentId: 'image', maxSize: 128 }],
+    'Sent attachments load a bounded thumbnail',
+  )
   assert.equal(
     await sent
       .locator('img')

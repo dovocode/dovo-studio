@@ -13,12 +13,17 @@ import { startRuntime } from '../packages/runtime/dist/index.js'
 const requireRuntime = createRequire(new URL('../packages/runtime/package.json', import.meta.url))
 const { getDocument } = await import(requireRuntime.resolve('pdfjs-dist/legacy/build/pdf.mjs'))
 let networkRequests = 0
-const canary = createServer((_request, response) => {
-  networkRequests++
+// Separate browser egress from the host runtime's automatic HEAD / port probes.
+const canaryHost = `artifact-export-${randomUUID()}.localhost`
+const canary = createServer((request, response) => {
+  if (request.headers.host?.split(':')[0] === canaryHost) networkRequests++
   response.end('External resource')
 })
 await new Promise((resolve) => canary.listen(0, '127.0.0.1', resolve))
-const external = `http://127.0.0.1:${canary.address().port}`
+const canaryListener = `http://127.0.0.1:${canary.address().port}`
+const external = canaryListener.replace('127.0.0.1', canaryHost)
+await fetch(canaryListener, { method: 'HEAD' })
+assert.equal(networkRequests, 0)
 const ownerToken = randomUUID()
 const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
 const taskId = randomUUID()
@@ -466,6 +471,14 @@ try {
   assert.ok(renderedCode.text.includes('CodeMarker'))
   assert.ok(renderedCode.text.includes('<script>'), 'Code must be escaped, never executed')
   assert.equal(networkRequests, 0, 'Artifact exports must not contact external resources')
+  const controlBrowser = await chromium.launch()
+  try {
+    const control = await controlBrowser.newPage()
+    await control.goto(external + '/control')
+    assert.equal(networkRequests, 1, 'The canary must detect a real browser request')
+  } finally {
+    await controlBrowser.close()
+  }
   console.log(
     'Actual PDF/PNG exports passed: paper sizing, margins, scaling, exact image widths and full height, temporary edits and non-printable exclusions, all four formats, multi-file live previews and assets, offline interactive HTML/MHTML exports, pagination, saved revisions, selectable text, print styles, opaque sandbox and blocked external access.',
   )
