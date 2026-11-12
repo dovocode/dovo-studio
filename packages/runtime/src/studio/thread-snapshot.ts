@@ -47,6 +47,10 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
     const attention = [
       ...questions.filter((q) => q.taskId === item.id).map((q) => `question:${q.id}`),
       ...approvals.filter((q) => q.taskId === item.id).map((q) => `approval:${q.id}`),
+      ...s.secureInputs
+        .list()
+        .filter((q) => q.taskId === item.id)
+        .map((q) => `secure-input:${q.id}`),
     ].slice(0, 100)
     const writable = !permissionPolicyReadOnly(resolveTaskAgent(item, s.store.get().agents))
     const watches = {
@@ -223,6 +227,17 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
     .repositories.find((repository) => repository.id === task.repositoryId)
   return {
     humanInputs: [
+      ...s.secureInputs
+        .list()
+        .filter((input) => family.has(input.taskId))
+        .map((input) => ({
+          id: input.id,
+          taskId: input.taskId,
+          runtimeId: s.runtimeId,
+          kind: 'question' as const,
+          title: 'Secure input requested',
+          threadTitle: byId.get(input.taskId)?.title.slice(0, 1000) ?? 'Child thread',
+        })),
       ...questions
         .filter((question) => family.has(question.taskId) && question.routing !== 'parent')
         .map((question) => ({

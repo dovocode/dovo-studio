@@ -42,6 +42,8 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
     }
     for (const approval of snapshot.approvals)
       addInput(approval.taskId, JSON.stringify(['approval', approval.id]))
+    for (const input of snapshot.secureInputs ?? [])
+      addInput(input.taskId, JSON.stringify(['secure-input', input.id]))
     for (const question of snapshot.questions)
       if (question.routing !== 'parent')
         addInput(question.taskId, JSON.stringify(['question', question.id]))

@@ -27,6 +27,7 @@ import {
 } from '../../workspace.js'
 import { runtimeDefaultsSchema } from './runtime-setup.js'
 import { pendingQuestionSchema } from '../../conversation/workflow/questions.js'
+import { pendingSecureInputSchema } from '../../conversation/workflow/secure-input.js'
 import { acpInstallationSchema } from '../../auth/acp-registry.js'
 import { internetSetupSchema } from '../../auth/account-internet.js'
 import { relaySettingsSchema } from './custom-turn.js'
@@ -305,6 +306,7 @@ export const snapshotSchema = mutableStruct({
   revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   workspace: workspaceSchema,
   approvals: mutableArray(approvalSchema),
+  secureInputs: Schema.optional(mutableArray(pendingSecureInputSchema)),
   questions: mutableArray(pendingQuestionSchema).pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => [])),
   ),

@@ -68,6 +68,7 @@ import { TerminalRecovery } from './terminal/recovery.js'
 import { AgentRegistry } from './agents/configuration/registry.js'
 import { Approvals } from './agents/execution/approvals.js'
 import { Questions } from './agents/execution/questions.js'
+import { SecureInputs } from './agent-tools/secure-input.js'
 import { Tasks } from './agents/tasks/tasks.js'
 import { Jobs } from './jobs/jobs.js'
 import { SocketTickets } from './http/support/socket-tickets.js'
@@ -271,6 +272,11 @@ export function createServices(
       () => preferences.get().enableLinkedProjectsTool,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy)
+  const secureInputs = new SecureInputs(
+    () => activity.add('integration', 'secure-input', 'Secure input state changed', {}),
+    (taskId, runId, id, status) => tasks.reportSecureInput(taskId, runId, id, status),
+  )
+  tasks.setSecureInputs(secureInputs)
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })
   const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
@@ -284,10 +290,19 @@ export function createServices(
     devices,
     (id) =>
       approvals.list().some((item) => item.taskId === id) ||
+      secureInputs.list().some((item) => item.taskId === id) ||
       questions.list().some((item) => item.taskId === id),
   )
   const pushNotifications = new PushNotifications(db, store, devices, (id) => {
     return [
+      ...secureInputs
+        .list()
+        .filter((item) => taskInputOwner(store.get().tasks, item.taskId) === id)
+        .map((item) => ({
+          id: item.id,
+          type: 'question' as const,
+          preview: 'Secure input requested. Open Studio to review the destination.',
+        })),
       ...taskRemoteHumanInputs(store.taskSummary(id)).map((input) => ({
         id: `${input.runtimeIdentity}:${input.id}`,
         type: input.kind,
@@ -499,6 +514,7 @@ export function createServices(
       (error) => console.error('Remote desktop cleanup failed:', error),
     ),
     runCredentials: runCredentials(store),
+    secureInputs,
     fileReviews,
     taskReviews,
     reviewMarks,
@@ -641,6 +657,7 @@ export interface Services {
   approvals: Approvals
   attachments: Attachments
   questions: Questions
+  secureInputs: SecureInputs
   tasks: Tasks
   jobs: Jobs
   tickets: SocketTickets

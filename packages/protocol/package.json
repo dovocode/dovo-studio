@@ -48,6 +48,12 @@
       "development": "./src/terminal-stream.ts",
       "import": "./dist/terminal-stream.js",
       "default": "./dist/terminal-stream.js"
+    },
+    "./secure-input": {
+      "types": "./src/secure-input.ts",
+      "development": "./src/secure-input.ts",
+      "import": "./dist/secure-input.js",
+      "default": "./dist/secure-input.js"
     }
   },
   "scripts": {

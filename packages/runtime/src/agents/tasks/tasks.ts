@@ -15,6 +15,7 @@ import { preservesNativeSession } from '../execution/handover.js'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child.js'
 import type { NativeThreadRead, NativeThreadPage, NativeThreadEntry } from '@dovo/protocol'
 import type { McpApps } from '../../mcp-apps/bridge.js'
+import type { SecureInputs } from '../../agent-tools/secure-input.js'
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
@@ -239,6 +240,7 @@ export class Tasks {
         if (!oldAgent || !agent || samePermissionPolicy(oldAgent, agent)) continue
         approvals.cancelTask(task.id)
         if (!permissionPolicyTightened(oldAgent, agent)) continue
+        this.secureInputs?.cancelTask(task.id)
         queueMicrotask(() => this.onStopChildren?.(task.id))
         runCredentials(this.store).revokeTask(task.id)
         this.running
@@ -261,6 +263,10 @@ export class Tasks {
     this.runner.serverEnvironment = environment
   }
   private mcpApps?: McpApps
+  private secureInputs?: SecureInputs
+  setSecureInputs(inputs: SecureInputs) {
+    this.secureInputs = inputs
+  }
   private deletionReservations = new Map<string, symbol>()
   setMcpApps(apps: McpApps) {
     this.mcpApps = apps
@@ -2656,59 +2662,88 @@ export class Tasks {
               .map((q) => `${q.question}\n${(answers[q.id] ?? []).join('\n')}`)
               .join('\n\n')
           : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
-        const messageId = `answer:${receipt.id}`
-        // The answer receipt and input are one transaction, before HTTP acknowledgement.
-        // Answer attachments become ordinary message files, never composer draft files.
-        const attachments = receipt.attachments ?? []
-        // An answer never ends an unapproved plan, even for an older form; only a user prompt,
-        // sent or queued, decides the next access. Replays keep the accepted flag.
-        const current = this.store.task(id)
-        const input = [...current.messages, ...(current.queue ?? [])]
-        const saved = input.find((message) => message.id === messageId)
-        const plan = saved ? !!saved.plan : planModeRequested(input)
-        this.queue.add(id, messageId, text, attachments, receipt, false, false, undefined, {
-          plan,
-        })
-        if (!this.store.taskSummary(id).queue?.some((message) => message.id === messageId)) return
-        const active = this.running.get(id)
-        const nativeSteer = active?.id === runId ? active.steer : undefined
-        const token = Symbol()
-        const deliver =
-          nativeSteer && !this.steering.has(id)
-            ? Effect.acquireUseRelease(
-                Effect.sync(() => this.steering.set(id, token)),
-                () => runtimeOperation(() => nativeSteer(messageId)),
-                () =>
-                  Effect.sync(() => {
-                    if (this.steering.get(id) === token) this.steering.delete(id)
-                  }),
-              )
-            : this.sendEffect(
-                id,
-                messageId,
-                text,
-                attachments.map((file) => file.id),
-                false,
-                false,
-                undefined,
-                undefined,
-                plan,
-              )
-        this.executor.runFork(
-          deliver.pipe(
-            Effect.catchCause((cause) =>
-              Effect.sync(() => {
-                this.store.updateTask(id, (task) => ({
-                  ...task,
-                  queuePaused: true,
-                  error: `Form answer saved in the queue; delivery was not confirmed: ${errorMessage(Cause.squash(cause))}`,
-                }))
-              }),
-            ),
-          ),
-        )
+        this.deliverHumanInput(id, runId, text, receipt)
       },
       requestId,
+    )
+  }
+  humanInputSignal(id: string, runId: string) {
+    const run = this.running.get(id)
+    if (!run || run.id !== runId || run.retiring || run.controller.signal.aborted)
+      throw new HttpError(409, 'Secure input requires this thread’s active agent turn')
+    return run.controller.signal
+  }
+  reportSecureInput(id: string, runId: string, requestId: string, status: string) {
+    this.deliverHumanInput(
+      id,
+      runId,
+      `Secure input ${requestId}: ${status}. The private value was not shared with the agent.`,
+      {
+        id: requestId,
+        fingerprint: createHash('sha256').update(status).digest('hex'),
+      },
+    )
+  }
+  private deliverHumanInput(
+    id: string,
+    runId: string,
+    text: string,
+    receipt: {
+      id: string
+      fingerprint: string
+      attachments?: import('@dovo/protocol').Attachment[]
+    },
+  ) {
+    const messageId = `answer:${receipt.id}`
+    // The answer receipt and input are one transaction, before HTTP acknowledgement.
+    // Answer attachments become ordinary message files, never composer draft files.
+    const attachments = receipt.attachments ?? []
+    // An answer never ends an unapproved plan, even for an older form; only a user prompt,
+    // sent or queued, decides the next access. Replays keep the accepted flag.
+    const current = this.store.task(id)
+    const input = [...current.messages, ...(current.queue ?? [])]
+    const saved = input.find((message) => message.id === messageId)
+    const plan = saved ? !!saved.plan : planModeRequested(input)
+    this.queue.add(id, messageId, text, attachments, receipt, false, false, undefined, {
+      plan,
+    })
+    if (!this.store.taskSummary(id).queue?.some((message) => message.id === messageId)) return
+    const active = this.running.get(id)
+    const nativeSteer = active?.id === runId ? active.steer : undefined
+    const token = Symbol()
+    const deliver =
+      nativeSteer && !this.steering.has(id)
+        ? Effect.acquireUseRelease(
+            Effect.sync(() => this.steering.set(id, token)),
+            () => runtimeOperation(() => nativeSteer(messageId)),
+            () =>
+              Effect.sync(() => {
+                if (this.steering.get(id) === token) this.steering.delete(id)
+              }),
+          )
+        : this.sendEffect(
+            id,
+            messageId,
+            text,
+            attachments.map((file) => file.id),
+            false,
+            false,
+            undefined,
+            undefined,
+            plan,
+          )
+    this.executor.runFork(
+      deliver.pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            this.store.updateTask(id, (task) => ({
+              ...task,
+              queuePaused: true,
+              error: `Form answer saved in the queue; delivery was not confirmed: ${errorMessage(Cause.squash(cause))}`,
+            }))
+          }),
+        ),
+      ),
     )
   }
   private delegationRoot(id: string) {
@@ -2943,6 +2978,7 @@ export class Tasks {
     }
   }
   private stopChildren(parentTaskId: string, parentRunId?: string) {
+    if (parentRunId === undefined) this.secureInputs?.cancelTask(parentTaskId)
     if (!this.stopping && parentRunId === undefined) this.onStopChildren?.(parentTaskId)
     const fibers: Fiber.Fiber<void, RuntimeFailure>[] = []
     for (const child of this.store.get().tasks) {

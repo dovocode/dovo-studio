@@ -53,6 +53,7 @@ import { useNavigation } from '../../shell/navigation'
 import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
 import { ContinueElsewhere } from './continue-elsewhere'
 import { TaskQuestions } from './task-questions'
+import { TaskSecureInputs } from './task-secure-inputs'
 import { LinkedProjects } from './linked-projects'
 import { RenameThread } from './rename-thread'
 import { useTaskLifecycle } from './use-task-lifecycle'
@@ -698,6 +699,7 @@ function TaskDetailContent({
       ]
     : []
   const needsInput =
+    snapshot?.secureInputs?.some((q) => q.taskId === task.id) ||
     snapshot?.questions.some((q) => q.taskId === task.id) ||
     snapshot?.approvals.some((a) => a.taskId === task.id)
   const latestTurn = task.turns?.at(-1)
@@ -1291,6 +1293,7 @@ function TaskDetailContent({
                     </View>
                   )}
                   <TaskQuestions taskId={task.id} questionId={questionId} />
+                  {focused && pane === 'chat' && <TaskSecureInputs taskId={task.id} />}
                   {(budget.tokenExceeded || budget.timeExceeded) && (
                     <Text
                       accessibilityRole="alert"

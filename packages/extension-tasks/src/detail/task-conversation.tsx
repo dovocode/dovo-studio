@@ -17,6 +17,7 @@ import {
 } from '@dovo/protocol'
 import { ComposerActivity } from '../chat/composer/composer-activity'
 import { TaskQuestions } from '../chat/thread/task-questions'
+import { TaskSecureInputs } from '../chat/thread/task-secure-inputs'
 import { RunControls } from '../chat/actions/run-controls'
 import {
   useAppPreferences,
@@ -395,6 +396,7 @@ export function TaskConversation({
             </div>
           )}
           <TaskQuestions taskId={task.id} />
+          {visible && <TaskSecureInputs taskId={task.id} />}
           <RunControls task={task} />
           <PlanApproval task={task} />
           {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}

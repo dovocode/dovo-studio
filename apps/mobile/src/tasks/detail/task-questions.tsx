@@ -35,6 +35,8 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
     (repo) => repo.id === task?.repositoryId,
   )?.name
   const recovery = <RecoveredAnswers taskId={taskId} pendingIds={questions.map((q) => q.id)} />
+  if (questionId && snapshot?.secureInputs?.some((input) => input.id === questionId))
+    return recovery
   if (questionId && !pending)
     return (
       <View style={{ padding: 16, gap: 8 }}>

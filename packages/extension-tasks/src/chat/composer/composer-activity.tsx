@@ -20,6 +20,9 @@ export function ComposerActivity({
   const { snapshot, request, connected } = useWorkspace()
   useEffect(() => {
     const inputs = [
+      ...(snapshot?.secureInputs ?? [])
+        .filter((item) => item.taskId === task.id)
+        .map((item) => item.id),
       ...(snapshot?.questions ?? [])
         .filter((item) => item.taskId === task.id)
         .map((item) => item.id),
@@ -29,7 +32,7 @@ export function ComposerActivity({
     ]
     if (inputs.some((id) => !previousInputs.current.has(id))) setCollapsed(true)
     previousInputs.current = new Set(inputs)
-  }, [task.id, snapshot?.questions, snapshot?.approvals])
+  }, [task.id, snapshot?.questions, snapshot?.approvals, snapshot?.secureInputs])
   const id = useId()
   const summary = nativeTodoSummary(task)
   const pausedCount = task.queuePaused

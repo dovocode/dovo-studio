@@ -42,6 +42,8 @@ import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
 import { linkedProjectsTool } from '../scm/tasks/linked-project-tools.js'
 import { agentInteraction } from '../agent-tools/interactions.js'
+import { secureInputTool } from '../agent-tools/secure-input-route.js'
+import { secureInputReplySchema } from '@dovo/protocol'
 import { pipelineWatchRequestSchema } from '../scm/tasks/pipeline-watch.js'
 import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
@@ -329,6 +331,36 @@ export function route(
         )
       }
       const agentDeviceAccess = !!run || request.headers['x-dovo-agent-access'] === '1'
+      if (method === 'POST' && path === '/api/secure-input/submit') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Secure input requires a paired human client.')
+        return yield* serviceResult(
+          s.secureInputs.submit(
+            decode(secureInputReplySchema, yield* serviceResult(body(request, 140 * 1024))),
+            device.id,
+          ),
+        )
+      }
+      if (
+        method === 'POST' &&
+        (path === '/api/secure-input/cancel' || path === '/api/secure-input/status')
+      ) {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Secure input requires a paired human client.')
+        const { taskId, id } = decode(
+          mutableStruct({ taskId: idSchema, id: idSchema }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        return path.endsWith('/status')
+          ? s.secureInputs.status(taskId, id)
+          : s.secureInputs.cancel(taskId, id)
+      }
+      if (method === 'POST' && path === '/api/agent/secure-input') {
+        if (!run) throw new HttpError(403, 'Secure input tools require an active agent run.')
+        return yield* serviceResult(
+          secureInputTool(s, yield* serviceResult(body(request, 300 * 1024)), run.runId),
+        )
+      }
       if (agentDeviceAccess && path.startsWith('/api/agents/instructions/'))
         throw new HttpError(403, 'Harness instruction files require a paired human client.')
       if (

@@ -343,3 +343,118 @@ it('keeps complete skills inline for restricted modes that may disable MCP', asy
   gate.resolve()
   await execution.done
 })
+
+it('delivers secure MCP input through real stdin while keeping transport, model and SQLite free of the value', async () => {
+  const { s, task, client, post, owner, credential } = await setup()
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { createHash } = await import('node:crypto')
+  const { sealSecureInput, secureInputResultSchema } = await import('@dovo/protocol')
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-secure-test-'))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  const proof = join(directory, 'hash')
+  const script = `let value='';process.stdin.setEncoding('utf8');process.stdin.on('data',text=>value+=text);process.stdin.on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(proof)},require('node:crypto').createHash('sha256').update(value).digest('hex'));process.stdout.write(value);process.stderr.write(value)})`
+  const command = {
+    action: 'request',
+    key: 'sign-in',
+    title: 'Private sign-in',
+    prompt: 'Enter the password',
+    destination: {
+      kind: 'command',
+      command: process.execPath,
+      args: ['-e', script],
+      appendNewline: false,
+    },
+  }
+  const open = () => client.callTool({ name: 'secure_input', arguments: command })
+  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('secure_input')
+  const opened = decode(secureInputResultSchema, JSON.parse(resultText(await open())))
+  expect(opened.status).toBe('pending')
+  expect(decode(secureInputResultSchema, JSON.parse(resultText(await open())))).toEqual(opened)
+  expect(s.secureInputs.list()).toHaveLength(1)
+  const secret = ' synthetic-PASSWORD/auth?code=confidential&state=private \n'
+  const envelope = sealSecureInput(s.secureInputs.list()[0], secret)
+  expect(JSON.stringify(envelope)).not.toContain(secret)
+  expect((await post('/api/secure-input/submit', envelope)).status).toBe(403)
+  expect((await post('/api/secure-input/submit', envelope, owner)).status).toBe(200)
+  expect(await readFile(proof, 'utf8')).toBe(createHash('sha256').update(secret).digest('hex'))
+  const status = await client.callTool({
+    name: 'secure_input',
+    arguments: { action: 'status', id: opened.id },
+  })
+  expect(decode(secureInputResultSchema, JSON.parse(resultText(status))).status).toBe('completed')
+  expect((await post('/api/secure-input/submit', envelope, owner)).status).toBe(200)
+  expect(s.db.serialize().includes(Buffer.from('synthetic-PASSWORD/auth'))).toBe(false)
+  expect(JSON.stringify(s.store.task(task.id))).not.toContain(secret)
+  const followup = [
+    ...s.store.task(task.id).messages,
+    ...(s.store.task(task.id).queue ?? []),
+  ].filter((message) => message.id === `answer:${opened.id}`)
+  expect(followup).toHaveLength(1)
+  expect(followup[0].text).toBe(
+    `Secure input ${opened.id}: completed. The private value was not shared with the agent.`,
+  )
+  expect(s.secureInputs.list()).toEqual([])
+  expect(
+    (
+      await post('/api/agent/secure-input', {
+        taskId: 'other',
+        parentRunId: credential.runId,
+        command,
+      })
+    ).status,
+  ).toBe(403)
+})
+
+it('dismisses secure inputs from earlier turns on Stop without sending a follow-up', async () => {
+  const { s, task, gate, execution } = await setup()
+  const previousTurn = new AbortController()
+  const pending = s.secureInputs.request(
+    task.id,
+    'previous-turn',
+    {
+      key: 'earlier-private-sign-in',
+      title: 'Private sign-in',
+      prompt: 'Enter a private value',
+      destination: { kind: 'command', command: process.execPath, args: [], appendNewline: false },
+    },
+    '/fixture',
+    previousTurn.signal,
+    async () => {
+      throw new Error('A stopped request must never consume input')
+    },
+  )
+  const cancelled = execution.done.catch((error: unknown) => error)
+  s.tasks.cancel(task.id)
+  gate.resolve()
+  await cancelled
+  expect(s.secureInputs.status(task.id, pending.id).status).toBe('cancelled')
+  expect(s.secureInputs.list()).toEqual([])
+  expect(s.store.task(task.id).queue).toBeUndefined()
+})
+
+it('denies secure-input execution in read-only runs at both discovery and HTTP boundaries', async () => {
+  const { task, client, post, credential } = await setup(true)
+  expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain('secure_input')
+  expect(
+    (
+      await post('/api/agent/secure-input', {
+        taskId: task.id,
+        parentRunId: credential.runId,
+        command: {
+          action: 'request',
+          key: 'denied',
+          title: 'Denied',
+          prompt: 'Denied',
+          destination: {
+            kind: 'command',
+            command: process.execPath,
+            args: [],
+            appendNewline: false,
+          },
+        },
+      })
+    ).status,
+  ).toBe(403)
+})

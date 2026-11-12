@@ -41,12 +41,21 @@ it.each([false, true])(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 42 : 15)
-      expect(characters).toBeLessThanOrEqual(full ? 48500 : 10000)
-      expect(descriptionCharacters).toBeLessThanOrEqual(full ? 12900 : 3200)
+      expect(tools).toHaveLength(full ? 43 : 16)
+      // Preserve the existing budget for all prior tools. Account for the new private-input
+      // schema separately so adding this tool cannot hide growth in unrelated tools.
+      const secureInput = tools.find((tool) => tool.name === 'secure_input')
+      expect(secureInput).toBeDefined()
+      const secureCharacters = JSON.stringify(secureInput).length + 1
+      expect(secureCharacters).toBeLessThanOrEqual(3000)
+      expect(characters - secureCharacters).toBeLessThanOrEqual(full ? 48500 : 10000)
+      expect(descriptionCharacters - (secureInput?.description?.length ?? 0)).toBeLessThanOrEqual(
+        full ? 12900 : 3200,
+      )
       expect(tools.map((tool) => tool.name)).toEqual(
         expect.arrayContaining([
           'ask_question',
+          'secure_input',
           'todos',
           'browser',
           'subagent_spawn',

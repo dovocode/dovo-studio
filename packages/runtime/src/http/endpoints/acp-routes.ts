@@ -19,7 +19,7 @@ import { routeProgram, serviceResult } from '../support/effect.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 const installationRequest = mutableStruct({ id: idSchema })
 const authenticationJobs = new WeakMap<Services, AcpAuthenticationJobs>()
-function jobs(s: Services) {
+export function acpAuthenticationJobs(s: Services) {
   let value = authenticationJobs.get(s)
   if (!value) {
     value = new AcpAuthenticationJobs(s.acpController.signal)
@@ -27,6 +27,7 @@ function jobs(s: Services) {
   }
   return value
 }
+const jobs = acpAuthenticationJobs
 const authenticationOperations = new WeakMap<Services, Set<string>>()
 function operations(s: Services) {
   let set = authenticationOperations.get(s)

@@ -14,9 +14,11 @@ import {
   decode,
   syncFrameSchema,
   workspaceRecoveriesSchema,
+  threadWatchSnapshotSchema,
   type SyncFrame,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
+import { threadSnapshot } from '../studio/thread-snapshot.js'
 const cleanup: Array<() => Promise<void> | void> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
@@ -74,6 +76,50 @@ async function setup() {
   }
   return { runtime, open, address }
 }
+it('pushes secure input metadata and removal to open clients without storing private input', async () => {
+  const { runtime, open } = await setup()
+  const client = await open(token, 5, ['task'], true)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await client.wait('snapshot')
+  client.frames.length = 0
+  const controller = new AbortController()
+  const result = runtime.services.secureInputs.request(
+    'task',
+    'run',
+    {
+      key: 'private-sign-in',
+      title: 'Private sign-in',
+      prompt: 'Enter a private value',
+      destination: { kind: 'command', command: '/trusted/login', args: [], appendNewline: false },
+    },
+    '/fixture',
+    controller.signal,
+    async () => {},
+  )
+  const delta = await client.wait('delta')
+  const pending = applySnapshotDelta(baseline.snapshot, delta.delta)
+  expect(pending.secureInputs).toEqual([
+    expect.objectContaining({ id: result.id, taskId: 'task', status: 'pending' }),
+  ])
+  const attention = decode(threadWatchSnapshotSchema, threadSnapshot(runtime.services, 'task'))
+  expect(attention.phase).toBe('needs-input')
+  expect(attention.humanInputs).toContainEqual({
+    id: result.id,
+    taskId: 'task',
+    runtimeId: runtime.services.runtimeId,
+    kind: 'question',
+    title: 'Secure input requested',
+    threadTitle: 'Task',
+  })
+  expect(attention.questions).toEqual([])
+  client.frames.length = 0
+  controller.abort()
+  const removed = await client.wait('delta')
+  expect(applySnapshotDelta(pending, removed.delta).secureInputs).toEqual([])
+  expect(runtime.services.store.task('task').messages).toEqual(
+    baseline.snapshot.workspace.tasks[0]?.messages,
+  )
+})
 it.each([{ taskIds: [] }, { taskIds: ['task'] }])(
   'keeps scoped paged sync history lazy for selection $taskIds',
   async ({ taskIds }) => {

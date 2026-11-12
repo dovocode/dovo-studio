@@ -11,6 +11,7 @@ const allowed = new Set([
   '/api/linked-projects',
   '/api/agent/question',
   '/api/agent/todos',
+  '/api/agent/secure-input',
   '/api/agent/skill',
   '/api/subagents/spawn',
   '/api/subagents/list',
@@ -86,6 +87,11 @@ export function authorizeRunRoute(
     denied()
   // Conversation questions and progress are allowed in read-only runs. They never
   // grant filesystem access or change another thread's configuration.
+  if (
+    path === '/api/agent/secure-input' &&
+    (grant.readOnly || (grant.sandboxMode && grant.sandboxMode !== 'danger-full-access'))
+  )
+    denied()
   if (path.startsWith('/api/agent/')) return grant
   if (path === '/api/studio/tools') {
     if (!ownsRun) denied()

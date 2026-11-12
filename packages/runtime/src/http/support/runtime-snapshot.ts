@@ -151,6 +151,7 @@ export function runtimeSnapshot(
             ...(taskIds ?? []),
             ...s.approvals.list().map((request) => request.taskId),
             ...s.questions.list().map((request) => request.taskId),
+            ...s.secureInputs.list().map((request) => request.taskId),
           ])
     const storedWorkspace = page?.workspace ?? completeWorkspace
     const forgeConnections = new Map(
@@ -375,6 +376,7 @@ export function runtimeSnapshot(
       workspace: selectedWorkspace,
       approvals: s.approvals.list(),
       questions: s.questions.list().filter((question) => question.routing !== 'parent'),
+      secureInputs: s.secureInputs.list(),
       terminals: s.terminals.list(),
       runs: s.jobs.list(),
       devices: device.owner ? s.devices.list() : s.devices.list().filter((d) => d.id === device.id),

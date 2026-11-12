@@ -7,7 +7,7 @@ import type { IncomingMessage } from 'node:http'
 import { Effect, Fiber } from 'effect'
 import { startRuntime } from '../../index.js'
 import { RuntimeServices } from '../../runtime-services.js'
-import { acpRoute } from './acp-routes.js'
+import { acpRoute, acpAuthenticationJobs } from './acp-routes.js'
 import * as acp from '../../agents/providers/acp/acp-connection.js'
 
 const cleanups: Array<() => Promise<void>> = []
@@ -257,8 +257,9 @@ it('cancels browser sign-in and releases the installation lock', async () => {
 })
 
 it('forwards only callbacks matching the active OAuth redirect and state', async () => {
-  const { call } = await setup()
+  const { runtime, call } = await setup()
   let finish = () => {}
+  let failSignIn = false
   const received: string[] = []
   const callback = createServer((request, response) => {
     received.push(request.url ?? '')
@@ -280,13 +281,19 @@ it('forwards only callbacks matching the active OAuth redirect and state', async
     output?.(
       `Open https://accounts.example.test/sign-in?redirect_uri=${encodeURIComponent(redirect)}&state=correct\n`,
     )
-    return new Promise<void>((resolve) => {
-      finish = resolve
+    return new Promise<void>((resolve, reject) => {
+      finish = () => {
+        // A consumer may echo confidential input and include it in its error.
+        output?.(`Callback: ${received.at(-1)}`)
+        if (failSignIn) reject(new Error(`Rejected ${received.at(-1)}`))
+        else resolve()
+      }
     })
   })
   expect(
     (await call('authenticate', { id: 'first', methodId: 'browser', background: true })).status,
   ).toBe(200)
+  const originalConsumer = acpAuthenticationJobs(runtime.services).callbackConsumer('first')
   for (const url of [
     `${redirect}?code=secret&state=wrong`,
     `http://127.0.0.1:12345/oauth/callback?code=secret&state=correct`,
@@ -306,6 +313,30 @@ it('forwards only callbacks matching the active OAuth redirect and state', async
   expect(received).toEqual(['/oauth/callback?code=secret&state=correct'])
   const completed = await (await call('inspect', { id: 'first' })).json()
   expect(completed.authentication).toMatchObject({ status: 'completed', output: '', urls: [] })
+  // A secure request binds to one pending sign-in, never a later job with the same ID.
+  expect(
+    (await call('authenticate', { id: 'first', methodId: 'browser', background: true })).status,
+  ).toBe(200)
+  const signal = new AbortController().signal
+  await expect(
+    originalConsumer(`${redirect}?code=old-private-code&state=correct`, signal),
+  ).rejects.toThrow('replaced')
+  const consumer = acpAuthenticationJobs(runtime.services).callbackConsumer('first')
+  await expect(consumer(`${redirect}?code=private-code&state=wrong`, signal)).rejects.toThrow(
+    'does not match',
+  )
+  failSignIn = true
+  await consumer(`${redirect}?code=private-code&state=correct`, signal)
+  expect(received).toEqual([
+    '/oauth/callback?code=secret&state=correct',
+    '/oauth/callback?code=private-code&state=correct',
+  ])
+  expect(acpAuthenticationJobs(runtime.services).state('first')).toEqual({
+    status: 'failed',
+    output: '',
+    urls: [],
+    error: 'Sign-in failed. Start sign-in again.',
+  })
 })
 
 it('stops an outstanding browser sign-in when the runtime closes', async () => {

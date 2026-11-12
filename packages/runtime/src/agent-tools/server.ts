@@ -20,6 +20,7 @@ import {
   linkedProjectsCommandSchema,
   agentQuestionCommandSchema,
   agentTodosCommandSchema,
+  secureInputCommandSchema,
 } from '@dovo/protocol/agent-tools'
 import { Schema } from 'effect'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -214,6 +215,15 @@ const tools: Array<
       'Read/replace the shared checklist: list reads; set replaces all items; [] clears. Prefer native checklists (same storage); never maintain parallel lists. Status updates grant no permission and do not complete the thread. Available read-only.',
     inputSchema: (() => {
       const document = Schema.toJsonSchemaDocument(agentTodosCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
+  {
+    name: 'secure_input',
+    description:
+      'Request private input on desktop or mobile. Use a stable key. Values go encrypted to the paired runtime, never to the model, chat, logs or tool results. Choose a local command that reads stdin (stdout/stderr are discarded; no shell, no value in argv/env) or an active ACP auth_callback installationId. The human reviews the destination before submitting. Request returns pending; completion status arrives in the conversation. Use status after uncertainty; never ask for the value in chat, use browser/terminal tools to read it, or treat pending as approval. Requests expire after 10 minutes. Command delivery has a 60 second limit. Requires write access without a restricted sandbox.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(secureInputCommandSchema)
       return { ...document.schema, type: 'object' as const, $defs: document.definitions }
     })(),
   },
@@ -828,6 +838,12 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
       return text(result)
     }
     switch (name) {
+      case 'secure_input':
+        writable()
+        if (terminalsDisabled) throw new Error('Secure input requires unrestricted command access')
+        return text(
+          await post('/api/agent/secure-input', { taskId: task, parentRunId, command: input }),
+        )
       case 'skill_read':
         if (process.env.DOVO_TASK_SKILLS_ENABLED !== '1') throw new Error('Skills are disabled')
         return text(
@@ -1203,6 +1219,7 @@ const enabledTools = tools
       (process.env.DOVO_TASK_SKILLS_ENABLED === '1' || tool.name !== 'skill_read') &&
       (linkedProjectsEnabled || tool.name !== 'linked_projects') &&
       (deviceHubEnabled || !deviceTools.has(tool.name)) &&
+      (!(readOnly || terminalsDisabled) || tool.name !== 'secure_input') &&
       (!terminalsDisabled || !tool.name.startsWith('terminal_')),
   )
   .map((tool) =>

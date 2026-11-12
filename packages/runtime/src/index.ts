@@ -107,6 +107,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.threadWatch.dispose(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
+        () => services.secureInputs.close(),
         closeTitles,
         () => services.dictation.dispose(),
         closeTasks,
@@ -184,6 +185,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                     const workers = yield* Effect.all(
                       [
                         () => services.jobs.shutdown(),
+                        () => services.secureInputs.close(),
                         () => services.acpInstallations.dispose(),
                         closeTitles,
                         () => services.dictation.dispose(),

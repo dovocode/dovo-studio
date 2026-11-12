@@ -579,6 +579,7 @@ class RuntimeSync {
       s.threadReplication.version(),
       s.approvals.list(),
       s.questions.list(),
+      s.secureInputs.list(),
       s.terminals.list(),
       s.jobs.revision,
       s.projectTransfers.revision,

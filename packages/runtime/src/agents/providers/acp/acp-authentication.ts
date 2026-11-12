@@ -7,6 +7,7 @@ type AuthenticationJob = {
   output: string
   error?: string
   controller: AbortController
+  privateInput?: boolean
 }
 
 /** Authentication outlives the HTTP request, so remote clients can follow browser sign-in. */
@@ -47,7 +48,7 @@ export class AcpAuthenticationJobs {
     try {
       await authenticateAcp(launch, methodId, controller.signal, (text) => {
         // Bounded, in-memory diagnostics only: OAuth links never enter task history or logs.
-        job.output = (job.output + text).slice(-16_384)
+        if (!job.privateInput) job.output = (job.output + text).slice(-16_384)
       })
       job.status = 'completed'
       job.output = ''
@@ -55,16 +56,27 @@ export class AcpAuthenticationJobs {
       job.status = 'failed'
       job.error = controller.signal.aborted
         ? 'Sign-in cancelled.'
-        : error instanceof Error
-          ? error.message
-          : String(error)
+        : job.privateInput
+          ? 'Sign-in failed. Start sign-in again.'
+          : error instanceof Error
+            ? error.message
+            : String(error)
     } finally {
       this.signal.removeEventListener('abort', abort)
       finished()
     }
   }
 
-  async complete(id: string, callback: string) {
+  callbackConsumer(id: string) {
+    const job = this.jobs.get(id)
+    if (!job || job.status !== 'waiting')
+      throw new Error('Start sign-in before requesting secure input.')
+    return async (value: string, signal: AbortSignal) => {
+      if (this.jobs.get(id) !== job) throw new Error('This sign-in has been replaced.')
+      await this.complete(id, value, signal)
+    }
+  }
+  async complete(id: string, callback: string, signal?: AbortSignal) {
     const job = this.jobs.get(id)
     if (!job || job.status !== 'waiting')
       throw new Error('Start sign-in before submitting its callback.')
@@ -101,9 +113,16 @@ export class AcpAuthenticationJobs {
       !target.searchParams.has('code')
     )
       throw new Error('This callback does not match the active agent sign-in.')
+    // A CLI can echo its callback while handling it. Stop retaining diagnostics first.
+    job.privateInput = true
+    job.output = ''
     const response = await fetch(target, {
       redirect: 'manual',
-      signal: AbortSignal.any([job.controller.signal, AbortSignal.timeout(10_000)]),
+      signal: AbortSignal.any([
+        job.controller.signal,
+        AbortSignal.timeout(10_000),
+        ...(signal ? [signal] : []),
+      ]),
     })
     await response.body?.cancel()
     if (response.status >= 400)
