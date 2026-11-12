@@ -1014,6 +1014,32 @@ try {
       reads: 0,
     },
   )
+  // A fast thread revisit must not depend on the 15-second disk writer.
+  await heldStartup.evaluate(() => {
+    const live = structuredClone(window.runtime.snapshot)
+    live.revision++
+    live.detailTaskIds = ['real']
+    live.workspace.tasks[0].messages = [{ id: 'reply', role: 'assistant', text: 'Recent reply' }]
+    window.streams['http://one.lan:8787'].onSnapshot(live)
+  })
+  await heldStartup.waitForFunction(() => window.runtime.snapshot?.revision === 9)
+  await heldStartup.evaluate(() => {
+    const live = structuredClone(window.runtime.snapshot)
+    live.revision++
+    live.detailTaskIds = []
+    live.workspace.tasks[0] = { ...live.workspace.tasks[0], messages: [], draft: 'New draft' }
+    window.streams['http://one.lan:8787'].onSnapshot(live)
+  })
+  await heldStartup.waitForFunction(() => window.runtime.snapshot?.revision === 10)
+  assert.deepEqual(
+    await heldStartup.evaluate(() => ({
+      messages: window.runtime.snapshot.workspace.tasks[0].messages.map((message) => message.text),
+      draft: window.runtime.snapshot.workspace.tasks[0].draft,
+      detailed: window.runtime.snapshot.detailTaskIds,
+    })),
+    { messages: ['Recent reply'], draft: 'New draft', detailed: ['real'] },
+    'A summary must retain recently opened history before the disk writer runs',
+  )
   await heldStartup.close()
   const fleetStartup = await liveContext.newPage()
   fleetStartup.on('pageerror', (error) => errors.push(error.message))
