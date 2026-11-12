@@ -80,6 +80,7 @@ export function InlineArtifact({
     >
       <FloatingPreview
         title={reference.title}
+        topLayer
         placement={placement}
         onPlacementChange={setPlacement}
         onClose={placement === 'inline' ? undefined : () => setPlacement('inline')}

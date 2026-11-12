@@ -151,9 +151,30 @@ try {
   )
   await sameFrame()
   await inline.getByRole('button', { name: 'Expand preview', exact: true }).click()
+  // A message can sit inside a clipped layer. Its detached toolbar must stay above that layer.
+  await inline.locator('..').evaluate((element) => {
+    element.style.clipPath = 'inset(0)'
+  })
   assert.ok((await floating.boundingBox()).width > 1200)
+  const closePreview = inline.getByRole('button', { name: 'Close preview', exact: true })
+  assert.equal(
+    await closePreview.evaluate((button) => {
+      const box = button.getBoundingClientRect()
+      return button.contains(
+        document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+      )
+    }),
+    true,
+    'The expanded message artifact must keep its close control visible and clickable',
+  )
   await sameFrame()
-  await inline.getByRole('button', { name: 'Return to thread', exact: true }).click()
+  await closePreview.click()
+  await inline.getByRole('button', { name: 'Expand preview', exact: true }).click()
+  const returnToThread = inline.getByRole('button', { name: 'Return to thread', exact: true })
+  await returnToThread.focus()
+  await returnToThread.press('Escape')
+  assert.equal(await floating.getAttribute('data-preview-overlay'), null)
+  await inline.locator('..').evaluate((element) => element.style.removeProperty('clip-path'))
   await sameFrame()
   await page.evaluate(() => window.changeThread('two'))
   await page.waitForFunction(() => window.previewReads.at(-1).input.taskId === 'two')
