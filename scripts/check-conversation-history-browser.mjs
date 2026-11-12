@@ -562,6 +562,8 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
               const names = {
                 'composer-activity': 'ComposerActivity',
                 'task-questions': 'TaskQuestions',
+                // Private input is covered by the secure-input and mobile continuity suites.
+                'task-secure-inputs': 'TaskSecureInputs',
                 'run-controls': 'RunControls',
                 composer: 'Composer',
                 'task-empty-state': 'TaskEmptyState',
