@@ -45,7 +45,7 @@ import { withFileWrite } from '../../scm/repositories/file-writes.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
 import { agentDiscoveryCache } from '../../agents/catalogs/discovery-cache.js'
-import { harnessAvailabilityCandidates } from '@dovo/protocol'
+import { harnessAvailabilityCandidates, builtInAgentDefinition } from '@dovo/protocol'
 import { modelMentionReference, matchingModelMentions, type ModelMention } from '@dovo/protocol'
 import {
   searchSkills,
@@ -97,6 +97,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         const models: ModelMention[] = []
         const unavailable: string[] = []
+        const harnessCatalogs = new Set<string>()
         // Reuse readiness/catalog caches and bound discoveries across all configured harnesses.
         let index = 0
         yield* serviceResult(
@@ -104,9 +105,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             Array.from({ length: Math.min(4, candidates.length) }, async () => {
               while (index < candidates.length) {
                 const { id, agent } = candidates[index++]!
-                if (!(await checker.check(agent, s.agents))) continue
                 try {
                   const key = configuredModelCatalogKey(agent, s.agents, installations)
+                  // Reserve default catalogs before awaiting discovery. The built-in agent
+                  // aliases must not add the same models a second time. Keep scoped overrides
+                  // with different launch/account settings and all explicit saved profiles.
+                  if (id.startsWith('harness:')) harnessCatalogs.add(key)
+                  else if (builtInAgentDefinition(agent.id) && harnessCatalogs.has(key)) continue
+                  if (!(await checker.check(agent, s.agents))) continue
                   const validate = () => {
                     if (
                       key !== configuredModelCatalogKey(agent, s.agents, s.acpInstallations.list())
@@ -122,8 +128,16 @@ export function agentsRoute(request: IncomingMessage, path: string) {
                     false,
                     validate,
                   )
+                  const modelIds = new Set<string>()
                   for (const model of catalog.models) {
-                    if (!model.id || model.id === 'default' || model.hidden) continue
+                    if (
+                      !model.id ||
+                      model.id === 'default' ||
+                      model.hidden ||
+                      modelIds.has(model.id)
+                    )
+                      continue
+                    modelIds.add(model.id)
                     models.push({
                       reference: modelMentionReference(id, model.id),
                       name: model.name,

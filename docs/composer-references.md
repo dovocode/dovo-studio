@@ -16,10 +16,12 @@ appropriate.
 
 Use the existing mention menu to insert a reference. A completed file token such as `@src/app.ts `
 becomes a file chip. Skill and MCP tokens must match available resource names. Model chips use the
-existing encoded model reference. Headings, code and links keep their normal text behavior. A token
-still being typed stays editable until its trailing boundary arrives. Copy keeps the full path or
-model reference, even when the displayed label is short. Backspace removes a whole chip. Paste uses
-plain text on native inputs.
+existing encoded model reference. Model suggestions list each default harness once. Saved agents
+keep their own entries. A scoped built-in agent also keeps its entry when its account or launch
+settings differ from the default harness. Headings, code and links keep their normal text behavior.
+A token still being typed stays editable until its trailing boundary arrives. Copy keeps the full
+path or model reference, even when the displayed label is short. Backspace removes a whole chip.
+Paste uses plain text on native inputs.
 
 Desktop/web users can switch to Markdown source with the existing source toggle or `Ctrl+Shift+M`
 (`⌘+Shift+M` on macOS). This keeps the source and caret. Desktop chips use ProseMirror inline atoms
