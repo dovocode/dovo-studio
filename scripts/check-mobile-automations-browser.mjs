@@ -162,6 +162,12 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     },
   },
   [
+    // Monitoring controls have their own real-component checks in check-bot-learning-browser.
+    {
+      path: './routine-options',
+      importer: editorImporter,
+      contents: 'export const RoutineOptions=()=>null;',
+    },
     {
       path: '@dovo/studio-core',
       importer: inspectorImporter,
