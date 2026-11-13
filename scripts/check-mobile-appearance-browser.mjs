@@ -13,7 +13,7 @@ const mocks = {
   'expo-document-picker': `export const getDocumentAsync=async()=>window.themeFile?{canceled:false,assets:[{uri:'theme.jsonc',name:'native.jsonc'}]}:{canceled:true};`,
   'expo-file-system': `export class File{get size(){return window.themeFile.length}async text(){return window.themeFile}}`,
   'react-native': `
-    export const Text=({children,style})=><span style={style}>{children}</span>;export const ActivityIndicator=()=> <span role="progressbar"/>;
+    export const Text=({children,style})=><span style={flat(style)}>{children}</span>;export const ActivityIndicator=()=> <span role="progressbar"/>;
     import {useSyncExternalStore} from 'react';
     const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
     const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(result[key]!==undefined){for(const axis of axes)result[axis]=result[key];delete result[key]}}return result};

@@ -49,7 +49,7 @@ createRoot(document.getElementById('app')).render(<App/>);
     },
     {
       path: '@dovo/studio-core',
-      contents: `export * from '@dovo/protocol';export const sameWorkspaceFields=()=>true;export const useWorkspaceSelector=selector=>selector(window.cardStore);export {createTask} from './packages/studio-core/src/workspace/actions';export const useStudioHost=()=>({navigate:route=>window.cardRoute=route});export const useWorkspace=()=>window.cardStore??({connected:true,snapshot:{permissionPolicySupported:true},request:async()=>({})});`,
+      contents: `export * from '@dovo/protocol';export {useAppPreferences,updateAppPreferences} from './packages/studio-core/src/preferences';export const sameWorkspaceFields=()=>true;export const useWorkspaceSelector=selector=>selector(window.cardStore);export {createTask} from './packages/studio-core/src/workspace/actions';export const useStudioHost=()=>({navigate:route=>window.cardRoute=route});export const useWorkspace=()=>window.cardStore??({connected:true,snapshot:{permissionPolicySupported:true},request:async()=>({})});`,
     },
     {
       path: '@dovo/studio-ui',

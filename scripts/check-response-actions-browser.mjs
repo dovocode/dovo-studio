@@ -84,7 +84,7 @@ createRoot(document.getElementById('app')).render(<App/>);
         : [
             {
               path: 'react-native',
-              contents: `export const Platform={OS:'web'};export const StyleSheet={flatten:style=>style};export const useWindowDimensions=()=>({fontScale:1,width:390,height:844});export const Alert={alert(){}};export const View=({children})=><div>{children}</div>;export const Text=({children,accessibilityRole,...props})=><span role={accessibilityRole} aria-label={props.accessibilityLabel}>{children}</span>;`,
+              contents: `export const Platform={OS:'web'};export const StyleSheet={create:styles=>styles,flatten:style=>style};export const useWindowDimensions=()=>({fontScale:1,width:390,height:844});export const Alert={alert(){}};export const View=({children})=><div>{children}</div>;export const Text=({children,accessibilityRole,...props})=><span role={accessibilityRole} aria-label={props.accessibilityLabel}>{children}</span>;`,
             },
             {
               path: 'expo-crypto',
@@ -119,7 +119,10 @@ createRoot(document.getElementById('app')).render(<App/>);
     })
     page.setDefaultTimeout(10000)
     const errors = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => {
+      errors.push(error.message)
+      console.error(`${platform} response actions:`, error.message)
+    })
     await page.setContent('<main id="app"></main>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     const button = (name) => page.getByRole('button', { name, exact: true })
