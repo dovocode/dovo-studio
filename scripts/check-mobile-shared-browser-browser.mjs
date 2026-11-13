@@ -136,6 +136,12 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   page.setDefaultTimeout(7000)
   const button = (name) => page.getByRole('button', { name, exact: true })
+  const openControl = async (name, target = page) => {
+    const control = target.getByRole('button', { name, exact: true })
+    if (!(await control.isVisible()))
+      await target.getByRole('button', { name: 'Browser options', exact: true }).click()
+    await control.click()
+  }
   const state = () =>
     page.evaluate(() => JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')))
   await page.getByText('Experimental Browser is off.').waitFor()
@@ -164,7 +170,7 @@ try {
     'Unsubmitted form',
     'Backgrounding retains the live fallback page',
   )
-  await button('Page actions').click()
+  await openControl('Page actions')
   await button('Bookmark page').click()
   await page.waitForFunction(
     () => JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).bookmarks.length === 1,
@@ -189,7 +195,7 @@ try {
     /^Existing phone edits[\s\S]*Keep  spaces\n> Second line/,
   )
   assert.equal(await page.evaluate(() => localStorage.getItem('dovo.draft.lan.target')), null)
-  await button('Page actions').click()
+  await openControl('Page actions')
   await button('Add page to thread').click()
   await page.evaluate(() => (window.failDraft = true))
   await button('Destination · LAN computer').click()
@@ -290,7 +296,7 @@ try {
     'Same viewer',
     'Route focus changes retain the remote viewer while refreshing its ticket',
   )
-  await button('Page actions').click()
+  await openControl('Page actions')
   await button('Thread for this tab').click()
   assert.equal(
     await button('Destination · Mac computer').count(),
@@ -356,7 +362,7 @@ try {
     }),
     'work',
   )
-  await button('Bookmarks').click()
+  await openControl('Bookmarks')
   await page.getByLabel('Search browser pages').fill('192.168')
   assert.ok(await page.getByRole('button', { name: /Open http:\/\/192/ }).count())
   await page
@@ -395,7 +401,7 @@ try {
   )
   mkdirSync(root + 'work/mobile-shared-browser', { recursive: true })
   await page.screenshot({ path: root + 'work/mobile-shared-browser/narrow.png' })
-  await button('Bookmarks').click()
+  await openControl('Bookmarks')
   await page.screenshot({ path: root + 'work/mobile-shared-browser/narrow-library.png' })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.getByRole('button', { name: 'Dismiss sheet' }).click()
@@ -527,7 +533,7 @@ try {
     const s = JSON.parse(localStorage.getItem('dovo.mobile-browser.v1'))
     return s.tabs.length === 1 && s.tabs[0].profileId === 'Work_1'
   })
-  await nativeButton('Page actions').click()
+  await openControl('Page actions', nativePage)
   await nativeButton('Copy selection').click()
   await nativePage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await nativePage.waitForFunction(() => window.copied !== null)
@@ -885,7 +891,7 @@ try {
     ['current', 'pinned', 'media'],
   )
   assert.equal(cleaned.closed[0].id, 'unused')
-  await cleanupPage.getByRole('button', { name: 'Page actions', exact: true }).click()
+  await openControl('Page actions', cleanupPage)
   await cleanupPage.getByRole('button', { name: 'Customize website', exact: true }).click()
   assert.equal(
     await cleanupPage.getByRole('button', { name: 'Customize with agent…', exact: true }).count(),
@@ -901,7 +907,7 @@ try {
         call.websiteScripts.some((script) => script.includes('color: red')),
     ),
   )
-  await cleanupPage.getByRole('button', { name: 'Page actions', exact: true }).click()
+  await openControl('Page actions', cleanupPage)
   await cleanupPage.getByRole('button', { name: 'Thread for this tab', exact: true }).click()
   await cleanupPage.getByText('Thread panels require a browser tab on a paired computer.').waitFor()
   assert.equal(

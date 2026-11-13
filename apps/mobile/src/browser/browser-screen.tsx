@@ -1,4 +1,5 @@
 import { useBrowserWorkspace } from './browser-workspace'
+import { BrowserNavigation } from './browser-navigation'
 import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -848,6 +849,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScreenHeader
+        hidden={Platform.OS === 'ios'}
         title={active.previewOf ? 'Link preview' : unified ? active.title || 'Page' : 'Browser'}
         onBack={() => (active.previewOf ? void act(() => close(active)) : navigate('tasks'))}
       />
@@ -1096,140 +1098,181 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           </View>
         )}
       </View>
-      <View
-        style={{
-          backgroundColor: colors.surface,
-          borderTopWidth: 1,
-          borderColor: colors.border,
-          paddingHorizontal: 12,
-          paddingTop: 10,
-          paddingBottom: 4,
-          gap: 4,
-        }}
-      >
-        {active.kind === 'local' && (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: colors.elevated,
-              borderRadius: 24,
-              minHeight: 48,
-            }}
-          >
-            <IconButton label="Browser options" icon="more" onPress={() => setOptionsOpen(true)} />
-            <TextInput
-              accessibilityLabel="Search or enter address"
-              testID="Search or enter address"
-              placeholder="Search or enter address"
-              placeholderTextColor={colors.muted}
-              selectionColor={colors.accent}
-              value={address}
-              onChangeText={setAddress}
-              autoCapitalize="none"
-              autoCorrect={false}
-              selectTextOnFocus
-              keyboardType="web-search"
-              onFocus={() => {
-                editing.current = true
-              }}
-              onBlur={() => {
-                editing.current = false
-              }}
-              returnKeyType="go"
-              onSubmitEditing={navigateLocal}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                minHeight: 48,
-                color: colors.text,
-                fontSize: 16,
-                textAlign: 'center',
-                paddingVertical: 8,
-              }}
-            />
-            <IconButton
-              label={address !== active.url || !active.url ? 'Go' : 'Reload'}
-              icon={address !== active.url || !active.url ? 'next' : 'refresh'}
-              disabled={busy || nativeOpening || !address.trim()}
-              onPress={navigateLocal}
-            />
-          </View>
-        )}
+      {Platform.OS === 'ios' && active.kind === 'local' ? (
+        <BrowserNavigation
+          address={address}
+          onAddress={setAddress}
+          onEditing={(value) => {
+            editing.current = value
+          }}
+          onNavigate={navigateLocal}
+          changed={address !== active.url || !active.url}
+          back={navigation.back}
+          forward={navigation.forward}
+          disabled={busy || nativeOpening}
+          onBack={() =>
+            void act(async () => {
+              if (nativeAvailable && DovoWebKitBrowser) await DovoWebKitBrowser.goBack(active.id)
+              else web.current?.goBack()
+            })
+          }
+          onForward={() =>
+            void act(async () => {
+              if (nativeAvailable && DovoWebKitBrowser) await DovoWebKitBrowser.goForward(active.id)
+              else web.current?.goForward()
+            })
+          }
+          tabs={recentTabs(state.tabs).length}
+          onTabs={() => {
+            setQuery('')
+            setLibrary('tabs')
+          }}
+          onOptions={() => setOptionsOpen(true)}
+        />
+      ) : (
         <View
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+          style={{
+            backgroundColor: colors.surface,
+            borderTopWidth: 1,
+            borderColor: colors.border,
+            paddingHorizontal: 12,
+            paddingTop: 10,
+            paddingBottom: 4,
+            gap: 4,
+          }}
         >
-          {active.kind === 'local' ? (
-            <>
-              <IconButton
-                label="Back"
-                icon="back"
-                disabled={!navigation.back || busy || nativeOpening}
-                onPress={() =>
-                  void act(async () => {
-                    if (nativeAvailable && DovoWebKitBrowser)
-                      await DovoWebKitBrowser.goBack(active.id)
-                    else web.current?.goBack()
-                  })
-                }
-              />
-              <IconButton
-                label="Forward"
-                icon="next"
-                disabled={!navigation.forward || busy || nativeOpening}
-                onPress={() =>
-                  void act(async () => {
-                    if (nativeAvailable && DovoWebKitBrowser)
-                      await DovoWebKitBrowser.goForward(active.id)
-                    else web.current?.goForward()
-                  })
-                }
-              />
-            </>
-          ) : (
-            <IconButton label="Browser options" icon="more" onPress={() => setOptionsOpen(true)} />
-          )}
-          <IconButton
-            label="Page actions"
-            icon="share"
-            disabled={!active.url || nativeOpening}
-            onPress={() => setPageActionsOpen(true)}
-          />
-          <IconButton
-            label="Bookmarks"
-            icon="history"
-            onPress={() => {
-              setQuery('')
-              setLibrary('bookmarks')
-            }}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Tabs (${recentTabs(state.tabs).length})`}
-            onPress={() => {
-              setQuery('')
-              setLibrary('tabs')
-            }}
-            style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
-          >
+          {active.kind === 'local' && (
             <View
               style={{
-                borderWidth: 1.5,
-                borderColor: colors.text,
-                borderRadius: 6,
-                minWidth: 23,
-                height: 25,
+                flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
+                backgroundColor: colors.elevated,
+                borderRadius: 24,
+                minHeight: 48,
               }}
             >
-              <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
-                {recentTabs(state.tabs).length}
-              </Text>
+              <IconButton
+                label="Browser options"
+                icon="more"
+                onPress={() => setOptionsOpen(true)}
+              />
+              <TextInput
+                accessibilityLabel="Search or enter address"
+                testID="Search or enter address"
+                placeholder="Search or enter address"
+                placeholderTextColor={colors.muted}
+                selectionColor={colors.accent}
+                value={address}
+                onChangeText={setAddress}
+                autoCapitalize="none"
+                autoCorrect={false}
+                selectTextOnFocus
+                keyboardType="web-search"
+                onFocus={() => {
+                  editing.current = true
+                }}
+                onBlur={() => {
+                  editing.current = false
+                }}
+                returnKeyType="go"
+                onSubmitEditing={navigateLocal}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 48,
+                  color: colors.text,
+                  fontSize: 16,
+                  textAlign: 'center',
+                  paddingVertical: 8,
+                }}
+              />
+              <IconButton
+                label={address !== active.url || !active.url ? 'Go' : 'Reload'}
+                icon={address !== active.url || !active.url ? 'next' : 'refresh'}
+                disabled={busy || nativeOpening || !address.trim()}
+                onPress={navigateLocal}
+              />
             </View>
-          </Pressable>
+          )}
+          <View
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+          >
+            {active.kind === 'local' ? (
+              <>
+                <IconButton
+                  label="Back"
+                  icon="back"
+                  disabled={!navigation.back || busy || nativeOpening}
+                  onPress={() =>
+                    void act(async () => {
+                      if (nativeAvailable && DovoWebKitBrowser)
+                        await DovoWebKitBrowser.goBack(active.id)
+                      else web.current?.goBack()
+                    })
+                  }
+                />
+                <IconButton
+                  label="Forward"
+                  icon="next"
+                  disabled={!navigation.forward || busy || nativeOpening}
+                  onPress={() =>
+                    void act(async () => {
+                      if (nativeAvailable && DovoWebKitBrowser)
+                        await DovoWebKitBrowser.goForward(active.id)
+                      else web.current?.goForward()
+                    })
+                  }
+                />
+              </>
+            ) : (
+              <IconButton
+                label="Browser options"
+                icon="more"
+                onPress={() => setOptionsOpen(true)}
+              />
+            )}
+            <IconButton
+              label="Page actions"
+              icon="share"
+              disabled={!active.url || nativeOpening}
+              onPress={() => setPageActionsOpen(true)}
+            />
+            <IconButton
+              label="Bookmarks"
+              icon="history"
+              onPress={() => {
+                setQuery('')
+                setLibrary('bookmarks')
+              }}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Tabs (${recentTabs(state.tabs).length})`}
+              onPress={() => {
+                setQuery('')
+                setLibrary('tabs')
+              }}
+              style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <View
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: colors.text,
+                  borderRadius: 6,
+                  minWidth: 23,
+                  height: 25,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
+                  {recentTabs(state.tabs).length}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      )}
       {customization && (
         <WebsiteCustomizationEditor
           key={`${active.id}:${active.profileId}:${customization.origin}:${customization.css}:${customization.script}`}
@@ -1397,6 +1440,26 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       )}
       {optionsOpen && (
         <Sheet ref={optionsSheet} title="Browser options" onClose={() => setOptionsOpen(false)}>
+          {Platform.OS === 'ios' && active.kind === 'local' && (
+            <>
+              <Action
+                secondary
+                label="Page actions"
+                disabled={!active.url || nativeOpening}
+                onPress={() => optionsSheet.current?.dismiss(() => setPageActionsOpen(true))}
+              />
+              <Action
+                secondary
+                label="Bookmarks"
+                onPress={() =>
+                  optionsSheet.current?.dismiss(() => {
+                    setQuery('')
+                    setLibrary('bookmarks')
+                  })
+                }
+              />
+            </>
+          )}
           <Action secondary label="Settle tab" disabled={busy} onPress={() => move()} />
           <Action
             secondary

@@ -2,14 +2,20 @@ import { Stack } from 'expo-router'
 import { Platform } from 'react-native'
 import { useTheme } from '../theme'
 
-export function NavigationStack({ title }: { title: string }) {
+export function NavigationStack({
+  title,
+  headerShown = Platform.OS === 'ios',
+}: {
+  title: string
+  headerShown?: boolean
+}) {
   const { colors, mode, highContrast, reduceTransparency } = useTheme()
 
   return (
     <Stack
       screenOptions={{
         title,
-        headerShown: Platform.OS === 'ios',
+        headerShown,
         headerBackButtonDisplayMode: 'minimal',
         headerTintColor: colors.text,
         statusBarStyle: mode === 'dark' ? 'light' : 'dark',

@@ -12,6 +12,19 @@ The **Snoozed** and **Settled** tab sections use the thread section headers, cou
 controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On
 mobile, the tab category picker hides **Snoozed** when no tabs are snoozed.
 
+The iOS Browser has no top header. Device-local tabs use one Liquid Glass navigation row above the
+native app tabs. The address shows the host until you edit it, then shows the full URL. Back and
+Forward hide during editing to give the field more space. Go and Tabs keep their positions when
+focus changes. Use **Browser options → Page actions** for sharing and page commands, or choose
+**Bookmarks** or **History** in Browser options. Reduced Transparency, high contrast and devices
+without Liquid Glass use an opaque background.
+
+Run `node scripts/check-mobile-browser-navigation-browser.mjs` and
+`node scripts/check-mobile-shared-browser-browser.mjs` after installing Playwright Chromium. These
+checks cover layout and browser state through native adapters. A separate iOS simulator check
+verified the real navigation control, glass and opaque rendering, keyboard avoidance and URL
+submission. It did not verify the full native browser screen or a physical iPhone.
+
 Choose **Browser options → Tab & page actions → Snooze tab → Choose date and time…** to set a custom
 wake time on desktop/web. The tab context menu and the unified sidebar's Snooze menu have the same
 option. On mobile, choose **Browser options → Choose date and time…**. The picker uses the device's
