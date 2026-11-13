@@ -717,3 +717,21 @@ it('never writes defaults over unread settings when an explicit retry still cann
   })
   expect(preferences.readMobilePreferenceStorage()).toEqual({ pending: false, error: null })
 })
+
+it('keeps Bot layout across restarts and defaults invalid saved values', async () => {
+  let saved = JSON.stringify({ botLayout: 'invalid', taskSort: 'title' })
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  let preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().botLayout).toBe('horizontal')
+  for (const botLayout of ['grid-2', 'grid-3', 'rows', 'horizontal'] as const) {
+    preferences.updateMobilePreferences({ botLayout })
+    await vi.waitFor(() => expect(JSON.parse(saved).botLayout).toBe(botLayout))
+    preferences = await loadPreferences()
+    await preferences.preferencesReady
+    expect(preferences.readMobilePreferences()).toMatchObject({ botLayout, taskSort: 'title' })
+  }
+})

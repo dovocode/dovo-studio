@@ -164,6 +164,17 @@ try {
     await page.getByLabel('Message').waitFor()
   }
   await load()
+  for (const layout of ['grid-2', 'grid-3', 'rows', 'horizontal']) {
+    await page.getByLabel('Bot layout').selectOption(layout)
+    await page.waitForFunction(
+      (layout) =>
+        JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).botLayout === layout,
+      layout,
+    )
+    await load()
+    await page.getByLabel('Bot layout').waitFor()
+    assert.equal(await page.getByLabel('Bot layout').inputValue(), layout)
+  }
   assert.equal(await page.getByLabel('Thread density').inputValue(), 'compact')
   await page.getByLabel('Thread density').selectOption('comfortable')
   await page.waitForFunction(

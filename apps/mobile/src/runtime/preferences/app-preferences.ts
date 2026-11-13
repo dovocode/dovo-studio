@@ -1,3 +1,4 @@
+import { botLayoutSchema } from '@dovo/protocol'
 import {
   pullProjectVisibilitySchema,
   defaultTaskSnoozeMinutes,
@@ -43,6 +44,7 @@ const schema = mutableStruct({
   retiredGlobalAgentPresets: mutableArray(Schema.String),
   threadDensity: Schema.Literals(['compact', 'comfortable']),
   taskSort: Schema.Literals(['priority', 'activity', 'newest', 'oldest', 'title', 'project']),
+  botLayout: botLayoutSchema,
   taskGrouping: Schema.Literals(['none', 'status', 'project']),
   hideFinishedSubagents: Schema.Boolean,
   workingSection: Schema.Boolean,
@@ -102,6 +104,7 @@ const defaults: MobilePreferences = {
   globalAgentPresets: [],
   retiredGlobalAgentPresets: [],
   threadDensity: 'compact',
+  botLayout: 'horizontal',
   taskSort: 'priority',
   taskGrouping: 'none',
   hideFinishedSubagents: true,

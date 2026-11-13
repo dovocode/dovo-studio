@@ -1,3 +1,4 @@
+import { botLayouts } from '@dovo/protocol'
 import {
   fontStack,
   systemAppFont,
@@ -18,6 +19,7 @@ import { CodeThemeSettings } from './code-theme'
 
 export default function AppearanceSettings() {
   const {
+    botLayout,
     theme,
     themePalette,
     themeGlow,
@@ -46,6 +48,19 @@ export default function AppearanceSettings() {
   const selectedPalette = studioThemes[themePalette]
   return (
     <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
+      <SettingsGroup title="Layout">
+        <SettingRow
+          label="Bot layout"
+          description="Show Bots as a horizontal row, a grid, or a list."
+        >
+          <SettingsSelect
+            label="Bot layout"
+            value={botLayout}
+            options={botLayouts.map(({ id, name }) => [id, name] as const)}
+            onChange={(botLayout) => updateAppPreferences({ botLayout })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup
         title="Theme"
         description="Choose your scheme and palette, then fine-tune the highlights."

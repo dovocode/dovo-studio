@@ -1,3 +1,4 @@
+import { botLayoutSchema } from '@dovo/protocol'
 import {
   pullProjectVisibilitySchema,
   defaultTaskSnoozeMinutes,
@@ -114,6 +115,7 @@ const schema = mutableStruct({
   notifySound: Schema.Boolean,
   motion: Schema.Literals(['system', 'reduce']),
   taskSort: Schema.Literals(['priority', 'activity', 'newest', 'oldest', 'title', 'project']),
+  botLayout: botLayoutSchema,
   taskGrouping: Schema.Literals(['none', 'status', 'project']),
   hideFinishedSubagents: Schema.Boolean,
   showToolDetails: Schema.Boolean,
@@ -236,6 +238,7 @@ export const defaultAppPreferences: AppPreferences = {
   timeFormat: 'auto',
   notifySound: true,
   motion: 'system',
+  botLayout: 'horizontal',
   taskSort: 'priority',
   taskGrouping: 'status',
   hideFinishedSubagents: true,

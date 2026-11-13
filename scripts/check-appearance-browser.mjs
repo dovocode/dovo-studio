@@ -203,6 +203,16 @@ try {
   }
   await page.goto(origin)
   await ready()
+  for (const name of ['2 columns', '3 columns', 'Rows', 'Horizontal row']) {
+    await page.getByRole('combobox', { name: 'Bot layout', exact: true }).click()
+    await page.getByRole('option', { name, exact: true }).click()
+    await page.reload()
+    await ready()
+    assert.equal(
+      await page.getByRole('combobox', { name: 'Bot layout', exact: true }).textContent(),
+      name,
+    )
+  }
   const preserved = page.locator('[data-preserved-lines] p')
   await preserved.waitFor()
   const lineTops = await preserved.evaluate((el) => {

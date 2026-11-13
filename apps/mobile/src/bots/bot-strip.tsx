@@ -1,4 +1,5 @@
-import { Alert, Pressable, ScrollView, View } from 'react-native'
+import { useMobilePreferences } from '../runtime/preferences/app-preferences'
+import { Alert, Pressable, ScrollView, View, type DimensionValue } from 'react-native'
 import { compareBotActivity, hasUnreadTaskActivity } from '@dovo/protocol'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
@@ -19,52 +20,101 @@ export function BotStrip({
   onOpen: (id: string, runtimeId: string) => void
 }) {
   const { colors, styles } = useTheme()
+  const { botLayout } = useMobilePreferences()
+  const rows = botLayout === 'rows'
+  const horizontal = botLayout === 'horizontal'
+  const width: DimensionValue = horizontal
+    ? 80
+    : botLayout === 'grid-2'
+      ? '50%'
+      : botLayout === 'grid-3'
+        ? '33.333333%'
+        : '100%'
   if (!entries.length && !onCreate) return null
-  return (
-    <View accessibilityLabel="Bots" style={{ gap: 8, paddingVertical: 12 }}>
-      <Text style={[styles.muted, { fontWeight: '600' }]}>Bots</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 12, paddingVertical: 4 }}
-      >
-        {[...entries]
-          .sort(
-            (a, b) =>
-              compareBotActivity(a.row.task, b.row.task) || a.row.key.localeCompare(b.row.key),
-          )
-          .map((entry) => (
-            <BotTile key={entry.row.key} entry={entry} onOpen={onOpen} />
-          ))}
-        {onCreate && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="New Bot"
-            accessibilityHint="Choose a computer and create a Bot."
-            disabled={createDisabled}
-            onPress={onCreate}
-            style={{ width: 76, gap: 6, alignItems: 'center', opacity: createDisabled ? 0.5 : 1 }}
+  const tiles = (
+    <>
+      {[...entries]
+        .sort(
+          (a, b) =>
+            compareBotActivity(a.row.task, b.row.task) || a.row.key.localeCompare(b.row.key),
+        )
+        .map((entry) => (
+          <BotTile key={entry.row.key} entry={entry} onOpen={onOpen} width={width} rows={rows} />
+        ))}
+      {onCreate && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="New Bot"
+          accessibilityHint="Choose a computer and create a Bot."
+          disabled={createDisabled}
+          onPress={onCreate}
+          style={({ pressed }) => ({
+            width,
+            flexDirection: rows ? 'row' : 'column',
+            paddingHorizontal: rows ? 8 : 2,
+            gap: 9,
+            paddingVertical: 6,
+            borderRadius: 12,
+            alignItems: 'center',
+            opacity: createDisabled ? 0.5 : pressed ? 0.7 : 1,
+          })}
+        >
+          <View
+            style={{
+              width: rows ? 42 : 62,
+              height: rows ? 42 : 62,
+              borderRadius: rows ? 21 : 31,
+              borderStyle: 'dashed',
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <View
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="add" size={24} color={colors.accent} />
-            </View>
-            {!!entries.length && (
-              <Text style={[styles.text, { fontSize: 12, textAlign: 'center' }]}>New Bot</Text>
-            )}
-          </Pressable>
+            <Icon name="add" size={22} color={colors.muted} />
+          </View>
+          {!!entries.length && (
+            <Text style={[styles.muted, { fontSize: 12, lineHeight: 16, textAlign: 'center' }]}>
+              New Bot
+            </Text>
+          )}
+        </Pressable>
+      )}
+    </>
+  )
+  return (
+    <View
+      testID={`Bot layout ${botLayout}`}
+      accessibilityLabel="Bots"
+      style={{ gap: 6, paddingTop: 8, paddingBottom: 10 }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={[styles.muted, { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 }]}>
+          Bots
+        </Text>
+        {!!entries.length && (
+          <Text
+            accessibilityLabel={`${entries.length} Bots`}
+            style={[styles.muted, { fontSize: 10 }]}
+          >
+            {entries.length}
+          </Text>
         )}
-      </ScrollView>
+      </View>
+      {horizontal ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 4, paddingVertical: 5, paddingHorizontal: 2 }}
+        >
+          {tiles}
+        </ScrollView>
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 4, paddingVertical: 5 }}>
+          {tiles}
+        </View>
+      )}
     </View>
   )
 }
@@ -72,15 +122,19 @@ export function BotStrip({
 function BotTile({
   entry: { row },
   onOpen,
+  width,
+  rows,
 }: {
   entry: TaskListRowData
+  width: DimensionValue
+  rows: boolean
   onOpen: (id: string, runtimeId: string) => void
 }) {
   const { colors, styles } = useTheme()
   const lifecycle = useTaskLifecycle(row.task, row.runtimeId)
   const unread = hasUnreadTaskActivity(row.task)
   return (
-    <View style={{ width: 76 }}>
+    <View style={{ width, paddingHorizontal: 2 }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Open Bot ${row.task.title} on ${row.runtimeName}${unread ? ', new messages' : ''}${row.task.pinned ? ', pinned' : ''}${row.online ? '' : ', offline'}`}
@@ -98,10 +152,30 @@ function BotTile({
             { text: 'Cancel', style: 'cancel' },
           ])
         }
-        style={{ gap: 6, alignItems: 'center' }}
+        style={({ pressed }) => ({
+          gap: 9,
+          flexDirection: rows ? 'row' : 'column',
+          paddingHorizontal: rows ? 8 : 0,
+          paddingVertical: 6,
+          borderRadius: 12,
+          alignItems: 'center',
+          backgroundColor: pressed ? colors.surface : undefined,
+        })}
       >
-        <View>
-          <BotAvatar avatar={row.task.bot?.avatar} name={row.task.title} />
+        <View
+          style={{
+            borderRadius: rows ? 21 : 31,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 2,
+          }}
+        >
+          <BotAvatar
+            avatar={row.task.bot?.avatar}
+            name={row.task.title}
+            round
+            size={rows ? 36 : 56}
+          />
           {unread && (
             <View
               testID={`Unread Bot ${row.key}`}
@@ -134,10 +208,19 @@ function BotTile({
           )}
         </View>
         <Text
-          numberOfLines={2}
+          numberOfLines={1}
           style={[
             styles.text,
-            { fontSize: 12, textAlign: 'center', fontWeight: unread ? '600' : '400' },
+            {
+              fontSize: 12,
+              lineHeight: 16,
+              flex: rows ? 1 : undefined,
+              minWidth: 0,
+              width: rows ? undefined : '100%',
+              textAlign: rows ? 'left' : 'center',
+              color: unread ? colors.text : colors.muted,
+              fontWeight: unread ? '600' : '400',
+            },
           ]}
         >
           {row.task.title}

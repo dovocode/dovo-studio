@@ -4,6 +4,9 @@ Tasks shows Bots above the thread groups. Use **+** at the end of the Bot row to
 and choose its host computer. The empty row keeps **+**. Creation needs a connected computer with
 Bot support. Pin a Bot through its touch-and-hold menu.
 
+Choose **Bot layout** in **Settings → Appearance**: Horizontal row (default), 2 columns, 3 columns,
+or Rows. The choice stays on this device. Desktop has the same choices.
+
 Search starts hidden. Scroll up to show it, or use the keyboard search shortcut. Scroll down to hide
 it. Search stays visible while focused or while its query is nonempty. Switching tabs keeps the
 query and list position.

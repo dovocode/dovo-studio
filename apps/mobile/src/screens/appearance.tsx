@@ -1,3 +1,4 @@
+import { botLayouts, isBotLayout } from '@dovo/protocol'
 import { SettingsScrollView } from './settings-search'
 import { CircleCheck, CircleX, TriangleAlert } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
@@ -21,6 +22,7 @@ export default function AppearanceScreen() {
     theme,
     themePalette,
     threadDensity,
+    botLayout,
     terminalFontFamily,
     terminalFontSize,
     highContrast,
@@ -87,6 +89,14 @@ export default function AppearanceScreen() {
           title="Layout"
           footer="Compact uses uniform rows with smaller text and single-line details. Comfortable keeps the original layout with more room for context."
         >
+          <Choice
+            label="Bot layout"
+            value={botLayout}
+            items={botLayouts.map((item) => ({ ...item }))}
+            onChange={(value) => {
+              if (isBotLayout(value)) updateMobilePreferences({ botLayout: value })
+            }}
+          />
           <Choice
             label="Thread density"
             value={threadDensity}

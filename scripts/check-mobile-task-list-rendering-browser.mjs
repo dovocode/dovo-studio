@@ -1981,6 +1981,12 @@ try {
   await newBot.waitFor()
   assert.equal(await newBot.isEnabled(), true)
   assert.equal(await newBot.evaluate((node) => node.parentElement.lastElementChild === node), true)
+  for (const layout of ['grid-2', 'grid-3', 'rows', 'horizontal']) {
+    await page.evaluate((botLayout) => window.setListPreferences({ botLayout }), layout)
+    await page.getByTestId(`Bot layout ${layout}`).waitFor()
+    assert.equal(await botTile.isVisible(), true)
+    assert.equal(await newBot.isEnabled(), true)
+  }
   await newBot.click()
   await page.getByRole('dialog', { name: 'Create Bot' }).waitFor()
   await page.getByRole('button', { name: 'Cancel Bot creation' }).click()

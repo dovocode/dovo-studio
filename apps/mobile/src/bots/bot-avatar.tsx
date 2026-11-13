@@ -6,10 +6,12 @@ export function BotAvatar({
   avatar,
   name,
   size = 56,
+  round = false,
 }: {
   avatar?: string
   name: string
   size?: number
+  round?: boolean
 }) {
   const { colors } = useTheme()
   return (
@@ -17,7 +19,7 @@ export function BotAvatar({
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.28,
+        borderRadius: round ? size / 2 : size * 0.28,
         overflow: 'hidden',
         backgroundColor: colors.surface,
         borderWidth: 1,

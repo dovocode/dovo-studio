@@ -1240,6 +1240,24 @@ try {
       'New Bot',
     ],
   )
+  for (const layout of ['horizontal', 'grid-2', 'grid-3', 'rows']) {
+    await page.evaluate((botLayout) => window.setListPreferences({ botLayout }), layout)
+    await bots.locator(`[data-bot-layout="${layout}"]`).waitFor()
+    assert.equal(await bots.getByRole('button').count(), 4)
+    if (process.env.DOVO_BOT_ROW_SCREENSHOT) {
+      for (const dark of [true, false]) {
+        await page.evaluate((dark) => {
+          document.documentElement.className = dark ? 'dark' : 'light'
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          document.body.style.background = 'var(--sidebar)'
+        }, dark)
+        await bots.screenshot({
+          path: `${process.env.DOVO_BOT_ROW_SCREENSHOT}-${layout}-${dark ? 'dark' : 'light'}.png`,
+        })
+      }
+    }
+  }
+  await page.evaluate(() => window.setListPreferences({ botLayout: 'horizontal' }))
   await page.getByRole('button', { name: /^Open Bot Recent Bot on / }).click()
   assert.equal(await page.evaluate(() => window.selected.task.id), 'Recent Bot')
   await page.evaluate(() => window.publish(window.initialTasks))
