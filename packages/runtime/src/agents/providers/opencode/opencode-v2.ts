@@ -391,6 +391,9 @@ export const opencodeV2Adapter: AgentAdapter = {
                     question: field.description || field.title || field.key,
                     options: 'options' in field ? field.options : [],
                     multiple: field.type === 'multiselect',
+                    custom:
+                      !('options' in field && field.options?.length) ||
+                      ('custom' in field && field.custom === true),
                     inputType:
                       field.type === 'number' || field.type === 'integer' ? 'number' : 'text',
                     secret: 'hidden' in field && field.hidden === true,
