@@ -1201,6 +1201,7 @@ function TaskDetailContent({
           <BotSettings
             task={task}
             initialSection={botSettings}
+            onDeleted={onBack}
             onClose={() => setBotSettings(undefined)}
           />
         </Suspense>

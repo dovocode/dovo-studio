@@ -1,5 +1,5 @@
 import { BotAvatarEditor } from './bot-avatar-editor'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
 import { automationHref } from '../shell/source-route'
@@ -7,6 +7,7 @@ import { Sheet, useSheetNavigation } from '../ui/layout/sheet'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   botResultSchema,
+  responses,
   botRoutines,
   botRunStatusLabels,
   workspacePatchResultSchema,
@@ -29,6 +30,7 @@ export type BotSection = 'settings' | 'mcp' | 'skill' | 'memory' | 'routines'
 export function BotSettings(props: {
   task: Task
   onClose: () => void
+  onDeleted?: () => void
   initialSection?: BotSection
 }) {
   const { profile } = useRuntime()
@@ -47,14 +49,25 @@ export function BotSettings(props: {
 function BotSettingsEditor({
   task,
   onClose,
+  onDeleted,
   initialSection = 'settings',
 }: {
   task: Task
   onClose: () => void
+  onDeleted?: () => void
   initialSection?: BotSection
 }) {
   const { profile, connected, snapshot, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
+  const [deleting, setDeleting] = useState(false)
+  const [deleted, setDeleted] = useState(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const [harness, setHarness] = useState(false)
   const [avatar, setAvatar] = useState(false)
   const [resources, setResources] = useState<'mcp' | 'skill' | undefined>(
@@ -199,7 +212,59 @@ function BotSettingsEditor({
             )}
             <Action label="Bot routines" secondary onPress={() => setRoutines(true)} />
             <Action label="Bot memory" secondary onPress={() => setMemory(true)} />
+            <Action
+              label="Delete Bot…"
+              secondary
+              disabled={
+                !connected ||
+                busy ||
+                !snapshot?.botsSupported ||
+                task.status === 'running' ||
+                !!task.activeRunId
+              }
+              onPress={() => setDeleting(true)}
+            />
           </View>
+          {deleting && (
+            <Sheet
+              title="Delete Bot?"
+              busy={busy}
+              onClose={() => {
+                if (!busy) setDeleting(false)
+              }}
+            >
+              <Text>
+                Permanently delete “{task.title}”, its conversation, private memory and local child
+                threads? Repository files and worktrees stay. Saved routines stay, but their Bot
+                jobs need a new target. Stop active work and close terminals first.
+              </Text>
+              <BotDeletionResult deleted={deleted} busy={busy} onDeleted={onDeleted} />
+              {!!error && <Text accessibilityRole="alert">{error}</Text>}
+              <Action label="Cancel" secondary disabled={busy} onPress={() => setDeleting(false)} />
+              <Action
+                label="Delete Bot"
+                disabled={
+                  !connected ||
+                  busy ||
+                  !snapshot?.botsSupported ||
+                  task.status === 'running' ||
+                  !!task.activeRunId
+                }
+                onPress={() =>
+                  act(async () => {
+                    await runClientEffect(
+                      callEffect(
+                        '/api/tasks/lifecycle',
+                        { id: task.id, action: 'delete', removeWorktrees: false },
+                        responses.ok,
+                      ),
+                    )
+                    if (mounted.current) setDeleted(true)
+                  })
+                }
+              />
+            </Sheet>
+          )}
           {avatar && (
             <BotAvatarEditor
               task={task}
@@ -307,4 +372,24 @@ function BotRoutines({ taskId }: { taskId: string }) {
       />
     </View>
   )
+}
+
+/** Dismiss both native sheets before navigating away from the deleted conversation. */
+function BotDeletionResult({
+  deleted,
+  busy,
+  onDeleted,
+}: {
+  deleted: boolean
+  busy: boolean
+  onDeleted?: () => void
+}) {
+  const navigate = useSheetNavigation()
+  const handled = useRef(false)
+  useEffect(() => {
+    if (!deleted || busy || handled.current) return
+    handled.current = true
+    navigate(() => onDeleted?.())
+  }, [deleted, busy, navigate, onDeleted])
+  return null
 }

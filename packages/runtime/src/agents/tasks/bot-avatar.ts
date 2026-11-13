@@ -104,6 +104,11 @@ export class BotAvatars {
     )
   }
 
+  requireIdle(id: string) {
+    if (this.running.has(id))
+      throw new HttpError(409, 'Finish or cancel avatar generation before deleting this Bot.')
+  }
+
   cancel(id: string, requestId: string) {
     const run = this.running.get(id)
     if (run?.requestId === requestId)

@@ -265,10 +265,18 @@ it('scopes private Bot memory to its coordinator thread and deletes it with the 
 
   await f.restart()
   expect(f.runtime.services.memory.list({ scope: 'bot', botId: created.id }).total).toBe(1)
-  expect(
-    (await f.request('/api/tasks/lifecycle', { id: created.id, action: 'delete' })).status,
-  ).toBe(200)
+  const flow = routine(created.id)
+  f.runtime.services.store.update((workspace) => ({ ...workspace, automations: [flow] }))
+  const deletion = { id: created.id, action: 'delete', removeWorktrees: false }
+  expect((await f.request('/api/tasks/lifecycle', deletion)).status).toBe(200)
   expect(f.runtime.services.memory.list({ scope: 'bot', botId: created.id }).total).toBe(0)
+  expect(f.runtime.services.store.get().tasks.some((task) => task.id === created.id)).toBe(false)
+  expect(f.runtime.services.store.get().tasks.some((task) => task.id === other.id)).toBe(true)
+  expect(f.runtime.services.store.get().automations).toEqual([flow])
+  expect(() => f.runtime.services.jobs.start(flow.id)).toThrow(/Choose an available Bot/)
+  // Deletion is safe to retry after a lost response, also across restart.
+  await f.restart()
+  expect((await f.request('/api/tasks/lifecycle', deletion)).status).toBe(200)
 })
 
 it('never selects Bots for inactivity settling or archiving', async () => {
@@ -497,4 +505,23 @@ it('keeps Bots standalone and named by people only', async () => {
     initialTitle: { before: normal.title, after: 'Plain thread' },
   })
   expect(s.store.taskSummary(normal.id).title).toBe('Plain thread')
+})
+
+it('keeps the Bot while a delegated worker has no confirmed completion', async () => {
+  const f = await setup()
+  const created = decode(botResultSchema, await (await f.create()).response.json())
+  f.runtime.services.threadWatch.watch(
+    created.id,
+    'remote',
+    'child',
+    'Mac',
+    undefined,
+    'spawned',
+    true,
+  )
+  const deletion = { id: created.id, action: 'delete', removeWorktrees: false }
+  expect((await f.request('/api/tasks/lifecycle', deletion)).status).toBe(409)
+  expect(f.runtime.services.store.task(created.id).bot).toBeDefined()
+  f.runtime.services.threadWatch.stop(created.id, 'remote', 'child')
+  expect((await f.request('/api/tasks/lifecycle', deletion)).status).toBe(200)
 })

@@ -1622,9 +1622,26 @@ export function taskLifecycle(
           ok: true,
         })
       const ids = taskFamilyIds(s.store.get().tasks, id)
+      const deletingBot = action === 'delete' && !!s.store.taskSummary(id).bot
       const requireIdle = () => {
         for (const taskId of ids) {
-          const handoff = s.store.taskSummary(taskId).machineHandoff
+          const task = s.store.taskSummary(taskId)
+          const handoff = task.machineHandoff
+          if (
+            deletingBot &&
+            s.threadWatch
+              .list(taskId)
+              .some(
+                (watch) =>
+                  watch.delegated &&
+                  watch.status === 'watching' &&
+                  watch.snapshot?.phase !== 'completed',
+              )
+          )
+            throw new HttpError(
+              409,
+              'Stop or unlink delegated work on other computers before deleting this Bot. Reconnect offline workers if their state is unknown.',
+            )
           if (
             handoff &&
             !(handoff.state === 'staged' && action === 'delete') &&
@@ -1638,6 +1655,7 @@ export function taskLifecycle(
             )
           s.tasks.requireIdle(taskId, deletionReservation)
           s.jobs.requireTaskIdle(taskId)
+          if (action === 'delete') s.botAvatars.requireIdle(taskId)
         }
         if (
           action !== 'restore' &&

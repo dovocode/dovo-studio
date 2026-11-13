@@ -39,6 +39,7 @@ window.runtime={profile:{id:'paired-owner',connection:{address:'http://owner.lan
 window.requests.push({owner:window.runtime.profile.id,path,input});let result;
 if(path==='/api/bots/create'){decode(botCreateSchema,input);if(window.failCreate)throw Error('Temporary runtime outage');result={id:input.createTask.id,bot:{...window.botTask.bot,role:input.role,responsibilities:input.responsibilities},revision:1,runtimeInstanceId:'runtime-a'}}
 else if(path==='/api/workspace'){if(window.rejectRename)result={revision:2,runtimeInstanceId:'runtime-a',outcome:'rejected'};else{window.botTask={...window.botTask,title:input.changes.title.after};result={revision:2,runtimeInstanceId:'runtime-a',outcome:'applied'}}}
+else if(path==='/api/tasks/lifecycle'){if(window.rejectBotDelete)throw Error('Stop child work before deleting this Bot.');result={ok:true}}
 else if(path==='/api/bots/update'){decode(botUpdateSchema,input);if(window.failBotUpdate)throw Error('Bot save failed after rename');if(window.strictCas && input.expectedRevision!==window.botTask.bot.revision)throw new RuntimeRequestError({kind:'response',status:409,mutationRejected:true,message:'Bot settings changed. Reopen after resolving your draft.'});window.botTask={...window.botTask,bot:{...window.botTask.bot,role:input.role,responsibilities:input.responsibilities,resources:input.resources}};result={id:'bot-a',bot:window.botTask.bot,revision:2,runtimeInstanceId:'runtime-a'}}
 else if(path==='/api/bots/lifecycle'){decode(botLifecycleSchema,input);if(window.lifecycleNoopExternal)window.botTask={...window.botTask,bot:{...window.botTask.bot,role:'External role',revision:'33333333-3333-4333-8333-333333333333'}};window.botTask={...window.botTask,bot:{...window.botTask.bot,state:input.action==='pause'?'paused':'active'}};window.publish();result={id:'bot-a',bot:window.botTask.bot,revision:2,runtimeInstanceId:'runtime-a'}}
 else if(path==='/api/memory/list')result={entries:window.notes,total:window.notes.length};
@@ -50,7 +51,7 @@ return decode(schema,result)},catch:error=>error})};
 import {RegistryProvider} from '@effect/atom-react';
 const initial={name:'Release assistant',role:'Release lead',responsibilities:'Check release readiness'};
 window.saved=[];window.rejectSave=false;
-function App(){useSyncExternalStore(window.subscribe,()=>window.version);const [mode,setMode]=useState('editor');window.showMode=value=>{setMode(value);setShow(true)};const [show,setShow]=useState(true);const [owner,setOwner]=useState('owner-a');const [offline,setOffline]=useState(false);window.disableFields=()=>setOffline(true);window.openEditor=next=>{setOwner(next);setOffline(false);setShow(true)};return !show?null:mode==='work'?<BotWorkSummary task={window.botTask} onRoutines={()=>window.workTarget='routines'} onWorkers={()=>window.workTarget='workers'}/>:mode==='avatar'?<BotAvatarEditor task={window.botTask} onSaved={()=>{}} onClose={()=>setShow(false)}/>:mode==='list'?<BotsScreen/>:mode==='memory'?<BotMemory taskId='bot-a' onClose={()=>setShow(false)}/>:mode==='settings'?<BotSettings task={window.botTask} onClose={()=>setShow(false)}/>:show?<BotEditor draftKey={owner} initial={initial} unavailable={offline?'Computer is offline':undefined} onClose={()=>setShow(false)} onSave={async value=>{if(window.rejectSave)throw Error('Runtime unavailable');window.saved.push({owner,value})}}/>:null}
+function App(){useSyncExternalStore(window.subscribe,()=>window.version);const [mode,setMode]=useState('editor');window.showMode=value=>{setMode(value);setShow(true)};const [show,setShow]=useState(true);const [owner,setOwner]=useState('owner-a');const [offline,setOffline]=useState(false);window.disableFields=()=>setOffline(true);window.openEditor=next=>{setOwner(next);setOffline(false);setShow(true)};return !show?null:mode==='work'?<BotWorkSummary task={window.botTask} onRoutines={()=>window.workTarget='routines'} onWorkers={()=>window.workTarget='workers'}/>:mode==='avatar'?<BotAvatarEditor task={window.botTask} onSaved={()=>{}} onClose={()=>setShow(false)}/>:mode==='list'?<BotsScreen/>:mode==='memory'?<BotMemory taskId='bot-a' onClose={()=>setShow(false)}/>:mode==='settings'?<BotSettings task={window.botTask} onDeleted={()=>window.botDeleted=true} onClose={()=>setShow(false)}/>:show?<BotEditor draftKey={owner} initial={initial} unavailable={offline?'Computer is offline':undefined} onClose={()=>setShow(false)} onSave={async value=>{if(window.rejectSave)throw Error('Runtime unavailable');window.saved.push({owner,value})}}/>:null}
 createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);
 `,
     },
@@ -525,6 +526,62 @@ try {
   assert.equal(
     await page.getByLabel('Avatar generation harness', { exact: true }).isDisabled(),
     false,
+  )
+  await page.evaluate(() => {
+    window.runtime.connected = false
+    window.showMode('settings')
+  })
+  assert.equal(
+    await page.getByRole('button', { name: 'Delete Bot…', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.runtime.connected = true
+    window.botTask.status = 'running'
+    window.publish()
+  })
+  assert.equal(
+    await page.getByRole('button', { name: 'Delete Bot…', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.botTask.status = 'review'
+    window.publish()
+  })
+  await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Delete Bot?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.path === '/api/tasks/lifecycle').length,
+    ),
+    0,
+  )
+  await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
+  await page.evaluate(() => (window.rejectBotDelete = true))
+  await page
+    .getByRole('dialog', { name: 'Delete Bot?', exact: true })
+    .getByRole('button', { name: 'Delete Bot', exact: true })
+    .click()
+  await page.getByRole('dialog', { name: 'Delete Bot?', exact: true }).getByRole('alert').waitFor()
+  assert.equal(await page.evaluate(() => window.botDeleted ?? false), false)
+  await page.evaluate(() => (window.rejectBotDelete = false))
+  await page
+    .getByRole('dialog', { name: 'Delete Bot?', exact: true })
+    .getByRole('button', { name: 'Delete Bot', exact: true })
+    .click()
+  await page.waitForFunction(() => window.botDeleted === true)
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.requests.filter((r) => r.path === '/api/tasks/lifecycle').at(-1),
+    ),
+    {
+      owner: 'paired-owner',
+      path: '/api/tasks/lifecycle',
+      input: { id: 'bot-a', action: 'delete', removeWorktrees: false },
+    },
   )
   assert.deepEqual(errors, [])
   console.log(

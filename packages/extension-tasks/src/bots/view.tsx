@@ -77,6 +77,9 @@ export default function BotsView({ entityId }: StudioViewProps) {
     [],
   )
   const current = bots.find((entry) => entry.key === selected)
+  const deletionGeneration = selection.current
+  const selectedKey = useRef(selected)
+  selectedKey.current = selected
   const supported = store.snapshot?.botsSupported === true
   const canCreate = botCreateHosts(store).some((item) => item.online && item.supported)
   const select = async (entry: TaskEntry) => {
@@ -212,7 +215,23 @@ export default function BotsView({ entityId }: StudioViewProps) {
             }}
           />
         ) : current && current.source.runtimeId === store.activeRuntimeId ? (
-          <TasksView entityId={current.task.id} embedded />
+          <TasksView
+            entityId={current.task.id}
+            embedded
+            onBotDeleted={(id) => {
+              if (
+                deletionGeneration !== selection.current ||
+                selectedKey.current !== current.key ||
+                latest.current.activeRuntimeId !== current.source.runtimeId ||
+                id !== current.task.id
+              )
+                return
+              selection.current++
+              setSelected('')
+              routeEntity.current = undefined
+              host.navigate({ viewId: 'bots' })
+            }}
+          />
         ) : entityId && !current ? (
           <div role="status" className="p-6 text-sm">
             {store.connected

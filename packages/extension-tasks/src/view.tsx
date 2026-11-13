@@ -118,7 +118,8 @@ export default function TasksView({
   navigationKey,
   pullTarget,
   embedded = false,
-}: StudioViewProps & { embedded?: boolean }) {
+  onBotDeleted,
+}: StudioViewProps & { embedded?: boolean; onBotDeleted?: (id: string) => void }) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -154,6 +155,8 @@ export default function TasksView({
     setStartupDraft(task ? { task, runtimeId } : null)
   }, [])
   const [deselected, setDeselected] = useApplicationState(false)
+  const deletionSelection = useRef({ id: selectedId, runtimeId: activeRuntimeId })
+  deletionSelection.current = { id: selectedId, runtimeId: activeRuntimeId }
   const selectedTask = deselected ? undefined : localTasks.find((t) => t.id === selectedId)
   const {
     task: storedTask,
@@ -1413,6 +1416,16 @@ export default function TasksView({
                     <BotSettings
                       key={`${botScope(snapshot?.runtimeId ?? activeRuntimeId, store.connection)}:${task.id}`}
                       task={task}
+                      onDeleted={() => {
+                        if (
+                          (!onBotDeleted && !mounted.current) ||
+                          deletionSelection.current.id !== task.id ||
+                          deletionSelection.current.runtimeId !== activeRuntimeId
+                        )
+                          return
+                        if (onBotDeleted) onBotDeleted(task.id)
+                        else deselectTask()
+                      }}
                       section={
                         surface === 'bot-mcp'
                           ? 'mcp'

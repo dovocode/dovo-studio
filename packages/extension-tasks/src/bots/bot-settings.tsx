@@ -1,9 +1,10 @@
 import { BotAvatarEditor } from './bot-avatar-editor'
 import { BotResourceEditor } from './bot-resource-editor'
 import { botScope } from './bot-scope'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   botResultSchema,
+  responses,
   workspacePatchResultSchema,
   emptyBotResources,
   taskResources,
@@ -11,7 +12,7 @@ import {
   type BotResources,
   type Task,
 } from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
+import { useConfirmation, useWorkspace } from '@dovo/studio-core'
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 import { ComposerHarnessControls } from '../chat/composer/composer-harness-controls'
 import { taskActionClient, taskRowPatch } from '../list/task-row-actions'
@@ -32,11 +33,21 @@ const drafts = new Map<string, Draft>()
 export function BotSettings({
   task,
   section = 'settings',
+  onDeleted,
 }: {
   task: Task
+  onDeleted?: () => void
   section?: 'settings' | 'mcp' | 'skill' | 'memory' | 'routines'
 }) {
   const store = useWorkspace()
+  const confirm = useConfirmation()
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const [ack, setAck] = useState<{ before: string; bot: Bot }>()
   const hostBot = ack && task.bot?.revision === ack.before ? ack.bot : task.bot
   const scope = JSON.stringify([
@@ -272,6 +283,43 @@ export function BotSettings({
             These are the thread’s actual settings. Changes apply through the existing harness
             controls. Browser sessions follow the runtime’s browser settings.
           </p>
+        </section>
+        <section className="grid gap-2 border-t pt-4">
+          <h2 className="font-semibold">Delete Bot</h2>
+          <p className="text-xs text-muted-foreground">
+            Delete this Bot, its conversation, private memory and local child threads. Files and
+            worktrees stay. Saved routines stay, but their Bot jobs need a new target. Stop active
+            work and close terminals first.
+          </p>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={disabled || task.status === 'running' || !!task.activeRunId}
+            onClick={() =>
+              void run(async () => {
+                if (
+                  !(await confirm({
+                    title: 'Delete Bot?',
+                    description: `Permanently delete “${task.title}”, its conversation, private memory and local child threads? Repository files and worktrees stay. Saved routines stay, but their Bot jobs need a new target.`,
+                    confirmLabel: 'Delete Bot',
+                    destructive: true,
+                  })) ||
+                  !mounted.current
+                )
+                  return
+                await client.request(
+                  '/api/tasks/lifecycle',
+                  { id: task.id, action: 'delete', removeWorktrees: false },
+                  responses.ok,
+                )
+                drafts.delete(scope)
+                onDeleted?.()
+                await refresh()
+              })
+            }
+          >
+            Delete Bot…
+          </Button>
         </section>
       </div>
       {error && (

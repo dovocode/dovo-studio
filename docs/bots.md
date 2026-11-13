@@ -70,6 +70,16 @@ settings. Agent runs cannot call the Bot or workspace endpoints, so a Bot cannot
 permissions. Studio Tools cannot archive or restore a Bot. Older clients edit individual thread
 fields, so they cannot remove a Bot's identity.
 
+## Delete a Bot
+
+Open **Bot settings → Delete Bot…** on desktop or mobile. Confirm **Delete Bot** to permanently
+remove its conversation, private memory and local child threads. Repository files and worktrees
+stay. Saved routines stay, but any step that targets the deleted Bot needs a new target before it
+can run. Deletion requires the Bot's computer to be connected. Stop active Bot and child work,
+finish active automation steps and close their terminals first. Finish or cancel avatar generation
+too. Reconnect offline delegated workers to confirm they stopped. A failed request keeps the
+settings open. Retrying a delete for a Bot that is already gone is safe.
+
 ## Pause and resume
 
 **Pause** holds all new work:

@@ -202,3 +202,49 @@ it.each(['saved', 'acp'] as const)(
     expect(result.status).toBe(200)
   },
 )
+
+it('keeps a Bot while its temporary avatar agent is working and permits deletion after it finishes', async () => {
+  const f = await setupBotRuntime()
+  const created = decode(botResultSchema, await (await f.create()).response.json())
+  let release!: () => void
+  let markStarted!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve
+  })
+  f.runtime.run.mockImplementation(async (run) => {
+    markStarted()
+    await gate
+    await writeFile(join(run.cwd, 'avatar.png'), await pixels())
+  })
+  const generation = f.request('/api/bots/avatar/generate', {
+    id: created.id,
+    requestId: randomUUID(),
+    prompt: 'Illustrated Bot',
+  })
+  try {
+    await started
+    const deletion = await f.request('/api/tasks/lifecycle', {
+      id: created.id,
+      action: 'delete',
+      removeWorktrees: false,
+    })
+    expect(deletion.status).toBe(409)
+    expect(await deletion.text()).toContain('avatar generation')
+    expect(f.runtime.services.store.task(created.id).bot).toBeDefined()
+  } finally {
+    release()
+    expect((await generation).status).toBe(200)
+  }
+  expect(
+    (
+      await f.request('/api/tasks/lifecycle', {
+        id: created.id,
+        action: 'delete',
+        removeWorktrees: false,
+      })
+    ).status,
+  ).toBe(200)
+})

@@ -186,6 +186,7 @@ function App(){
  window.host={navigate:target=>{window.navigations??=[];window.navigations.push(target);setRoute(target)},registerCommand:command=>{window.commands.set(command.id,command.run);return ()=>window.commands.delete(command.id)}};
  window.externalRole=()=>setAll(before=>({...before,[owner]:{...before[owner],tasks:before[owner].tasks.map(t=>t.id==='bot'?{...t,bot:{...t.bot,role:'External role',revision:randomUUID()}}:t)}}));window.fresh=(scratch=true)=>{window.pairVersion=(window.pairVersion??0)+1;setInspector(false);setRoute({viewId:'bots'});setAll(before=>({...before,[owner]:{...before[owner],tasks:[],repositories:scratch?[{id:'dovo:scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]:[]}}));setVersion(v=>v+1)};window.setOwner=setOwner;window.setOffline=setOffline;window.setSupported=setSupported;window.route=setRoute;window.remount=()=>setVersion(v=>v+1);window.inspect=setInspector;
  const current=all[owner];window.all=all;window.owner=owner;window.currentRoute=route;
+ window.addDeleteFixture=()=>setAll(before=>({...before,[owner]:{...before[owner],tasks:[...before[owner].tasks,task('late-delete','Late delete Bot',true)]}}));
  window.cloneBot=(from,to,id)=>setAll(before=>({...before,[to]:{...before[to],tasks:[...before[to].tasks.filter(task=>task.id!==id),{...before[from].tasks.find(task=>task.id===id),title:'Remote same-ID Bot'}]}}));
  window.setScratch=(id,enabled)=>setAll(before=>({...before,[id]:{...before[id],repositories:enabled?[{id:id+'-scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]:[]}}));
  const setWorkspace=useCallback(update=>setAll(before=>({...before,[owner]:typeof update==='function'?update(before[owner]):update})),[owner]);
@@ -193,6 +194,13 @@ function App(){
   window.calls.push({owner:target,path,input:JSON.parse(JSON.stringify(input??{}))});
   const current=all[target];const found=current.tasks.find(t=>t.id===input?.id);const bot=found?.bot;
   if(path==='/api/fixture/agent'){if(window.deferAgentRead)await new Promise(resolve=>window.releaseAgentRead=resolve);return {ok:true}};
+  if(path==='/api/tasks/lifecycle' && input.action==='delete'){
+    if(window.rejectBotDelete)throw Error('Stop child work before deleting this Bot.');
+    if(window.deferBotDelete)await new Promise(resolve=>window.releaseBotDelete=resolve);
+    setAll(before=>({...before,[target]:{...before[target],tasks:before[target].tasks.filter(t=>t.id!==input.id)}}));
+
+    return {ok:true};
+  }
   if(path==='/api/tasks/files')return {files:[]};
   if(path==='/api/tasks/waiting')return {dependencies:[]};
   if(path==='/api/tasks/message'){setAll(before=>({...before,[target]:{...before[target],tasks:before[target].tasks.map(t=>t.id===input.id?{...t,status:'review',draft:'',messages:[...t.messages,{id:input.messageId,role:'user',text:input.text,createdAt:new Date().toISOString()}]}:t)}}));return {ok:true}};
@@ -1366,6 +1374,77 @@ try {
       animations: 'disabled',
     })
   }
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.evaluate(() => {
+    window.deleteTarget = window.all[window.owner].tasks.find((t) => t.bot).id
+    window.deleteOwner = window.owner
+    window.route({ viewId: 'bots', entityId: window.deleteTarget })
+    window.confirmationResponse = (options) => {
+      window.deleteConfirmation = options
+      return false
+    }
+  })
+  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((c) => c.path === '/api/tasks/lifecycle').length),
+    0,
+  )
+  assert.match(
+    await page.evaluate(() => window.deleteConfirmation.description),
+    /Repository files and worktrees stay/,
+  )
+  await page.evaluate(() => {
+    window.confirmationResponse = () => true
+    window.rejectBotDelete = true
+  })
+  await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Stop child work' }).waitFor()
+  assert.equal(
+    await page.evaluate(() =>
+      window.all[window.deleteOwner].tasks.some((t) => t.id === window.deleteTarget),
+    ),
+    true,
+  )
+  await page.evaluate(() => {
+    window.rejectBotDelete = false
+  })
+  await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
+  await page.waitForFunction(
+    () => !window.all[window.deleteOwner].tasks.some((t) => t.id === window.deleteTarget),
+  )
+  await page.waitForFunction(
+    () => window.currentRoute.viewId === 'bots' && !window.currentRoute.entityId,
+  )
+  const deletes = await page.evaluate(() =>
+    window.calls.filter((c) => c.path === '/api/tasks/lifecycle'),
+  )
+  assert.deepEqual(deletes.at(-1).input, {
+    id: await page.evaluate(() => window.deleteTarget),
+    action: 'delete',
+    removeWorktrees: false,
+  })
+  assert.equal(deletes.at(-1).owner, await page.evaluate(() => window.deleteOwner))
+  await page.evaluate(() => {
+    window.addDeleteFixture()
+    window.route({ viewId: 'bots', entityId: 'late-delete' })
+    window.deferBotDelete = true
+  })
+  await page.locator('textarea[data-task-id="late-delete"]').waitFor()
+  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
+  await page.waitForFunction(() => typeof window.releaseBotDelete === 'function')
+  await page.evaluate(() => window.route({ viewId: 'runtime' }))
+  await page.getByRole('region', { name: 'Computers fixture' }).waitFor()
+  await page.evaluate(() => window.releaseBotDelete())
+  await page.waitForFunction(
+    () => !window.all[window.deleteOwner].tasks.some((t) => t.id === 'late-delete'),
+  )
+  assert.equal(
+    await page.evaluate(() => window.currentRoute.viewId),
+    'runtime',
+    'A late delete cannot navigate away from another screen',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Bots: real TasksView/TaskRow/composer integration, owner-scoped settings and memory, hold/resume UI, draft recovery, old/offline runtime, normal-chat regression, idempotent creation, routine targeting, desktop machine selection/defaults/ownership, refresh failure, frozen retries, pairing replacement, deferred switch/context commits and control locks, external Bot routes during create and switch, same-ID owner retention, remount single-flight, stale draft protection, explicit discard and saved-action recovery passed. Transport and visual shells are fixtures; native harness execution is not tested.',
