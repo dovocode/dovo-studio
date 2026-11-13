@@ -1030,6 +1030,9 @@ importers:
 
   packages/extension-tasks:
     dependencies:
+      '@dovo/client-runtime':
+        specifier: workspace:*
+        version: link:../client-runtime
       '@dovo/extension-scm':
         specifier: workspace:*
         version: link:../extension-scm

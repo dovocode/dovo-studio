@@ -1,8 +1,9 @@
+import { BotCall } from '../bots/bot-call'
 import { sideThreadsOf } from './side-threads'
 import { sideThreadAttentionTarget } from '@dovo/protocol'
 import { SideThreadAttentionBadge, useSideThreadAttention } from '../chat/thread/side-threads-panel'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   runtimeComputerName,
   taskDisplayProject,
@@ -37,6 +38,7 @@ import {
   BookOpen,
   Brain,
   Workflow,
+  Phone,
 } from 'lucide-react'
 import { HeaderContent, Button, IconButton, ProjectIcon, DropdownMenu, cn } from '@dovo/studio-ui'
 import { taskPresentation } from '../list/task-presentation'
@@ -254,7 +256,17 @@ export function TaskHeader({
       ? 'No project'
       : task.checkoutBranch ||
         (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')
-  const actions = !task.bot && (
+  const [calling, setCalling] = useState(false)
+  const actions = task.bot ? (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={!connected || task.bot.state !== 'active' || !!task.replica}
+      onClick={() => setCalling(true)}
+    >
+      <Phone size={15} /> Call
+    </Button>
+  ) : (
     <>
       {compact ? (
         <IconButton
@@ -305,6 +317,13 @@ export function TaskHeader({
   )
   return (
     <>
+      {calling && task.bot && (
+        <BotCall
+          key={`${activeRuntimeId}:${connection?.address}:${connection?.token}:${task.id}`}
+          task={task}
+          onClose={() => setCalling(false)}
+        />
+      )}
       {!compact && (
         <HeaderContent>
           <header

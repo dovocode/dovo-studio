@@ -1,3 +1,4 @@
+import { BotCall } from '../../bots/bot-call'
 import { BotWorkSummary } from '../../bots/bot-work-summary'
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
 import { BotAvatar } from '../../bots/bot-avatar'
@@ -819,6 +820,7 @@ function TaskDetailContent({
   }, [focused, native, pane])
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
+  const [calling, setCalling] = useState(false)
   const [botSettings, setBotSettings] = useState<
     'settings' | 'mcp' | 'skill' | 'memory' | 'routines'
   >()
@@ -942,6 +944,14 @@ function TaskDetailContent({
                   [
                     ...(task.bot
                       ? [
+                          {
+                            label: 'Call',
+                            icon: 'phone' as const,
+                            group: 'Tools',
+                            onPress: () => setCalling(true),
+                            disabled: !connected || task.bot.state !== 'active' || !!task.replica,
+                            overflow: false,
+                          },
                           ...(
                             [
                               ['settings', 'Settings', 'settings'],
@@ -1208,6 +1218,13 @@ function TaskDetailContent({
           key={`${activeId}:${task.id}`}
           taskId={task.id}
           onClose={() => setSideChanges(false)}
+        />
+      )}
+      {calling && task.bot && (
+        <BotCall
+          key={`${activeId}:${connection?.address}:${connection?.token}:${task.id}`}
+          task={task}
+          onClose={() => setCalling(false)}
         />
       )}
       {botSettings && task.bot && (

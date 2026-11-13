@@ -30,7 +30,8 @@ const mocks = {
     export const useRuntimeReleaseCheck=()=>({releases:[]});
     export const runtimeUpdate=()=>({available:false});
   `,
-  '@dovo/studio-ui': `
+  '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';
+
     export {Button} from './src/components/ui/button';
     export {Tooltip,TooltipTrigger,TooltipContent} from './src/components/ui/tooltip';
     export {IconButton} from './src/components/icon-button';

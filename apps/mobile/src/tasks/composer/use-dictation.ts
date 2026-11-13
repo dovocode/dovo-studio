@@ -56,14 +56,15 @@ const driver: DictationDriver | null = native
       },
     }
   : null
-export function useDictation(callbacks: DictationCallbacks) {
-  const [dictation] = useApplicationState(() =>
-    createDictation(
-      driver,
-      preferredLocales,
-      Platform.OS === 'ios' || Number(Platform.Version) >= 33,
-    ),
+export function createMobileDictation() {
+  return createDictation(
+    driver,
+    preferredLocales,
+    Platform.OS === 'ios' || Number(Platform.Version) >= 33,
   )
+}
+export function useDictation(callbacks: DictationCallbacks) {
+  const [dictation] = useApplicationState(createMobileDictation)
   const currentCallbacks = useRef(callbacks)
   currentCallbacks.current = callbacks
   const state = useSyncExternalStore(

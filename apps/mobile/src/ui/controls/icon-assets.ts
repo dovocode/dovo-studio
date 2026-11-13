@@ -78,6 +78,7 @@ export const iconAssets = {
   projects: require('../../../assets/icons/projects.png'),
   home: require('../../../assets/icons/home.png'),
   microphone: require('../../../assets/icons/microphone.png'),
+  phone: require('../../../assets/icons/phone.png'),
   waveform: require('../../../assets/icons/waveform.png'),
   car: require('../../../assets/icons/car.png'),
   more: require('../../../assets/icons/more.png'),

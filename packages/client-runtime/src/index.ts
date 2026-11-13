@@ -45,3 +45,10 @@ export {
   ConditionalReadCache,
   type ConditionalReadReply,
 } from './effects/conditional-read-cache.js'
+export {
+  createBotCall,
+  botCallSpeech,
+  type BotCallAudio,
+  type BotCallReply,
+  type BotCallState,
+} from './effects/bot-call.js'

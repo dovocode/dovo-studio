@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dovo/client-runtime": "workspace:*",
     "@dovo/extension-scm": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
