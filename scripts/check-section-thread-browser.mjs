@@ -21,7 +21,7 @@ export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} fro
     export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{children}</Host.Provider>;
     export const useStudioHost=()=>useContext(Host);
     export const SettingsTargetProvider=({children})=>children;
-    export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
+    export const useAppPreferences=()=>({botsOverviewEnabled:true,lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const updateAppPreferences=changes=>{(window.preferenceWrites??=[]).push(changes)};
     export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
     const confirmSettingsNavigation=()=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : Promise.resolve(window.allowSettings);export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
