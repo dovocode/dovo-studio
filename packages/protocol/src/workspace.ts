@@ -1,3 +1,4 @@
+import { routinePolicySchema, routineMonitorSchema } from './automation/routine-policy.js'
 import { workflowSchema } from './conversation/workflow/workflows.js'
 import { taskIsWorking } from './tasks/task-working.js'
 import { providerRetrySchema } from './conversation/workflow/provider-retry.js'
@@ -673,6 +674,8 @@ export const linkedPullRequestSchema = mutableStruct({
   title: maxValue(Schema.String, 2000),
 })
 export const taskSchema = mutableStruct({
+  /** An isolated automation worker owned by a Bot, never the coordinator itself. */
+  botJob: Schema.optional(mutableStruct({ botId: Schema.String, runId: Schema.String })),
   /** A read-only conversation projection. Never persisted in the execution workspace. */
   replica: Schema.optional(
     mutableStruct({
@@ -1095,11 +1098,11 @@ export const nodeDataSchema = mutableStruct({
   repositoryId: Schema.String,
   execution: Schema.optional(executionSchema),
   linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
-  /** Task steps with a Bot post their objective into that Bot's thread, using its settings. */
+  /** Bot task steps use isolated workers with the Bot's settings and report back. */
   botId: Schema.optional(
     maxValue(minValue(Schema.String, 1), 200).annotate({
       description:
-        'For a Bot job, set data.kind to task and data.botId to the existing Bot thread ID on this computer. The objective runs in its persistent thread with its saved settings; project and agent fields are ignored.',
+        'For a Bot job, set data.kind to task and data.botId to the existing Bot thread ID on this computer. The objective runs in an isolated worker with its saved settings and reports back to the Bot; project and agent fields are ignored.',
     }),
   ),
 })
@@ -1118,6 +1121,8 @@ export const flowEdgeSchema = mutableStruct({
   target: Schema.String,
 })
 export const automationSchema = mutableStruct({
+  policy: Schema.optional(routinePolicySchema),
+  monitor: Schema.optional(routineMonitorSchema),
   id: Schema.String,
   name: minValue(Schema.String, 1),
   nodes: mutableArray(flowNodeSchema),

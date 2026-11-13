@@ -79,6 +79,11 @@ function SnapshotView({ snapshot }: { snapshot: Snapshot }) {
   const labels = new Map(workflow.nodes.map((node) => [node.id, node.data.label || node.id]))
   return (
     <View style={{ gap: 12 }}>
+      {(workflow.policy || workflow.monitor) && (
+        <Text>
+          {JSON.stringify({ limits: workflow.policy, monitor: workflow.monitor }, null, 2)}
+        </Text>
+      )}
       {workflow.nodes.map((node, index) => {
         const resource = snapshot.resources.find((item) => item.nodeId === node.id)
         const rows: [string, string][] = [

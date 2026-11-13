@@ -1,3 +1,4 @@
+import { RoutineOptions } from './routine-options'
 import { automationBotJobSummary, githubEventChoices } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -187,6 +188,14 @@ export function AutomationDetail({
       )}
       {flow ? (
         <>
+          {surface === 'triggers' && (
+            <RoutineOptions
+              key={flow.id}
+              flow={flow}
+              disabled={!connected || actions.busy || !!active}
+              onSave={(options) => update((current) => ({ ...current, ...options }))}
+            />
+          )}
           <JobControls
             key={flow.id}
             flow={flow}

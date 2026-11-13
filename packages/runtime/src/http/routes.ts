@@ -1,3 +1,4 @@
+import { proposeBotSkill } from '../agent-tools/bot-skills.js'
 import { workflowTool } from '../agent-tools/workflows.js'
 import { dictationRoute } from './endpoints/dictation-routes.js'
 import { searchRuntimeHistory } from './support/history-search.js'
@@ -394,6 +395,10 @@ export function route(
       if (method === 'POST' && path === '/api/linked-projects') {
         if (!run) throw new HttpError(403, 'Linked project tools require an active agent run')
         return yield* serviceResult(linkedProjectsTool(s, yield* serviceResult(body(request))))
+      }
+      if (method === 'POST' && path === '/api/agent/skill-proposal') {
+        if (!run) throw new HttpError(403, 'Skill proposals require an active agent run.')
+        return proposeBotSkill(s, run.taskId, yield* serviceResult(body(request, 32000)))
       }
       if (method === 'POST' && path === '/api/agent/skill') {
         if (!run) throw new HttpError(403, 'Skill reads require an active agent run')
@@ -931,8 +936,11 @@ export function route(
             ].includes(path),
         )
       }
-      if (method === 'POST' && path.startsWith('/api/memory/'))
+      if (method === 'POST' && path.startsWith('/api/memory/')) {
+        if (path.startsWith('/api/memory/bot-review/') && agentDeviceAccess)
+          throw new HttpError(403, 'Memory review controls require a paired human client.')
         return yield* memoryRoute(request, path, device.owner || !!run)
+      }
       if (method === 'POST' && path.startsWith('/api/thread-actions/')) {
         if (agentDeviceAccess)
           throw new HttpError(403, 'Thread actions are sent from a paired human client.')

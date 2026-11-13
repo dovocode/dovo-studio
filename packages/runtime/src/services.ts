@@ -1,3 +1,4 @@
+import { BotMemoryReview } from './memory/bot-review.js'
 import { BotAvatars } from './agents/tasks/bot-avatar.js'
 import { RuntimeDictation } from './speech/runtime-dictation.js'
 import { ManagedPolicy } from './policy/managed-policy.js'
@@ -274,7 +275,11 @@ export function createServices(
       () => preferences.get().enableLinkedProjectsTool,
       () => preferences.get().enablePullRequestBabysitting,
     ),
-    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy)
+    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy, {
+      defaults,
+      memory,
+    })
+  const botMemoryReview = new BotMemoryReview(db, { store, memory, titles, tasks, activity })
   const botAvatars = new BotAvatars({
     store,
     agents,
@@ -581,6 +586,7 @@ export function createServices(
     db,
     titles,
     botAvatars,
+    botMemoryReview,
     activity,
     commands,
     pulls,
@@ -651,6 +657,7 @@ export interface Services {
   forges: ForgeConnections
   defaults: RuntimeDefaults
   titles: TitleGeneration
+  botMemoryReview: BotMemoryReview
   botAvatars: BotAvatars
   activity: Activity
   taskReviews: TaskReviews

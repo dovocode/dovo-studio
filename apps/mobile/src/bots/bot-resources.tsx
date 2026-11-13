@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -22,12 +23,14 @@ type Editing =
 /** The owner supplies revision-aware storage. ResourceEditor owns credentials and validation. */
 export function BotResources({
   value,
+  children,
   disabled,
   inherited = { mcpServers: [], skills: [] },
   save,
   onClose,
   kind,
 }: {
+  children?: ReactNode
   kind?: 'mcp' | 'skill'
   value: BotResourceSettings
   inherited?: ResourceSettings
@@ -60,6 +63,7 @@ export function BotResources({
         These controls manage Dovo resources. A harness can also load its native or global tools and
         skills. Full-access agents can read host files.
       </Text>
+      {children}
       {disabled && (
         <Text accessibilityRole="alert" style={styles.muted}>
           Reconnect the owning computer to edit these resources.

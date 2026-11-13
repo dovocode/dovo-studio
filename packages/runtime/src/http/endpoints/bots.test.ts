@@ -314,7 +314,7 @@ function routine(botId: string): Automation {
   }
 }
 
-it('runs a routine in the Bot thread with the Bot settings', async () => {
+it('runs a routine in an isolated worker with the Bot settings', async () => {
   const f = await setup()
   const created = decode(botResultSchema, await (await f.create()).response.json())
   const s = f.runtime.services
@@ -322,17 +322,19 @@ it('runs a routine in the Bot thread with the Bot settings', async () => {
   const threads = s.store.get().tasks.length
   const id = s.jobs.start('routine')
   await waitForRuntime(() => expect(s.jobs.detail(id).status).toBe('completed'))
-  expect(s.store.get().tasks).toHaveLength(threads)
-  expect(s.jobs.detail(id).steps?.find((step) => step.nodeId === 'task')?.taskId).toBe(created.id)
-  const message = s.store
-    .task(created.id)
-    .messages.find((item) => item.text === 'Run the daily release check')
+  expect(s.store.get().tasks).toHaveLength(threads + 1)
+  const workerId = s.jobs.detail(id).steps?.find((step) => step.nodeId === 'task')?.taskId
+  expect(workerId).toBeTruthy()
+  expect(workerId).not.toBe(created.id)
+  const worker = s.store.task(workerId!)
+  expect(worker.botJob).toEqual({ botId: created.id, runId: id })
+  const message = worker.messages.find((item) => item.text === 'Run the daily release check')
   expect(message?.source).toMatchObject({ kind: 'automation', automationId: 'routine', runId: id })
-  expect(f.prompts.at(-1)).toContain('You are a persistent Dovo Bot')
-
-  // A retry of a completed step never sends the routine message twice.
+  expect(f.prompts.at(-1)).toContain('isolated worker for a scheduled Dovo Bot job')
+  expect(s.store.task(created.id).messages.some((m) => m.role === 'user')).toBe(false)
+  expect(s.store.task(created.id).messages.at(-1)?.text).toContain('Status: completed')
   expect(
-    s.store.task(created.id).messages.filter((item) => item.text === 'Run the daily release check'),
+    worker.messages.filter((item) => item.text === 'Run the daily release check'),
   ).toHaveLength(1)
 })
 
@@ -358,7 +360,7 @@ it('fails a routine for a paused Bot without queueing work, and rejects missing 
   expect(() => s.jobs.start('routine')).toThrow(/Choose an available Bot/)
 })
 
-it('sends a routine again on Retry after its Bot turn failed', async () => {
+it('retries the same isolated worker after its turn failed', async () => {
   const f = await setup()
   const created = decode(botResultSchema, await (await f.create()).response.json())
   const s = f.runtime.services
@@ -368,11 +370,13 @@ it('sends a routine again on Retry after its Bot turn failed', async () => {
   })
   const id = s.jobs.start('routine')
   await waitForRuntime(() => expect(s.jobs.detail(id).status).toBe('failed'))
+  const workerId = s.jobs.detail(id).steps?.find((step) => step.nodeId === 'task')?.taskId
+  expect(workerId).toBeTruthy()
   s.jobs.retry(id)
   await waitForRuntime(() => expect(s.jobs.detail(id).status).toBe('completed'))
-  expect(
-    s.store.task(created.id).messages.filter((item) => item.text === 'Run the daily release check'),
-  ).toHaveLength(2)
+  expect(s.jobs.detail(id).steps?.find((step) => step.nodeId === 'task')?.taskId).toBe(workerId)
+  expect(s.store.task(workerId!).turns).toHaveLength(2)
+  expect(s.store.task(created.id).messages.some((m) => m.role === 'user')).toBe(false)
   expect(f.runtime.run).toHaveBeenCalledTimes(2)
 })
 

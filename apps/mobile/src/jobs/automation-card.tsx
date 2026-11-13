@@ -94,6 +94,12 @@ export function AutomationCard({
           onPress={onEdit}
         />
       </View>
+      {!flow.enabled && (
+        <Text>
+          Test run performs real work. Triggers stay disabled and the next scheduled time stays
+          unchanged.
+        </Text>
+      )}
       {latest ? <RunProgress key={latest.id} run={latest} /> : null}
       <View
         style={[
@@ -106,7 +112,7 @@ export function AutomationCard({
         {(!active || !!requestId) && (
           <Action
             secondary={recoverable}
-            label={requestId ? 'Retry start' : 'Run automation'}
+            label={requestId ? 'Retry start' : !flow.enabled ? 'Test run' : 'Run automation'}
             disabled={!focused || !connected || !activeId || busy || issues.length > 0}
             onPress={() =>
               act(() =>

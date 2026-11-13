@@ -145,3 +145,30 @@ it('counts offline workers separately and excludes paused, stopped and nondelega
   }
   expect(botWorkSummary(owner, [owner], [], [])).toMatchObject({ workers: 1, offlineWorkers: 1 })
 })
+
+it('includes isolated Bot workers and retained run links without counting completed workers as active', async () => {
+  const { botWorkInbox } = await import('./bot-work.js')
+  const worker = {
+    ...task,
+    id: 'routine-worker',
+    title: 'Daily worker',
+    subagents: [],
+    botJob: { botId: task.id, runId: 'retained-run' },
+    status: 'running' as const,
+  }
+  const finished = { ...worker, id: 'finished-worker', status: 'review' as const }
+  const unrelated = {
+    ...worker,
+    id: 'foreign',
+    botJob: { botId: 'other-bot', runId: 'foreign-run' },
+  }
+  const runs = [run('retained-run', 'waiting', '2026-11-13')]
+  expect(
+    botWorkSummary({ ...task, subagents: [] }, [task, worker, finished, unrelated], [], runs)
+      .workers,
+  ).toBe(1)
+  const inbox = botWorkInbox(task, [task, worker, finished, unrelated], [], runs, [worker.id])
+  expect(inbox.map((i) => i.taskId).filter(Boolean)).toEqual(['routine-worker', 'finished-worker'])
+  expect(inbox.find((i) => i.runId === 'retained-run')?.status).toBe('Needs review')
+  expect(inbox.find((i) => i.taskId === worker.id)?.status).toBe('Needs input')
+})

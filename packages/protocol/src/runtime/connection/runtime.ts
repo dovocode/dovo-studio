@@ -160,6 +160,8 @@ export const jobRunStepSchema = mutableStruct({
   error: Schema.optional(Schema.String),
 })
 export const jobRunSchema = mutableStruct({
+  outcome: Schema.optional(Schema.Literals(['unchanged'])),
+  reportDeferred: Schema.optional(Schema.Boolean),
   id: Schema.String,
   automationId: Schema.String,
   status: Schema.Literals(['running', 'waiting', 'completed', 'failed', 'cancelled']),
@@ -275,6 +277,7 @@ export const snapshotSchema = mutableStruct({
   botResourcesSupported: Schema.optional(Schema.Literal(true)),
   botAvatarsSupported: Schema.optional(Schema.Literal(true)),
   botAvatarHarnessSelectionSupported: Schema.optional(Schema.Literal(true)),
+  botMemoryReviewSupported: Schema.optional(Schema.Literal(true)),
   botContextResetSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.threadActions`, the `thread_prepare` agent tool and `/api/thread-actions/*`. */
   threadActionsSupported: Schema.optional(Schema.Literal(true)),

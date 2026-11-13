@@ -15,9 +15,9 @@ require no project setup. Creation stops if the scratch folder is unavailable.
 A paired runtime with `botsSupported: true` is required. Existing HTTP LAN and VPN runtime addresses
 remain supported. No account or external login is required.
 
-Each Bot has one permanent thread. The Bots list uses the normal thread row. The unified workspace
-includes that same thread once, with a Bot icon. Delegated work remains below its parent. The normal
-Threads list excludes Bots.
+Each Bot has one permanent thread. Threads and Unified show Bots above the thread list by default.
+Appearance settings can also enable a separate Bot overview. Delegated work stays linked to its
+parent.
 
 Open **Settings** beside the conversation. The sidebar leaves the composer available. Close it to
 give the chat more space. The harness, model and access controls edit the real thread settings. They
@@ -33,9 +33,9 @@ computer can read saved files. Do not save secrets. Memory edits include the not
 concurrent edits.
 
 Use **Manage routines** to open Automations. Select a task step and choose the Bot in **Thread
-target**. Its instructions go to the existing Bot thread. The Bot's current harness, project and
-permissions apply. A routine that targets a paused Bot fails; resume the Bot before retrying that
-run.
+target**. Its instructions run in an isolated worker. The Bot's saved harness, model, resources and
+permissions apply. The conversation stays available. A routine that targets a paused Bot fails;
+resume the Bot before retrying that run.
 
 Open **MCP servers** or **Skills** in the Bot tools sidebar. Use MCP Registry or skills.sh to import
 resources for this Bot. The runtime must advertise `botResourcesSupported`. Add, edit or remove this
@@ -96,6 +96,9 @@ Bot metadata; the client never writes it through a workspace patch.
 Offline computers retain cached Bot rows. Editing requires an online computer. Older runtimes show
 an update message and disable Bot mutations. If creation succeeds before the thread arrives, the
 view waits for its runtime snapshot.
+
+See [Bot learning and routines](bot-learning-and-routines.md) for memory review, the work inbox,
+source monitoring, limits, quiet hours, test runs, and reviewed skill proposals.
 
 ## Verification
 

@@ -39,7 +39,11 @@ export function JobControls({
           onClick={() => void actions.start(flow.id, onRun)}
         >
           {pending ? <RotateCw /> : <Play />}
-          {pending ? 'Retry start' : 'Run automation'}
+          {pending
+            ? 'Retry start'
+            : configuringTriggers && !flow.enabled
+              ? 'Test run'
+              : 'Run automation'}
         </Button>
         {configuringTriggers && (
           <Button
@@ -77,6 +81,12 @@ export function JobControls({
             </Button>
           )}
       </div>
+      {configuringTriggers && !flow.enabled && (
+        <p className="text-xs text-muted-foreground">
+          Test run performs real work with the saved tools and access. It keeps triggers disabled
+          and does not move the next scheduled run.
+        </p>
+      )}
       {validation.length > 0 && (
         <details className="text-xs text-muted-foreground">
           <summary className="cursor-pointer">

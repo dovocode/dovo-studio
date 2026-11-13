@@ -205,3 +205,47 @@ it('hands a Bot to another harness and model while retaining its identity, draft
   expect(f.inputs.at(-1)?.prompt).not.toContain('Excluded later context')
   expect(f.runtime.services.store.task(created.id).bot).toEqual(before.bot)
 })
+
+it('compacts a full Bot session before delivering the next human message, without consuming it', async () => {
+  const f = await setupBotRuntime()
+  const { id } = decode(botResultSchema, await (await f.create()).response.json())
+  const s = f.runtime.services
+  const send = async (text: string) => {
+    expect(
+      (await f.request('/api/tasks/message', { id, messageId: randomUUID(), text })).status,
+    ).toBe(200)
+    await waitForRuntime(() => expect(s.store.taskSummary(id).status).toBe('review'))
+  }
+  await send('First message')
+  s.store.updateTask(id, (t) => ({
+    ...t,
+    contextUsage: { used: 90, limit: 100, updatedAt: new Date().toISOString() },
+  }))
+  const calls: string[] = []
+  let compactInput: import('../../agents/execution/types').AgentRun | undefined
+  let approval: string | undefined
+  f.runtime.run.mockImplementation(async (input) => {
+    calls.push(input.prompt)
+    if (input.compact) {
+      compactInput = input
+      approval = await input.approve('Permission', 'Details')
+      input.onEvent?.('item/completed', { item: { type: 'contextCompaction' } })
+    } else {
+      input.onPromptAccepted?.()
+      input.onText('After compaction')
+    }
+  })
+  await send('Keep this human message')
+  expect(compactInput).toBeDefined()
+  expect(compactInput?.attachments).toBeUndefined()
+  expect(compactInput?.nativeAgentInteractions).toBeUndefined()
+  expect(approval).toBe('deny')
+  expect(calls).toHaveLength(2)
+  expect(calls[0]).toBe('/compact')
+  expect(calls[1]).toContain('Keep this human message')
+  const task = s.store.task(id)
+  expect(task.compactions?.at(-1)?.trigger).toBe('auto')
+  expect(task.messages.filter((m) => m.text === 'Keep this human message')).toHaveLength(1)
+  expect(task.messages.some((m) => m.text === '/compact')).toBe(false)
+  expect(task.bot?.compaction?.attempts).toBe(1)
+})

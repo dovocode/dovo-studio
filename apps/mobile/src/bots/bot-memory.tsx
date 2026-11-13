@@ -1,3 +1,5 @@
+import { requestMessageReveal } from '../tasks/conversation/message-reveal'
+import { BotMemoryLearning } from './bot-memory-learning'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -72,6 +74,7 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
           <Action label="Retry memory" onPress={() => setReload((value) => value + 1)} />
         </>
       )}
+      <BotMemoryLearning taskId={taskId} onChanged={() => setReload((value) => value + 1)} />
       <Action
         label="Add memory note"
         disabled={!connected || busy}
@@ -82,6 +85,27 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
         <View key={entry.key} style={{ gap: 6, paddingVertical: 8 }}>
           <Text style={styles.title}>{entry.key}</Text>
           <Text>{entry.content}</Text>
+          {entry.evidence && (
+            <View style={{ gap: 4 }}>
+              <Text style={styles.muted}>Learned from your messages</Text>
+              {entry.evidence.sources.map((source) => (
+                <View key={source.messageId}>
+                  <Text>{source.quote}</Text>
+                  <Action
+                    label="View source message"
+                    secondary
+                    disabled={!profile?.connection}
+                    onPress={() => {
+                      if (profile?.connection) {
+                        requestMessageReveal(profile.connection, taskId, source.messageId)
+                        onClose()
+                      }
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
           <Action
             label={`Edit ${entry.key}`}
             secondary

@@ -23,11 +23,48 @@ const key = maxValue(minValue(Schema.String, 1), 120).pipe(
   Schema.check(Schema.isPattern(/\S/)),
 )
 const revision = uuidSchema
+export const memoryEvidenceSchema = mutableStruct({
+  learnedAt: Schema.String,
+  sources: maxValue(
+    mutableArray(
+      mutableStruct({
+        messageId: maxValue(minValue(Schema.String, 1), 200),
+        quote: maxValue(minValue(Schema.String, 1), 500),
+      }),
+    ),
+    5,
+  ),
+})
+export const botMemoryReviewSchema = mutableStruct({
+  enabled: Schema.Boolean,
+  revision: uuidSchema,
+  cursor: Schema.optional(Schema.String),
+  lastReviewedAt: Schema.optional(Schema.String),
+  retryAt: Schema.optional(Schema.String),
+  error: Schema.optional(maxValue(Schema.String, 500)),
+})
+export const botMemoryStatusSchema = mutableStruct({
+  ...botMemoryReviewSchema.fields,
+  running: Schema.Boolean,
+})
+export const botMemoryRequestSchema = mutableStruct({ botId: uuidSchema })
+export const botMemoryConfigureSchema = mutableStruct({
+  ...botMemoryRequestSchema.fields,
+  expectedRevision: uuidSchema,
+  enabled: Schema.Boolean,
+})
+export const botMemoryClearSchema = mutableStruct({
+  ...botMemoryRequestSchema.fields,
+  expectedRevision: uuidSchema,
+})
+export type BotMemoryReviewState = typeof botMemoryReviewSchema.Type
+export type MemoryEvidence = typeof memoryEvidenceSchema.Type
 export const memoryEntrySchema = mutableStruct({
   ...memoryScopeRequestSchema.fields,
   key,
   content: maxValue(minValue(Schema.String, 1), 16000).pipe(Schema.check(Schema.isPattern(/\S/))),
   revision,
+  evidence: Schema.optional(memoryEvidenceSchema),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 })

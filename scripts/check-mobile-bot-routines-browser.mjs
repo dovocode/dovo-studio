@@ -70,7 +70,7 @@ try {
   assert.equal(await page.getByLabel('Project', { exact: true }).count(), 0)
   assert.equal(await page.getByLabel('Harness', { exact: true }).count(), 0)
   assert.equal(await page.getByLabel('Permissions', { exact: true }).count(), 0)
-  await page.getByText(/This step uses the Bot’s persistent chat/).waitFor()
+  await page.getByText(/This step uses an isolated worker/).waitFor()
   await page.getByLabel('Instructions', { exact: true }).fill('Use the release checklist')
   assert.equal(await page.evaluate(() => window.data.botId), 'release-bot')
   assert.equal(await page.evaluate(() => window.data.repositoryId), 'project')

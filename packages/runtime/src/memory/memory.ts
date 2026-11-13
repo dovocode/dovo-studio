@@ -4,6 +4,8 @@ import type Database from 'better-sqlite3'
 import {
   decode,
   memoryEntrySchema,
+  memoryEvidenceSchema,
+  type MemoryEvidence,
   memoryPageSize,
   mutableStruct,
   resolveTaskAgent,
@@ -40,7 +42,9 @@ export class Memory {
       scope TEXT NOT NULL, repository_id TEXT NOT NULL, key TEXT NOT NULL,
       content TEXT NOT NULL, revision TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       PRIMARY KEY(scope, repository_id, key)
-    )`)
+    );
+    CREATE TABLE IF NOT EXISTS bot_memory_evidence (bot_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(bot_id,key));
+    CREATE TABLE IF NOT EXISTS bot_memory_forgotten (bot_id TEXT NOT NULL, key TEXT NOT NULL, PRIMARY KEY(bot_id,key));`)
   }
   settings(): MemorySettings {
     return this.preferences.get().memory
@@ -112,8 +116,19 @@ export class Memory {
   }
   private decodeRow(raw: unknown) {
     const { repositoryId, ...row } = decode(rowSchema, raw)
+    const evidence =
+      row.scope === 'bot'
+        ? this.db
+            .prepare('SELECT value FROM bot_memory_evidence WHERE bot_id=? AND key=?')
+            .pluck()
+            .get(repositoryId, row.key)
+        : undefined
     return decode(memoryEntrySchema, {
       ...row,
+      evidence:
+        typeof evidence === 'string'
+          ? decode(memoryEvidenceSchema, JSON.parse(evidence))
+          : undefined,
       ...(row.scope === 'bot'
         ? { botId: repositoryId }
         : { repositoryId: repositoryId || undefined }),
@@ -163,6 +178,7 @@ export class Memory {
         key,
         repositoryId: input.scope === 'project' ? repositoryId : undefined,
         botId: input.scope === 'bot' ? repositoryId : undefined,
+        evidence: undefined,
         revision: randomUUID(),
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
@@ -179,17 +195,58 @@ export class Memory {
           entry.createdAt,
           entry.updatedAt,
         )
+      if (input.scope === 'bot') {
+        this.db
+          .prepare('DELETE FROM bot_memory_evidence WHERE bot_id=? AND key=?')
+          .run(repositoryId, key)
+      }
       return entry
     })()
   }
   remove(input: MemoryDelete) {
     const repositoryId = this.repository(input)
-    const result = this.db
-      .prepare('DELETE FROM memories WHERE scope=? AND repository_id=? AND key=? AND revision=?')
-      .run(input.scope, repositoryId, input.key.trim(), input.expectedRevision)
-    if (!result.changes)
-      throw new HttpError(409, 'Memory changed or was removed. Refresh before deleting it.')
-    return { ok: true }
+    return this.db.transaction(() => {
+      const result = this.db
+        .prepare('DELETE FROM memories WHERE scope=? AND repository_id=? AND key=? AND revision=?')
+        .run(input.scope, repositoryId, input.key.trim(), input.expectedRevision)
+      if (!result.changes)
+        throw new HttpError(409, 'Memory changed or was removed. Refresh before deleting it.')
+      if (input.scope === 'bot') {
+        this.db
+          .prepare('DELETE FROM bot_memory_evidence WHERE bot_id=? AND key=?')
+          .run(repositoryId, input.key.trim())
+        this.db
+          .prepare('INSERT OR IGNORE INTO bot_memory_forgotten VALUES (?,?)')
+          .run(repositoryId, input.key.trim())
+      }
+      return { ok: true }
+    })()
+  }
+  /** Complete bounded Bot snapshot for atomic reviews; ordinary lists remain paginated. */
+  botNotes(botId: string) {
+    return this.db
+      .prepare(`SELECT ${columns} FROM memories WHERE scope='bot' AND repository_id=? ORDER BY key`)
+      .all(botId)
+      .map((row) => this.decodeRow(row))
+  }
+  forgotten(botId: string, key: string) {
+    return !!this.db
+      .prepare('SELECT 1 FROM bot_memory_forgotten WHERE bot_id=? AND key=?')
+      .get(botId, key)
+  }
+  saveEvidence(botId: string, key: string, evidence: MemoryEvidence) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO bot_memory_evidence VALUES (?,?,?)')
+      .run(botId, key, JSON.stringify(decode(memoryEvidenceSchema, evidence)))
+  }
+  clearBot(botId: string) {
+    this.repository({ scope: 'bot', botId }, true)
+    for (const note of this.botNotes(botId))
+      this.db
+        .prepare('INSERT OR IGNORE INTO bot_memory_forgotten VALUES (?,?)')
+        .run(botId, note.key)
+    this.db.prepare("DELETE FROM memories WHERE scope='bot' AND repository_id=?").run(botId)
+    this.db.prepare('DELETE FROM bot_memory_evidence WHERE bot_id=?').run(botId)
   }
   private projectForTask(taskId: string) {
     let task = this.store.taskSummary(taskId)
@@ -206,7 +263,13 @@ export class Memory {
   }
   /** Deleting a Bot removes its private notes with it. */
   removeBot(botId: string) {
+    this.db
+      .prepare('DELETE FROM documents WHERE id >= ? AND id < ?')
+      .run('bot-skill-proposal:' + botId + ':', 'bot-skill-proposal:' + botId + ';')
     this.db.prepare("DELETE FROM memories WHERE scope='bot' AND repository_id=?").run(botId)
+    this.db.prepare('DELETE FROM bot_memory_evidence WHERE bot_id=?').run(botId)
+    this.db.prepare('DELETE FROM bot_memory_forgotten WHERE bot_id=?').run(botId)
+    this.db.prepare('DELETE FROM documents WHERE id=?').run(`bot-memory-review:${botId}`)
   }
   availableScopes(taskId: string): MemoryScope[] {
     const settings = this.settings()

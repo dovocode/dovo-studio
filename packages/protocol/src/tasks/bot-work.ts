@@ -72,6 +72,7 @@ export function botWorkSummary(
     failed: routines.filter((routine) => routine.runs[0]?.status === 'failed').length,
     workers:
       taskSubagents(task, tasks, true).length +
+      tasks.filter((t) => t.botJob?.botId === task.id && t.status === 'running').length +
       remote.filter((watch) => !watch.offline && !watch.paused).length,
     offlineWorkers: remote.filter((watch) => watch.offline).length,
   }
@@ -93,4 +94,57 @@ export function botRoutineContext(taskId: string, automations: readonly Automati
       })),
     })
   )
+}
+
+/** Saved worker identity retains run links even when its automation was removed. */
+export function botWorkInbox(
+  task: TaskMetadata,
+  tasks: readonly TaskMetadata[],
+  automations: readonly Automation[],
+  runs: readonly JobRun[],
+  pendingTaskIds: readonly string[] = [],
+) {
+  const children = taskSubagents(task, tasks).flatMap((child) =>
+    child.source === 'dovo' ? [child.taskId ?? child.id] : [],
+  )
+  const workers = tasks.filter((t) => t.botJob?.botId === task.id || children.includes(t.id))
+  const ids = new Set(workers.flatMap((t) => (t.botJob ? [t.botJob.runId] : [])))
+  const flows = new Set(botRoutines(task.id, automations, []).map((r) => r.flow.id))
+  const items = [
+    ...runs
+      .filter((r) => ids.has(r.id) || flows.has(r.automationId))
+      .map((r) => ({
+        key: 'run:' + r.id,
+        title: automations.find((f) => f.id === r.automationId)?.name ?? 'Routine run',
+        status: r.outcome === 'unchanged' ? 'No change' : botRunStatusLabels[r.status],
+        attention: r.status === 'failed' || r.status === 'waiting',
+        at: r.updatedAt ?? r.createdAt,
+        runId: r.id,
+        automationId: r.automationId,
+        taskId: undefined as string | undefined,
+      })),
+    ...workers.map((t) => ({
+      key: 'worker:' + t.id,
+      title: t.title,
+      status: pendingTaskIds.includes(t.id)
+        ? 'Needs input'
+        : t.status === 'running'
+          ? 'Working'
+          : t.status === 'review' || t.status === 'done'
+            ? 'Completed'
+            : t.status === 'cancelled'
+              ? 'Cancelled'
+              : t.error
+                ? 'Failed'
+                : 'Queued',
+      attention: !!(pendingTaskIds.includes(t.id) || t.error),
+      at: t.updatedAt ?? t.createdAt,
+      taskId: t.id,
+      runId: undefined as string | undefined,
+      automationId: undefined as string | undefined,
+    })),
+  ]
+  return items
+    .sort((a, b) => Number(b.attention) - Number(a.attention) || b.at.localeCompare(a.at))
+    .slice(0, 30)
 }

@@ -3,6 +3,10 @@ import { automationSchema, jobRunSchema, type JobRunStep, type TaskSummary } fro
 import { Schema } from 'effect'
 export const storedRunSchema = mutableStruct({
   ...jobRunSchema.fields,
+  sourceHash: Schema.optional(Schema.String),
+  sourceUrl: Schema.optional(Schema.String),
+  sourceText: Schema.optional(Schema.String),
+  sourceChecked: Schema.optional(Schema.Boolean),
   ...{
     flow: automationSchema,
     triggerPayload: Schema.optional(Schema.Unknown),
@@ -74,7 +78,8 @@ export function reconcileCompletedTasks(run: StoredRun, tasks: TaskSummary[]): S
   const steps = runSteps(run).map((step) => {
     if (completedNodes.includes(step.nodeId) || !step.taskId) return step
     // Bot steps share a long-lived thread; their own message decides completion.
-    if (run.flow.nodes.find((node) => node.id === step.nodeId)?.data.botId) return step
+    if (run.flow.nodes.find((node) => node.id === step.nodeId)?.data.botId === step.taskId)
+      return step
     const task = tasks.find((task) => task.id === step.taskId)
     if (!task || !['review', 'done'].includes(task.status) || taskFamilyWorking(tasks, task.id))
       return step

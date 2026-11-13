@@ -1,3 +1,5 @@
+import { taskHref } from '../shell/task-route'
+import { BotSkillProposals } from './bot-skill-proposals'
 import { BotAvatarEditor } from './bot-avatar-editor'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
@@ -9,6 +11,7 @@ import {
   botResultSchema,
   responses,
   botRoutines,
+  botWorkInbox,
   botRunStatusLabels,
   workspacePatchResultSchema,
   emptyBotResources,
@@ -292,6 +295,27 @@ function BotSettingsEditor({
           {resources && snapshot?.botResourcesSupported && (
             <BotResources
               kind={resources}
+              children={
+                resources === 'skill' ? (
+                  <BotSkillProposals
+                    task={task}
+                    onSaved={(result) => {
+                      if (
+                        draft.expectedRevision === bot.revision &&
+                        JSON.stringify(draft.resources ?? emptyBotResources()) ===
+                          JSON.stringify(bot.resources ?? emptyBotResources())
+                      ) {
+                        currentRevision.current = result.bot.revision
+                        baseline.current = result.bot
+                        retain({
+                          expectedRevision: result.bot.revision,
+                          resources: result.bot.resources ?? emptyBotResources(),
+                        })
+                      }
+                    }}
+                  />
+                ) : undefined
+              }
               value={draft.resources ?? emptyBotResources()}
               inherited={taskResources(
                 {
@@ -318,9 +342,42 @@ function BotSettingsEditor({
 function BotRoutines({ taskId }: { taskId: string }) {
   const { snapshot, profile } = useRuntime()
   const navigate = useSheetNavigation()
+  const task = snapshot?.workspace.tasks.find((t) => t.id === taskId)
+  const inbox = task
+    ? botWorkInbox(
+        task,
+        snapshot?.workspace.tasks ?? [],
+        snapshot?.workspace.automations ?? [],
+        snapshot?.runs ?? [],
+        [...(snapshot?.approvals ?? []), ...(snapshot?.questions ?? [])].map(
+          (input) => input.taskId,
+        ),
+      )
+    : []
   const routines = botRoutines(taskId, snapshot?.workspace.automations ?? [], snapshot?.runs ?? [])
   return (
     <View style={{ gap: 8 }}>
+      <Text>Work inbox</Text>
+      <Text>Workers run separately. Your conversation stays available.</Text>
+      {inbox.map((item) => (
+        <Action
+          key={item.key}
+          secondary
+          disabled={!profile}
+          label={item.title + ' · ' + item.status}
+          onPress={() => {
+            if (profile)
+              navigate(() =>
+                router.navigate(
+                  item.taskId
+                    ? taskHref(profile.id, item.taskId)
+                    : automationHref(profile.id, item.automationId!, item.runId),
+                ),
+              )
+          }}
+        />
+      ))}
+      {!inbox.length && <Text>No work yet.</Text>}
       <Text>
         Routines are optional.{' '}
         {routines.length

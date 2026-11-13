@@ -14,6 +14,7 @@ const allowed = new Set([
   '/api/agent/workflow',
   '/api/agent/secure-input',
   '/api/agent/skill',
+  '/api/agent/skill-proposal',
   '/api/agent/thread-prepare',
   '/api/subagents/spawn',
   '/api/subagents/list',

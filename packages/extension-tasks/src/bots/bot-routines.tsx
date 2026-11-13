@@ -1,5 +1,5 @@
 import { formatDateTime, useStudioHost, useWorkspace } from '@dovo/studio-core'
-import { botRoutines, botRunStatusLabels } from '@dovo/protocol'
+import { botRoutines, botRunStatusLabels, botWorkInbox } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 
 /** Run links use the normal automation history, with its owning computer intact. */
@@ -7,6 +7,18 @@ export function BotRoutines({ taskId }: { taskId: string }) {
   const { workspace, snapshot, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   const routines = botRoutines(taskId, workspace.automations, snapshot?.runs ?? [])
+  const task = workspace.tasks.find((t) => t.id === taskId)
+  const inbox = task
+    ? botWorkInbox(
+        task,
+        workspace.tasks,
+        workspace.automations,
+        snapshot?.runs ?? [],
+        [...(snapshot?.approvals ?? []), ...(snapshot?.questions ?? [])].map(
+          (input) => input.taskId,
+        ),
+      )
+    : []
   const open = (automationId: string, runId?: string) =>
     host.navigate({
       viewId: 'jobs',
@@ -17,6 +29,33 @@ export function BotRoutines({ taskId }: { taskId: string }) {
     })
   return (
     <section className="grid gap-3" aria-label="Routines">
+      <h2 className="font-semibold">Work inbox</h2>
+      <p className="text-xs text-muted-foreground">
+        Work runs in isolated workers. Your conversation stays available. Review requests and
+        failures appear first.
+      </p>
+      {inbox.length ? (
+        inbox.map((item) => (
+          <Button
+            key={item.key}
+            variant="outline"
+            size="sm"
+            className="h-auto justify-start whitespace-normal text-left"
+            onClick={() =>
+              item.taskId
+                ? host.navigate({
+                    viewId: 'tasks',
+                    entityId: item.taskId,
+                  })
+                : item.automationId && open(item.automationId, item.runId)
+            }
+          >
+            {item.title} · {item.status}
+          </Button>
+        ))
+      ) : (
+        <p className="text-xs text-muted-foreground">No work yet.</p>
+      )}
       <h2 className="font-semibold">Routines</h2>
       {routines.map(({ flow: routine, runs, triggers, steps }) => {
         return (
@@ -72,8 +111,8 @@ export function BotRoutines({ taskId }: { taskId: string }) {
       })}
       {!routines.length && (
         <p className="text-xs text-muted-foreground">
-          No routines target this Bot. In Automations, target this Bot from a task step to send work
-          into this thread.
+          No routines target this Bot. In Automations, target this Bot from a task step to run
+          isolated work and report back.
         </p>
       )}
       <Button variant="outline" size="sm" onClick={() => host.navigate({ viewId: 'jobs' })}>

@@ -1,3 +1,4 @@
+import { routinePolicySchema, routineMonitorSchema } from '../automation/routine-policy.js'
 import { Schema } from 'effect'
 import {
   isoDateTime,
@@ -169,6 +170,8 @@ const provider = Schema.Literals([
 
 /** Saved workflow instructions and graph. Agent configuration stays in effective resources. */
 export const automationReviewWorkflowSchema = mutableStruct({
+  policy: Schema.optional(routinePolicySchema),
+  monitor: Schema.optional(routineMonitorSchema),
   id,
   name: Schema.String,
   enabled: Schema.optional(Schema.Boolean),

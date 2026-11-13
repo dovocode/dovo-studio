@@ -106,6 +106,11 @@ export function AutomationSnapshotView({ snapshot }: { snapshot: AutomationActio
   const labels = new Map(workflow.nodes.map((node) => [node.id, node.data.label || node.id]))
   return (
     <div className="grid gap-3" aria-label="Saved workflow">
+      {(workflow.policy || workflow.monitor) && (
+        <pre className="whitespace-pre-wrap text-xs">
+          {JSON.stringify({ limits: workflow.policy, monitor: workflow.monitor }, null, 2)}
+        </pre>
+      )}
       {workflow.nodes.map((node, index) => {
         const resource = snapshot.resources.find((item) => item.nodeId === node.id)
         return (

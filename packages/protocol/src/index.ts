@@ -399,3 +399,7 @@ export * from './conversation/workflow/workflows.js'
 export * from './tasks/workflow-tools.js'
 
 export * from './tasks/bot-layout.js'
+
+export * from './automation/routine-policy.js'
+
+export * from './tasks/bot-skills.js'

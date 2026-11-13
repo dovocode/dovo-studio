@@ -894,6 +894,29 @@ export default function TasksView({
   const [searching, setSearching] = useApplicationState<TaskSearchMode | null>(null)
   // After opening a search result, scroll its message into view once the thread renders.
   const [revealMessage, setRevealMessage] = useApplicationState('')
+  useEffect(() => {
+    const reveal = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return
+      const detail: unknown = event.detail
+      if (
+        !detail ||
+        typeof detail !== 'object' ||
+        !('scope' in detail) ||
+        !('taskId' in detail) ||
+        !('messageId' in detail)
+      )
+        return
+      if (
+        detail.scope !== botScope(snapshot?.runtimeId ?? activeRuntimeId, store.connection) ||
+        detail.taskId !== task?.id ||
+        typeof detail.messageId !== 'string'
+      )
+        return
+      setRevealMessage(detail.messageId)
+    }
+    window.addEventListener('dovo:bot-memory-source', reveal)
+    return () => window.removeEventListener('dovo:bot-memory-source', reveal)
+  }, [task?.id, snapshot?.runtimeId, activeRuntimeId, store.connection, setRevealMessage])
   const revealHandled = useCallback(() => setRevealMessage(''), [setRevealMessage])
   const allEntries = useMemo(() => collectTasks(sources), [sources])
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { BotSkillProposals } from './bot-skill-proposals'
 import { BotAvatarEditor } from './bot-avatar-editor'
 import { BotResourceEditor } from './bot-resource-editor'
 import { botScope } from './bot-scope'
@@ -385,6 +386,26 @@ export function BotSettings({
             />
           </div>
         ))}
+      {section === 'skill' && (
+        <BotSkillProposals
+          key={scope}
+          task={{ ...task, bot: hostBot }}
+          onSaved={(result) => {
+            setAck({ before: task.bot?.revision ?? hostBot.revision, bot: result.bot })
+            if (
+              draft &&
+              draft.revision === hostBot.revision &&
+              drafts.get(scope) === draft &&
+              result.bot.role === draft.originalRole &&
+              result.bot.responsibilities === draft.originalResponsibilities
+            ) {
+              const next = { ...draft, revision: result.bot.revision }
+              drafts.set(scope, next)
+              setDraft(next)
+            }
+          }}
+        />
+      )}
       {section === 'memory' && <BotMemory key={scope} taskId={task.id} />}
       {section === 'routines' && <BotRoutines taskId={task.id} />}
     </div>

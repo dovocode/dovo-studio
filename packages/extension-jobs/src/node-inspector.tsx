@@ -253,9 +253,9 @@ export function NodeInspector({
           )}
           {data.botId ? (
             <p className="text-muted-foreground">
-              Send work to this Bot’s persistent thread. The Bot’s current harness, project and tool
-              permissions apply. A paused Bot cannot run routines. Resume it before running this
-              routine.
+              Run work in an isolated worker and report back to this Bot. The Bot’s current harness,
+              model and tool permissions apply. A paused Bot cannot run routines. Resume it before
+              running this routine.
             </p>
           ) : (
             <>

@@ -8,6 +8,7 @@ import {
   decode,
   mutableArray,
   memoryScopeSchema,
+  botSkillProposalInputSchema,
   mutableStruct,
   previewDevicesSchema,
   previewResultSchema,
@@ -460,6 +461,19 @@ const tools: Array<
       required: ['id'],
     },
   })),
+  ...(memoryScopes.includes('bot')
+    ? [
+        {
+          name: 'propose_skill',
+          description:
+            'Propose a reusable Bot-only skill from a completed Bot or worker turn. Requires sourceTaskId and sourceTurnId. Preparation installs nothing. The human reviews the diff in Skills before applying. Use a stable key; never include secrets.',
+          inputSchema: (() => {
+            const document = Schema.toJsonSchemaDocument(botSkillProposalInputSchema)
+            return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+          })(),
+        },
+      ]
+    : []),
   ...(memoryScopes.length
     ? [
         ...(['list', 'read', ...(!readOnly ? ['write', 'delete'] : [])] as const).map((action) => ({
@@ -938,6 +952,16 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             taskId: task,
             parentRunId,
             command: input,
+          }),
+        )
+      case 'propose_skill':
+        if (!memoryScopes.includes('bot'))
+          throw new Error('Only Bot coordinators can propose skills')
+        return text(
+          await post('/api/agent/skill-proposal', {
+            ...decode(botSkillProposalInputSchema, input),
+            taskId: task,
+            parentRunId,
           }),
         )
       case 'memory_list':

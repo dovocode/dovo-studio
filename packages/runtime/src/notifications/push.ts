@@ -1,3 +1,4 @@
+import { routineQuietNow } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
 import { Effect, Schema } from 'effect'
@@ -277,7 +278,14 @@ export class PushNotifications {
           !current.cancelled &&
           (current.failed || (!task.delegation && !task.spawnParent))
         )
-          kinds.push({ kind: current.failed ? 'failed' : 'done' })
+          if (
+            current.failed ||
+            !routineQuietNow(
+              this.store.get().automations.find((flow) => flow.id === task.origin)?.policy
+                ?.quietHours,
+            )
+          )
+            kinds.push({ kind: current.failed ? 'failed' : 'done' })
         for (const { kind, input } of kinds)
           for (const registration of registrations) {
             const id = createHash('sha256')

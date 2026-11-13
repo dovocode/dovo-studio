@@ -1,3 +1,4 @@
+import { BotMemoryLearning } from './bot-memory-learning'
 import { botScope } from './bot-scope'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -102,6 +103,7 @@ export function BotMemory({ taskId }: { taskId: string }) {
         Dovo memory tools keep these notes separate from other threads and delegated agents. An
         agent with full file access on this computer can read saved files. Do not save secrets.
       </p>
+      <BotMemoryLearning key={scope} taskId={taskId} onChanged={() => void load()} />
       <div className="flex gap-2">
         <Button
           size="sm"
@@ -124,44 +126,73 @@ export function BotMemory({ taskId }: { taskId: string }) {
         <p className="text-xs text-muted-foreground">No saved notes yet.</p>
       )}
       {notes.map((note) => (
-        <div key={note.key} className="flex min-w-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="min-w-0 flex-1 justify-start truncate"
-            disabled={busy}
-            onClick={() => void choose(note)}
-          >
-            {note.key}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={disabled}
-            aria-label={`Delete memory ${note.key}`}
-            onClick={() =>
-              void run(async () => {
-                if (
-                  !(await confirm({
-                    title: 'Delete memory note?',
-                    description: `Delete “${note.key}” from this Bot’s memory.`,
-                    confirmLabel: 'Delete note',
-                    destructive: true,
-                  }))
-                )
-                  return
-                await request(
-                  '/api/memory/delete',
-                  { scope: 'bot', botId: taskId, key: note.key, expectedRevision: note.revision },
-                  responses.ok,
-                )
-                if (draft.key === note.key) clear()
-                await load()
-              })
-            }
-          >
-            Delete
-          </Button>
+        <div key={note.key} className="grid gap-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="min-w-0 flex-1 justify-start truncate"
+              disabled={busy}
+              onClick={() => void choose(note)}
+            >
+              {note.key}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled}
+              aria-label={`Delete memory ${note.key}`}
+              onClick={() =>
+                void run(async () => {
+                  if (
+                    !(await confirm({
+                      title: 'Delete memory note?',
+                      description: `Delete “${note.key}” from this Bot’s memory.`,
+                      confirmLabel: 'Delete note',
+                      destructive: true,
+                    }))
+                  )
+                    return
+                  await request(
+                    '/api/memory/delete',
+                    { scope: 'bot', botId: taskId, key: note.key, expectedRevision: note.revision },
+                    responses.ok,
+                  )
+                  if (draft.key === note.key) clear()
+                  await load()
+                })
+              }
+            >
+              Delete
+            </Button>
+          </div>
+          {note.evidence && (
+            <details className="text-xs text-muted-foreground">
+              <summary>Learned from your messages</summary>
+              {note.evidence.sources.map((source) => (
+                <blockquote key={source.messageId} className="my-2 border-l pl-2">
+                  <p>{source.quote}</p>
+                  <Button
+                    size="sm"
+                    variant="link"
+                    onClick={() =>
+                      window.dispatchEvent(
+                        new CustomEvent('dovo:bot-memory-source', {
+                          detail: {
+                            scope: botScope(snapshot?.runtimeId ?? activeRuntimeId, connection),
+                            taskId,
+                            messageId: source.messageId,
+                          },
+                        }),
+                      )
+                    }
+                  >
+                    View source message
+                  </Button>
+                </blockquote>
+              ))}
+            </details>
+          )}
         </div>
       ))}
       {notes.length < total && (

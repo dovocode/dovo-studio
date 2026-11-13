@@ -108,6 +108,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.acpController.abort(),
         () => services.secureInputs.close(),
         () => services.botAvatars.dispose(),
+        () => services.botMemoryReview.dispose(),
         closeTitles,
         () => services.dictation.dispose(),
         closeTasks,
@@ -186,6 +187,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                         () => services.secureInputs.close(),
                         () => services.acpInstallations.dispose(),
                         () => services.botAvatars.dispose(),
+                        () => services.botMemoryReview.dispose(),
                         closeTitles,
                         () => services.dictation.dispose(),
                         closeTasks,
@@ -270,6 +272,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         )
         services.jobs.startScheduler()
         services.tasks.startScheduler()
+        services.botMemoryReview.start()
       })
       for (const [name, start] of [
         ['Live activities', () => services.liveActivities.start()],

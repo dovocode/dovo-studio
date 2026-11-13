@@ -38,7 +38,7 @@ import { Cause, Effect, Exit, Schema } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
 import { contextUsage, turnTokenCounter } from '../tasks/context-usage.js'
 import { estimatedTurnCost } from '../tasks/estimated-cost.js'
-import { completedCompaction } from '../tasks/compaction.js'
+import { compactBotSession, completedCompaction } from '../tasks/compaction.js'
 import { updateSubagents } from './subagents.js'
 import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
 import type { AgentSteer, AgentRun, NativeAgentSession } from './types.js'
@@ -1184,7 +1184,61 @@ export class TaskTurnRunner {
           )
           yield* runtimeOperation(() =>
             runWithHooks(
-              recoveringAdapter,
+              {
+                run: async (input) => {
+                  if (task.bot && sessionId && !compact && !goal) {
+                    const current = this.store.taskSummary(id)
+                    const previous = current.bot?.compaction
+                    const attempts =
+                      previous?.sessionId === sessionId &&
+                      !(
+                        current.contextUsage?.used !== undefined &&
+                        current.contextUsage.limit &&
+                        current.contextUsage.used < current.contextUsage.limit * 0.7
+                      )
+                        ? previous.attempts
+                        : 0
+                    await compactBotSession(adapter, input, {
+                      ...current.contextUsage,
+                      attempts,
+                      nativeWork: nativeWorkAtDispatch || nativeWorkActive(),
+                      attempt: () =>
+                        this.store.updateTask(id, (t) => ({
+                          ...t,
+                          bot: t.bot && {
+                            ...t.bot,
+                            compaction: { sessionId, attempts: attempts + 1 },
+                          },
+                        })),
+                      completed: () => {
+                        this.store.updateTask(id, (t) => ({
+                          ...t,
+                          contextUsage: undefined,
+                          compactions: [
+                            ...(t.compactions ?? []),
+                            {
+                              at: new Date().toISOString(),
+                              turnId,
+                              messageId: assistantId,
+                              textOffset: 0,
+                              sessionId,
+                              provider: agent.provider,
+                              trigger: 'auto',
+                            },
+                          ],
+                        }))
+                        this.activity?.add(
+                          'agent',
+                          id,
+                          'Compacted Bot context before the next prompt',
+                          { turnId },
+                        )
+                      },
+                    })
+                  }
+                  return recoveringAdapter.run(input)
+                },
+              },
               {
                 taskId: id,
                 onOwnedProcess: this.protectRun?.(id, turnId, controller),
@@ -1544,6 +1598,9 @@ export class TaskTurnRunner {
                     this.store.updateTask(id, (task) => ({
                       ...task,
                       contextUsage: undefined,
+                      ...(compact && task.bot
+                        ? { bot: { ...task.bot, compaction: undefined } }
+                        : {}),
                       compactions: [
                         ...(task.compactions ?? []),
                         {

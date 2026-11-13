@@ -33,3 +33,5 @@ export {
 } from './tasks/thread-actions.js'
 
 export { workflowCommandSchema } from './tasks/workflow-tools.js'
+
+export { botSkillProposalInputSchema } from './tasks/bot-skills.js'

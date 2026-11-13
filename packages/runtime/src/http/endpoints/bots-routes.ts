@@ -1,3 +1,4 @@
+import { decideBotSkill } from '../../agent-tools/bot-skills.js'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { Effect } from 'effect'
@@ -102,6 +103,7 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
       const value = yield* serviceResult(
         body(request, path === '/api/bots/avatar/upload' ? 8 * 1024 * 1024 : 256 * 1024),
       )
+      if (path === '/api/bots/skill-proposal/decide') return decideBotSkill(s, value)
       if (path === '/api/bots/avatar/upload') {
         const input = decode(botAvatarUploadSchema, value)
         const task = s.store.taskSummary(input.id)

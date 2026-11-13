@@ -1,3 +1,4 @@
+import { RoutineOptions } from './routine-options'
 import { defaultGithubTrigger, githubEventChoices } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -129,6 +130,12 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               }))
             }
             placeholder="Morning repository review"
+          />
+          <RoutineOptions
+            key={draft.id}
+            flow={draft}
+            disabled={busy}
+            onSave={(options) => setDraft((current) => ({ ...current, ...options }))}
           />
           <Choice
             label="Trigger"

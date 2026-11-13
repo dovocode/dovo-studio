@@ -47,7 +47,7 @@ const definitions = [
     part: 'automations',
     schema: studioAutomationsCommandSchema,
     description:
-      'Manage Studio automations: list/read/create/update/validate, enable/disable, run/cancel/retry/wait. Create/update take the complete automation. Bot job: task node data.botId = existing Bot ID (studio_threads list/read); data.objective runs with Bot settings. Discover project/agent IDs with studio_discover. Run needs stable requestId; cancel/retry/wait use run ID; runs uses automation ID. Human review gates cannot be approved here. Inspect the schema for full options.',
+      'Manage Studio automations: list/read/create/update/validate, enable/disable, run/cancel/retry/wait. Create/update take the complete automation. Bot job: task node data.botId = existing Bot ID (studio_threads list/read); data.objective runs in an isolated worker with Bot settings and reports back. Optional automation.monitor.url skips unchanged automatic runs; automation.policy sets minutes/tokens/costUsd limits and quietHours. Manual run tests real work without enabling triggers. Discover project/agent IDs with studio_discover. Run needs stable requestId; cancel/retry/wait use run ID; runs uses automation ID. Human review gates cannot be approved here. Inspect the schema for full options.',
   },
   {
     part: 'browsers',

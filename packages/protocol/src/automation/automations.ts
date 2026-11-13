@@ -1,3 +1,4 @@
+import { routineMonitorUrl } from './routine-policy.js'
 import { CronDate, CronExpressionParser } from 'cron-parser'
 import { resolveTaskAgent } from '../workspace.js'
 import { supportsAccess } from '../auth/access.js'
@@ -38,6 +39,20 @@ export function automationIssues(
   },
 ): string[] {
   const errors: string[] = []
+  if (flow.monitor) {
+    try {
+      routineMonitorUrl(flow.monitor.url)
+    } catch {
+      errors.push('Enter an HTTP or HTTPS monitoring URL without credentials or a fragment.')
+    }
+  }
+  if (flow.policy?.quietHours) {
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: flow.policy.quietHours.timezone })
+    } catch {
+      errors.push('Enter a valid quiet-hours time zone.')
+    }
+  }
   if (!flow.name.trim()) errors.push('Give the automation a name.')
   const ids = new Set(flow.nodes.map((node) => node.id))
   if (ids.size !== flow.nodes.length) errors.push('Use unique node ids.')
@@ -107,7 +122,7 @@ export function automationIssues(
         errors.push('Enter a GitHub actor login without @.')
     }
     if (data.kind === 'task' && data.botId !== undefined) {
-      // A Bot step runs in the Bot's own thread with the Bot's current settings.
+      // A Bot step runs in an isolated worker with the Bot's current settings.
       // Dormant normal-step settings (harness, agent, project, linked projects) are ignored.
       if (!data.objective.trim()) errors.push(`Add instructions to ${data.label}.`)
       const target = workspace.tasks?.find((task) => task.id === data.botId)

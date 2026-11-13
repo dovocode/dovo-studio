@@ -4,6 +4,9 @@ import {
   decode,
   strictStruct,
   memoryConfigureSchema,
+  botMemoryRequestSchema,
+  botMemoryConfigureSchema,
+  botMemoryClearSchema,
   memoryDeleteSchema,
   memoryListRequestSchema,
   memoryReadSchema,
@@ -21,6 +24,23 @@ export function memoryRoute(request: IncomingMessage, path: string, owner: boole
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const input = yield* serviceResult(body(request, 100_000))
+      if (path.startsWith('/api/memory/bot-review/')) {
+        if (path.endsWith('/save')) {
+          const value = decode(botMemoryConfigureSchema, input)
+          return s.botMemoryReview.configure(value.botId, value.expectedRevision, value.enabled)
+        }
+        if (path.endsWith('/clear')) {
+          const value = decode(botMemoryClearSchema, input)
+          return s.botMemoryReview.clear(value.botId, value.expectedRevision)
+        }
+        const value = decode(botMemoryRequestSchema, input)
+        if (path.endsWith('/read')) return s.botMemoryReview.status(value.botId)
+        if (path.endsWith('/run')) {
+          yield* serviceResult(s.botMemoryReview.review(value.botId))
+          return s.botMemoryReview.status(value.botId)
+        }
+        throw new HttpError(404, 'Unknown memory review action')
+      }
       if (path === '/api/memory/projects/read') return s.memory.projects()
       if (path === '/api/memory/settings/read') return s.memory.settings()
       if (path === '/api/memory/settings/save')

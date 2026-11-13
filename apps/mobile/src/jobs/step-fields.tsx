@@ -114,8 +114,8 @@ export function StepFields({
           )}
           {data.botId ? (
             <Text style={styles.muted}>
-              This step uses the Bot’s persistent chat, harness and permissions. A paused Bot must
-              resume before this step can run.
+              This step uses an isolated worker with the Bot’s harness and permissions. Its chat
+              stays available. A paused Bot must resume before this step can run.
             </Text>
           ) : (
             <>

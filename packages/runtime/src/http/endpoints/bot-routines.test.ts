@@ -1,9 +1,8 @@
-import { expect, it, vi } from 'vite-plus/test'
+import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
 import { botResultSchema, decode, type Automation, type AutomationData } from '@dovo/protocol'
 import { waitForRuntime } from '../../testing/integration'
 import { setupBotRuntime, type BotRunInput } from '../../testing/bots'
-import { Jobs } from '../../jobs/jobs'
 
 function routine(id: string, botId: string, objective: string): Automation {
   const base: AutomationData = {
@@ -91,259 +90,384 @@ const step = (f: Awaited<ReturnType<typeof bot>>, run: string) =>
     .jobs.detail(run)
     .steps?.find((item) => item.nodeId === 'task')
 
-it('finishes each routine on its own turn while people and other routines use the Bot', async () => {
+async function configure(
+  b: Awaited<ReturnType<typeof bot>>,
+  objective = 'ROUTINE-A check releases',
+) {
+  b.s().store.update((w) => ({ ...w, automations: [routine('routine-a', b.id, objective)] }))
+}
+const terminal = async (b: Awaited<ReturnType<typeof bot>>, id: string, status = 'completed') =>
+  waitForRuntime(() => expect(b.s().jobs.detail(id).status).toBe(status))
+
+it('runs isolated Bot workers alongside the person and reports once without consuming drafts', async () => {
   const b = await bot()
-  b.g.hold('USER-ONE')
-  b.g.hold('USER-TWO')
-  await b.send('USER-ONE first person message')
-  await waitForRuntime(() => expect(b.g.started.has('USER-ONE')).toBe(true))
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [
-      routine('routine-a', b.id, 'ROUTINE-A check releases'),
-      routine('routine-b', b.id, 'ROUTINE-B FAIL check builds'),
-    ],
-  }))
-  const a = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(step(b, a)?.messageId).toBeDefined())
-  const later = b.s().jobs.start('routine-b')
-  await waitForRuntime(() => expect(step(b, later)?.messageId).toBeDefined())
-  await b.send('USER-TWO second person message')
-  // Both routines wait in the queue behind the person's running turn.
-  expect(b.s().jobs.detail(a).status).toBe('running')
-  expect(b.s().store.taskSummary(b.id).queue).toHaveLength(3)
-
-  b.g.release('USER-ONE')
-  // Routine A succeeds on its own turn; routine B fails on its own turn. Neither waits for
-  // or adopts the person's later turn, which is still running.
-  await waitForRuntime(() => expect(b.s().jobs.detail(a).status).toBe('completed'))
-  await waitForRuntime(() => expect(b.s().jobs.detail(later).status).toBe('failed'))
-  expect(b.s().jobs.detail(later).error).toBe('Routine provider failed')
-  const history = b.s().store.task(b.id)
-  const own = history.messages.find((message) => message.id === step(b, a)?.messageId)
-  expect(own?.text).toBe('ROUTINE-A check releases')
-  expect(history.turns?.find((turn) => turn.id === own?.turnId)?.status).toBe('completed')
-
-  // A person continues after the failed routine turn; that success never changes routine B.
-  await b.send('Continue please')
-  await waitForRuntime(() => expect(b.g.started.has('USER-TWO')).toBe(true))
-  b.g.release('USER-TWO')
+  b.g.hold('PERSON')
+  b.g.hold('ROUTINE-A')
+  await b.send('PERSON working')
+  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
+  b.s().store.updateTask(b.id, (t) => ({ ...t, draft: 'Human draft' }))
+  await configure(b)
+  const request = randomUUID()
+  const run = b.s().jobs.startManual('routine-a', request)
+  expect(b.s().jobs.startManual('routine-a', request)).toBe(run)
+  await waitForRuntime(() => expect(b.g.started.has('ROUTINE-A')).toBe(true))
+  const worker = step(b, run)?.taskId
+  expect(worker).toBeTruthy()
+  expect(worker).not.toBe(b.id)
+  const input = b.f.inputs.find((i) => i.taskId === worker)!
+  expect(input.agent.instructions).toContain('isolated worker')
+  expect(input.sessionId).toBeUndefined()
+  expect(input.linkedDirectories ?? []).toHaveLength(0)
+  expect(b.s().store.taskSummary(worker!).bot).toBeUndefined()
+  expect(b.s().store.taskSummary(b.id).queue ?? []).toHaveLength(0)
+  b.g.release('ROUTINE-A')
+  await terminal(b, run)
+  const reports = b
+    .s()
+    .store.task(b.id)
+    .messages.filter((m) => m.source?.kind === 'automation')
+  expect(reports).toHaveLength(1)
+  expect(reports[0].text).toContain('Status: completed')
+  expect(reports[0].text).toContain(worker)
+  expect(b.s().store.taskSummary(b.id)).toMatchObject({ status: 'running', draft: 'Human draft' })
+  b.g.release('PERSON')
   await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).status).toBe('review'))
-  expect(b.s().jobs.detail(later).status).toBe('failed')
-  // Retry sends routine B again under a new message id, once.
-  b.s().jobs.retry(later)
-  await waitForRuntime(() => expect(b.s().jobs.detail(later).status).toBe('failed'))
+})
+
+it('Stop cancels only its worker, leaving the person and queued input intact', async () => {
+  const b = await bot()
+  b.g.hold('PERSON')
+  b.g.hold('ROUTINE-A')
+  await b.send('PERSON working')
+  await configure(b)
+  const run = b.s().jobs.start('routine-a')
+  await waitForRuntime(() => expect(b.g.started.has('ROUTINE-A')).toBe(true))
+  await b.send('Person later')
+  await b.s().jobs.cancel(run)
+  await terminal(b, run, 'cancelled')
+  await waitForRuntime(() =>
+    expect(b.s().store.taskSummary(step(b, run)!.taskId!).status).toBe('cancelled'),
+  )
+  expect(b.s().store.taskSummary(b.id).status).toBe('running')
   expect(
     b
       .s()
-      .store.task(b.id)
-      .messages.filter((message) => message.text === 'ROUTINE-B FAIL check builds'),
-  ).toHaveLength(2)
+      .store.taskSummary(b.id)
+      .queue?.map((m) => m.text),
+  ).toEqual(['Person later'])
+  b.g.release('PERSON')
 })
 
-it('Stop withdraws only its own queued routine message and never stops a person’s turn', async () => {
+it('a paused Bot rejects new jobs and keeps an already running worker separate', async () => {
+  const b = await bot()
+  b.g.hold('ROUTINE-A')
+  await configure(b)
+  const run = b.s().jobs.start('routine-a')
+  await waitForRuntime(() => expect(b.g.started.has('ROUTINE-A')).toBe(true))
+  await b.f.request('/api/bots/lifecycle', { id: b.id, action: 'pause' })
+  expect(b.s().jobs.detail(run).status).toBe('running')
+  b.g.release('ROUTINE-A')
+  await terminal(b, run)
+  const next = b.s().jobs.start('routine-a')
+  await terminal(b, next, 'failed')
+  expect(b.s().jobs.detail(next).taskIds).toHaveLength(0)
+})
+
+it('failed workers can retry without invoking the Bot or duplicating reports', async () => {
+  const b = await bot()
+  await configure(b, 'ROUTINE-A FAIL')
+  const run = b.s().jobs.start('routine-a')
+  await terminal(b, run, 'failed')
+  const worker = step(b, run)?.taskId
+  await waitForRuntime(() => expect(() => b.s().jobs.retry(run)).not.toThrow())
+  await terminal(b, run, 'failed')
+  expect(step(b, run)?.taskId).toBe(worker)
+  expect(b.f.inputs.every((i) => i.taskId !== b.id)).toBe(true)
+  const reports = b
+    .s()
+    .store.task(b.id)
+    .messages.filter((m) => m.source?.kind === 'automation')
+  expect(reports).toHaveLength(2)
+  expect(new Set(reports.map((m) => m.id)).size).toBe(2)
+})
+
+it('restores worker ownership on restart and leaves the person to normal recovery', async () => {
   const b = await bot()
   b.g.hold('PERSON')
-  await b.send('PERSON working')
-  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A queued')],
-  }))
+  b.g.hold('ROUTINE-A')
+  await b.send('PERSON interrupted')
+  await configure(b)
   const run = b.s().jobs.start('routine-a')
+  await waitForRuntime(() => expect(b.g.started.has('ROUTINE-A')).toBe(true))
+  const worker = step(b, run)?.taskId
+  await b.f.restart()
+  b.f.runtime.run.mockImplementation((i) => gates().run(i))
+  expect(b.s().jobs.detail(run)).toMatchObject({ status: 'failed', interrupted: true })
+  expect(b.s().jobs.ownsTask(b.id)).toBe(false)
+  expect(b.s().jobs.ownsTask(worker!)).toBe(true)
+  expect(b.s().store.taskSummary(b.id).restartRecovery?.kind).toBe('turn')
+  b.s().jobs.retry(run)
+  await terminal(b, run)
+  expect(step(b, run)?.taskId).toBe(worker)
+})
+
+it('stops a running worker when Bot access narrows', async () => {
+  const b = await bot()
+  b.g.hold('ROUTINE-A')
+  await configure(b)
+  const run = b.s().jobs.start('routine-a')
+  await waitForRuntime(() => expect(b.g.started.has('ROUTINE-A')).toBe(true))
+  b.s().store.updateTask(b.id, (t) => ({
+    ...t,
+    harness: t.harness && { ...t.harness, permission: 'read-only' },
+  }))
+  await terminal(b, run, 'failed')
   await waitForRuntime(() =>
+    expect(b.s().store.taskSummary(step(b, run)!.taskId!).status).toBe('cancelled'),
+  )
+  expect(b.s().jobs.detail(run).error).toContain('access changed')
+})
+
+it('persists the next schedule across downtime, catches up once and skips unchanged sources', async () => {
+  const { createServer } = await import('node:http')
+  const b = await bot()
+  const server = createServer((_req, res) => res.end('Release 1'))
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('No source address')
+  try {
+    const flow = routine('routine-a', b.id, 'Read the monitored release')
+    flow.enabled = true
+    flow.monitor = { url: `http://127.0.0.1:${address.port}/release` }
+    flow.nodes[0].data = { ...flow.nodes[0].data, trigger: 'schedule', schedule: '* * * * *' }
+    b.s().store.update((w) => ({ ...w, automations: [flow] }))
+    const now = Date.now() + 60_000
+    b.s().jobs.tick(now)
+    const saved = b
+      .s()
+      .db.prepare('SELECT value FROM documents WHERE id=?')
+      .pluck()
+      .get('automation-next:routine-a')
+    expect(typeof saved).toBe('string')
+    await b.f.restart()
+    b.f.runtime.run.mockImplementation((i) => gates().run(i))
+    b.s().jobs.tick(now + 3600_000)
+    await waitForRuntime(() => expect(b.s().jobs.list()[0]?.status).toBe('completed'))
+    expect(b.s().jobs.list()).toHaveLength(1)
+    expect(b.f.inputs).toHaveLength(1)
+    b.s().jobs.tick(now + 3660_000)
+    await waitForRuntime(() => expect(b.s().jobs.list()[0]?.outcome).toBe('unchanged'))
+    expect(b.s().jobs.list()[0]?.status).toBe('completed')
+    expect(b.f.inputs).toHaveLength(1)
+    const cursor = b
+      .s()
+      .db.prepare('SELECT value FROM documents WHERE id=?')
+      .pluck()
+      .get('automation-next:routine-a')
+    const request = randomUUID()
+    const manual = b.s().jobs.startManual(flow.id, request)
+    expect(b.s().jobs.startManual(flow.id, request)).toBe(manual)
+    await terminal(b, manual)
+    expect(b.f.inputs).toHaveLength(2)
     expect(
       b
         .s()
-        .store.taskSummary(b.id)
-        .queue?.map((item) => item.id),
-    ).toEqual([step(b, run)?.messageId]),
-  )
-  await b.s().jobs.cancel(run)
-  expect(b.s().store.taskSummary(b.id).queue ?? []).toHaveLength(0)
-  // The person's turn is still running.
-  expect(b.s().store.taskSummary(b.id).status).toBe('running')
-  b.g.release('PERSON')
-  await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).status).toBe('review'))
-  expect(
-    b
-      .s()
-      .store.task(b.id)
-      .turns?.every((turn) => turn.status === 'completed'),
-  ).toBe(true)
+        .db.prepare('SELECT value FROM documents WHERE id=?')
+        .pluck()
+        .get('automation-next:routine-a'),
+    ).toBe(cursor)
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())))
+  }
 })
 
-it('Stop cancels the routine’s own running turn', async () => {
+it('stops a budget-limited worker and retains its partial transcript and the Bot chat', async () => {
   const b = await bot()
   b.g.hold('ROUTINE-A')
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A long')],
+  await configure(b)
+  b.s().store.update((w) => ({
+    ...w,
+    automations: w.automations.map((f) => ({ ...f, policy: { minutes: 1 } })),
   }))
   const run = b.s().jobs.start('routine-a')
   await waitForRuntime(() => expect(b.g.started.has('ROUTINE-A')).toBe(true))
-  await b.s().jobs.cancel(run)
-  await waitForRuntime(() => expect(b.s().store.task(b.id).turns?.at(-1)?.status).toBe('cancelled'))
-  expect(b.s().jobs.detail(run).status).toBe('cancelled')
-})
-
-it('pausing the Bot withdraws a held routine message and fails the step', async () => {
-  const b = await bot()
-  b.g.hold('PERSON')
-  await b.send('PERSON working')
-  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A held')],
+  const worker = step(b, run)!.taskId!
+  b.s().store.updateTaskHistory(worker, (t) => ({
+    ...t,
+    messages: [
+      ...t.messages,
+      {
+        id: randomUUID(),
+        role: 'assistant',
+        text: 'Partial work',
+        createdAt: new Date().toISOString(),
+      },
+    ],
   }))
-  const run = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).queue).toHaveLength(1))
-  await b.f.request('/api/bots/lifecycle', { id: b.id, action: 'pause' })
-  await waitForRuntime(() => expect(b.s().jobs.detail(run).status).toBe('failed'))
-  expect(b.s().store.taskSummary(b.id).queue ?? []).toHaveLength(0)
-  // The person's current turn may finish while paused.
-  b.g.release('PERSON')
-  await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).status).toBe('review'))
-})
-
-it('adopts an earlier attempt after a restart instead of sending the routine twice', async () => {
-  const b = await bot()
-  b.g.hold('PERSON')
-  await b.send('PERSON working')
-  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A after restart')],
-  }))
-  const run = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).queue).toHaveLength(1))
-  const first = step(b, run)?.messageId
-  // The runtime process ends with the routine message delivered but its turn not started:
-  // no shutdown cleanup runs, as after a crash or a lost acknowledgement.
-  vi.spyOn(
-    Jobs.prototype as unknown as { stopTask: () => Promise<void> },
-    'stopTask',
-  ).mockResolvedValue()
-  await b.f.restart()
-  vi.mocked(Jobs.prototype as unknown as { stopTask: () => Promise<void> }).stopTask.mockRestore()
-  const g = gates()
-  b.f.runtime.run.mockImplementation((input) => g.run(input))
-  expect(b.s().jobs.detail(run).status).toBe('failed')
+  b.s().jobs.enforceBudgets(Date.now() + 61_000)
+  await terminal(b, run, 'failed')
+  expect(b.s().jobs.detail(run).error).toContain('time budget')
+  await waitForRuntime(() => expect(b.s().store.taskSummary(worker).status).toBe('cancelled'))
   expect(
     b
       .s()
-      .store.taskSummary(b.id)
-      .queue?.map((item) => item.id),
-  ).toEqual([first])
-  // The person resumes the held queue; Retry adopts the same message.
-  await b.f.request('/api/tasks/queue', { id: b.id, action: 'resume' })
-  b.s().jobs.retry(run)
-  await waitForRuntime(() => expect(b.s().jobs.detail(run).status).toBe('completed'))
-  expect(step(b, run)?.messageId).toBe(first)
+      .store.task(worker)
+      .messages.some((m) => m.text === 'Partial work'),
+  ).toBe(true)
+  expect(b.s().store.taskSummary(b.id).status).toBe('draft')
+})
+
+it('defers successful Bot reports through restart during quiet hours and delivers once afterward', async () => {
+  const b = await bot()
+  await configure(b)
+  const now = Date.now(),
+    hour = new Date(now).getUTCHours()
+  const start = String(hour).padStart(2, '0') + ':00',
+    end = String((hour + 1) % 24).padStart(2, '0') + ':00'
+  b.s().store.update((w) => ({
+    ...w,
+    automations: w.automations.map((f) => ({
+      ...f,
+      policy: { quietHours: { start, end, timezone: 'UTC' } },
+    })),
+  }))
+  const run = b.s().jobs.start('routine-a')
+  await terminal(b, run)
+  await waitForRuntime(() => expect(b.s().jobs.detail(run).reportDeferred).toBe(true))
+  expect(b.s().store.task(b.id).messages).toHaveLength(0)
+  await b.f.restart()
+  b.s().jobs.tick(now + 2 * 3600_000)
+  b.s().jobs.tick(now + 2 * 3600_000)
+  expect(b.s().jobs.detail(run).reportDeferred).toBe(false)
   expect(
     b
       .s()
       .store.task(b.id)
-      .messages.filter((message) => message.text === 'ROUTINE-A after restart'),
+      .messages.filter((m) => m.source?.kind === 'automation'),
   ).toHaveLength(1)
 })
 
-it('withdraws its queued routine message on a clean shutdown; Retry sends it once', async () => {
+it('recovers a legacy routine already queued in the Bot without converting or duplicating it', async () => {
+  const { botStepMessageId } = await import('../../jobs/jobs')
   const b = await bot()
-  b.g.hold('PERSON')
-  await b.send('PERSON working')
-  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A clean shutdown')],
-  }))
-  const run = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).queue).toHaveLength(1))
-  await b.f.restart()
-  b.f.runtime.run.mockImplementation((input) => gates().run(input))
-  expect(b.s().jobs.detail(run)).toMatchObject({ status: 'failed', interrupted: true })
-  expect(b.s().store.taskSummary(b.id).queue ?? []).toHaveLength(0)
-  await b.f.request('/api/tasks/queue', { id: b.id, action: 'resume' })
-  b.s().jobs.retry(run)
-  await waitForRuntime(() => expect(b.s().jobs.detail(run).status).toBe('completed'))
-  expect(
-    b
-      .s()
-      .store.task(b.id)
-      .messages.filter((message) => message.text === 'ROUTINE-A clean shutdown'),
-  ).toHaveLength(1)
-})
-
-it('withdraws its message when a person paused the Bot queue, leaving other queued input', async () => {
-  const b = await bot()
-  b.g.hold('PERSON')
-  await b.send('PERSON working')
-  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A while paused')],
-  }))
-  const run = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).queue).toHaveLength(1))
-  const later = randomUUID()
-  await b.f.request('/api/tasks/message', { id: b.id, messageId: later, text: 'Person later' })
-  // The person pauses the queue (not the Bot), and the running turn ends.
-  await b.f.request('/api/tasks/queue', { id: b.id, action: 'pause' })
-  expect(b.s().store.taskSummary(b.id).queuePaused).toBe(true)
-  b.g.release('PERSON')
-  await waitForRuntime(() => expect(b.s().jobs.detail(run).status).toBe('failed'))
-  expect(
-    b
-      .s()
-      .store.taskSummary(b.id)
-      .queue?.map((item) => item.id),
-  ).toEqual([later])
-  // Resume alone runs only the person's message.
-  await b.f.request('/api/tasks/queue', { id: b.id, action: 'resume' })
-  await waitForRuntime(() => expect(b.s().store.taskSummary(b.id).status).toBe('review'))
-  const texts = () =>
-    b
-      .s()
-      .store.task(b.id)
-      .messages.map((message) => message.text)
-  expect(texts()).not.toContain('ROUTINE-A while paused')
-  // Retry sends the routine once.
-  b.s().jobs.retry(run)
-  await waitForRuntime(() => expect(b.s().jobs.detail(run).status).toBe('completed'))
-  expect(texts().filter((text) => text === 'ROUTINE-A while paused')).toHaveLength(1)
-})
-
-it('lets the next routine run start while unrelated Bot work continues', async () => {
-  const b = await bot()
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A daily')],
-  }))
-  const first = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(b.s().jobs.detail(first).status).toBe('completed'))
-  b.g.hold('PERSON')
-  await b.send('PERSON long task')
-  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
-  // The finished run no longer owns the Bot thread.
-  const second = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(step(b, second)?.messageId).toBeDefined())
-  expect(b.s().jobs.ownsTask(b.id)).toBe(false)
-  b.g.release('PERSON')
-  await waitForRuntime(() => expect(b.s().jobs.detail(second).status).toBe('completed'))
-})
-
-it('leaves an interrupted person turn to normal restart recovery', async () => {
-  const b = await bot()
-  b.s().store.update((workspace) => ({
-    ...workspace,
-    automations: [routine('routine-a', b.id, 'ROUTINE-A earlier')],
-  }))
-  const run = b.s().jobs.start('routine-a')
-  await waitForRuntime(() => expect(b.s().jobs.detail(run).status).toBe('completed'))
   b.g.hold('PERSON')
   await b.send('PERSON interrupted')
+  await configure(b, 'LEGACY routine')
   await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
+  const id = randomUUID(),
+    messageId = botStepMessageId(id, 'task', 1),
+    now = new Date().toISOString()
+  await b.f.request('/api/tasks/message', { id: b.id, messageId, text: 'LEGACY routine' })
+  const flow = b.s().store.get().automations[0]
+  b.s()
+    .db.prepare('INSERT INTO job_runs VALUES (?,?)')
+    .run(
+      id,
+      JSON.stringify({
+        id,
+        automationId: flow.id,
+        flow,
+        status: 'running',
+        taskIds: [b.id],
+        completedNodes: ['trigger'],
+        currentNodeId: 'task',
+        createdAt: now,
+        updatedAt: now,
+        attempt: 1,
+        steps: [
+          { nodeId: 'trigger', label: 'Trigger', kind: 'trigger', status: 'completed', attempt: 1 },
+          {
+            nodeId: 'task',
+            label: 'Routine',
+            kind: 'task',
+            status: 'running',
+            attempt: 1,
+            taskId: b.id,
+            messageId,
+          },
+        ],
+      }),
+    )
   await b.f.restart()
-  expect(b.s().store.taskSummary(b.id).restartRecovery?.kind).toBe('turn')
-  expect(b.s().jobs.ownsTask(b.id)).toBe(false)
+  b.f.runtime.run.mockImplementation((i) => gates().run(i))
+  expect(b.s().jobs.detail(id).status).toBe('failed')
+  await b.f.request('/api/tasks/queue', { id: b.id, action: 'resume' })
+  b.s().jobs.retry(id)
+  await terminal(b, id)
+  expect(step(b, id)?.taskId).toBe(b.id)
+  expect(
+    b
+      .s()
+      .store.task(b.id)
+      .messages.filter((m) => m.text === 'LEGACY routine'),
+  ).toHaveLength(1)
+  expect(b.s().jobs.detail(id).taskIds).toEqual([b.id])
 })
+
+it('keeps an unconsumed due time after a temporary acceptance failure', async () => {
+  const { vi } = await import('vite-plus/test')
+  const b = await bot()
+  await configure(b)
+  b.s().store.update((w) => ({
+    ...w,
+    automations: w.automations.map((flow) => ({
+      ...flow,
+      enabled: true,
+      nodes: flow.nodes.map((node) =>
+        node.data.kind === 'trigger'
+          ? { ...node, data: { ...node.data, trigger: 'schedule' as const, schedule: '* * * * *' } }
+          : node,
+      ),
+    })),
+  }))
+  const now = Date.now() + 60000
+  b.s().jobs.tick(now)
+  const cursor = b
+    .s()
+    .db.prepare('SELECT value FROM documents WHERE id=?')
+    .pluck()
+    .get('automation-next:routine-a')
+  vi.spyOn(b.s().jobs, 'start').mockImplementationOnce(() => {
+    throw new Error('Temporary storage failure')
+  })
+  b.s().jobs.tick(now + 60000)
+  expect(b.s().jobs.list()).toHaveLength(0)
+  expect(b.s().jobs.scheduleDiagnostics()[0]?.error).toContain('Temporary storage failure')
+  expect(
+    b
+      .s()
+      .db.prepare('SELECT value FROM documents WHERE id=?')
+      .pluck()
+      .get('automation-next:routine-a'),
+  ).toBe(cursor)
+  b.s().jobs.tick(now + 61000)
+  await waitForRuntime(() => expect(b.s().jobs.list()[0]?.status).toBe('completed'))
+  expect(b.s().jobs.list()).toHaveLength(1)
+  expect(b.s().jobs.scheduleDiagnostics()).toHaveLength(0)
+})
+
+it.each(['tokens', 'costUsd'] as const)(
+  'stops a worker at its reported %s budget',
+  async (kind) => {
+    const b = await bot()
+    b.g.hold('ROUTINE-A')
+    await configure(b)
+    b.s().store.update((w) => ({
+      ...w,
+      automations: w.automations.map((flow) => ({ ...flow, policy: { [kind]: 1 } })),
+    }))
+    const run = b.s().jobs.start('routine-a')
+    await waitForRuntime(() => expect(b.g.started.has('ROUTINE-A')).toBe(true))
+    const worker = step(b, run)!.taskId!
+    b.s().store.updateTaskHistory(worker, (t) => ({
+      ...t,
+      turns: t.turns?.map((turn) => ({ ...turn, tokens: 2, estimatedCostUsd: 2 })),
+    }))
+    b.s().jobs.enforceBudgets()
+    await terminal(b, run, 'failed')
+    expect(b.s().jobs.detail(run).error).toContain(
+      kind === 'tokens' ? 'token budget' : 'estimated cost budget',
+    )
+    await waitForRuntime(() => expect(b.s().store.taskSummary(worker).status).toBe('cancelled'))
+  },
+)
