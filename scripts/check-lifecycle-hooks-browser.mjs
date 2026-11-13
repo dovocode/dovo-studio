@@ -18,9 +18,8 @@ async function bundle(mobile) {
     '../ui/controls/switch': controls,
     '../runtime/preferences/setting-source': `export const SettingSource=()=>null;`,
     'react-native': controls,
-    './mcp-editor': `export const McpEditor=()=>null;`,
+    '@dovo/studio-ui/resource-editors': `export {resourceError} from '${root}/packages/studio-ui/src/resources/error.ts';export const McpEditor=()=>null;export const SkillEditor=()=>null;`,
     './catalog-picker': `export const CatalogPicker=()=>null;`,
-    './skill-editor': `export const SkillEditor=()=>null;`,
     '@dovo/studio-ui': `export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const FormField=({label,children})=><label>{label}{children}</label>;export const Select=({value,onValueChange,children})=><select aria-label="When" value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const SelectTrigger=()=>null;export const SelectValue=()=>null;export const SelectContent=({children})=><>{children}</>;export const SelectItem=({value,children})=><option value={value}>{children}</option>;export const Switch=({checked,onCheckedChange,...props})=><input type="checkbox" checked={checked} onChange={e=>onCheckedChange(e.target.checked)} {...props}/>;export const SettingSource=()=>null;export const SettingsScopePage=()=>null;`,
   }
   const source = mobile

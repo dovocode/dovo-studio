@@ -145,7 +145,7 @@ const data={kind:'trigger',label:'Reminder',trigger:'manual',schedule:'0 9 * * *
 const trigger={id:'trigger',type:'automation',position:{x:0,y:0},data};
 const task={...trigger,id:'task',data:{...data,kind:'task',harness:defaultTaskHarness('codex')}};
 const flow={id:'reminder',name:'Deployment reminder',enabled:false,nodes:[trigger,task],edges:[{id:'edge',source:'trigger',target:'task'}]};
-const workspace={agents:[],repositories:[{id:'repo',name:'App',path:'/app',branch:'main'}]};
+const workspace={agents:[],tasks:[],repositories:[{id:'repo',name:'App',path:'/app',branch:'main'}]};
 window.runtime={connected:true,snapshot:{workspace},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};
 function App(){const[node,setNode]=useState(trigger);return <><div data-testid="desktop-editor"><NodeInspector node={node} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -162,6 +162,11 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     },
   },
   [
+    {
+      path: '@dovo/studio-core',
+      importer: inspectorImporter,
+      contents: 'export const useWorkspace=()=>window.runtime;',
+    },
     {
       path: '@dovo/studio-ui',
       importer: inspectorImporter,
@@ -219,39 +224,43 @@ try {
   const page = await editorBrowser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.setContent('<div id="app"></div>')
-  await page.addScriptTag({ content: editorBundle.outputFiles[0].text })
-  const desktop = page.getByTestId('desktop-editor'),
-    mobile = page.getByTestId('mobile-editor')
-  await desktop.getByLabel('Trigger', { exact: true }).selectOption('once')
-  await desktop.getByLabel('Run at', { exact: true }).fill('2026-10-28T09:30')
-  assert.deepEqual(
-    await page.evaluate(() => ({
-      trigger: window.desktopData.trigger,
-      runAt: window.desktopData.runAt,
-      timezone: window.desktopData.timezone,
-    })),
-    { trigger: 'once', runAt: '2026-10-28T09:30', timezone: 'Europe/Amsterdam' },
-  )
-  await mobile.getByLabel('Trigger', { exact: true }).selectOption('once')
-  await mobile.getByLabel('Run at', { exact: true }).fill('2026-02-30 09:30')
-  await mobile.getByRole('button', { name: 'Save automation', exact: true }).click()
-  await mobile
-    .getByRole('alert')
-    .filter({ hasText: 'Enter a valid date, time and time zone.' })
-    .waitFor()
-  assert.equal(await page.evaluate(() => window.saved), undefined)
-  await mobile.getByLabel('Run at', { exact: true }).fill('2026-10-28 09:30')
-  await mobile.getByRole('button', { name: 'Save automation', exact: true }).click()
-  await page.waitForFunction(() => window.editorClosed)
-  const saved = await page.evaluate(() => window.saved)
-  assert.equal(saved.path, '/api/workspace')
-  assert.equal(saved.body.id, 'reminder')
-  assert.equal(saved.body.changes.nodes.before[0].data.trigger, 'manual')
-  assert.equal(saved.body.changes.nodes.after[0].data.trigger, 'once')
-  assert.equal(saved.body.changes.nodes.after[0].data.runAt, '2026-10-28T09:30')
-  assert.equal(saved.body.changes.nodes.after[0].data.timezone, 'Europe/Amsterdam')
-  assert.deepEqual(errors, [])
+  const pageError = new Promise((_, reject) => page.once('pageerror', reject))
+  const checkEditors = async () => {
+    await page.setContent('<div id="app"></div>')
+    await page.addScriptTag({ content: editorBundle.outputFiles[0].text })
+    const desktop = page.getByTestId('desktop-editor'),
+      mobile = page.getByTestId('mobile-editor')
+    await desktop.getByLabel('Trigger', { exact: true }).selectOption('once')
+    await desktop.getByLabel('Run at', { exact: true }).fill('2026-10-28T09:30')
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        trigger: window.desktopData.trigger,
+        runAt: window.desktopData.runAt,
+        timezone: window.desktopData.timezone,
+      })),
+      { trigger: 'once', runAt: '2026-10-28T09:30', timezone: 'Europe/Amsterdam' },
+    )
+    await mobile.getByLabel('Trigger', { exact: true }).selectOption('once')
+    await mobile.getByLabel('Run at', { exact: true }).fill('2026-02-30 09:30')
+    await mobile.getByRole('button', { name: 'Save automation', exact: true }).click()
+    await mobile
+      .getByRole('alert')
+      .filter({ hasText: 'Enter a valid date, time and time zone.' })
+      .waitFor()
+    assert.equal(await page.evaluate(() => window.saved), undefined)
+    await mobile.getByLabel('Run at', { exact: true }).fill('2026-10-28 09:30')
+    await mobile.getByRole('button', { name: 'Save automation', exact: true }).click()
+    await page.waitForFunction(() => window.editorClosed)
+    const saved = await page.evaluate(() => window.saved)
+    assert.equal(saved.path, '/api/workspace')
+    assert.equal(saved.body.id, 'reminder')
+    assert.equal(saved.body.changes.nodes.before[0].data.trigger, 'manual')
+    assert.equal(saved.body.changes.nodes.after[0].data.trigger, 'once')
+    assert.equal(saved.body.changes.nodes.after[0].data.runAt, '2026-10-28T09:30')
+    assert.equal(saved.body.changes.nodes.after[0].data.timezone, 'Europe/Amsterdam')
+    assert.deepEqual(errors, [])
+  }
+  await Promise.race([checkEditors(), pageError])
   console.log(
     'Desktop and mobile one-time editors preserve date/time zones, validate calendar dates and save the scheduled trigger.',
   )
