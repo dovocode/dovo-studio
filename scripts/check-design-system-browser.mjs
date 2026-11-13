@@ -570,7 +570,7 @@ try {
     const mentionField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await mentionField.fill('@src')
     await page
-      .getByRole('listbox', { name: 'Files, models and MCP servers', exact: true })
+      .getByRole('listbox', { name: 'Bots, files, models and MCP servers', exact: true })
       .waitFor()
     await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
     if (await mentionField.evaluate((element) => element instanceof HTMLTextAreaElement))
