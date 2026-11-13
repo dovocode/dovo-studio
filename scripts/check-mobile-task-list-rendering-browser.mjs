@@ -35,7 +35,7 @@ export const SettingsSearchField=({label,value,onChangeText,inputRef,onFocus,onB
 const SheetNavigation=window.fixtureSheetNavigation??=createContext(callback=>callback());
 export const useSheetNavigation=()=>useContext(SheetNavigation);
 export const Sheet=forwardRef(function Sheet({title,children,onClose},ref){const parent=useSheetNavigation();const dismiss=after=>{onClose();after?.()};useImperativeHandle(ref,()=>({dismiss}));return <div role="dialog" aria-label={title}><SheetNavigation.Provider value={callback=>dismiss(()=>parent(callback))}>{children}</SheetNavigation.Provider><button onClick={onClose}>Close details</button></div>});
-export const ScreenHeader=({title,buttons})=><header><h1>{title}</h1>{buttons?.map(button=><button key={button.label} aria-pressed={button.selected} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
+export const ScreenHeader=({title,titleContent,buttons})=><header>{titleContent??<h1>{title}</h1>}{buttons?.map(button=><button key={button.label} aria-pressed={button.selected} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
 export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
@@ -771,24 +771,38 @@ try {
     'Compact gives the title its own line',
   )
   const historyInput = page.getByRole('textbox', { name: 'Search threads', exact: true })
-  assert.equal(await historyInput.isVisible(), false, 'Search starts hidden')
+  assert.equal(await historyInput.isVisible(), true, 'Search stays visible in the header')
+  assert.equal(
+    await historyInput.evaluate((node) => node === document.activeElement),
+    false,
+    'Search does not take focus on open',
+  )
   const scrollSearch = async (from, to) => {
     await page.evaluate(
       ({ from, to }) => {
         const event = (y) => ({ nativeEvent: { contentOffset: { y } } })
         window.listScrollHandlers.onScrollBeginDrag(event(from))
         window.listScrollHandlers.onScroll(event(to))
-        window.listScrollHandlers.onScrollEndDrag()
+        window.listScrollHandlers.onScrollEndDrag?.()
       },
       { from, to },
     )
   }
   await scrollSearch(0, 40)
-  assert.equal(await historyInput.isVisible(), false)
+  assert.equal(await historyInput.isVisible(), true)
   await scrollSearch(40, 20)
   await historyInput.waitFor({ state: 'visible' })
+  assert.equal(
+    await historyInput.evaluate((node) => !!node.closest('header')),
+    true,
+    'Search replaces the header title',
+  )
+  assert.equal(
+    await page.locator('header').getByRole('heading', { name: 'Threads', exact: true }).count(),
+    0,
+  )
   await scrollSearch(20, 40)
-  await historyInput.waitFor({ state: 'hidden' })
+  assert.equal(await historyInput.isVisible(), true, 'Scrolling down keeps header search visible')
   await page.evaluate(() => window.focusTaskSearch())
   await historyInput.waitFor({ state: 'visible' })
   await page.waitForFunction(

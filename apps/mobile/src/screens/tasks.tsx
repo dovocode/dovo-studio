@@ -53,7 +53,15 @@ import {
   useRef,
   type ComponentRef,
 } from 'react'
-import { Alert, FlatList, Pressable, ScrollView, TextInput, View } from 'react-native'
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native'
 import { Schema } from 'effect'
 import { mutableStruct, responses } from '@dovo/protocol'
 import { Text } from '../ui/content/text'
@@ -88,20 +96,17 @@ const sortOptions = taskSortOptions.filter((option) => option.id !== 'status')
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
   const { colors, styles } = useTheme()
   const panes = useTaskPanes()
+  const { width } = useWindowDimensions()
 
   const { navigate, focused } = useNavigation(),
     { refreshAll, overviews, profiles, activeId, readRuntime, ready } = useRuntime()
   const { view, setView, scrollOffset } = useTaskListView()
   const car = useCarMode() && !archived
   const searchInput = useRef<ComponentRef<typeof TextInput>>(null)
-  const [searchRevealed, setSearchRevealed] = useApplicationState(false)
-  const [searchFocused, setSearchFocused] = useApplicationState(false)
   const [searchFocusRequested, setSearchFocusRequested] = useApplicationState(false)
-  const searchDrag = useRef<{ last: number; distance: number } | null>(null)
   const focusSearch = useCallback(() => {
-    setSearchRevealed(true)
     setSearchFocusRequested(true)
-  }, [setSearchRevealed, setSearchFocusRequested])
+  }, [setSearchFocusRequested])
   useEffect(() => {
     if (!searchFocusRequested) return
     searchInput.current?.focus()
@@ -698,6 +703,27 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     <View style={styles.screen}>
       <ScreenHeader
         title={archived ? 'Archived threads' : 'Threads'}
+        titleContent={
+          !car ? (
+            <View
+              style={{ width: panes.expanded ? '100%' : Math.min(600, width - 144), minWidth: 0 }}
+            >
+              <SearchField
+                inputRef={searchInput}
+                label={archived ? 'Search archived threads' : 'Search threads'}
+                placeholder="Search threads"
+                style={{ fontSize: 15 }}
+                clearButtonMode="while-editing"
+                returnKeyType="search"
+                value={search}
+                onChangeText={(search) => {
+                  scrollOffset.current = 0
+                  setView((current) => ({ ...current, search }))
+                }}
+              />
+            </View>
+          ) : undefined
+        }
         buttons={
           archived
             ? [
@@ -758,32 +784,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               ]
         }
       />
-      {!car && (
-        <View
-          style={{
-            ...contentColumn.collection,
-            paddingHorizontal: 16,
-            paddingBottom: 8,
-            display: searchRevealed || searchFocused || search.length > 0 ? 'flex' : 'none',
-          }}
-        >
-          <SearchField
-            inputRef={searchInput}
-            label={archived ? 'Search archived threads' : 'Search threads'}
-            placeholder="Search threads"
-            style={{ fontSize: 15 }}
-            clearButtonMode="while-editing"
-            returnKeyType="search"
-            value={search}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            onChangeText={(search) => {
-              scrollOffset.current = 0
-              setView((current) => ({ ...current, search }))
-            }}
-          />
-        </View>
-      )}
       {selecting && (
         <View
           testID="Task selection toolbar"
@@ -906,30 +906,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       {organizing && <SectionOrderSheet onClose={() => setOrganizing(false)} />}
       <FlatList
         {...listScroll}
-        onScrollBeginDrag={(event) => {
-          listScroll.onScrollBeginDrag()
-          searchDrag.current = { last: event.nativeEvent.contentOffset.y, distance: 0 }
-        }}
-        onScroll={(event) => {
-          listScroll.onScroll(event)
-          const drag = searchDrag.current
-          if (!drag) return
-          const y = event.nativeEvent.contentOffset.y
-          const delta = y - drag.last
-          drag.last = y
-          drag.distance =
-            Math.sign(delta) === Math.sign(drag.distance) ? drag.distance + delta : delta
-          if (Math.abs(drag.distance) < 12) return
-          setSearchRevealed(drag.distance < 0)
-          drag.distance = 0
-        }}
-        onScrollEndDrag={() => {
-          searchDrag.current = null
-        }}
-        onScrollToTop={(event) => {
-          listScroll.onScrollToTop(event)
-          setSearchRevealed(true)
-        }}
         contentInsetAdjustmentBehavior="automatic"
         data={expandedItems}
         testID="Task list"
