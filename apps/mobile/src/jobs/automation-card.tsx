@@ -95,7 +95,7 @@ export function AutomationCard({
         />
       </View>
       {!flow.enabled && (
-        <Text>
+        <Text style={styles.text}>
           Test run performs real work. Triggers stay disabled and the next scheduled time stays
           unchanged.
         </Text>

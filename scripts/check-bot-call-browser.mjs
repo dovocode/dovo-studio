@@ -55,6 +55,12 @@ const built = await bundleBrowser(
       contents: `export const useRuntime=()=>window.runtime;`,
     },
     { path: '../ui/layout/sheet', importer: mobile + 'bots/', contents: controls },
+    {
+      path: '../ui/theme',
+      importer: mobile + 'bots/',
+      contents:
+        'export const useTheme=()=>({styles:{text:{color:"#f5f5f5"},muted:{color:"#aaa"},error:{color:"#ffaaaa"}}});',
+    },
     { path: '../ui/content/text', importer: mobile + 'bots/', contents: controls },
     { path: '../ui/controls/action', importer: mobile + 'bots/', contents: controls },
     { path: './bot-avatar', importer: mobile + 'bots/', contents: controls },

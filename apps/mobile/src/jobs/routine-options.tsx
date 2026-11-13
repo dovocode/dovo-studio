@@ -8,6 +8,7 @@ import {
 } from '@dovo/protocol'
 import { SettingsField as Field, SettingsAction as Action } from '../screens/settings-controls'
 import { Text } from '../ui/content/text'
+import { useTheme } from '../ui/theme'
 export function RoutineOptions({
   flow,
   disabled,
@@ -17,12 +18,13 @@ export function RoutineOptions({
   disabled: boolean
   onSave: (options: Pick<Automation, 'policy' | 'monitor'>) => void
 }) {
+  const { styles } = useTheme()
   const [fields, setFields] = useState(() => routineOptionFields(flow))
   const [error, setError] = useState('')
   return (
     <View style={{ gap: 8 }}>
-      <Text>Monitoring and limits</Text>
-      <Text>
+      <Text style={styles.text}>Monitoring and limits</Text>
+      <Text style={styles.muted}>
         Source checks use HTTP GET. Unchanged automatic runs skip the agent. Manual tests always
         run. Quiet hours defer successful Bot reports. Failures and approvals stay visible. Usage
         limits can overrun when reports arrive late.
@@ -51,7 +53,11 @@ export function RoutineOptions({
           }
         }}
       />
-      {!!error && <Text accessibilityRole="alert">{error}</Text>}
+      {!!error && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {error}
+        </Text>
+      )}
     </View>
   )
 }

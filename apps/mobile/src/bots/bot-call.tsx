@@ -9,8 +9,10 @@ import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
 import { BotAvatar } from './bot-avatar'
 import { mobileBotCallAudio } from './bot-call-audio'
+import { useTheme } from '../ui/theme'
 
 export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { styles } = useTheme()
   const { call: request, connected, snapshot, profile } = useRuntime()
   const scope = JSON.stringify([
     profile?.id,
@@ -86,24 +88,34 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
     <Sheet title={`Call ${task.title}`} onClose={close}>
       <View style={{ gap: 16, alignItems: 'center', paddingVertical: 24 }}>
         <BotAvatar avatar={task.bot?.avatar} name={task.title} size={96} />
-        <Text accessibilityLiveRegion="polite">{label}</Text>
-        <Text>{task.bot?.role}</Text>
+        <Text style={styles.text} accessibilityLiveRegion="polite">
+          {label}
+        </Text>
+        <Text style={styles.muted}>{task.bot?.role}</Text>
       </View>
       <View style={{ gap: 12 }}>
-        <Text>
+        <Text style={styles.muted}>
           Uses this Bot’s conversation and permissions, with this device’s speech service. Keep Dovo
           open. The microphone pauses during playback to avoid echo. Select Interrupt to speak.
         </Text>
-        {!!state.heard && <Text selectable>You: {state.heard}</Text>}
+        {!!state.heard && (
+          <Text style={styles.text} selectable>
+            You: {state.heard}
+          </Text>
+        )}
         {!!state.reply && (
-          <Text selectable>
+          <Text style={styles.text} selectable>
             {task.title}: {state.reply}
           </Text>
         )}
         {!snapshot?.queuePausePreservationSupported && (
-          <Text>Update this Bot’s computer before calling.</Text>
+          <Text style={styles.muted}>Update this Bot’s computer before calling.</Text>
         )}
-        {!!state.error && <Text accessibilityRole="alert">{state.error}</Text>}
+        {!!state.error && (
+          <Text style={styles.error} accessibilityRole="alert">
+            {state.error}
+          </Text>
+        )}
         {state.phase === 'idle' || state.phase === 'ended' ? (
           <Action
             label="Start call"
@@ -127,7 +139,7 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
         )}
         <Action label="End call" onPress={close} />
         {needsInput && <Action secondary label="Review in chat" onPress={close} />}
-        <Text>
+        <Text style={styles.muted}>
           Your messages and full replies stay in the chat. End call stops audio and keeps work
           already started.
         </Text>

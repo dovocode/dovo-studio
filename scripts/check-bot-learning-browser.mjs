@@ -61,7 +61,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     },
     { path: '../ui/content/text', importer: mobile, contents: controls },
     { path: '../ui/controls/action', importer: mobile + 'bots/', contents: controls },
-    { path: '../ui/theme', importer: mobile + 'bots/', contents: controls },
+    { path: '../ui/theme', importer: mobile, contents: controls },
     {
       path: '../../runtime/state/application-state',
       importer: mobile + 'ui/',
