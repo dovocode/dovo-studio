@@ -530,3 +530,10 @@ pnpm exec vp test --maxWorkers=2 packages/runtime/src/agents/catalogs/resources.
 
 Browser checks cover client state and mocked catalog responses. An authenticated Glama request,
 provider-specific authentication and physical iPhone appearance need separate verification.
+
+On mobile, returning to the app reads the current software-keyboard state again. This restores
+keyboard avoidance if iOS showed the keyboard before the app became active. It does not focus an
+input or reopen a keyboard that the user dismissed. Zero-height shortcut responders stay excluded.
+Run `node scripts/check-mobile-keyboard-resume-browser.mjs` and
+`node scripts/check-mobile-tabbar-browser.mjs` to check resume event order and retained drafts.
+These checks adapt native events; physical keyboard geometry needs a device check.

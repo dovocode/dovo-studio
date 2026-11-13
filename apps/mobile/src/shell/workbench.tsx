@@ -1,3 +1,4 @@
+import { useSoftwareKeyboard } from './use-software-keyboard'
 import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
 import { LinkBrowser } from '../ui/content/open-link'
 import { iconAssets } from '../ui/controls/icon-assets'
@@ -37,12 +38,10 @@ import {
 } from 'react'
 import {
   ActivityIndicator,
-  AppState,
   KeyboardAvoidingView,
   Keyboard,
   Platform,
   View as NativeView,
-  type KeyboardEvent,
 } from 'react-native'
 import { IconButton } from '../ui/controls/icon-button'
 import { Text } from '../ui/content/text'
@@ -388,26 +387,8 @@ export function Workbench() {
     // Bring its draft creation scene into view before consuming the inbox item.
     router.navigate('/')
   }, [hasOnlineComputer, shortcuts.input])
-  const [keyboard, setKeyboard] = useApplicationState(false)
+  const keyboard = useSoftwareKeyboard()
   const detail = active === 'settings' ? pathname.startsWith('/settings/automations/') : routeDetail
-  useEffect(() => {
-    // The shortcut responder has an empty native input view. Its zero-height keyboard
-    // events must not pad the entire navigator out of view when iOS unlocks.
-    const show = (event: KeyboardEvent) =>
-      setKeyboard(AppState.currentState === 'active' && event.endCoordinates.height > 0)
-    const subscriptions = [
-      Keyboard.addListener('keyboardWillShow', show),
-      Keyboard.addListener('keyboardDidShow', show),
-      Keyboard.addListener('keyboardWillHide', () => setKeyboard(false)),
-      Keyboard.addListener('keyboardDidHide', () => setKeyboard(false)),
-      AppState.addEventListener('change', (state) => {
-        if (state !== 'active') setKeyboard(false)
-      }),
-    ]
-    return () => {
-      for (const subscription of subscriptions) subscription.remove()
-    }
-  }, [])
   const finishShortcut = (runtimeId?: string, taskId?: string) => {
     return runClientEffect(
       mobileWorkflow(function* () {

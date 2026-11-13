@@ -48,7 +48,7 @@ export const View=({children,style,accessibilityLabel})=><div aria-label={access
 export const KeyboardAvoidingView=({children,enabled})=><div data-keyboard-avoidance={String(enabled)}>{children}</div>;export const ActivityIndicator=()=>null;
 export const AppState={currentState:'active',addEventListener:(name,callback)=>{window.appStateListener=callback;return {remove(){delete window.appStateListener}}}};
 window.setAppState=state=>{AppState.currentState=state;window.appStateListener?.(state)};
-export const Keyboard={dismiss(){},addListener:(name,callback)=>{window.keyboardListeners[name]=callback;return {remove(){}}}};`,
+export const Keyboard={dismiss(){},metrics:()=>window.keyboardMetrics,addListener:(name,callback)=>{window.keyboardListeners[name]=event=>{if(name==='keyboardDidShow')window.keyboardMetrics=event.endCoordinates;if(name==='keyboardDidHide')window.keyboardMetrics=undefined;callback(event)};return {remove(){delete window.keyboardListeners[name]}}}};`,
   },
   {
     path: 'expo-router',
@@ -323,7 +323,14 @@ try {
     window.keyboardListeners.keyboardDidShow({ endCoordinates: { height: 300, screenY: 500 } })
     window.setAppState('active')
   })
-  assert.equal(await keyboardEnabled(), 'false')
+  await page.waitForFunction(
+    () => document.querySelector('[data-keyboard-avoidance]').dataset.keyboardAvoidance === 'true',
+  )
+  assert.equal(
+    await keyboardEnabled(),
+    'true',
+    'Resume restores avoidance when the keyboard appeared before activation',
+  )
   await page.evaluate(() =>
     window.keyboardListeners.keyboardDidShow({ endCoordinates: { height: 0, screenY: 0 } }),
   )
