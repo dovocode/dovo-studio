@@ -699,6 +699,7 @@ it('keeps read-only providers from sending task terminal or device input', async
       'todos',
       'linked_projects',
       'browser',
+      'workflow',
       'subagent_spawn',
       'subagent_list',
       'subagent_answer',
@@ -1066,6 +1067,49 @@ it.each(['ask', 'read-only'] as const)(
           })
           try {
             await client.connect(transport)
+            const plan = {
+              action: 'create',
+              id: 'review-flow',
+              name: 'Review changes',
+              phases: [{ id: 'inspect', title: 'Inspect' }],
+            }
+            const created = await client.callTool({ name: 'workflow', arguments: plan })
+            expect(created.isError).not.toBe(true)
+            expect(
+              (
+                await client.callTool({
+                  name: 'workflow',
+                  arguments: { ...plan, taskId: 'forged-parent' },
+                })
+              ).isError,
+            ).toBe(true)
+            expect(
+              (
+                await client.callTool({
+                  name: 'workflow',
+                  arguments: {
+                    ...plan,
+                    id: 'duplicate-phases',
+                    phases: [plan.phases[0], plan.phases[0]],
+                  },
+                })
+              ).isError,
+            ).toBe(true)
+            expect(JSON.parse(decodeToolText(created))).toMatchObject({
+              id: 'review-flow',
+              state: 'queued',
+            })
+            expect((await client.callTool({ name: 'workflow', arguments: plan })).isError).not.toBe(
+              true,
+            )
+            expect(
+              (
+                await client.callTool({
+                  name: 'workflow',
+                  arguments: { ...plan, name: 'Changed plan' },
+                })
+              ).isError,
+            ).toBe(true)
             const arguments_ = {
               key: 'review',
               name: 'Review',
@@ -1091,6 +1135,35 @@ it.each(['ask', 'read-only'] as const)(
               mutableStruct({ id: Schema.String }),
               JSON.parse(decodeToolText(spawned)),
             )
+            const membership = {
+              action: 'attach',
+              id: 'review-flow',
+              phaseId: 'inspect',
+              childId: id,
+            }
+            expect(
+              (await client.callTool({ name: 'workflow', arguments: membership })).isError,
+            ).not.toBe(true)
+            expect(
+              (await client.callTool({ name: 'workflow', arguments: membership })).isError,
+            ).not.toBe(true)
+            expect(
+              (
+                await client.callTool({
+                  name: 'workflow',
+                  arguments: { ...membership, childId: run.taskId },
+                })
+              ).isError,
+            ).toBe(true)
+            expect(
+              (
+                await client.callTool({
+                  name: 'workflow',
+                  arguments: { ...membership, phaseId: 'missing' },
+                })
+              ).isError,
+            ).toBe(true)
+            expect(s.store.task(run.taskId).workflows?.[0]?.members).toHaveLength(1)
             expect(s.store.task(id).delegation?.parentTaskId).toBe(run.taskId)
             expect(s.store.task(id).harness?.permission).toBe(permission)
             const waited = await client.callTool({
@@ -1102,6 +1175,20 @@ it.each(['ask', 'read-only'] as const)(
               running: false,
               status: 'review',
               result: 'Answer from Claude',
+            })
+            const workflow = await client.callTool({
+              name: 'workflow',
+              arguments: { action: 'read', id: 'review-flow' },
+            })
+            expect(JSON.parse(decodeToolText(workflow))).toMatchObject({
+              state: 'completed',
+              phases: [
+                {
+                  id: 'inspect',
+                  state: 'completed',
+                  members: [{ id, provider: 'claude', state: 'completed' }],
+                },
+              ],
             })
             const list = await client.callTool({ name: 'subagent_list', arguments: {} })
             expect(JSON.parse(decodeToolText(list))).toMatchObject({

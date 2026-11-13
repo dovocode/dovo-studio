@@ -30,3 +30,5 @@ export {
   automationPrepareCommandSchema,
   automationListCommandSchema,
 } from './tasks/thread-actions.js'
+
+export { workflowCommandSchema } from './tasks/workflow-tools.js'

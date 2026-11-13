@@ -431,7 +431,7 @@ export function createClaudeAdapter(): AgentAdapter {
         {
           stop: async (id) => {
             for (const agent of session.nativeAgents.filter(
-              (agent) => nativeAgentWorking(agent) && (!id || agent.id === id),
+              (agent) => nativeAgentWorking(agent) && !agent.workflowId && (!id || agent.id === id),
             ))
               await session.stream.stopTask(agent.id)
           },

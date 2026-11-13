@@ -391,3 +391,6 @@ export * from './conversation/workflow/secure-input.js'
 export * from './conversation/workflow/secure-input-crypto.js'
 
 export * from './runtime/connection/shared-settings-policy.js'
+
+export * from './conversation/workflow/workflows.js'
+export * from './tasks/workflow-tools.js'

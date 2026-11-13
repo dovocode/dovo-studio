@@ -1,3 +1,4 @@
+import { workflowTool } from '../agent-tools/workflows.js'
 import { dictationRoute } from './endpoints/dictation-routes.js'
 import { searchRuntimeHistory } from './support/history-search.js'
 import { attachmentArchiveRequestSchema, attachmentArchiveReadRequestSchema } from '@dovo/protocol'
@@ -403,6 +404,14 @@ export function route(
         const skill = run.skills?.find((item) => item.name === input.name)
         if (!skill) throw new HttpError(404, 'Skill is not enabled for this run')
         return skill
+      }
+      if (method === 'POST' && path === '/api/agent/workflow') {
+        if (!run) throw new HttpError(403, 'Workflows require an active agent run')
+        const input = decode(
+          Schema.Struct({ taskId: Schema.String, command: Schema.Unknown }),
+          yield* serviceResult(body(request, 32 * 1024)),
+        )
+        return workflowTool(s, input.taskId, run.runId, input.command)
       }
       if (method === 'POST' && path === '/api/agent/thread-prepare') {
         if (!run) throw new HttpError(403, 'Thread actions require an active agent run')

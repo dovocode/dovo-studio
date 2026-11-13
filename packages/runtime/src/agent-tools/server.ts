@@ -24,6 +24,7 @@ import {
   automationListCommandSchema,
   agentTodosCommandSchema,
   secureInputCommandSchema,
+  workflowCommandSchema,
 } from '@dovo/protocol/agent-tools'
 import { Schema } from 'effect'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -307,6 +308,15 @@ const tools: Array<
       },
       required: ['action'],
     },
+  },
+  {
+    name: 'workflow',
+    description:
+      'Create and track a phased workflow in this thread with any agent. Create with a stable id and named phases. Start children with subagent_spawn, then attach their returned childId to a phase. Read/list returns live status; use subagent_read/wait for full results. The coordinator advances phases and passes context. No scripts or schedules run. Retry identical arguments; use a fresh workflow id for a new plan. Respects child permissions. Available read-only.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(workflowCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
   },
   {
     name: 'subagent_spawn',
@@ -944,6 +954,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             taskId: task,
             parentRunId,
           }),
+        )
+      case 'workflow':
+        return text(
+          await post('/api/agent/workflow', { taskId: task, parentRunId, command: input }),
         )
       case 'subagent_spawn':
         return text(await post('/api/subagents/spawn', { ...input, taskId: task, parentRunId }))

@@ -1,3 +1,4 @@
+import { readClaudeWorkflowThread } from './claude-workflow-thread.js'
 import { getSubagentMessages, type SessionStore } from '@anthropic-ai/claude-agent-sdk'
 import type { Agent } from '@dovo/protocol'
 import { decode, mutableArray, mutableStruct } from '@dovo/protocol'
@@ -17,6 +18,7 @@ export async function readClaudeThread(
   cwd?: string,
 ) {
   if (!sessionId) return []
+  if (isAbsolute(id)) return readClaudeWorkflowThread(agent, id, cwd)
   const root = agent.env?.CLAUDE_CONFIG_DIR
   let sessionStore: SessionStore | undefined
   if (root)

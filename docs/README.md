@@ -25,6 +25,7 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Forgejo and Gitea](forgejo-gitea.md): setup and provider-specific behavior.
 - [Bitbucket and Azure DevOps](bitbucket-azure.md): provider setup and capabilities.
 - [Issues, pipelines, and Jira](issues-pipelines-jira.md): connected issue and pipeline sources.
+- [Agent workflows](workflows.md): phased plans, mixed-agent work, and native Claude workflows.
 - [Automations](automations.md): triggers, execution, reviews, and recovery.
 - [Scoped settings](scoped-settings.md): global, environment, shared project and local project
   inheritance.

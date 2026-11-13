@@ -1,3 +1,4 @@
+import { TaskWorkflows } from './task-workflows'
 import {
   buildThreadTree,
   nativeFailureKey,
@@ -152,6 +153,7 @@ export function TaskAgents({
           gap: 4,
         }}
       >
+        <TaskWorkflows task={task} onOpenThread={onOpenThread} />
         <View
           style={{
             flexDirection: 'row',
@@ -224,9 +226,11 @@ export function TaskAgents({
           const state =
             !active && agent.status === 'working'
               ? 'Last seen working'
-              : agent.status === 'unknown'
-                ? 'Status unavailable'
-                : agent.status
+              : agent.queued
+                ? 'Queued'
+                : agent.status === 'unknown'
+                  ? 'Status unavailable'
+                  : agent.status
           return (
             <View key={key} style={{ paddingVertical: 12, gap: 5 }}>
               <Pressable
@@ -292,7 +296,7 @@ export function TaskAgents({
                     },
                   ]}
                 >
-                  {active ? agent.activity || 'Working' : state}
+                  {agent.queued ? 'Queued' : active ? agent.activity || 'Working' : state}
                 </Text>
                 <Text
                   style={[

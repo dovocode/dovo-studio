@@ -1508,7 +1508,8 @@ export class WorkspaceStore {
           record.forkedFrom !== undefined ||
           record.consumedMessageIds !== undefined ||
           record.bot !== undefined ||
-          record.threadActions !== undefined)
+          record.threadActions !== undefined ||
+          record.workflows !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')
       const parsed = decode(

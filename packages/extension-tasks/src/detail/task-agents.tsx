@@ -1,3 +1,4 @@
+import { TaskWorkflows } from './task-workflows'
 import {
   buildThreadTree,
   nativeFailureKey,
@@ -174,6 +175,7 @@ export function TaskAgents({
   }, [working])
   return (
     <section className="flex min-h-full flex-col" aria-label="Subagents">
+      <TaskWorkflows task={task} onOpenThread={onOpenThread} />
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 text-muted-foreground">
         <span className="text-[0.625rem] uppercase tracking-wider">Spawned agents</span>
         <div className="flex items-center gap-2 text-xs">
@@ -231,9 +233,11 @@ export function TaskAgents({
           const state =
             !active && agent.status === 'working'
               ? 'Last seen working'
-              : agent.status === 'unknown'
-                ? 'Status unavailable'
-                : agent.status
+              : agent.queued
+                ? 'Queued'
+                : agent.status === 'unknown'
+                  ? 'Status unavailable'
+                  : agent.status
           return (
             <details
               key={`${agent.provider}:${agent.id}:${index}`}
@@ -268,7 +272,7 @@ export function TaskAgents({
                     </span>
                   </div>
                   <p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">
-                    {active ? agent.activity || 'Working' : state}
+                    {agent.queued ? 'Queued' : active ? agent.activity || 'Working' : state}
                   </p>
                   <p className="mt-0.5 truncate font-mono text-[0.625rem] text-muted-foreground/70">
                     {subagentMetadata(agent) || agent.provider}

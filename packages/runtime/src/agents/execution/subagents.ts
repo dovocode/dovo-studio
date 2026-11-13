@@ -1,3 +1,7 @@
+import {
+  updateClaudeWorkflows,
+  hasClaudeWorkflowProgress,
+} from '../providers/claude/claude-workflows.js'
 import { mutableArray, nativeAgentWorking } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -26,6 +30,21 @@ export function updateSubagents(
 ): Subagent[] {
   const event = object(payload),
     item = object(event.item)
+  if (
+    provider === 'claude' &&
+    event.type === 'system' &&
+    (event.task_type === 'local_workflow' ||
+      hasClaudeWorkflowProgress(event) ||
+      current.some(
+        (agent) =>
+          agent.provider === 'claude' &&
+          agent.source !== 'dovo' &&
+          agent.id === event.task_id &&
+          agent.workflow &&
+          (!rootThreadId || agent.sessionId === rootThreadId),
+      ))
+  )
+    return updateClaudeWorkflows(current, payload, now, rootThreadId)
   let next = current
   const put = (id: string, fields: Partial<Subagent>) => {
     const previous = next.find(
@@ -65,6 +84,7 @@ export function updateSubagents(
         ? {
             ...agent,
             sessionLive: false,
+            queued: agent.queued ? false : agent.queued,
             status:
               nativeAgentWorking(agent) || agent.status === 'working' ? 'stopped' : agent.status,
             finishedAt:
@@ -218,6 +238,8 @@ export function updateSubagents(
         agent.provider === provider &&
         agent.source !== 'dovo' &&
         agent.background &&
+        !agent.workflow &&
+        !agent.workflowId &&
         agent.status === 'working' &&
         !live.has(agent.id)
       )
@@ -366,5 +388,5 @@ export function updateSubagents(
       durationMs: number(item.durationMs),
     })
   }
-  return next
+  return provider === 'claude' ? updateClaudeWorkflows(next, payload, now, rootThreadId) : next
 }

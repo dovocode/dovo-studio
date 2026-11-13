@@ -1,7 +1,15 @@
+import { workflowSchema } from './workflows.js'
 import { modelDisplayName } from '../../tasks/model-display-name.js'
 import { mutableStruct } from '../../shared/schema.js'
 import { Schema } from 'effect'
 export const subagentSchema = mutableStruct({
+  workflow: Schema.optional(workflowSchema),
+  workflowId: Schema.optional(Schema.String),
+  queued: Schema.optional(Schema.Boolean),
+  attempt: Schema.optional(Schema.Number),
+  nativeToolUseId: Schema.optional(Schema.String),
+  workflowRunId: Schema.optional(Schema.String),
+  transcriptDirectory: Schema.optional(Schema.String),
   kind: Schema.optional(Schema.Literal('background')),
   source: Schema.optional(Schema.Literal('dovo')),
   taskId: Schema.optional(Schema.String),
@@ -53,6 +61,7 @@ export type SubagentListItem = Pick<
   | 'reasoning'
   | 'tokens'
   | 'activity'
+  | 'queued'
   | 'status'
 >
 const listFields = [
@@ -65,6 +74,7 @@ const listFields = [
   'reasoning',
   'tokens',
   'activity',
+  'queued',
   'status',
 ] as const
 export function projectSubagentList(
@@ -79,7 +89,7 @@ export function projectSubagentList(
   )
     return previous
   return agents.map(
-    ({ id, taskId, source, name, provider, model, reasoning, tokens, activity, status }) => ({
+    ({
       id,
       taskId,
       source,
@@ -89,6 +99,19 @@ export function projectSubagentList(
       reasoning,
       tokens,
       activity,
+      queued,
+      status,
+    }) => ({
+      id,
+      taskId,
+      source,
+      name,
+      provider,
+      model,
+      reasoning,
+      tokens,
+      activity,
+      queued,
       status,
     }),
   )
@@ -102,6 +125,7 @@ export function nativeAgentWorking(agent: Subagent) {
   )
 }
 export function subagentElapsed(agent: Subagent, now: number) {
+  if (agent.queued) return '—'
   const ms =
     agent.durationMs ??
     Math.max(
@@ -135,6 +159,7 @@ export function subagentMetadata(agent: Pick<Subagent, 'model' | 'reasoning' | '
 }
 
 export function subagentListStatus(agent: SubagentListItem, online: boolean) {
+  if (agent.queued) return 'Queued'
   if (agent.status === 'unknown') return 'Status unavailable'
   if (agent.status === 'working') return online ? 'Working' : 'Last seen working'
   return { completed: 'Done', failed: 'Failed', stopped: 'Stopped' }[agent.status]

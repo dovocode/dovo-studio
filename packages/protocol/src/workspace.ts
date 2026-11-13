@@ -1,3 +1,4 @@
+import { workflowSchema } from './conversation/workflow/workflows.js'
 import { taskIsWorking } from './tasks/task-working.js'
 import { providerRetrySchema } from './conversation/workflow/provider-retry.js'
 import { messageSourceSchema } from './tasks/message-source.js'
@@ -1042,6 +1043,7 @@ export const taskSchema = mutableStruct({
   archived: Schema.optional(Schema.Boolean),
   archivedAt: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
   subagents: Schema.optional(mutableArray(subagentSchema)),
+  workflows: Schema.optional(maxValue(mutableArray(workflowSchema), 50)),
   quotaContinuation: Schema.optional(
     mutableStruct({
       turnId: Schema.String,

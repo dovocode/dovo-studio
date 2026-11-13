@@ -1474,6 +1474,127 @@ try {
     await page.getByRole('button', { name: 'Stop agents', exact: true }).click()
     await page.waitForFunction(() => window.requests.at(-1)?.path === '/api/tasks/stop-agents')
     assert.equal(await page.evaluate(() => window.requests.at(-1).input.childId), undefined)
+    await page.evaluate(() => {
+      window.store = { ...window.store, connected: true }
+      const base = window.workspace.tasks[0]
+      window.publishTasks([
+        {
+          ...base,
+          id: 'workflow-parent',
+          title: 'Workflow parent',
+          subagents: [],
+          threadWatches: [],
+          workflows: [
+            {
+              id: 'mixed',
+              name: 'Mixed-agent review',
+              description: 'Inspect, then verify.',
+              phases: [
+                { id: 'inspect', title: 'Inspect code' },
+                { id: 'verify', title: 'Verify changes' },
+              ],
+              members: [
+                { id: 'codex-review', taskId: 'codex-review', phaseId: 'inspect' },
+                { id: 'claude-tests', taskId: 'claude-tests', phaseId: 'verify' },
+              ],
+            },
+          ],
+        },
+        {
+          ...base,
+          id: 'codex-review',
+          title: 'Codex review',
+          harness: { provider: 'codex' },
+          workflows: [],
+          subagents: [],
+          threadWatches: [],
+          status: 'review',
+          delegation: { parentTaskId: 'workflow-parent', parentRunId: 'round', key: 'review' },
+        },
+        {
+          ...base,
+          id: 'claude-tests',
+          title: 'Claude verification',
+          harness: { provider: 'claude' },
+          workflows: [],
+          subagents: [],
+          threadWatches: [],
+          status: 'draft',
+          delegation: { parentTaskId: 'workflow-parent', parentRunId: 'round', key: 'tests' },
+        },
+      ])
+      window.renderAgents()
+    })
+    const workflows = page.locator('[aria-label="Workflows"]')
+    await workflows.getByText('Mixed-agent review', { exact: true }).waitFor()
+    await workflows.getByText(/Inspect code$/).waitFor()
+    await workflows.getByText(/Verify changes$/).waitFor()
+    await workflows.getByText('claude · Queued', { exact: true }).waitFor()
+    await workflows.getByRole('button', { name: /Codex review/ }).click()
+    assert.equal(
+      await page.evaluate(() => window.routes.at(-1).entityId ?? window.routes.at(-1).threadId),
+      'codex-review',
+    )
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) =>
+          task.id === 'claude-tests'
+            ? { ...task, status: 'failed', error: 'Verification failed' }
+            : task,
+        ),
+      )
+      window.renderAgents()
+    })
+    await workflows.getByText('claude · Failed', { exact: true }).waitFor()
+    await workflows.getByText('Verification failed', { exact: true }).waitFor()
+    // Workflow history stays visible when the finished-agent filter is on.
+    await hideFinished.click()
+    await workflows.getByText(/^Codex review/).waitFor()
+    await workflows.getByText(/^Claude verification/).waitFor()
+    await page.evaluate(() => {
+      const parent = window.workspace.tasks[0]
+      window.publishTasks([
+        {
+          ...parent,
+          workflows: [],
+          subagents: [
+            {
+              id: 'native-workflow',
+              provider: 'claude',
+              name: 'Native workflow',
+              status: 'working',
+              sessionLive: true,
+              startedAt: '2026-11-13T00:00:00Z',
+              updatedAt: '2026-11-13T00:00:00Z',
+              workflow: {
+                id: 'native-plan',
+                name: 'Native phase review',
+                phases: [{ id: 'inspect', title: 'Native inspect' }],
+                members: [{ id: 'native-member', phaseId: 'inspect' }],
+              },
+            },
+            {
+              id: 'native-member',
+              workflowId: 'native-plan',
+              provider: 'claude',
+              name: 'Workflow member',
+              status: 'unknown',
+              queued: true,
+              canStopIndividual: false,
+              sessionLive: true,
+              startedAt: '2026-11-13T00:00:00Z',
+              updatedAt: '2026-11-13T00:00:00Z',
+            },
+          ],
+        },
+      ])
+      window.renderAgents()
+    })
+    await workflows.getByText('Native phase review', { exact: true }).waitFor()
+    await workflows.getByText('claude · Queued', { exact: true }).waitFor()
+    await workflows.getByRole('button', { name: /Workflow member/ }).click()
+    await page.getByText('Native final answer', { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.requests.at(-1).input.id), 'native-member')
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'}: grouping, stop controls, native thread viewing and paging, finished-agent filtering, offline visibility and navigation passed.`,

@@ -70,7 +70,16 @@ export function NativeAgentThread({
     return () => {
       active = false
     }
-  }, [call, connected, taskId, agent.id, agent.provider, agent.sessionId, load])
+  }, [
+    call,
+    connected,
+    taskId,
+    agent.id,
+    agent.provider,
+    agent.sessionId,
+    agent.workflowId ? agent.updatedAt : undefined,
+    load,
+  ])
   return (
     <View style={{ flex: 1 }} accessibilityLabel="Native agent thread">
       <ScreenHeader

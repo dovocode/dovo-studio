@@ -41,7 +41,7 @@ it.each([false, true])(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 46 : 19)
+      expect(tools).toHaveLength(full ? 47 : 20)
       // Preserve the existing budget for all prior tools. Account for the new private-input
       // schema separately so adding this tool cannot hide growth in unrelated tools.
       const secureInput = tools.find((tool) => tool.name === 'secure_input')
@@ -61,17 +61,26 @@ it.each([false, true])(
         expect(tool?.description?.length ?? 0).toBeLessThanOrEqual(500)
         return tool
       })
+      const workflow = tools.find((tool) => tool.name === 'workflow')
+      expect(workflow).toBeDefined()
+      const workflowCharacters = JSON.stringify(workflow).length + 1
+      expect(workflowCharacters).toBeLessThanOrEqual(3000)
       const automationCharacters = automationTools.reduce(
         (total, tool) => total + JSON.stringify(tool).length + 1,
         0,
       )
       expect(
-        characters - secureCharacters - prepareCharacters - automationCharacters,
+        characters -
+          secureCharacters -
+          prepareCharacters -
+          automationCharacters -
+          workflowCharacters,
       ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
         descriptionCharacters -
           (secureInput?.description?.length ?? 0) -
           (threadPrepare?.description?.length ?? 0) -
+          (workflow?.description?.length ?? 0) -
           automationTools.reduce((total, tool) => total + (tool?.description?.length ?? 0), 0),
       ).toBeLessThanOrEqual(full ? 12900 : 3200)
       expect(tools.map((tool) => tool.name)).toEqual(
