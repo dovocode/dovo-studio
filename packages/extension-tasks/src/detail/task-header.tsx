@@ -197,7 +197,7 @@ export function TaskHeader({
     ['devices', 'Devices', Smartphone, 0],
     [
       'side-chats',
-      'Side chats',
+      task.bot ? 'Side threads' : 'Side chats',
       MessagesSquare,
       (task.sideChats?.length ?? 0) + sideThreadsOf(workspace.tasks, task.id).length,
     ],

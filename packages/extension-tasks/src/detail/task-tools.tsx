@@ -146,6 +146,8 @@ export function TaskTools({
                     ['bot-skills', 'Skills', BookOpen, 0],
                     ['bot-memory', 'Memory', Brain, 0],
                     ['bot-routines', 'Routines', Workflow, 0],
+                    ['files', 'Files', Files, 0],
+                    ['side-chats', 'Side threads', MessagesSquare, sideChatCount],
                   ],
                 },
               ] as const)
@@ -153,7 +155,7 @@ export function TaskTools({
           {
             label: 'Thread workspace',
             tools: [
-              ['files', 'Files', Files, 0],
+              ...(task.bot ? [] : [['files', 'Files', Files, 0] as const]),
               ...(task.bot ? [] : [['projects', 'Linked projects', FolderSymlink, 0] as const]),
               ...(hasArtifacts ? [['artifacts', 'Artifacts', Shapes, 0] as const] : []),
               ...(hasDiff
@@ -163,7 +165,9 @@ export function TaskTools({
                 ? [['linked-pulls', 'Linked PRs', GitPullRequest, linkedPullCount] as const]
                 : []),
               ...(hasAgents ? [['agents', 'Agents', Bot, agentCount] as const] : []),
-              ['side-chats', 'Side chats', MessagesSquare, sideChatCount],
+              ...(task.bot
+                ? []
+                : [['side-chats', 'Side chats', MessagesSquare, sideChatCount] as const]),
             ],
           },
           {
@@ -175,76 +179,78 @@ export function TaskTools({
             ],
           },
         ] as const
-      ).map(({ label: groupLabel, tools }) => (
-        <div className="studio-tools-group" role="group" aria-label={groupLabel} key={groupLabel}>
-          {tools.map(([id, label, Icon, count]) => (
-            <Tooltip key={id}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={
-                    id === 'terminal'
-                      ? bottomTerminalOpen
-                        ? 'Hide bottom terminal'
-                        : 'Show bottom terminal'
-                      : label
-                  }
-                  aria-description={
-                    [
-                      count > 0 ? `${count} ${label.toLowerCase()}` : '',
-                      id === 'side-chats' && sideAttention
-                        ? sideAttention === 'approval'
-                          ? 'Approval required'
-                          : 'Needs input'
-                        : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ') || undefined
-                  }
-                  aria-pressed={id === 'terminal' ? bottomTerminalOpen : surface === id}
-                  className={cn(
-                    'studio-navigation-item',
-                    (id === 'terminal' ? bottomTerminalOpen : surface === id) && 'is-active',
-                  )}
-                  onClick={() =>
-                    id === 'terminal' && onBottomTerminal ? onBottomTerminal() : onSelect(id)
-                  }
-                >
-                  <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
-                  <span className="studio-navigation-label">{label}</span>
-                  {(count > 0 || (id === 'side-chats' && sideAttention)) && (
-                    <span
-                      data-tool-count
-                      data-attention={
-                        id === 'side-chats' && sideAttention ? sideAttention : undefined
-                      }
-                      aria-hidden="true"
-                      className={cn(
-                        'pointer-events-none absolute right-0.5 top-0.5 min-w-3 rounded px-0.5 text-center text-[0.5625rem] leading-3 tabular-nums',
+      )
+        .filter(({ tools }) => tools.length > 0)
+        .map(({ label: groupLabel, tools }) => (
+          <div className="studio-tools-group" role="group" aria-label={groupLabel} key={groupLabel}>
+            {tools.map(([id, label, Icon, count]) => (
+              <Tooltip key={id}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      id === 'terminal'
+                        ? bottomTerminalOpen
+                          ? 'Hide bottom terminal'
+                          : 'Show bottom terminal'
+                        : label
+                    }
+                    aria-description={
+                      [
+                        count > 0 ? `${count} ${label.toLowerCase()}` : '',
                         id === 'side-chats' && sideAttention
-                          ? 'bg-status-warning/15 text-status-warning'
-                          : 'bg-background text-muted-foreground',
-                      )}
-                    >
-                      {count > 99 ? '99+' : count || '•'}
-                    </span>
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" sideOffset={10}>
-                {id === 'terminal'
-                  ? bottomTerminalOpen
-                    ? 'Hide bottom terminal'
-                    : 'Show bottom terminal'
-                  : count > 0
-                    ? `${label} (${count})`
-                    : label}
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-      ))}
+                          ? sideAttention === 'approval'
+                            ? 'Approval required'
+                            : 'Needs input'
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || undefined
+                    }
+                    aria-pressed={id === 'terminal' ? bottomTerminalOpen : surface === id}
+                    className={cn(
+                      'studio-navigation-item',
+                      (id === 'terminal' ? bottomTerminalOpen : surface === id) && 'is-active',
+                    )}
+                    onClick={() =>
+                      id === 'terminal' && onBottomTerminal ? onBottomTerminal() : onSelect(id)
+                    }
+                  >
+                    <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
+                    <span className="studio-navigation-label">{label}</span>
+                    {(count > 0 || (id === 'side-chats' && sideAttention)) && (
+                      <span
+                        data-tool-count
+                        data-attention={
+                          id === 'side-chats' && sideAttention ? sideAttention : undefined
+                        }
+                        aria-hidden="true"
+                        className={cn(
+                          'pointer-events-none absolute right-0.5 top-0.5 min-w-3 rounded px-0.5 text-center text-[0.5625rem] leading-3 tabular-nums',
+                          id === 'side-chats' && sideAttention
+                            ? 'bg-status-warning/15 text-status-warning'
+                            : 'bg-background text-muted-foreground',
+                        )}
+                      >
+                        {count > 99 ? '99+' : count || '•'}
+                      </span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left" sideOffset={10}>
+                  {id === 'terminal'
+                    ? bottomTerminalOpen
+                      ? 'Hide bottom terminal'
+                      : 'Show bottom terminal'
+                    : count > 0
+                      ? `${label} (${count})`
+                      : label}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        ))}
     </nav>
   )
 }

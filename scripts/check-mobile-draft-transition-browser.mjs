@@ -10,6 +10,8 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   // Bot settings has its own real-component suite. Normal chat startup does not open it.
   '../../bots/bot-settings': 'export const BotSettings=()=>null;',
+  // Voice calls have their own web/mobile suite. Keep native audio out of this startup fixture.
+  '../../bots/bot-call': 'export const BotCall=()=>null;',
   // Native handoff controls have their own desktop/mobile browser suite.
   './continue-elsewhere': 'export const ContinueElsewhere=()=>null;',
   './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
@@ -1142,10 +1144,15 @@ try {
   await page.locator('header').getByText('Lasting Bot', { exact: true }).waitFor()
   await page.locator('header').getByLabel('Bot avatar', { exact: true }).waitFor()
   assert.equal(
-    await page.evaluate(() => window.headerActions.every((action) => action.overflow)),
+    await page.evaluate(() =>
+      window.headerActions
+        .filter((action) => action.label !== 'Call')
+        .every((action) => action.overflow),
+    ),
     true,
-    'All Bot tools belong in More',
+    'Bot tools belong in More; Call remains a visible header action',
   )
+  await page.locator('header').getByRole('button', { name: 'Call', exact: true }).waitFor()
   assert.deepEqual(
     await page.evaluate(() =>
       Object.fromEntries(

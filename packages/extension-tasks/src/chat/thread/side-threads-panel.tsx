@@ -463,7 +463,9 @@ export function SideThreadsPanel({
         )}
       >
         <MessagesSquare size={16} className="shrink-0 text-muted-foreground" aria-hidden="true" />
-        <h2 className="min-w-16 flex-1 truncate text-xs font-medium">Side chats</h2>
+        <h2 className="min-w-16 flex-1 truncate text-xs font-medium">
+          {task.bot ? 'Side threads' : 'Side chats'}
+        </h2>
         {view === 'threads' && (children.length > 0 || nested) && (
           <Button
             size="sm"
