@@ -3,6 +3,8 @@ import { CheckpointDiff } from './saved-file-diff'
 import { useEffect, useMemo, useState } from 'react'
 import {
   filePreviewLabel,
+  filePreviewIdentity,
+  changedFileFingerprint,
   filePreviewSchema,
   fileSizeLabel,
   type FilePreview,
@@ -44,14 +46,26 @@ export function SavedFilePreview({
     file.path,
   ])
   const full = fullKey === ownerKey
-  const key = JSON.stringify([ownerKey, full, attempt])
+  const { path, before, after } = file
+  // Review progress can recreate equal file objects after a request flushes workspace edits.
+  // Track saved content, not those object identities, so the read can settle.
+  const contentKey = useMemo(
+    () => changedFileFingerprint({ path, before, after, viewed: false }),
+    [path, before, after],
+  )
+  const key = JSON.stringify([
+    ownerKey,
+    contentKey,
+    filePreviewIdentity(file.preview),
+    full,
+    attempt,
+  ])
   const [result, setResult] = useState<{
     key: string
-    file: ChangedFile
     preview: FilePreview | null
     error: string
   } | null>(null)
-  const preview = result?.key === key && result.file === file ? result.preview : null
+  const preview = result?.key === key ? result.preview : null
   const completeText =
     preview &&
     [preview.before, preview.after].every(
@@ -69,7 +83,7 @@ export function SavedFilePreview({
         : null,
     [completeText, preview, file.path],
   )
-  const error = result?.key === key && result.file === file ? result.error : ''
+  const error = result?.key === key ? result.error : ''
   useEffect(() => {
     let active = true
     if (!taskId) return
@@ -85,13 +99,12 @@ export function SavedFilePreview({
       filePreviewSchema,
     ).then(
       (result) => {
-        if (active) setResult({ key, file, preview: result, error: '' })
+        if (active) setResult({ key, preview: result, error: '' })
       },
       (cause: unknown) => {
         if (active)
           setResult({
             key,
-            file,
             preview: null,
             error: cause instanceof Error ? cause.message : String(cause),
           })
@@ -100,7 +113,7 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [request, taskId, turnId, commitSha, checkoutId, working, file.path, key, full, file])
+  }, [request, taskId, turnId, commitSha, checkoutId, working, file.path, key, full])
   if (diff) return <CheckpointDiff file={diff} />
   return (
     <div className="space-y-3 p-4 text-xs">
