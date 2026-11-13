@@ -330,7 +330,8 @@ function WorkbenchContent({
         !options?.replace &&
         (target.viewId !== next.viewId ||
           target.entityId !== next.entityId ||
-          JSON.stringify(target.pullTarget) !== JSON.stringify(next.pullTarget))
+          JSON.stringify(target.pullTarget) !== JSON.stringify(next.pullTarget) ||
+          JSON.stringify(target.automationTarget) !== JSON.stringify(next.automationTarget))
       ) {
         history.current.push({ target, runtimeId: currentRuntime.current })
         if (history.current.length > 50) history.current.shift()
@@ -1144,7 +1145,7 @@ function WorkbenchContent({
                   data-settings-content={inSettings ? '' : undefined}
                   className="flex min-h-0 min-w-0 flex-1 flex-col"
                 >
-                  <ErrorBoundary key={target.viewId}>
+                  <ErrorBoundary key={target.viewId} diagnosticContext={{ viewId: target.viewId }}>
                     <Suspense
                       fallback={
                         <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
@@ -1156,6 +1157,7 @@ function WorkbenchContent({
                           nativeAgentKey={target.nativeAgentKey}
                           threadParent={parentThread}
                           pullTarget={target.pullTarget}
+                          automationTarget={target.automationTarget}
                           threadConnection={target.threadConnection}
                           navigationKey={navigationKey}
                         />

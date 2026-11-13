@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,6 +15,8 @@ import {
   ThreadStateSynchronization,
   runtimeProfile,
   type ThreadRecord,
+  SCRATCH_PROJECT_ID,
+  defaultTaskHarness,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 import { backupRuntimeDatabase } from './backup.js'
@@ -1011,5 +1013,105 @@ it('automatically repairs old parent omissions through authenticated HTTP withou
   } finally {
     await f.close()
     await rm(dir, { recursive: true, force: true })
+  }
+})
+
+it('keeps Bots on their home runtime and retires copies shared by earlier builds', async () => {
+  const a = await fixture(),
+    b = await fixture()
+  try {
+    const bot = {
+      role: 'Release manager',
+      responsibilities: 'PRIVATE-RESPONSIBILITIES',
+      state: 'active' as const,
+      revision: randomUUID(),
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    }
+    a.create('thread', 2)
+    // An earlier build shared this thread before it became a Bot.
+    a.create('legacy-bot', 2)
+    pair(a, b)
+    await settle(a, b)
+    await expect.poll(() => b.runtime.services.threadReplication.replicas()).toHaveLength(2)
+    // The Bot's delegated work is an ordinary thread and still replicates.
+    a.create('child', 2)
+    a.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      tasks: workspace.tasks.map((task) =>
+        task.id === 'legacy-bot'
+          ? { ...task, bot }
+          : task.id === 'child'
+            ? {
+                ...task,
+                delegation: { parentTaskId: 'legacy-bot', parentRunId: 'run', key: 'child' },
+              }
+            : task,
+      ),
+    }))
+    // A Bot created through the API is never shared, not even as a removed descriptor.
+    const created = await a.call('/api/bots/create', {
+      requestId: randomUUID(),
+      role: 'Watcher',
+      responsibilities: 'PRIVATE-RESPONSIBILITIES',
+      createTask: {
+        id: 'new-bot',
+        title: 'Watcher',
+        repositoryId: SCRATCH_PROJECT_ID,
+        agentId: '',
+        harness: defaultTaskHarness('codex'),
+        execution: 'main',
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      },
+    })
+    expect(created.status).toBe(200)
+    a.runtime.services.store.updateTask('new-bot', (task) => ({ ...task, title: 'Watcher 2' }))
+    await settle(a, b)
+    await expect
+      .poll(
+        () =>
+          b.runtime.services.threadReplication
+            .replicas()
+            .map((task) => task.replica?.threadId ?? '')
+            .sort((left, right) => left.localeCompare(right)),
+        { timeout: 6000 },
+      )
+      .toEqual(['child', 'thread'])
+    // Peers hold no Bot history or Bot settings, and the owner keeps everything.
+    const shared = JSON.stringify(b.runtime.services.threadReplication.journal.current())
+    expect(shared).not.toContain('PRIVATE-RESPONSIBILITIES')
+    const botMessages = b.runtime.services.threadReplication.journal
+      .current()
+      .filter(
+        (version) =>
+          !version.deleted &&
+          version.value.kind === 'message' &&
+          ['legacy-bot', 'new-bot'].includes(version.value.threadId) &&
+          version.value.message,
+      )
+    expect(botMessages).toEqual([])
+    expect(a.runtime.services.store.task('legacy-bot').messages).toHaveLength(2)
+    expect(a.runtime.services.store.taskSummary('legacy-bot').bot?.role).toBe('Release manager')
+    // Later Bot activity is not exported.
+    a.runtime.services.store.updateTask('legacy-bot', (task) => ({ ...task, title: 'Renamed' }))
+    await settle(a, b)
+    expect(JSON.stringify(b.runtime.services.threadReplication.journal.current())).not.toContain(
+      'Renamed',
+    )
+    expect(
+      b.runtime.services.threadReplication.journal
+        .thread(a.runtime.services.runtimeId, 'new-bot')
+        .filter((version) => !version.deleted),
+    ).toEqual([])
+    expect(
+      a.runtime.services.threadReplication.journal.thread(a.runtime.services.runtimeId, 'new-bot'),
+    ).toEqual([])
+  } finally {
+    await Promise.all([a.close(), b.close()])
   }
 })

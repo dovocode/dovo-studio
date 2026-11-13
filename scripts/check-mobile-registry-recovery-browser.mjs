@@ -20,6 +20,7 @@ window.readFails=!location.search.includes('startup');window.holdInactiveCache=!
 const profiles=['one','two'].map(name=>runtimeProfile({address:'http://'+name+'.lan:8787',token:'test-private-token-at-least-32-characters-'+name},name));
 window.saved=JSON.stringify({version:1,activeId:profiles[0].id,profiles});
 window.liveStartup=location.search.includes('liveStartup');
+window.holdActiveCache=location.search.includes('heldActiveCache');window.activeCacheWait=new Promise(resolve=>window.releaseActiveCache=resolve);window.activeCacheStarted=false;
 window.cachedStartupSnapshot={revision:1,runtimeInstanceId:'cached-runtime',owner:false,workspaceReconciliationSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]};
 window.servers={};window.messageCalls=[];window.holdMessage=false;window.patchOffline=false;window.patchCalls=[];
 window.fetch=async(url,init={})=>{
@@ -126,7 +127,7 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     {
       path: './read-cache',
       importer,
-      contents: `import {Effect} from 'effect';import {browserReadCache} from '${root}packages/studio-core/src/workspace/read-cache.ts';export const mobileReadCache=connection=>{const cache=browserReadCache(connection);return {...cache,readEffect:(...args)=>{if(args[0]==='snapshot'&&connection.address.includes('one.lan')&&window.liveStartup&&!location.search.includes('emptyCache'))return Effect.succeed({value:{snapshot:window.cachedStartupSnapshot,lastSeen:null,pulls:null}});if(args[0]==='snapshot'&&connection.address.includes('two.lan')&&window.holdInactiveCache){window.inactiveCacheStarted=true;return Effect.promise(()=>window.inactiveCacheWait).pipe(Effect.andThen(cache.readEffect(...args)))}return cache.readEffect(...args)}}};`,
+      contents: `import {Effect} from 'effect';import {browserReadCache} from '${root}packages/studio-core/src/workspace/read-cache.ts';export const mobileReadCache=connection=>{const cache=browserReadCache(connection);return {...cache,readEffect:(...args)=>{if(args[0]==='snapshot'&&connection.address.includes('one.lan')&&window.liveStartup&&!location.search.includes('emptyCache')){const value=Effect.succeed({value:{snapshot:window.cachedStartupSnapshot,lastSeen:null,pulls:null}});if(window.holdActiveCache){window.activeCacheStarted=true;return Effect.promise(()=>window.activeCacheWait).pipe(Effect.andThen(value))}return value}if(args[0]==='snapshot'&&connection.address.includes('two.lan')&&window.holdInactiveCache){window.inactiveCacheStarted=true;return Effect.promise(()=>window.inactiveCacheWait).pipe(Effect.andThen(cache.readEffect(...args)))}return cache.readEffect(...args)}}};`,
     },
     {
       path: './mutation-storage',
@@ -136,7 +137,7 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     {
       path: '../preferences/app-preferences',
       importer,
-      contents: `const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[]};export const useMobilePreferences=()=>preferences;export const readMobilePreferences=()=>preferences;export const updateMobilePreferences=()=>{};`,
+      contents: `const preferences={computerRefresh:location.search.includes('fleetStartup')?'reduced':'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[]};export const useMobilePreferences=()=>preferences;export const readMobilePreferences=()=>preferences;export const updateMobilePreferences=()=>{};`,
     },
   ],
 )
@@ -951,6 +952,94 @@ try {
   await liveContext.route('http://mobile-recovery.lan/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
+  const heldStartup = await liveContext.newPage()
+  heldStartup.on('pageerror', (error) => errors.push(error.message))
+  await heldStartup.goto('http://mobile-recovery.lan/?startup&liveStartup&heldActiveCache')
+  await heldStartup.addScriptTag({ content: built.outputFiles[0].text })
+  await heldStartup.waitForFunction(() => window.activeCacheStarted)
+  // Keep disk restoration blocked. Live rows must be usable without releasing it.
+  await heldStartup.waitForFunction(
+    () => window.inactiveCacheStarted && !!window.streams?.['http://one.lan:8787'],
+    null,
+    { timeout: 2000 },
+  )
+  await heldStartup.evaluate(() => {
+    const live = structuredClone(window.cachedStartupSnapshot)
+    live.revision = 8
+    live.workspace.tasks = [
+      {
+        id: 'real',
+        title: 'Real thread',
+        agentId: '',
+        repositoryId: 'project',
+        harness: { provider: 'claude', model: 'test', permission: 'read-only' },
+        status: 'review',
+        createdAt: '2026-11-12',
+        draft: '',
+        example: false,
+        messages: [],
+        files: [],
+      },
+    ]
+    live.workspace.repositories = [
+      {
+        id: 'project',
+        name: 'Real project',
+        path: '/real',
+        branch: 'main',
+        iconOverride: 'data:image/png;base64,cmVhbA==',
+      },
+    ]
+    window.streamOnline = true
+    window.streams['http://one.lan:8787'].onSnapshot(live)
+  })
+  await heldStartup.waitForFunction(
+    () => window.runtime.ready && window.runtime.snapshot?.revision === 8,
+  )
+  await heldStartup.evaluate(() => window.releaseActiveCache())
+  await heldStartup.waitForFunction(() => window.runtime.ready)
+  assert.deepEqual(
+    await heldStartup.evaluate(() => ({
+      titles: window.runtime.snapshot.workspace.tasks.map((task) => task.title),
+      status: window.runtime.snapshot.workspace.tasks[0].status,
+      provider: window.runtime.snapshot.workspace.tasks[0].harness.provider,
+      icon: window.runtime.snapshot.workspace.repositories[0].iconOverride,
+      reads: window.requests.filter((url) => url.includes('/api/snapshot')).length,
+    })),
+    {
+      titles: ['Real thread'],
+      status: 'review',
+      provider: 'claude',
+      icon: 'data:image/png;base64,cmVhbA==',
+      reads: 0,
+    },
+  )
+  await heldStartup.close()
+  const fleetStartup = await liveContext.newPage()
+  fleetStartup.on('pageerror', (error) => errors.push(error.message))
+  await fleetStartup.goto('http://mobile-recovery.lan/?startup&liveStartup&fleetStartup')
+  await fleetStartup.addScriptTag({ content: built.outputFiles[0].text })
+  await fleetStartup.waitForFunction(
+    () => window.runtime.overviews.find((entry) => entry.profile.name === 'two')?.connected,
+    null,
+    { timeout: 2000 },
+  )
+  assert.equal(
+    await fleetStartup.evaluate(
+      () =>
+        window.requests.filter(
+          (url) => url.includes('/api/snapshot?scope=overview') && url.includes('two.lan'),
+        ).length,
+    ),
+    1,
+  )
+  assert.equal(
+    await fleetStartup.evaluate(() =>
+      window.requests.some((url) => url.includes('/api/scm/pulls')),
+    ),
+    false,
+  )
+  await fleetStartup.close()
   const livePage = await liveContext.newPage()
   livePage.on('pageerror', (error) => errors.push(error.message))
   await livePage.goto('http://mobile-recovery.lan/?startup&liveStartup')

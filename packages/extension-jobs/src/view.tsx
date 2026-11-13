@@ -29,6 +29,7 @@ import { AutomationDetail } from './automation-detail'
 import { CachedAutomation } from './cached-automation'
 import { aggregateAutomations, liveAutomationRuntimes, type FleetAutomation } from './fleet'
 import { newNode } from './graph'
+import { automationDestination } from './automation-destination'
 type Selection = {
   runtimeId: string
   automationId: string
@@ -42,7 +43,7 @@ type Creation = {
   id: string
   name: string
 }
-export default function JobsView({ entityId }: StudioViewProps) {
+export default function JobsView({ entityId, automationTarget, navigationKey }: StudioViewProps) {
   const {
     runtimes,
     activeRuntimeId,
@@ -88,20 +89,8 @@ export default function JobsView({ entityId }: StudioViewProps) {
     workspace,
   })
   const rows = aggregateAutomations(entries)
-  const notifiedRun = entityId
-    ? entries
-        .flatMap((entry) =>
-          (entry.snapshot?.runs ?? []).map((run) => ({ run, runtimeId: entry.profile.id })),
-        )
-        .find(({ run }) => run.id === entityId)
-    : undefined
-  const notifiedRow = notifiedRun
-    ? rows.find(
-        (row) =>
-          row.runtime.profile.id === notifiedRun.runtimeId &&
-          row.flow.id === notifiedRun.run.automationId,
-      )
-    : undefined
+  const destination = automationDestination(rows, activeRuntimeId, entityId, automationTarget)
+  const notifiedRow = destination?.row
   const query = search.trim().toLowerCase()
   const visible = rows.filter((row) =>
     [row.flow.name, row.runtimeName, ...row.projects, row.status].some((value) =>
@@ -109,11 +98,12 @@ export default function JobsView({ entityId }: StudioViewProps) {
     ),
   )
   const chosen =
-    selected &&
-    rows.find(
-      (row) =>
-        row.runtime.profile.id === selected.runtimeId && row.flow.id === selected.automationId,
-    )
+    selected && (!automationTarget || destination)
+      ? rows.find(
+          (row) =>
+            row.runtime.profile.id === selected.runtimeId && row.flow.id === selected.automationId,
+        )
+      : undefined
   const ownDetail =
     !!chosen && connected && isActiveRuntime(chosen.runtime.profile, activeRuntimeId, connection)
   const back = () => {
@@ -142,7 +132,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
   }
   useEffect(() => {
     if (notifiedRow) void open(notifiedRow)
-  }, [entityId, notifiedRow?.key])
+  }, [entityId, notifiedRow?.key, automationTarget?.runId, navigationKey])
   const startCreation = async () => {
     const destination = entries.find((entry) => entry.profile.id === owner)
     if (busy || !destination?.connected || !name.trim()) return
@@ -376,18 +366,17 @@ export default function JobsView({ entityId }: StudioViewProps) {
             {chosen ? (
               ownDetail ? (
                 <AutomationDetail
-                  key={`${chosen.key}:${clientScopeKey(connection)}:${entityId ?? ''}`}
+                  key={`${chosen.key}:${clientScopeKey(connection)}:${destination?.runId ?? ''}:${navigationKey ?? ''}`}
                   automationId={chosen.flow.id}
-                  initialRunId={
-                    notifiedRun?.run.automationId === chosen.flow.id ? entityId : undefined
-                  }
+                  initialRunId={notifiedRow?.key === chosen.key ? destination?.runId : undefined}
                   initialSurface={selected.canvas ? 'canvas' : 'runs'}
                   onBack={back}
                 />
               ) : (
                 <CachedAutomation
-                  key={chosen.key}
+                  key={`${chosen.key}:${destination?.runId ?? ''}`}
                   row={chosen}
+                  initialRunId={notifiedRow?.key === chosen.key ? destination?.runId : undefined}
                   busy={busy}
                   error={error}
                   onOpen={() => void open(chosen, true)}

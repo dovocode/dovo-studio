@@ -47,7 +47,8 @@ export function inactiveTaskIds(
   if (!days) return []
   return tasks
     .filter((task) => {
-      if (task.delegation || task.example || task.archivedAt) return false
+      // Bots are persistent assistants; inactivity never settles or archives them.
+      if (task.delegation || task.example || task.archivedAt || task.bot) return false
       const ids = taskFamilyIds(tasks, task.id)
       return tasks.every(
         (member) =>
@@ -110,6 +111,7 @@ export async function archiveTask(
     if (
       !current ||
       current.delegation ||
+      current.bot ||
       current.archivedAt ||
       taskIsBusy(s, id) ||
       !eligible(current)
@@ -286,6 +288,7 @@ export class Housekeeping {
             !task.settledAt ||
             task.archivedAt ||
             task.delegation ||
+            task.bot ||
             task.example
           )
             return false

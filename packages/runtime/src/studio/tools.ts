@@ -93,6 +93,12 @@ function withinPolicy(
 function validateFlow(s: Services, flow: Automation, policy?: StudioPolicy) {
   for (const node of flow.nodes) {
     if (node.data.kind !== 'task') continue
+    if (node.data.botId) {
+      // A Bot step runs with the Bot's settings, so the Bot must stay within this agent's access.
+      const bot = s.store.get().tasks.find((task) => task.id === node.data.botId)
+      if (bot) withinPolicy(s, bot, policy)
+      continue
+    }
     const defaults = s.store.taskDefaults(node.data.repositoryId)
     withinPolicy(
       s,
@@ -405,6 +411,8 @@ export async function studioTool(
       await s.tasks.start(command.id)
       return { ok: true }
     }
+    if (target.bot)
+      throw new HttpError(403, 'Only a person can archive or restore a Bot from Dovo.')
     return runClientEffect(
       taskLifecycle(s, command.id, command.action === 'archive' ? 'archive' : 'restore').pipe(
         Effect.provideService(RuntimeServices, s),

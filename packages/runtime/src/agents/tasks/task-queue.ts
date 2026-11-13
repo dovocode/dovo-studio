@@ -163,7 +163,9 @@ export class TaskQueue {
         t.nativeTodos.every((todo) => todo.status === 'completed')
           ? { nativeTodos: undefined }
           : {}),
+        // A Bot's name changes only through an explicit rename.
         ...(options.initialTitle &&
+        !t.bot &&
         t.title === options.initialTitle.before &&
         !t.history.messages &&
         !t.queue?.length &&

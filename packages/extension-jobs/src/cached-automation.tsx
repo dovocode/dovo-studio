@@ -12,14 +12,16 @@ export function CachedAutomation({
   error,
   onOpen,
   onBack,
+  initialRunId,
 }: {
   row: FleetAutomation
   busy: boolean
   error: string
   onOpen: () => void
   onBack: () => void
+  initialRunId?: string
 }) {
-  const [runId, setRunId] = useApplicationState(row.latest?.id)
+  const [runId, setRunId] = useApplicationState(initialRunId ?? row.latest?.id)
   const run = row.runs.find((run) => run.id === runId) ?? row.latest
   return (
     <section className="flex h-full min-h-0 flex-col">

@@ -269,8 +269,12 @@ export function TaskContextMenu({
             }}
           >
             <Menu.Label className="max-w-64 truncate px-2.5 py-1.5 text-[0.625rem] text-muted-foreground">
-              {repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project')} ·{' '}
-              {source.name}
+              {task.bot
+                ? task.bot.role
+                : repository?.kind === 'scratch'
+                  ? 'No Project'
+                  : (repository?.name ?? 'No Project')}{' '}
+              · {source.name}
             </Menu.Label>
             {toolsMenu}
             <Menu.Label className="px-2.5 py-1.5 text-[0.625rem] font-medium text-muted-foreground">
@@ -443,7 +447,7 @@ export function TaskContextMenu({
               </>
             )}
             <Menu.Separator className={separatorClass} />
-            {repository && repository.kind !== 'scratch' && (
+            {!task.bot && repository && repository.kind !== 'scratch' && (
               <Menu.Item
                 className={itemClass}
                 disabled={!canEdit}
@@ -453,7 +457,7 @@ export function TaskContextMenu({
                 to another computer…
               </Menu.Item>
             )}
-            {source.threadHandoffsSupported && task.status !== 'draft' && (
+            {!task.bot && source.threadHandoffsSupported && task.status !== 'draft' && (
               <Menu.Item
                 className={itemClass}
                 disabled={!canEdit || !!task.archivedAt || !!task.machineHandoff}
@@ -465,99 +469,103 @@ export function TaskContextMenu({
                 <ArrowRightLeft /> Continue elsewhere…
               </Menu.Item>
             )}
-            <Menu.Sub>
-              <Menu.SubTrigger className={itemClass}>
-                <Plus /> New thread <ChevronRight className="ml-auto" />
-              </Menu.SubTrigger>
-              <Menu.Portal>
-                <Menu.SubContent className={menuClass} collisionPadding={8}>
-                  {task.checkoutBranch && task.execution === 'worktree' && (
-                    <Menu.Item
-                      className={itemClass}
-                      disabled={!canEdit || task.status === 'running'}
-                      onSelect={() =>
-                        void run(async () => {
-                          const result = await client.request(
-                            '/api/tasks/worktree-thread',
-                            { id: task.id, mode: 'reuse' },
-                            mutableStruct({ id: Schema.String }),
-                          )
-                          host.navigate({ viewId: 'tasks', entityId: result.id })
-                        })
-                      }
-                    >
-                      <Plus /> New thread on {branch}
-                    </Menu.Item>
-                  )}
-                  <Menu.Item
-                    className={itemClass}
-                    disabled={!canEdit || !repository}
-                    onSelect={onCreate}
-                  >
-                    <Plus />
-                    New thread in this project
-                  </Menu.Item>
-                  {onTemplate && !!templates.length && (
-                    <Menu.Sub>
-                      <Menu.SubTrigger className={itemClass} disabled={!canEdit || !repository}>
+            {!task.bot && (
+              <>
+                <Menu.Sub>
+                  <Menu.SubTrigger className={itemClass}>
+                    <Plus /> New thread <ChevronRight className="ml-auto" />
+                  </Menu.SubTrigger>
+                  <Menu.Portal>
+                    <Menu.SubContent className={menuClass} collisionPadding={8}>
+                      {task.checkoutBranch && task.execution === 'worktree' && (
+                        <Menu.Item
+                          className={itemClass}
+                          disabled={!canEdit || task.status === 'running'}
+                          onSelect={() =>
+                            void run(async () => {
+                              const result = await client.request(
+                                '/api/tasks/worktree-thread',
+                                { id: task.id, mode: 'reuse' },
+                                mutableStruct({ id: Schema.String }),
+                              )
+                              host.navigate({ viewId: 'tasks', entityId: result.id })
+                            })
+                          }
+                        >
+                          <Plus /> New thread on {branch}
+                        </Menu.Item>
+                      )}
+                      <Menu.Item
+                        className={itemClass}
+                        disabled={!canEdit || !repository}
+                        onSelect={onCreate}
+                      >
+                        <Plus />
+                        New thread in this project
+                      </Menu.Item>
+                      {onTemplate && !!templates.length && (
+                        <Menu.Sub>
+                          <Menu.SubTrigger className={itemClass} disabled={!canEdit || !repository}>
+                            <LayoutTemplate />
+                            New thread from template
+                            <ChevronRight className="ml-auto" />
+                          </Menu.SubTrigger>
+                          <Menu.Portal>
+                            <Menu.SubContent className={menuClass} collisionPadding={8}>
+                              {templates.map((template) => (
+                                <Menu.Item
+                                  key={template.id}
+                                  className={itemClass}
+                                  onSelect={() => onTemplate(template.id)}
+                                >
+                                  {template.name}
+                                </Menu.Item>
+                              ))}
+                            </Menu.SubContent>
+                          </Menu.Portal>
+                        </Menu.Sub>
+                      )}
+                      <Menu.Item
+                        className={itemClass}
+                        disabled={!canEdit || !repository || !local}
+                        onSelect={() => {
+                          setTemplateName(task.title)
+                          setError('')
+                          setDialog('template')
+                        }}
+                      >
                         <LayoutTemplate />
-                        New thread from template
-                        <ChevronRight className="ml-auto" />
-                      </Menu.SubTrigger>
-                      <Menu.Portal>
-                        <Menu.SubContent className={menuClass} collisionPadding={8}>
-                          {templates.map((template) => (
-                            <Menu.Item
-                              key={template.id}
-                              className={itemClass}
-                              onSelect={() => onTemplate(template.id)}
-                            >
-                              {template.name}
-                            </Menu.Item>
-                          ))}
-                        </Menu.SubContent>
-                      </Menu.Portal>
-                    </Menu.Sub>
-                  )}
-                  <Menu.Item
-                    className={itemClass}
-                    disabled={!canEdit || !repository || !local}
-                    onSelect={() => {
-                      setTemplateName(task.title)
-                      setError('')
-                      setDialog('template')
-                    }}
-                  >
-                    <LayoutTemplate />
-                    Save as template…
-                  </Menu.Item>
-                </Menu.SubContent>
-              </Menu.Portal>
-            </Menu.Sub>
-            <Menu.Sub>
-              <Menu.SubTrigger className={itemClass}>
-                <Filter /> Project <ChevronRight className="ml-auto" />
-              </Menu.SubTrigger>
-              <Menu.Portal>
-                <Menu.SubContent className={menuClass} collisionPadding={8}>
-                  <Menu.Item
-                    className={itemClass}
-                    disabled={!canEdit || !repository || !local}
-                    onSelect={() => setDialog('project')}
-                  >
-                    <Filter /> Project settings
-                  </Menu.Item>
-                  <Menu.Item
-                    className={itemClass}
-                    disabled={blocked || !repository}
-                    onSelect={onFilter}
-                  >
-                    <Filter />
-                    Filter by project
-                  </Menu.Item>
-                </Menu.SubContent>
-              </Menu.Portal>
-            </Menu.Sub>
+                        Save as template…
+                      </Menu.Item>
+                    </Menu.SubContent>
+                  </Menu.Portal>
+                </Menu.Sub>
+                <Menu.Sub>
+                  <Menu.SubTrigger className={itemClass}>
+                    <Filter /> Project <ChevronRight className="ml-auto" />
+                  </Menu.SubTrigger>
+                  <Menu.Portal>
+                    <Menu.SubContent className={menuClass} collisionPadding={8}>
+                      <Menu.Item
+                        className={itemClass}
+                        disabled={!canEdit || !repository || !local}
+                        onSelect={() => setDialog('project')}
+                      >
+                        <Filter /> Project settings
+                      </Menu.Item>
+                      <Menu.Item
+                        className={itemClass}
+                        disabled={blocked || !repository}
+                        onSelect={onFilter}
+                      >
+                        <Filter />
+                        Filter by project
+                      </Menu.Item>
+                    </Menu.SubContent>
+                  </Menu.Portal>
+                </Menu.Sub>
+              </>
+            )}
             <Menu.Sub>
               <Menu.SubTrigger className={itemClass} disabled={blocked}>
                 <Copy />
@@ -578,8 +586,12 @@ export function TaskContextMenu({
                   {(
                     [
                       ['Title', task.title],
-                      ['Branch', branch],
-                      ['Project path', repository?.path ?? ''],
+                      ...(!task.bot
+                        ? [
+                            ['Branch', branch],
+                            ['Project path', repository?.path ?? ''],
+                          ]
+                        : []),
                       ['Thread ID', task.id],
                       [
                         'Studio ID (for agents)',
@@ -629,136 +641,141 @@ export function TaskContextMenu({
                       Compact agent context
                     </Menu.Item>
                   )}
-                  <Menu.Item
-                    className={itemClass}
-                    disabled={!canEdit || task.status === 'running'}
-                    onSelect={() =>
-                      void run(async () => {
-                        const generated = await client.request(
-                          '/api/tasks/title',
-                          {
-                            taskId: task.id,
-                          },
-                          generatedTitleSchema,
-                        )
-                        await patch({
-                          title: generated.title,
-                        })
-                      })
-                    }
-                  >
-                    <Sparkles />
-                    Regenerate title
-                  </Menu.Item>
-                  <Menu.Sub>
-                    <Menu.SubTrigger
-                      className={itemClass}
-                      disabled={!canEdit || !source.threadBehaviorSupported}
-                    >
-                      <Check /> Auto-settle behavior <ChevronRight className="ml-auto" />
-                    </Menu.SubTrigger>
-                    <Menu.Portal>
-                      <Menu.SubContent className={menuClass} collisionPadding={8}>
-                        <Menu.Item
-                          className={itemClass}
-                          onSelect={() => void run(() => patch({ settleBehavior: undefined }))}
-                        >
-                          {!task.settleBehavior && <Check />} Inherit project settings
-                        </Menu.Item>
-                        <Menu.Item
-                          className={itemClass}
-                          onSelect={() =>
-                            void run(() =>
-                              patch({
-                                settleBehavior: {
-                                  settleMerged: false,
-                                  settleClosed: false,
-                                  settleInactive: false,
-                                },
-                              }),
+                  {!task.bot && (
+                    <>
+                      <Menu.Item
+                        className={itemClass}
+                        disabled={!canEdit || task.status === 'running'}
+                        onSelect={() =>
+                          void run(async () => {
+                            const generated = await client.request(
+                              '/api/tasks/title',
+                              {
+                                taskId: task.id,
+                              },
+                              generatedTitleSchema,
                             )
-                          }
-                        >
-                          {task.settleBehavior?.settleMerged === false &&
-                            task.settleBehavior?.settleClosed === false &&
-                            task.settleBehavior?.settleInactive === false && <Check />}{' '}
-                          Never auto-settle
-                        </Menu.Item>
-                        {(
-                          [
-                            ['settleMerged', 'When PR merges'],
-                            ['settleClosed', 'When PR closes'],
-                            ['settleInactive', 'After 3 inactive days'],
-                          ] as const
-                        ).map(([field, label]) => (
-                          <Menu.Item
-                            key={field}
-                            className={itemClass}
-                            onSelect={() =>
-                              void run(() =>
-                                patch({
-                                  settleBehavior: {
-                                    settleMerged: false,
-                                    settleClosed: false,
-                                    settleInactive: false,
-                                    ...task.settleBehavior,
-                                    [field]: !task.settleBehavior?.[field],
-                                    ...(field === 'settleInactive' ? { inactiveDays: 3 } : {}),
-                                  },
-                                }),
-                              )
-                            }
-                          >
-                            {task.settleBehavior?.[field] && <Check />} {label}
-                          </Menu.Item>
-                        ))}
-                      </Menu.SubContent>
-                    </Menu.Portal>
-                  </Menu.Sub>
-                  <Menu.Sub>
-                    <Menu.SubTrigger
-                      className={itemClass}
-                      disabled={!canEdit || !source.threadBehaviorSupported}
-                    >
-                      <Archive /> Auto-archive after settled <ChevronRight className="ml-auto" />
-                    </Menu.SubTrigger>
-                    <Menu.Portal>
-                      <Menu.SubContent className={menuClass} collisionPadding={8}>
-                        <Menu.Item
+                            await patch({
+                              title: generated.title,
+                            })
+                          })
+                        }
+                      >
+                        <Sparkles />
+                        Regenerate title
+                      </Menu.Item>
+                      <Menu.Sub>
+                        <Menu.SubTrigger
                           className={itemClass}
-                          onSelect={() =>
-                            void run(() => patch({ archiveAfterSettledDays: undefined }))
-                          }
+                          disabled={!canEdit || !source.threadBehaviorSupported}
                         >
-                          {task.archiveAfterSettledDays === undefined && <Check />} Inherit project
-                          settings
-                        </Menu.Item>
-                        {[0, 1, 3, 7, 14, 30].map((days) => (
-                          <Menu.Item
-                            key={days}
-                            className={itemClass}
-                            onSelect={() =>
-                              void run(() => patch({ archiveAfterSettledDays: days }))
-                            }
-                          >
-                            {task.archiveAfterSettledDays === days && <Check />}{' '}
-                            {days
-                              ? `After ${days} ${days === 1 ? 'day' : 'days'} in Settled`
-                              : 'Never automatically archive'}
-                          </Menu.Item>
-                        ))}
-                        <Menu.Item
+                          <Check /> Auto-settle behavior <ChevronRight className="ml-auto" />
+                        </Menu.SubTrigger>
+                        <Menu.Portal>
+                          <Menu.SubContent className={menuClass} collisionPadding={8}>
+                            <Menu.Item
+                              className={itemClass}
+                              onSelect={() => void run(() => patch({ settleBehavior: undefined }))}
+                            >
+                              {!task.settleBehavior && <Check />} Inherit project settings
+                            </Menu.Item>
+                            <Menu.Item
+                              className={itemClass}
+                              onSelect={() =>
+                                void run(() =>
+                                  patch({
+                                    settleBehavior: {
+                                      settleMerged: false,
+                                      settleClosed: false,
+                                      settleInactive: false,
+                                    },
+                                  }),
+                                )
+                              }
+                            >
+                              {task.settleBehavior?.settleMerged === false &&
+                                task.settleBehavior?.settleClosed === false &&
+                                task.settleBehavior?.settleInactive === false && <Check />}{' '}
+                              Never auto-settle
+                            </Menu.Item>
+                            {(
+                              [
+                                ['settleMerged', 'When PR merges'],
+                                ['settleClosed', 'When PR closes'],
+                                ['settleInactive', 'After 3 inactive days'],
+                              ] as const
+                            ).map(([field, label]) => (
+                              <Menu.Item
+                                key={field}
+                                className={itemClass}
+                                onSelect={() =>
+                                  void run(() =>
+                                    patch({
+                                      settleBehavior: {
+                                        settleMerged: false,
+                                        settleClosed: false,
+                                        settleInactive: false,
+                                        ...task.settleBehavior,
+                                        [field]: !task.settleBehavior?.[field],
+                                        ...(field === 'settleInactive' ? { inactiveDays: 3 } : {}),
+                                      },
+                                    }),
+                                  )
+                                }
+                              >
+                                {task.settleBehavior?.[field] && <Check />} {label}
+                              </Menu.Item>
+                            ))}
+                          </Menu.SubContent>
+                        </Menu.Portal>
+                      </Menu.Sub>
+                      <Menu.Sub>
+                        <Menu.SubTrigger
                           className={itemClass}
-                          onSelect={() => {
-                            setArchiveDays(String(task.archiveAfterSettledDays || 7))
-                            setDialog('archive-period')
-                          }}
+                          disabled={!canEdit || !source.threadBehaviorSupported}
                         >
-                          Custom period…
-                        </Menu.Item>
-                      </Menu.SubContent>
-                    </Menu.Portal>
-                  </Menu.Sub>
+                          <Archive /> Auto-archive after settled{' '}
+                          <ChevronRight className="ml-auto" />
+                        </Menu.SubTrigger>
+                        <Menu.Portal>
+                          <Menu.SubContent className={menuClass} collisionPadding={8}>
+                            <Menu.Item
+                              className={itemClass}
+                              onSelect={() =>
+                                void run(() => patch({ archiveAfterSettledDays: undefined }))
+                              }
+                            >
+                              {task.archiveAfterSettledDays === undefined && <Check />} Inherit
+                              project settings
+                            </Menu.Item>
+                            {[0, 1, 3, 7, 14, 30].map((days) => (
+                              <Menu.Item
+                                key={days}
+                                className={itemClass}
+                                onSelect={() =>
+                                  void run(() => patch({ archiveAfterSettledDays: days }))
+                                }
+                              >
+                                {task.archiveAfterSettledDays === days && <Check />}{' '}
+                                {days
+                                  ? `After ${days} ${days === 1 ? 'day' : 'days'} in Settled`
+                                  : 'Never automatically archive'}
+                              </Menu.Item>
+                            ))}
+                            <Menu.Item
+                              className={itemClass}
+                              onSelect={() => {
+                                setArchiveDays(String(task.archiveAfterSettledDays || 7))
+                                setDialog('archive-period')
+                              }}
+                            >
+                              Custom period…
+                            </Menu.Item>
+                          </Menu.SubContent>
+                        </Menu.Portal>
+                      </Menu.Sub>
+                    </>
+                  )}
                 </Menu.SubContent>
               </Menu.Portal>
             </Menu.Sub>

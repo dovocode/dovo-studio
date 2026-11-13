@@ -1,3 +1,5 @@
+import { botPaused } from '@dovo/protocol'
+import { forgetThreadActions } from '../../agent-tools/thread-actions.js'
 import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
 import {
   taskMessageSchema,
@@ -764,7 +766,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           !taskHistoryCounts(before).messages &&
           !before.queue?.length &&
           !taskHistoryCounts(before).turns
-        if (input.selectProject)
+        // Bots are standalone; automatic project selection never moves one into a project.
+        if (input.selectProject && !before.bot)
           yield* s.titles.selectProjectsEffect({
             id: input.id,
             requestId: input.messageId,
@@ -943,6 +946,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             if (!task) return false
             return (
               !task.queuePaused &&
+              !botPaused(task) &&
               !task.archived &&
               !task.archivedAt &&
               !task.restartRecovery &&
@@ -1680,6 +1684,8 @@ export function taskLifecycle(
           for (const taskId of ids) {
             s.projectTransfers.discardStagedThread(taskId)
             s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)
+            s.memory.removeBot(taskId)
+            forgetThreadActions(s, taskId)
           }
           s.store.update((workspace) => ({
             ...workspace,

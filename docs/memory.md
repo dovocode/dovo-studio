@@ -8,6 +8,8 @@ coding providers' native memory. All Memory scopes start **off**:
   project separately. Delegated agents working in a linked project use that project's memory.
 - **No project**: a separate space shared by threads without a project, including scratch threads.
 
+[Bots](bots.md) also have a private `bot` scope. It is always on for its Bot and has no switch.
+
 Open **Settings → Tasks & projects → Memory** on desktop, select the computer and memory scope, then
 use **Enable memory for this scope**. You can search, create, edit and delete saved notes there.
 Mobile exposes the same scope switches under the computer's settings; manage note content on

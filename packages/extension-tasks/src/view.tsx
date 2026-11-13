@@ -1,3 +1,4 @@
+import { botScope } from './bots/bot-scope'
 import type { WorkspaceControls } from './chat/composer/composer-workspace'
 import type { SelectRemoteProject } from './chat/composer/composer-project'
 import type { CodeFinding } from '@dovo/protocol'
@@ -6,6 +7,7 @@ import { randomUUID, checkpointFileCount } from '@dovo/protocol'
 import { forgePullTarget, pullRepositoryIdentity } from '@dovo/protocol'
 import { FloatingPreview, type PreviewPlacement } from './detail/floating-preview'
 import { ResizableSidebar } from './detail/resizable-sidebar'
+import { BotSettings } from './bots/bot-settings'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
 import {
@@ -371,6 +373,7 @@ export default function TasksView({
   } | null>(null)
   const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
+    'bot-settings': null,
     'pull-preview': null,
     'linked-pulls': null,
     chat: null,
@@ -1049,7 +1052,7 @@ export default function TasksView({
             agent.sessionId === native.agent.sessionId,
         ) ??
         native.agent)
-    const projectPanelOpen = preferences.projectPanelOpen
+    const projectPanelOpen = !task.bot && preferences.projectPanelOpen
     const pendingInsert =
       (composerInsert?.threadKey === threadKey ? composerInsert : null) ??
       handoffs.find((item) => item.threadKey === threadKey) ??
@@ -1358,6 +1361,30 @@ export default function TasksView({
                     : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[inherit]'
                 }
               >
+                {task.bot && (
+                  <div
+                    hidden={surface !== 'bot-settings'}
+                    className="min-h-0 flex-1 overflow-y-auto"
+                    aria-label="Bot settings panel"
+                    ref={(node) => {
+                      panes.current['bot-settings'] = node
+                    }}
+                  >
+                    <header className="studio-thread-tools-header flex items-center gap-2 border-b px-3 py-2 text-xs">
+                      <h2 className="flex-1 font-medium">Bot settings</h2>
+                      <IconButton
+                        label="Close Bot settings"
+                        onClick={() => selectSurface('chat', true)}
+                      >
+                        <X size={14} />
+                      </IconButton>
+                    </header>
+                    <BotSettings
+                      key={`${botScope(snapshot?.runtimeId ?? activeRuntimeId, store.connection)}:${task.id}`}
+                      task={task}
+                    />
+                  </div>
+                )}
                 {surface === 'changes' && (
                   <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
                     <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />

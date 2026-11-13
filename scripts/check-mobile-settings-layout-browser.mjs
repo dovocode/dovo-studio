@@ -612,6 +612,31 @@ try {
     )
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+    await page.evaluate(() => window.navigate('/settings/pull-requests'))
+    const babysitting = page.getByRole('switch', { name: 'PR babysitting', exact: true })
+    await babysitting.waitFor()
+    assert.equal(await babysitting.getAttribute('aria-checked'), 'false')
+    await babysitting.click()
+    await page.waitForFunction(
+      () => window.computerPreferences.computer.enablePullRequestBabysitting === true,
+    )
+    assert.equal(
+      await page.evaluate(() => window.computerPreferences.computer.enablePullRequestWatching),
+      true,
+    )
+    assert.equal(
+      await page.evaluate(() => window.computerPreferences.other.enablePullRequestBabysitting),
+      false,
+    )
+    await babysitting.click()
+    await page.waitForFunction(
+      () => window.computerPreferences.computer.enablePullRequestBabysitting === false,
+    )
+    assert.equal(
+      await page.evaluate(() => window.computerPreferences.computer.enablePullRequestWatching),
+      true,
+    )
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
     await search.fill('general memory')
     await row('Memory').waitFor()
     await page.getByText('Agents & tools', { exact: true }).waitFor()

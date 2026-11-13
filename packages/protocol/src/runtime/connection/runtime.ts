@@ -144,6 +144,8 @@ export const jobRunStepSchema = mutableStruct({
   kind: Schema.Literals(['trigger', 'task', 'review']),
   status: Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']),
   taskId: Schema.optional(Schema.String),
+  /** Bot steps: the routine message in the Bot thread. Its turn is this step's result. */
+  messageId: Schema.optional(Schema.String),
   attempt: minValue(
     Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
       Schema.check(Schema.isInt()),
@@ -267,6 +269,12 @@ export const snapshotSchema = mutableStruct({
   messageSetupSupported: Schema.optional(Schema.Literal(true)),
   /** The first `/api/tasks/message` can carry its unsent draft as `createTask`. */
   threadStartSupported: Schema.optional(Schema.Literal(true)),
+  /** `/api/bots/*`, `Task.bot`, bot memory and automation Bot steps. */
+  botsSupported: Schema.optional(Schema.Literal(true)),
+  /** `Task.bot.resources` and `/api/bots/update` `resources`. */
+  botResourcesSupported: Schema.optional(Schema.Literal(true)),
+  /** `Task.threadActions`, the `thread_prepare` agent tool and `/api/thread-actions/*`. */
+  threadActionsSupported: Schema.optional(Schema.Literal(true)),
   /** Queued model/reasoning choices become thread defaults when their turn starts. */
   persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
@@ -626,6 +634,10 @@ export const runtimePreferencesSchema = mutableStruct({
   enableCodeReviews: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   /** Experimental: let agents hand PR feedback monitoring to this runtime. */
   enablePullRequestWatching: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  /** Opt-in: maintain linked editing PRs through CI, review feedback and target updates. */
+  enablePullRequestBabysitting: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
   /** Experimental: let agents hand pipeline run monitoring to this runtime. */

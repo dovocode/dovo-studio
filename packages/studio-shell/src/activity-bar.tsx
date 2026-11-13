@@ -108,12 +108,13 @@ export function ActivityBar({
   const unifiedViews = views.filter((view) => !view.navigationGroup && view.id === 'workspace')
   const workspaceViews = views.filter(
     (view) =>
-      !view.navigationGroup && ['tasks', 'browser', 'terminals', 'artifacts'].includes(view.id),
+      !view.navigationGroup &&
+      ['tasks', 'bots', 'browser', 'terminals', 'artifacts'].includes(view.id),
   )
   const toolViews = views.filter(
     (view) =>
       !view.navigationGroup &&
-      !['workspace', 'tasks', 'browser', 'terminals', 'artifacts'].includes(view.id),
+      !['workspace', 'tasks', 'bots', 'browser', 'terminals', 'artifacts'].includes(view.id),
   )
   const settings = views.filter((view) => view.navigationGroup === 'settings')
   const settingsActive = settings.some((view) => view.id === activeId)

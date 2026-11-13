@@ -26,6 +26,7 @@ import {
   MessageCircleQuestion,
   MessageCircleDashed,
   Pin,
+  Pause,
   Network,
   SquareTerminal,
   Save,
@@ -60,6 +61,7 @@ import { useTaskListUndo } from './task-list-undo'
 import { taskListActionHandlers } from './task-list-action'
 
 const statusIcons: Record<string, LucideIcon> = {
+  Paused: Pause,
   Draft: FilePenLine,
   Working: CircleDashed,
   'Was working': CloudOff,
@@ -179,13 +181,19 @@ function TaskListRowView({
   }
   const car = useCarMode()
   const dense = !car && density === 'compact'
-  const status = taskRowStatus(task, needsInput, row.online, now)
+  const status =
+    task.bot?.state === 'paused' && row.online && !needsInput && !taskIsWorking(task)
+      ? 'Paused'
+      : taskRowStatus(task, needsInput, row.online, now)
   const done = showTaskDone(task, needsInput, now)
   const failed = !needsInput && !done && status.startsWith('Failed')
   const displayProject = owner.displayProject ?? repository
-  const general = repository?.kind === 'scratch'
-  const projectName =
-    displayProject?.kind === 'scratch' ? 'No Project' : row.projectName || 'No Project'
+  const general = !!task.bot || repository?.kind === 'scratch'
+  const projectName = task.bot
+    ? task.bot.role
+    : displayProject?.kind === 'scratch'
+      ? 'No Project'
+      : row.projectName || 'No Project'
   const worktree = !general && task.execution === 'worktree'
   // "Review · 23m" → state "Review" and a right-aligned age "23m".
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
@@ -273,7 +281,11 @@ function TaskListRowView({
         )}
       </View>
     )
-  const projectBadge = projectImage
+  const projectBadge = task.bot ? (
+    <Icon name="bot" size={badgeSize} color={colors.muted} />
+  ) : (
+    projectImage
+  )
   const subthreadControl = childCount > 0 && (
     <Pressable
       accessibilityRole="button"
@@ -382,14 +394,15 @@ function TaskListRowView({
       {task.title}
     </Text>
   )
-  const title = showTypeIndicator ? (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-      <Icon name="chat" size={14} color={colors.muted} />
-      {titleText}
-    </View>
-  ) : (
-    titleText
-  )
+  const title =
+    !task.bot && showTypeIndicator ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+        <Icon name={task.bot ? 'bot' : 'chat'} size={14} color={colors.muted} />
+        {titleText}
+      </View>
+    ) : (
+      titleText
+    )
 
   const statusIndicator = state !== 'Review' && (
     <View
@@ -487,14 +500,16 @@ function TaskListRowView({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${projectName}, ${task.title}, ${status}, ${general ? 'Conversation' : `${worktree ? 'Worktree' : 'Local checkout'}, ${branch}`}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
+          accessibilityLabel={`${task.bot ? 'Bot, ' : ''}${task.pinned ? 'Pinned, ' : ''}${projectName}, ${task.title}, ${status}, ${task.bot ? 'Bot' : general ? 'Conversation' : `${worktree ? 'Worktree' : 'Local checkout'}, ${branch}`}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
           accessibilityHint={
             car
               ? 'Open conversation.'
               : selectionActive
                 ? 'Tap to toggle selection.'
                 : settled
-                  ? 'Open conversation. Touch and hold to select. Tap the project icon for task details.'
+                  ? task.bot
+                    ? 'Open Bot conversation. Touch and hold to select. Tap the Bot icon for actions.'
+                    : 'Open conversation. Touch and hold to select. Tap the project icon for task details.'
                   : 'Open conversation. Touch and hold to select. Task details are in the actions menu.'
           }
           accessibilityState={{ disabled, selected: selectionActive ? selected : current }}
@@ -557,7 +572,7 @@ function TaskListRowView({
           ) : (
             <View style={{ flex: 1, minWidth: 0, gap: rowGap }}>
               <View
-                testID="Thread project"
+                testID={task.bot ? 'Bot identity' : 'Thread project'}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -566,7 +581,10 @@ function TaskListRowView({
                   paddingRight: car ? 0 : 32,
                 }}
               >
-                <View testID="Thread project icon" style={{ width: badgeSize, flexShrink: 0 }}>
+                <View
+                  testID={task.bot ? 'Bot identity icon' : 'Thread project icon'}
+                  style={{ width: badgeSize, flexShrink: 0 }}
+                >
                   {projectBadge}
                 </View>
                 <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...metadataText }]}>

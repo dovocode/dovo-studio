@@ -9,6 +9,7 @@ const literalMessage =
 const environment = `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
+export {createTask} from '${root}/packages/studio-core/src/workspace/actions.ts';
 export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>useContext(Context);
 export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useResolvedTheme=()=> 'dark';
 export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=useWorkspace;export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
@@ -68,7 +69,7 @@ async function bundle(mobile) {
   const ui = `${root}/packages/studio-ui/src/components`
   if (!mobile)
     mocks['@dovo/studio-ui'] =
-      `export * as ContextMenu from '@radix-ui/react-context-menu';export {Button} from '${ui}/ui/button.tsx';export {Input} from '${ui}/ui/input.tsx';export {IconButton} from '${ui}/icon-button.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${ui}/ui/dialog.tsx';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=({children})=><div>{children}</div>;export const ConversationHistory=ConversationContent;export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;`
+      `export * as ContextMenu from '@radix-ui/react-context-menu';export {Button} from '${ui}/ui/button.tsx';export {Input} from '${ui}/ui/input.tsx';export {IconButton} from '${ui}/icon-button.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogHeader} from '${ui}/ui/dialog.tsx';export {FormField} from '${ui}/form-field.tsx';export {Textarea} from '${ui}/ui/textarea.tsx';export {permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';export const HarnessFields=({value,onChange})=><label>Harness model<input value={value.model} onChange={event=>onChange({...value,model:event.target.value})}/></label>;export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=({children})=><div>{children}</div>;export const ConversationHistory=ConversationContent;export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;`
   const renderedFixture = fixture
     .replace(
       'CHOOSER_STATE',

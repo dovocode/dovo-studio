@@ -231,6 +231,8 @@ it('enriches full detail without losing review decisions, requested teams, or cl
               mergeStateStatus: 'BLOCKED',
               isInMergeQueue: false,
               viewerCanUpdate: true,
+              viewerCanUpdateBranch: true,
+              baseRef: { compare: { behindBy: 2 } },
               viewerCanEnableAutoMerge: true,
               viewerCanDisableAutoMerge: true,
               autoMergeRequest: null,
@@ -358,6 +360,13 @@ it('enriches full detail without losing review decisions, requested teams, or cl
     headRef: 'refs/pull/7/head',
     reviewers: ['maintainers'],
   })
+  const feedback = await new PullRequests(git, {
+    host: repo.host,
+    repository: repo.nameWithOwner,
+  }).feedback('/repo', 7)
+  expect(feedback.pull.behindBy).toBe(2)
+  expect(feedback.capabilities?.actions).toContain('update-branch')
+  expect(feedback.files).toEqual([])
   expect(detail.fileBaseUrl).toBe(`${repo.url}/blob/${sha}/`)
   expect(detail.comments.find((comment) => comment.id === 'review-1')).toMatchObject({
     state: 'APPROVED',

@@ -5,6 +5,8 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  // Bot settings are covered by check-bots-browser; retain normal-thread model coverage here.
+  './bots/bot-settings': 'export const BotSettings=()=>null;',
   './detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   // Sharing controls have a separate browser suite; this fixture covers model selection.

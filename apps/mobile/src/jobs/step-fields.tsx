@@ -91,85 +91,118 @@ export function StepFields({
             multiline
             style={{ minHeight: 96, textAlignVertical: 'top' }}
           />
-          <Choice
-            label="Project"
-            value={data.repositoryId}
-            items={workspace.repositories.map((repository) => ({
-              id: repository.id,
-              name: projectDisplayName(repository),
-            }))}
-            disabled={disabled || !workspace.repositories.length}
-            onChange={(repositoryId) => onChange({ repositoryId })}
-          />
-          <Choice
-            label="Harness"
-            value={taskHarnessSelection(task)}
-            items={taskHarnessChoices(
-              task,
-              agents,
-              installations,
-              snapshot?.defaults?.modelPreferences,
-            )}
-            disabled={disabled}
-            onChange={(selection) => {
-              const next = selectedTaskHarness(task, agents, selection, installations)
-              if (!next) return
-              if (selection.startsWith('agent:'))
-                onChange({
-                  agentId: selection.slice(6),
-                  harness: decode(taskHarnessSchema, next),
-                  agentOverrides: undefined,
-                })
-              else changeAgent(next)
-            }}
-          />
-          <ModelSettings agent={agent} onChange={changeAgent} disabled={disabled} />
-          <Choice
-            label="Permissions"
-            value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
-            selectedLabel={permissionPolicyLabel(agent)}
-            disabled={disabled}
-            items={selectableAccessModes(agent.permission, agent.provider)
-              .filter((mode) => supportsAccess(agent.provider, mode.id))
-              .map((mode) => ({ id: mode.id, name: mode.name }))}
-            onChange={(permission) =>
-              changeAgent(
-                selectPermissionPreset(agent, decode(agentSchema.fields.permission, permission)),
-              )
-            }
-          />
-          {(agent.provider === 'opencode' ||
-            (agent.provider === 'acp' && !agent.acpInstallationId)) && (
-            <Field
-              label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
-              value={agent.endpoint}
-              editable={!disabled}
-              onChangeText={(endpoint) => changeAgent({ ...agent, endpoint })}
+          {(snapshot?.botsSupported || data.botId) && (
+            <Choice
+              label="Destination"
+              value={data.botId ?? ''}
+              disabled={disabled}
+              items={[
+                { id: '', name: 'New thread for each run' },
+                ...(snapshot?.workspace.tasks
+                  .filter((task) => task.bot && (!task.archivedAt || task.id === data.botId))
+                  .map((task) => ({
+                    id: task.id,
+                    name: `${task.title}${task.archivedAt ? ' · Archived' : task.bot?.state === 'paused' ? ' · Paused' : ''}`,
+                  })) ?? []),
+                ...(data.botId &&
+                !snapshot?.workspace.tasks.some((task) => task.id === data.botId && task.bot)
+                  ? [{ id: data.botId, name: 'Unavailable Bot' }]
+                  : []),
+              ]}
+              onChange={(botId) => onChange({ botId: botId || undefined })}
             />
           )}
-          {!workspace.repositories.length && (
-            <Text style={styles.muted}>Add a project in Tasks → Projects first.</Text>
+          {data.botId ? (
+            <Text style={styles.muted}>
+              This step uses the Bot’s persistent chat, harness and permissions. A paused Bot must
+              resume before this step can run.
+            </Text>
+          ) : (
+            <>
+              <Choice
+                label="Project"
+                value={data.repositoryId}
+                items={workspace.repositories.map((repository) => ({
+                  id: repository.id,
+                  name: projectDisplayName(repository),
+                }))}
+                disabled={disabled || !workspace.repositories.length}
+                onChange={(repositoryId) => onChange({ repositoryId })}
+              />
+              <Choice
+                label="Harness"
+                value={taskHarnessSelection(task)}
+                items={taskHarnessChoices(
+                  task,
+                  agents,
+                  installations,
+                  snapshot?.defaults?.modelPreferences,
+                )}
+                disabled={disabled}
+                onChange={(selection) => {
+                  const next = selectedTaskHarness(task, agents, selection, installations)
+                  if (!next) return
+                  if (selection.startsWith('agent:'))
+                    onChange({
+                      agentId: selection.slice(6),
+                      harness: decode(taskHarnessSchema, next),
+                      agentOverrides: undefined,
+                    })
+                  else changeAgent(next)
+                }}
+              />
+              <ModelSettings agent={agent} onChange={changeAgent} disabled={disabled} />
+              <Choice
+                label="Permissions"
+                value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
+                selectedLabel={permissionPolicyLabel(agent)}
+                disabled={disabled}
+                items={selectableAccessModes(agent.permission, agent.provider)
+                  .filter((mode) => supportsAccess(agent.provider, mode.id))
+                  .map((mode) => ({ id: mode.id, name: mode.name }))}
+                onChange={(permission) =>
+                  changeAgent(
+                    selectPermissionPreset(
+                      agent,
+                      decode(agentSchema.fields.permission, permission),
+                    ),
+                  )
+                }
+              />
+              {(agent.provider === 'opencode' ||
+                (agent.provider === 'acp' && !agent.acpInstallationId)) && (
+                <Field
+                  label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
+                  value={agent.endpoint}
+                  editable={!disabled}
+                  onChangeText={(endpoint) => changeAgent({ ...agent, endpoint })}
+                />
+              )}
+              {!workspace.repositories.length && (
+                <Text style={styles.muted}>Add a project in Tasks → Projects first.</Text>
+              )}
+              <Choice
+                label="Checkout"
+                value={data.execution ?? 'main'}
+                disabled={disabled}
+                items={[
+                  { id: 'worktree', name: 'New worktree' },
+                  { id: 'main', name: 'Local checkout' },
+                ]}
+                onChange={(execution) => {
+                  if (execution === 'worktree' || execution === 'main') onChange({ execution })
+                }}
+              />
+              <LinkedCheckoutEditor
+                value={data.linkedCheckouts ?? []}
+                disabled={disabled}
+                onChange={(linkedCheckouts) => onChange({ linkedCheckouts })}
+              />
+              <Text style={styles.muted}>
+                Each task has its own chat. A new worktree keeps its changes separate.
+              </Text>
+            </>
           )}
-          <Choice
-            label="Checkout"
-            value={data.execution ?? 'main'}
-            disabled={disabled}
-            items={[
-              { id: 'worktree', name: 'New worktree' },
-              { id: 'main', name: 'Local checkout' },
-            ]}
-            onChange={(execution) => {
-              if (execution === 'worktree' || execution === 'main') onChange({ execution })
-            }}
-          />
-          <LinkedCheckoutEditor
-            value={data.linkedCheckouts ?? []}
-            disabled={disabled}
-            onChange={(linkedCheckouts) => onChange({ linkedCheckouts })}
-          />
-          <Text style={styles.muted}>
-            Each task has its own chat. A new worktree keeps its changes separate.
-          </Text>
         </>
       )}
     </View>

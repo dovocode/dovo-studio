@@ -12,10 +12,10 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
-import {PierreEditor} from './src/review/pierre-editor';import {ResizableSidebar} from './src/detail/resizable-sidebar';
+import {PierreEditor} from './src/review/pierre-editor';import {updateAppPreferences} from '${root}/packages/studio-core/src/preferences.ts';updateAppPreferences({diffLayout:'split',diffOverflow:'wrap'});import {ResizableSidebar} from './src/detail/resizable-sidebar';
 const lines=Array.from({length:1000},(_,i)=>'export const value'+i+' = '+i+';');const before=lines.join('\\n');lines[10]='export const changed = '+JSON.stringify('long '.repeat(200))+';';lines[800]='export const other = false;';const file={path:'fixture.ts',before,after:lines.join('\\n'),viewed:false};
 const noop=()=>{};const comment=async(body,range)=>{window.postedComment={body,range}};window.renderCount=0;
-function App(){const[current,setFile]=useState(file);window.loadLarge=()=>setFile({...file,before:'',after:Array.from({length:5000},(_,i)=>'export const large'+i+' = '+JSON.stringify('text '.repeat(30))+';').join('\\n')});const[focus,setFocus]=useState(undefined);window.setFocus=setFocus;window.renderCount++;return <main className="dark flex h-screen min-w-0 overflow-hidden"><section className="flex min-h-0 min-w-0 flex-1 flex-col"><PierreEditor file={current} task={{id:"task",repositoryId:"repo"}} comments={[]} onSave={contents=>{window.savedContents=contents;setFile(current=>({...current,after:contents}))}} onComment={comment} onEditingChange={noop} focusedLine={focus}/></section><ResizableSidebar preference="diffFilesSidebarWidth" label="diff files pane" side="right" maxFraction={0.4} maxWidth={640} className="border-l">Files</ResizableSidebar></main>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[current,setFile]=useState(file);window.loadLarge=()=>setFile({...file,before:'',after:Array.from({length:50000},(_,i)=>'export const large'+i+' = '+JSON.stringify('text '.repeat(30))+';').join('\\n')});const[focus,setFocus]=useState(undefined);window.setFocus=setFocus;window.renderCount++;return <main className="dark flex h-screen min-w-0 overflow-hidden"><section className="flex min-h-0 min-w-0 flex-1 flex-col"><PierreEditor file={current} task={{id:"task",repositoryId:"repo"}} comments={[]} onSave={contents=>{window.savedContents=contents;setFile(current=>({...current,after:contents}))}} onComment={comment} onEditingChange={noop} focusedLine={focus}/></section><ResizableSidebar preference="diffFilesSidebarWidth" label="diff files pane" side="right" maxFraction={0.4} maxWidth={640} className="border-l">Files</ResizableSidebar></main>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
     bundle: true,
@@ -50,15 +50,11 @@ function App(){const[current,setFile]=useState(file);window.loadLarge=()=>setFil
     },
     {
       path: '@dovo/studio-core',
-      contents: `export const useWorkspace=()=>({connection:{address:'http://runtime',token:'test'},workspace:{repositories:[]}});export const defaultAppPreferences={diffFilesSidebarWidth:260};export const readAppPreferences=()=>defaultAppPreferences;export const updateAppPreferences=value=>Object.assign(defaultAppPreferences,value);`,
+      contents: `export const useWorkspace=()=>({connection:{address:'http://runtime',token:'test'},workspace:{repositories:[]}});export * from '${root}/packages/studio-core/src/preferences.ts';export * from '${root}/packages/studio-core/src/themes.ts';`,
     },
     {
       path: '@dovo/studio-ui',
       contents: `export {cn} from '${root}/packages/studio-ui/src/lib/utils';export {Button} from '${root}/packages/studio-ui/src/components/ui/button';export {LineCommentForm} from '${root}/packages/studio-ui/src/line-comment-form';export const MessageResponse=()=>null;`,
-    },
-    {
-      path: '@dovo/studio-ui/code-themes',
-      contents: `import {useMemo} from 'react';import {preloadHighlighter} from '@pierre/diffs';export const preloadStudioHighlighter=language=>preloadHighlighter({themes:['github-dark'],langs:[language]});export const useDiffOptions=()=>useMemo(()=>({defaultSplit:true,options:{theme:'github-dark',overflow:'wrap'}}),[]);`,
     },
   ],
 )
@@ -142,7 +138,7 @@ try {
   if (!process.env.DOVO_DIFF_PLAIN)
     assert.ok(
       stress.lines < 500,
-      'Resizing mounted the whole 5,000-line diff: ' + JSON.stringify(stress),
+      'Resizing mounted the whole 50,000-line diff: ' + JSON.stringify(stress),
     )
   console.log('Large diff resize', stress)
   await page.evaluate(() => window.setFocus(4500))
@@ -228,8 +224,8 @@ try {
     false,
   )
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await page.evaluate(() => window.setFocus(5000))
-  await page.locator('[data-line="5000"]').waitFor()
+  await page.evaluate(() => window.setFocus(50000))
+  await page.locator('[data-line="50000"]').waitFor()
   if (!process.env.DOVO_DIFF_PLAIN)
     assert.ok(
       (await page.locator('[data-line]').count()) < 500,
@@ -237,7 +233,7 @@ try {
     )
   await page.getByRole('button', { name: 'Split', exact: true }).click()
   await page.getByRole('button', { name: 'Unified', exact: true }).waitFor()
-  await page.evaluate(() => window.setFocus(50000))
+  await page.evaluate(() => window.setFocus(500000))
   await page.evaluate(
     () =>
       new Promise((resolve) => {

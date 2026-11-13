@@ -41,17 +41,26 @@ it.each([false, true])(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 43 : 16)
+      expect(tools).toHaveLength(full ? 44 : 17)
       // Preserve the existing budget for all prior tools. Account for the new private-input
       // schema separately so adding this tool cannot hide growth in unrelated tools.
       const secureInput = tools.find((tool) => tool.name === 'secure_input')
       expect(secureInput).toBeDefined()
       const secureCharacters = JSON.stringify(secureInput).length + 1
       expect(secureCharacters).toBeLessThanOrEqual(3000)
-      expect(characters - secureCharacters).toBeLessThanOrEqual(full ? 48500 : 10000)
-      expect(descriptionCharacters - (secureInput?.description?.length ?? 0)).toBeLessThanOrEqual(
-        full ? 12900 : 3200,
+      // The new-thread action card is accounted for separately, like secure_input.
+      const threadPrepare = tools.find((tool) => tool.name === 'thread_prepare')
+      expect(threadPrepare).toBeDefined()
+      const prepareCharacters = JSON.stringify(threadPrepare).length + 1
+      expect(prepareCharacters).toBeLessThanOrEqual(1600)
+      expect(characters - secureCharacters - prepareCharacters).toBeLessThanOrEqual(
+        full ? 48500 : 10000,
       )
+      expect(
+        descriptionCharacters -
+          (secureInput?.description?.length ?? 0) -
+          (threadPrepare?.description?.length ?? 0),
+      ).toBeLessThanOrEqual(full ? 12900 : 3200)
       expect(tools.map((tool) => tool.name)).toEqual(
         expect.arrayContaining([
           'ask_question',

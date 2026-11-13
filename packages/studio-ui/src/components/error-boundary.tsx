@@ -27,6 +27,26 @@ export class ErrorBoundary extends Component<
     return { error: diagnosticMessage(error), diagnostic: clientDiagnostic(error), copyStatus: '' }
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
+    const context = { ...this.context, ...this.props.diagnosticContext }
+    const surface = this.props.scope ?? 'view'
+    this.setState(({ diagnostic }) => ({
+      diagnostic: diagnostic
+        ? {
+            ...diagnostic,
+            context: {
+              ...context,
+              surface,
+              viewId:
+                surface === 'view' && context.viewId
+                  ? diagnosticMessage(context.viewId).slice(0, 256)
+                  : undefined,
+            },
+            ...(info.componentStack
+              ? { componentStack: diagnosticMessage(info.componentStack) }
+              : {}),
+          }
+        : null,
+    }))
     console.error(
       this.props.scope === 'app' ? 'Workbench failed' : 'Extension view failed',
       error,
@@ -34,20 +54,9 @@ export class ErrorBoundary extends Component<
     )
   }
   copyDiagnostic = async () => {
+    if (!this.state.diagnostic) return
     try {
-      await copyTextToClipboard(
-        JSON.stringify(
-          {
-            ...this.state.diagnostic,
-            context: {
-              ...(this.props.diagnosticContext ?? this.context),
-              surface: this.props.scope ?? 'view',
-            },
-          },
-          null,
-          2,
-        ),
-      )
+      await copyTextToClipboard(JSON.stringify(this.state.diagnostic, null, 2))
       this.setState({ copyStatus: 'Diagnostics copied' })
     } catch (error) {
       this.setState({ copyStatus: diagnosticMessage(error) })
@@ -67,7 +76,7 @@ export class ErrorBoundary extends Component<
   render() {
     if (!this.state.error)
       return this.props.diagnosticContext ? (
-        <DiagnosticContext value={this.props.diagnosticContext}>
+        <DiagnosticContext value={{ ...this.context, ...this.props.diagnosticContext }}>
           {this.props.children}
         </DiagnosticContext>
       ) : (

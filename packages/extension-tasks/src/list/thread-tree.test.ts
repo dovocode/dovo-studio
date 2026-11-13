@@ -1,5 +1,5 @@
 import type { Task, ThreadWatchSummary } from '@dovo/protocol'
-import { decode, snapshotSchema } from '@dovo/protocol'
+import { decode, randomUUID, snapshotSchema } from '@dovo/protocol'
 import { createTask } from '@dovo/studio-core'
 import { expect, it } from 'vite-plus/test'
 import { collectTasks, taskCollectionKey, type TaskSource } from './task-collection'
@@ -41,6 +41,48 @@ const watch = (extra: Partial<ThreadWatchSummary> = {}): ThreadWatchSummary => (
   ...extra,
 })
 const key = taskCollectionKey
+
+it('keeps a Bot with routine turns and delegated work as one unified workspace root', () => {
+  const bot = task('bot', {
+    bot: {
+      role: 'Release assistant',
+      responsibilities: 'Review releases',
+      state: 'active',
+      revision: randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    messages: [{ id: 'routine-message', role: 'user', text: 'Review this release' }],
+    turns: [
+      {
+        id: 'routine-turn',
+        agentId: '',
+        provider: 'codex',
+        model: 'default',
+        assistantId: 'answer',
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+      },
+    ],
+  })
+  const entries = collectTasks([
+    source('desktop', [
+      bot,
+      task('delegated', {
+        delegation: { parentTaskId: 'bot', parentRunId: 'routine-turn', key: 'review' },
+      }),
+      task('normal'),
+    ]),
+  ])
+  const tree = buildThreadTree(entries)
+  expect(tree.roots.map((entry) => entry.task.id).sort()).toEqual(['bot', 'normal'])
+  expect(tree.roots.filter((entry) => entry.task.bot)).toHaveLength(1)
+  expect(
+    threadDescendants(tree.nodes.get(key('desktop', 'bot'))!.children).map(
+      (child) => child.threadId,
+    ),
+  ).toEqual(['delegated'])
+})
 
 it('nests all local generations and completed children without needing working-agent records', () => {
   const entries = collectTasks([

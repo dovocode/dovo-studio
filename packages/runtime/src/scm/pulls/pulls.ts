@@ -500,7 +500,7 @@ export class PullRequests {
               value,
             ),
           ),
-      settings
+      settings || feedbackOnly
         ? githubLifecycle(json, repo, number).then((value) => {
             if (value.headRefOid !== pull.head.sha)
               throw new HttpError(409, 'This PR changed while loading merge readiness. Refresh it.')
@@ -655,6 +655,10 @@ export class PullRequests {
         !lifecycle.value.isInMergeQueue
           ? [
               ...(lifecycle.value.viewerCanUpdate ? ['draft' as const] : []),
+              ...(lifecycle.value.viewerCanUpdateBranch &&
+              (lifecycle.value.baseRef?.compare?.behindBy ?? 0) > 0
+                ? ['update-branch' as const]
+                : []),
               ...((
                 lifecycle.value.autoMergeRequest
                   ? lifecycle.value.viewerCanDisableAutoMerge
@@ -717,6 +721,7 @@ export class PullRequests {
           ? {
               draft: lifecycle.value.isDraft,
               state: lifecycle.value.state.toLowerCase(),
+              behindBy: lifecycle.value.baseRef?.compare?.behindBy,
               mergeStateStatus: lifecycle.value.mergeStateStatus,
               autoMergeEnabled: !!lifecycle.value.autoMergeRequest,
               inMergeQueue: lifecycle.value.isInMergeQueue,

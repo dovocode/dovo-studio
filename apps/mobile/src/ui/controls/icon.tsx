@@ -1,4 +1,5 @@
 import {
+  Bot,
   GripVertical,
   WandSparkles,
   Zap,
@@ -113,6 +114,7 @@ const icons = {
   filters: ListFilter,
   search: Search,
   tasks: MessagesSquare,
+  bot: Bot,
   issues: CircleDot,
   pulls: GitPullRequest,
   stack: Layers,

@@ -344,6 +344,8 @@ export class ProjectTransfers {
       const task = s.store.taskSummary(input.handoff.taskId)
       if (task.repositoryId !== input.repositoryId)
         throw new HttpError(409, 'This thread belongs to another project')
+      // Bot identity, private memory and routines belong to this computer.
+      if (task.bot) throw new HttpError(409, 'Bots stay on the computer that runs them.')
       if (
         task.pullRequest ||
         task.workItem ||

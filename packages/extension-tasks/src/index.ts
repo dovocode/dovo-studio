@@ -4,6 +4,14 @@ export const tasksExtension = defineStudioExtension(
   [
     { id: 'tasks', title: 'Threads', icon: 'tasks', order: 0, load: () => import('./view') },
     {
+      id: 'bots',
+      title: 'Bots',
+      icon: 'agents',
+      order: 0.1,
+      keywords: 'assistants roles responsibilities memory routines',
+      load: () => import('./bots/view'),
+    },
+    {
       id: 'workspace',
       title: 'Workspace',
       icon: 'workspace',

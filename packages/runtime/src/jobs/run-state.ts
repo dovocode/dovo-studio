@@ -73,6 +73,8 @@ export function reconcileCompletedTasks(run: StoredRun, tasks: TaskSummary[]): S
   const completedNodes = [...run.completedNodes]
   const steps = runSteps(run).map((step) => {
     if (completedNodes.includes(step.nodeId) || !step.taskId) return step
+    // Bot steps share a long-lived thread; their own message decides completion.
+    if (run.flow.nodes.find((node) => node.id === step.nodeId)?.data.botId) return step
     const task = tasks.find((task) => task.id === step.taskId)
     if (!task || !['review', 'done'].includes(task.status) || taskFamilyWorking(tasks, task.id))
       return step

@@ -81,7 +81,7 @@ import { ComposerField } from './composer-field'
 import { dismissComposerKeyboard } from './native-composer-input'
 import { ComposerActivity } from './composer-activity'
 import { ComposerHistoryGesture } from './composer-history-gesture'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -141,7 +141,7 @@ export function Composer({
     attachmentPicker,
     agent,
     firstMessage,
-    checkoutEditable,
+    checkoutEditable: engineCheckoutEditable,
     hasInput,
     canSend,
     submitting,
@@ -209,8 +209,10 @@ export function Composer({
     : 'Default'
   const fastMode = ['priority', 'fast'].includes(serviceTierValue(composerAgent?.serviceTier))
   const { activeId: stashRuntimeId } = useRuntime()
+  const checkoutEditable = !task.bot && engineCheckoutEditable
   const checkoutAction = useAction()
   const [turnModelOpen, setTurnModelOpen] = useApplicationState(false)
+  const turnModelSheet = useRef<SheetHandle>(null)
   const [advanced, setAdvanced] = useApplicationState(false)
   useEffect(() => setAdvanced(false), [task.id, task.repositoryId, setAdvanced])
   const [machineMoving, setMachineMoving] = useApplicationState(false)
@@ -265,11 +267,14 @@ export function Composer({
     turnSettings?.harness
       ? {
           ...task,
+          repositoryId: task.bot ? '' : task.repositoryId,
           agentId: '',
           agentOverrides: undefined,
           harness: turnSettings.harness,
         }
-      : task,
+      : task.bot
+        ? { ...task, repositoryId: '' }
+        : task,
     {
       agents: snapshot?.workspace.agents ?? [],
       repositories: snapshot?.workspace.repositories ?? [],
@@ -310,6 +315,7 @@ export function Composer({
   const nextPrompt = useNextPrompt({
     task,
     enabled:
+      !task.bot &&
       connected &&
       snapshot?.promptSuggestionsEnabled === true &&
       !draft.text.trim() &&
@@ -491,6 +497,7 @@ export function Composer({
     !minimalComposer || focused || hasInput || dictation.active || composerHistory.active
   const canBrowseHistory = composerHistory.available && !busy && !attaching && !dictation.active
   const canAskAside =
+    !task.bot &&
     !task.sideThread &&
     !editing &&
     !!onAsk &&
@@ -503,7 +510,7 @@ export function Composer({
     !task.archivedAt &&
     !draft.pendingFork &&
     !draft.pendingRestore
-  const showFork = hasGit && !!task.repositoryId
+  const showFork = !task.bot && hasGit && !!task.repositoryId
   const showBackgroundStart =
     !!onStartInBackground && !editing && !task.messages.length && task.status !== 'running'
   const showMessageMenu =
@@ -615,7 +622,7 @@ export function Composer({
       disabled: !canBrowseHistory,
       onPress: composerHistory.begin,
     },
-    ...(planSupported && !showPlanButton
+    ...(!task.bot && planSupported && !showPlanButton
       ? [
           {
             title: plan ? 'Turn off Plan' : 'Plan',
@@ -689,6 +696,11 @@ export function Composer({
       onPress: () => setDraftTools('context'),
     },
   ]
+  const visibleDraftMenuActions = task.bot
+    ? draftMenuActions.filter((item) =>
+        ['Camera', 'Photos', 'Files', 'Paste Image'].includes(item.title),
+      )
+    : draftMenuActions
   const canDictate = draft.ready && !busy && !task.archivedAt && !attaching
   const listening = dictation.isRecording || dictation.isStarting
   const dictationStatus = dictation.isStarting
@@ -750,7 +762,7 @@ export function Composer({
     )
   }
   const showStartModes =
-    !!renderAbove && firstMessage && task.status === 'draft' && checkoutEditable
+    !task.bot && !!renderAbove && firstMessage && task.status === 'draft' && checkoutEditable
   const startModeDisabled =
     (!connected && !onSelectRemote) ||
     busy ||
@@ -815,7 +827,7 @@ export function Composer({
   )
   const setup =
     checkoutEditable ||
-    (task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch) ? (
+    (!task.bot && task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch) ? (
       <>
         {checkoutEditable && (
           <View testID="Task setup" style={{ gap: 8, width: '100%' }}>
@@ -1017,7 +1029,7 @@ export function Composer({
         },
       ]}
     >
-      {meter && meter.level !== 'ok' && (
+      {!task.bot && meter && meter.level !== 'ok' && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={commandAction.busy ? 'Compacting context' : 'Compact context'}
@@ -1097,7 +1109,7 @@ export function Composer({
             }
             onBusy={setAttaching}
           />
-          {nextPrompt.text && (
+          {!task.bot && nextPrompt.text && (
             <View style={{ flexDirection: 'row', gap: 8, padding: 10 }}>
               <Pressable
                 accessibilityRole="button"
@@ -1119,7 +1131,7 @@ export function Composer({
               </Pressable>
             </View>
           )}
-          {nextPrompt.error && (
+          {!task.bot && nextPrompt.error && (
             <Text style={{ color: colors.muted, fontSize: 12 }}>
               Prompt suggestion unavailable. {nextPrompt.error}
             </Text>
@@ -1139,7 +1151,9 @@ export function Composer({
                   : undefined
               }
               prompts={projectPrompts(
-                snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+                !task.bot
+                  ? snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
+                  : undefined,
                 snapshot?.defaults,
               )}
             />
@@ -1304,7 +1318,7 @@ export function Composer({
                     !!task.example
                   }
                   onPress={() => {}}
-                  menuActions={draftMenuActions}
+                  menuActions={visibleDraftMenuActions}
                 />
               ) : (
                 <View ref={toolsTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
@@ -1365,13 +1379,17 @@ export function Composer({
                   gap: 4,
                 }}
               >
-                {turnModelOpen && agent && (
-                  <Sheet title="Agent & model" onClose={() => setTurnModelOpen(false)}>
+                {!task.bot && turnModelOpen && agent && (
+                  <Sheet
+                    ref={turnModelSheet}
+                    title="Agent & model"
+                    onClose={() => setTurnModelOpen(false)}
+                  >
                     {snapshot?.fullTurnSettingsSupported ? (
                       <HarnessSettings
                         inline
                         task={task}
-                        onClose={() => setTurnModelOpen(false)}
+                        onClose={() => turnModelSheet.current?.dismiss()}
                         turn={{
                           value: turnSettings,
                           onChange: setTurnSettings,
@@ -1389,7 +1407,7 @@ export function Composer({
                     )}
                   </Sheet>
                 )}
-                {showOptions && !dictation.active && (
+                {!task.bot && showOptions && !dictation.active && (
                   <Animated.View
                     entering={reveal}
                     exiting={conceal}
@@ -1464,46 +1482,51 @@ export function Composer({
                     </Pressable>
                   </Animated.View>
                 )}
-                {showOptions && !dictation.active && planSupported && showPlanButton && (
-                  <Animated.View entering={reveal} exiting={conceal}>
-                    <Pressable
-                      accessibilityRole="switch"
-                      accessibilityLabel="Plan"
-                      accessibilityHint="Runs the next message read-only and replies with a plan"
-                      accessibilityState={{
-                        checked: plan,
-                        disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
-                      }}
-                      disabled={busy || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
-                      onPress={() => setPlan(!plan)}
-                      style={({ pressed }) => ({
-                        minWidth: 44,
-                        minHeight: 44,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 3,
-                        opacity: pressed || busy || (!plan && !!planModeIssue(agent)) ? 0.5 : 1,
-                      })}
-                    >
-                      <Icon
-                        name="checklist"
-                        size={15}
-                        color={plan ? colors.accent : colors.muted}
-                      />
-                      <Text
-                        style={[
-                          styles.muted,
-                          { fontSize: 12 },
-                          plan && { color: colors.accent, fontWeight: '600' },
-                        ]}
+                {!task.bot &&
+                  showOptions &&
+                  !dictation.active &&
+                  planSupported &&
+                  showPlanButton && (
+                    <Animated.View entering={reveal} exiting={conceal}>
+                      <Pressable
+                        accessibilityRole="switch"
+                        accessibilityLabel="Plan"
+                        accessibilityHint="Runs the next message read-only and replies with a plan"
+                        accessibilityState={{
+                          checked: plan,
+                          disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
+                        }}
+                        disabled={busy || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
+                        onPress={() => setPlan(!plan)}
+                        style={({ pressed }) => ({
+                          minWidth: 44,
+                          minHeight: 44,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 3,
+                          opacity: pressed || busy || (!plan && !!planModeIssue(agent)) ? 0.5 : 1,
+                        })}
                       >
-                        Plan
-                      </Text>
-                    </Pressable>
-                  </Animated.View>
-                )}
-                {showOptions &&
+                        <Icon
+                          name="checklist"
+                          size={15}
+                          color={plan ? colors.accent : colors.muted}
+                        />
+                        <Text
+                          style={[
+                            styles.muted,
+                            { fontSize: 12 },
+                            plan && { color: colors.accent, fontWeight: '600' },
+                          ]}
+                        >
+                          Plan
+                        </Text>
+                      </Pressable>
+                    </Animated.View>
+                  )}
+                {!task.bot &&
+                  showOptions &&
                   !dictation.active &&
                   !(task.status === 'running' && hasInput) &&
                   showContextUsage &&
@@ -1604,7 +1627,7 @@ export function Composer({
               anchor={toolsAnchor}
               onClose={() => setToolsAnchor(null)}
               align="start"
-              actions={draftMenuActions}
+              actions={visibleDraftMenuActions}
             />
             <DraftStash
               open={draftTools === 'stash'}

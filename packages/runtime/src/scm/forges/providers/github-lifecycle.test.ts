@@ -162,3 +162,50 @@ it('does not report success when GitHub has not confirmed the mutation', async (
     actOnGithubPull(json, repo, { ...scope, action: 'draft', draft: true }),
   ).rejects.toThrow('did not confirm')
 })
+
+it('uses GitHub Update branch with a merge and the expected PR head', async () => {
+  const json = client({
+    ...state,
+    viewerCanUpdateBranch: true,
+    baseRef: { compare: { behindBy: 2 } },
+  }).mockResolvedValueOnce({
+    data: {
+      updatePullRequestBranch: { pullRequest: { id: state.id, headRefOid: 'b'.repeat(40) } },
+    },
+  })
+  await expect(
+    actOnGithubPull(json, repo, { ...scope, action: 'update-branch' }),
+  ).resolves.toMatchObject({ status: 'updated' })
+  expect(json).toHaveBeenLastCalledWith(
+    expect.arrayContaining([
+      `head=${headSha}`,
+      expect.stringContaining('expectedHeadOid:$head,updateMethod:MERGE'),
+    ]),
+  )
+  expect(json.mock.calls.flat().join(' ')).not.toContain('REBASE')
+})
+
+it('does not update an already current branch', async () => {
+  const json = client({ ...state, baseRef: { compare: { behindBy: 0 } } })
+  await actOnGithubPull(json, repo, { ...scope, action: 'update-branch' })
+  expect(json).toHaveBeenCalledTimes(2)
+})
+
+it.each([
+  { headRefOid: 'c'.repeat(40) },
+  { state: 'CLOSED' as const },
+  { isInMergeQueue: true },
+  { viewerCanUpdateBranch: false },
+  { baseRef: null },
+])('rejects unsafe Update branch requests: %j', async (change) => {
+  const json = client({
+    ...state,
+    viewerCanUpdateBranch: true,
+    baseRef: { compare: { behindBy: 2 } },
+    ...change,
+  })
+  await expect(actOnGithubPull(json, repo, { ...scope, action: 'update-branch' })).rejects.toThrow(
+    /PR|branch|GitHub/,
+  )
+  expect(json).toHaveBeenCalledTimes(2)
+})

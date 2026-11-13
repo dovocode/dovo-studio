@@ -11,6 +11,8 @@ export type ClientDiagnosticContext = {
   computerName?: string
   runtimeVersion?: string
   surface?: string
+  /** Extension view ID only. Do not include entity or thread IDs. */
+  viewId?: string
 }
 
 /** Supported credential assignments, headers and embedded JSON; not arbitrary secret detection. */
@@ -56,7 +58,11 @@ export function diagnosticMessage(error: unknown) {
   ).slice(0, 2000)
 }
 
-export function clientDiagnostic(error: unknown, context: ClientDiagnosticContext = {}) {
+export function clientDiagnostic(
+  error: unknown,
+  context: ClientDiagnosticContext = {},
+  componentStack?: string | null,
+) {
   return {
     id:
       globalThis.crypto?.randomUUID?.() ??
@@ -64,6 +70,7 @@ export function clientDiagnostic(error: unknown, context: ClientDiagnosticContex
     at: new Date().toISOString(),
     context,
     error: diagnosticMessage(error),
+    ...(componentStack ? { componentStack: diagnosticMessage(componentStack) } : {}),
   }
 }
 

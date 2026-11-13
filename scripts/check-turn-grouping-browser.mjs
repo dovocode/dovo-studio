@@ -20,8 +20,8 @@ const initial={id:'thread',title:'Thread',status:'done',messages:[
 const events=[{id:'last',time:'2026-10-03T10:00:50Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'last',status:'completed',textOffset:56,event:{item:{type:'commandExecution',command:'git diff'}}})},{id:'command',time:'2026-10-03T10:00:20Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'command',status:'completed',textOffset:35,event:{item:{type:'commandExecution',command:'git status'}}})},{id:'prior',time:'2026-10-03T10:00:05Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'before',toolId:'prior',status:'completed',textOffset:13,event:{item:{type:'commandExecution',command:'pnpm test'}}})}];
 window.events=events;export function App(){const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[hasMore,setHasMore]=useState(false);window.setHasMore=setHasMore;const[historyBusy,setHistoryBusy]=useState(false);window.setHistoryBusy=setHistoryBusy;const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.fixtureVisible=active;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,messageSources:new Map(task.messages.filter(message=>message.source).map(message=>[message.id,message.source])),childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected,request:async()=>({ok:true}),history:{load:()=>{window.historyLoads=(window.historyLoads??0)+1},hasMore,busy:historyBusy,error:'',bookmarks:[],setBookmark:()=>{},trim:()=>{}},visible:active,legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
 `
-const ui = `export {cn} from './src/lib/utils';export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';
-export {FileTypeIcon} from './src/file-tree';export {RepositoryOpenItems} from './src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+const ui = `export {cn} from './src/lib/utils';export {Dialog,DialogContent,DialogTitle,DialogHeader,DialogDescription} from '../studio-ui/src/components/ui/dialog';
+export {FormField} from '../studio-ui/src/components/form-field';export {Textarea} from '../studio-ui/src/components/ui/textarea';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export const HarnessFields=({value,onChange})=><label>Harness model<input value={value.model} onChange={event=>onChange({...value,model:event.target.value})}/></label>;export {FileTypeIcon} from './src/file-tree';export {RepositoryOpenItems} from './src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 export * as ContextMenu from '@radix-ui/react-context-menu';export const Conversation=({children,...props})=><div {...props}>{children}</div>;
 export const ConversationContent=({children})=><div>{children}</div>,ConversationHistory=ConversationContent;
 export const Message=({children,id})=><div id={id}>{children}</div>,MessageContent=ConversationContent;
@@ -31,12 +31,15 @@ export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 `
 async function bundle(mobile) {
   const mocks = {
+    ...(mobile
+      ? { './components/thread-actions': `export const ThreadActionCards=()=>null;` }
+      : {}),
     'lucide-react-native': `export * from 'lucide-react';`,
     '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
     './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
 
     'fixture-projection': `export * from '@dovo/protocol';export {conversationMessages} from '${root}/apps/mobile/src/tasks/conversation/state/messages.ts';`,
-    '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useWorkspaceSelector=select=>select(useFixture());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
+    '@dovo/studio-core': `export {createTask} from '../studio-core/src/workspace/actions';export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useWorkspaceSelector=select=>select(useFixture());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
     '@dovo/studio-ui': ui,
     './use-conversation-history': `export const useConversationHistory=task=>({task,hasMore:false,busy:false,error:'',setBookmark:()=>{}});`,
@@ -186,7 +189,7 @@ const visualIndices = (locator) =>
   )
 const browser = await chromium.launch()
 try {
-  for (const mobile of [false, true]) {
+  for (const mobile of process.argv.includes('--desktop-only') ? [false] : [false, true]) {
     const page = await browser.newPage()
     page.setDefaultTimeout(8000)
     const errors = []
@@ -846,7 +849,8 @@ try {
     await page.close()
   }
   console.log(
-    'Desktop and mobile: turn grouping, visible steering/final replies, tool ordering, artifact tiles, chronological selection and guarded conversation copying passed.',
+    (process.argv.includes('--desktop-only') ? 'Desktop' : 'Desktop and mobile') +
+      ': turn grouping, visible steering/final replies, tool ordering, artifact tiles, chronological selection and guarded conversation copying passed.',
   )
 } finally {
   await browser.close()

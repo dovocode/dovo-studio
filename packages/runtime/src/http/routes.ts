@@ -25,6 +25,12 @@ import {
 } from '../auth/run-authorization.js'
 import { patchWorkspace } from './endpoints/workspace-patch.js'
 import { threadStartReplay } from './endpoints/thread-start.js'
+import { botsRoute } from './endpoints/bots-routes.js'
+import {
+  dismissThreadAction,
+  prepareThreadAction,
+  sendThreadActionEffect,
+} from '../agent-tools/thread-actions.js'
 import { taskListAction } from './endpoints/task-list-action.js'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
@@ -126,7 +132,7 @@ import {
 import { workspaceSchema } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import { RuntimeServices } from '../runtime-services.js'
-import { HttpError, type RuntimeFailure } from '../errors.js'
+import { HttpError, runtimeOperation, type RuntimeFailure } from '../errors.js'
 import type { PeerOrigin } from './peer-connections.js'
 import { body } from './support/body.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
@@ -396,6 +402,11 @@ export function route(
         const skill = run.skills?.find((item) => item.name === input.name)
         if (!skill) throw new HttpError(404, 'Skill is not enabled for this run')
         return skill
+      }
+      if (method === 'POST' && path === '/api/agent/thread-prepare') {
+        if (!run) throw new HttpError(403, 'Thread actions require an active agent run')
+        const input = yield* serviceResult(body(request, 64 * 1024))
+        return yield* runtimeOperation(() => prepareThreadAction(s, input, run.runId))
       }
       if (method === 'POST' && (path === '/api/agent/question' || path === '/api/agent/todos')) {
         if (!run) throw new HttpError(403, 'Agent interaction tools require an active agent run')
@@ -835,6 +846,11 @@ export function route(
               '/api/tasks/message',
               '/api/tasks/steer',
               '/api/tasks/viewed',
+              '/api/bots/create',
+              '/api/bots/update',
+              '/api/bots/lifecycle',
+              '/api/thread-actions/send',
+              '/api/thread-actions/dismiss',
               '/api/runtime/preferences/save',
               '/api/agents/defaults/save',
               '/api/agents/settings/save',
@@ -851,7 +867,11 @@ export function route(
               (method === 'PATCH' && path === '/api/workspace'),
           ),
         )
-        return path === '/api/tasks/message' ? threadStartReplay(s, value) : value
+        return path === '/api/tasks/message' ||
+          path.startsWith('/api/bots/') ||
+          path.startsWith('/api/thread-actions/')
+          ? threadStartReplay(s, value)
+          : value
       }
       if (method === 'POST' && path === '/api/threads/metadata') {
         if (agentDeviceAccess)
@@ -915,6 +935,17 @@ export function route(
       }
       if (method === 'POST' && path.startsWith('/api/memory/'))
         return yield* memoryRoute(request, path, device.owner || !!run)
+      if (method === 'POST' && path.startsWith('/api/thread-actions/')) {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Thread actions are sent from a paired human client.')
+        const input = yield* serviceResult(body(request, 256 * 1024))
+        if (path === '/api/thread-actions/send') return yield* sendThreadActionEffect(s, input)
+        if (path === '/api/thread-actions/dismiss')
+          return yield* runtimeOperation(() => dismissThreadAction(s, input))
+        throw new HttpError(404, 'Unknown thread action')
+      }
+      if (method === 'POST' && path.startsWith('/api/bots/'))
+        return yield* botsRoute(request, path, agentDeviceAccess)
       if (method === 'GET' && path === '/api/notifications/status')
         return yield* serviceResult(s.pushNotifications.status(device.id))
       if (method === 'POST' && path === '/api/notifications/register')

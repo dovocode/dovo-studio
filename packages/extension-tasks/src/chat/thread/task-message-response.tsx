@@ -137,6 +137,7 @@ export function TaskMessageResponse({
           agentId: task?.agentId,
           agentOverrides: task?.agentOverrides,
           harness: task?.harness,
+          bot: task?.bot,
           agents: userMessage ? value.workspace.agents : undefined,
           repositories: userMessage ? value.workspace.repositories : undefined,
           defaults: userMessage ? value.snapshot?.defaults : undefined,

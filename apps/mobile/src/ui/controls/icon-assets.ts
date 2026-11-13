@@ -32,6 +32,7 @@ export const iconAssets = {
   filters: require('../../../assets/icons/filters.png'),
   search: require('../../../assets/icons/search.png'),
   tasks: require('../../../assets/icons/tasks.png'),
+  bot: require('../../../assets/icons/bot.png'),
   issues: require('../../../assets/icons/issues.png'),
   pulls: require('../../../assets/icons/pulls.png'),
   stack: require('../../../assets/icons/stack.png'),

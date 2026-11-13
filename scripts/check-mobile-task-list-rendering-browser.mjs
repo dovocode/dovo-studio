@@ -14,7 +14,7 @@ const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):styl
 const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
 export const View=({children,accessibilityLabel,style,testID,ref,onLayout})=>{const node=useRef(null);useImperativeHandle(ref,()=>({nativeElement:node.current,measureLayout:(parent,done)=>{const bounds=node.current.getBoundingClientRect(),origin=parent.nativeElement.getBoundingClientRect();done(bounds.x-origin.x,bounds.y-origin.y,bounds.width,bounds.height)}}));useLayoutEffect(()=>{if(!onLayout)return;const measure=()=>onLayout({nativeEvent:{layout:{height:node.current.getBoundingClientRect().height}}});measure();const observer=new ResizeObserver(measure);observer.observe(node.current);return ()=>observer.disconnect()},[onLayout]);return <div ref={node} data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>};
 export const Text=({children,accessibilityRole,numberOfLines,style})=>{const value=flat(style),scale=window.rowFontScale??1;return <span role={accessibilityRole} style={window.rowLayout?{display:'block',minWidth:0,...nativeStyle({...value,fontSize:(value.fontSize??13)*scale,...(value.lineHeight?{lineHeight:value.lineHeight*scale}:{})}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}:value}>{children}</span>};
-export const Image=()=>null;
+export const Image=({source})=><span data-project-image={source?.uri}/>;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
@@ -26,7 +26,7 @@ export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{
 export const Platform={OS:'ios'};
 export const AccessibilityInfo={announceForAccessibility:message=>window.announcements?.push(message)};
 export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});buttons?.find(button=>button.style!=='cancel')?.onPress?.()}};
-export const Icon=()=>null;
+export const Icon=({name})=><i data-icon={name}/>;
 export const IconButton=({label,onPress,disabled})=><button aria-label={label} onClick={onPress} disabled={disabled}>{label}</button>;
 export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;
 export const SettingsAction=Action;
@@ -57,7 +57,7 @@ const stubs = [
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as SquareTerminal,Icon as Network};`,
+    contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as Pause,Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as SquareTerminal,Icon as Network};`,
   },
   {
     path: '@dovo/protocol',
@@ -238,6 +238,7 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';
+import {Effect} from 'effect';
 import {TaskPanesContext} from './apps/mobile/src/shell/task-panes';
 import {runtimeProfile,runtimeSnapshotPath} from '@dovo/protocol';
 import {studioThemes} from './packages/studio-core/src/themes.ts';
@@ -245,9 +246,10 @@ import {accessibleThemeColors} from './packages/studio-core/src/accessibility.ts
 window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...accessibleThemeColors(theme[mode],mode,false)})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,RuntimeContext,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
-import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.tsx';
+import {TaskListViewProvider,useTaskListView} from './apps/mobile/src/tasks/list/task-list-view.tsx';
 import {updateMobilePreferences,readMobilePreferences,preferencesReady} from '${mobile}runtime/preferences/app-preferences.ts';window.setListPreferences=updateMobilePreferences;Object.defineProperty(window,'listPreferences',{get:readMobilePreferences});window.preferencesReady=preferencesReady;
 import TasksScreen from './apps/mobile/src/screens/tasks.tsx';
+import {useMessageReveal} from './apps/mobile/src/tasks/conversation/message-reveal';
 import {WorkspaceOverview} from './apps/mobile/src/workspace/workspace-overview';
 import {WorkspaceViewProvider} from './apps/mobile/src/workspace/workspace-view';
 import {BrowserWorkspaceProvider} from './apps/mobile/src/browser/browser-workspace';
@@ -263,7 +265,7 @@ window.rowRenders={};window.alerts=[];window.requests=[];window.navigations=[];w
 window.navigation={focused:true,navigate:(...args)=>window.navigations.push(args),setDetail:()=>{},openWork:()=>{}};
 window.fetch=async(url,options)=>{
   const target=new URL(url),path=target.pathname,body=options?.body?JSON.parse(options.body):null;window.requests.push({path,body,origin:target.origin,method:options?.method});
-  if(path==='/api/tasks/search'){if(window.searchFailure)return Response.json({error:'History unavailable'},{status:503});if(body.query==='old history')await new Promise(resolve=>window.finishOldSearch=resolve);return Response.json({taskIds:body.query==='history needle'?(window.historyMatches??['task-98']):body.query==='old history'?['task-97']:[],hits:[]})};
+  if(path==='/api/tasks/search'){if(window.searchFailure)return Response.json({error:'History unavailable'},{status:503});if(body.query==='old history')await new Promise(resolve=>window.finishOldSearch=resolve);return Response.json({taskIds:body.query==='history needle'?(window.historyMatches??['task-98']):body.query==='old history'?['task-97']:[],hits:window.historyHits??[]})};
   if(path==='/api/mutations/status')return Response.json({version:1});
   if(path==='/api/workspace'&&options?.method==='PATCH')return Response.json({revision:window.snapshot.revision+1,runtimeInstanceId:'fixture'});
   if(path==='/api/runtime')return Response.json(window.snapshot,{headers:{ETag:'fixture-'+window.snapshot.revision}});
@@ -273,9 +275,9 @@ window.publish=changes=>flushSync(()=>{
   window.snapshot={...window.snapshot,revision:window.snapshot.revision+1,workspace:{...window.snapshot.workspace,tasks:window.snapshot.workspace.tasks.map(task=>changes[task.id]?{...task,...changes[task.id]}:task)}};
   window.pushSnapshot(window.snapshot);
 });
-function Probe(){window.runtime=useRuntime();return null}
-function PaneProbe({children}){const runtime=useRuntime();const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
-function Screen(){const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);return overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
+function Probe(){window.runtime=useRuntime();window.messageReveal=useMessageReveal();return null}
+function PaneProbe({children}){const runtime=useRuntime();const {setView}=useTaskListView();window.resetThreadList=()=>setView({project:'',search:'',filter:'active',source:'all',sort:'newest'});const[sources,setSources]=useState(null);window.setListSources=value=>flushSync(()=>setSources(value));const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={sources?{...runtime,activeId:'shared-peer',overviews:sources,profiles:sources.map(source=>source.profile),selectRuntimeEffect:id=>window.holdSelection?Effect.promise(()=>new Promise(resolve=>window.releaseSelection=resolve)):runtime.selectRuntimeEffect(id)}:showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
+function Screen(){const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);window.showThreads=()=>setOverview(false);return overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><Screen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
 `,
     },
@@ -1710,9 +1712,238 @@ try {
       'Mobile Unified overview: 100 unchanged rows, 30 hidden streaming updates, zero row renders; one rename renders one row and keeps navigation current.',
     )
   }
+  if (!process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
+    await page.evaluate(() => {
+      const owner = structuredClone(window.runtime.overviews[0])
+      owner.connected = false
+      owner.error = null
+      owner.profile.connection.runtimeId = 'original-owner'
+      owner.snapshot.runtimeId = 'original-owner'
+      owner.snapshot.workspace.tasks = [
+        {
+          ...owner.snapshot.workspace.tasks[0],
+          id: 'startup-real',
+          title: 'Startup real thread',
+          status: 'review',
+          agentId: 'agent',
+          repositoryId: 'repo',
+          pinned: false,
+          archived: false,
+          archivedAt: undefined,
+          threadWatches: [],
+          subagents: [],
+        },
+      ]
+      owner.snapshot.workspace.repositories[0].iconOverride = 'data:image/png;base64,cmVhbA=='
+      const peer = structuredClone(owner)
+      peer.profile = {
+        ...peer.profile,
+        id: 'shared-peer',
+        connection: {
+          ...peer.profile.connection,
+          address: 'http://peer.lan',
+          runtimeId: 'shared-peer',
+        },
+      }
+      peer.connected = true
+      peer.snapshot.runtimeId = 'shared-peer'
+      peer.snapshot.workspace.tasks = [
+        {
+          ...owner.snapshot.workspace.tasks[0],
+          id: 'startup-copy',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          replica: {
+            ownerRuntimeId: 'original-owner',
+            threadId: 'startup-real',
+            ownerName: 'Owner',
+            projectName: 'Project',
+          },
+        },
+      ]
+      window.startupSources = { owner, peer }
+      window.resetThreadList()
+      window.setListPreferences({
+        computerRefresh: 'reduced',
+        collapsedThreadSections: [],
+        taskGrouping: 'none',
+      })
+      window.setListSources([peer, owner])
+    })
+    const ownerId = await page.evaluate(() => window.startupSources.owner.profile.id)
+    const copyId = `Task ${JSON.stringify(['shared-peer', 'startup-copy'])}`
+    for (const overview of [false, true]) {
+      await page.evaluate(
+        (overview) => (overview ? window.showOverview() : window.showThreads()),
+        overview,
+      )
+      const real = overview
+        ? page.getByTestId('Workspace thread Startup real thread')
+        : page.getByTestId(`Task ${JSON.stringify([ownerId, 'startup-real'])}`)
+      await real.waitFor()
+      assert.equal(
+        await real.locator('[data-project-image="data:image/png;base64,cmVhbA=="]').count(),
+        1,
+      )
+      assert.equal(await real.locator('[data-harness="codex"]').count(), 1)
+      assert.equal(await real.getByTestId('Draft highlight').count(), 0)
+      assert.equal(await page.getByTestId(copyId).count(), 0)
+      // Opening a cached owner thread must not wait for a selected-computer write.
+      await page.evaluate(() => {
+        window.holdSelection = true
+        window.navigations = []
+      })
+      const navigation = await real.evaluate((element) => {
+        const started = performance.now()
+        element.click()
+        return { route: window.navigations.at(-1), elapsed: performance.now() - started }
+      })
+      assert.deepEqual(
+        navigation.route,
+        ['tasks', 'startup-real', ownerId],
+        'Cached thread navigation must complete while secure selection storage is blocked',
+      )
+      console.log(
+        `${overview ? 'Workspace' : 'Tasks'} cached thread tap: ${navigation.elapsed.toFixed(1)} ms with selection storage blocked.`,
+      )
+      await page.evaluate(() => {
+        window.holdSelection = false
+        window.releaseSelection?.()
+      })
+      const node = await real.elementHandle()
+      await page.evaluate(() => {
+        const { peer, owner } = window.startupSources
+        window.setListSources([peer, { ...owner, connected: true }])
+      })
+      assert.equal(
+        await node.evaluate((element) => element.isConnected),
+        true,
+        'Live owner must keep the cached real row mounted',
+      )
+      await page.evaluate(() => {
+        const { peer, owner } = window.startupSources
+        window.setListSources([peer, { ...owner, snapshot: null }])
+      })
+      await real.waitFor({ state: 'detached' })
+      await page
+        .getByText(overview ? 'Loading threads…' : 'Waiting for your computers', { exact: true })
+        .waitFor()
+      assert.equal(await page.getByTestId('Draft highlight').count(), 0)
+      await page.evaluate(() => {
+        const { peer, owner } = window.startupSources
+        window.setListSources([peer, { ...owner, snapshot: null, error: 'Connection timed out' }])
+      })
+      await (
+        overview
+          ? page.getByTestId('Workspace thread Startup real thread')
+          : page.getByTestId(copyId)
+      ).waitFor()
+      await page.evaluate(() => {
+        const { peer, owner } = window.startupSources
+        window.setListSources([peer, owner])
+      })
+    }
+    await page.evaluate(() => {
+      const { owner, peer } = window.startupSources
+      window.showThreads()
+      window.setListSources([
+        { ...peer, connected: false },
+        { ...owner, connected: true },
+      ])
+      window.resetThreadList()
+      window.searchFailure = false
+      window.historyMatches = ['startup-real']
+      window.historyHits = [
+        {
+          taskId: 'startup-real',
+          messageId: 'saved-message',
+          role: 'assistant',
+          snippet: 'History needle in saved history',
+        },
+      ]
+      window.holdSelection = true
+      window.navigations = []
+    })
+    await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('history needle')
+    const message = page.getByRole('button', {
+      name: 'Open assistant message in Startup real thread on Owner',
+      exact: true,
+    })
+    await message.waitFor()
+    const destination = await message.evaluate((element) => {
+      element.click()
+      return window.navigations.at(-1)
+    })
+    assert.deepEqual(destination, ['tasks', 'startup-real', ownerId])
+    assert.equal(
+      await page.evaluate(() => {
+        const owner = window.startupSources.owner.profile
+        return (
+          window.messageReveal?.messageId === 'saved-message' &&
+          window.messageReveal.scope ===
+            JSON.stringify([owner.connection.address, owner.connection.token, 'startup-real'])
+        )
+      }),
+      true,
+      'Search reveal must keep the exact owner connection while selection storage is blocked',
+    )
+    await page.evaluate(() => {
+      window.holdSelection = false
+      window.releaseSelection?.()
+    })
+    console.log(
+      'Mobile startup rows: Tasks and Workspace use the real cached project/harness icons and status, retain the row at live arrival, wait for missing owners and restore shared copies after a connection failure.',
+    )
+  }
   console.log(
     'Mobile task-list status and project sections persist collapse and expansion through full reloads using real preferences and a storage adapter.',
   )
+  await page.evaluate(() => {
+    const owner = structuredClone(window.startupSources.owner)
+    owner.connected = true
+    owner.snapshot.botsSupported = true
+    owner.snapshot.workspace.tasks = [
+      {
+        ...owner.snapshot.workspace.tasks[0],
+        id: 'lasting-bot',
+        title: 'Lasting release Bot',
+        status: 'done',
+        archived: false,
+        archivedAt: undefined,
+        bot: {
+          role: 'Release lead',
+          responsibilities: 'Check releases',
+          state: 'paused',
+          revision: '11111111-1111-4111-8111-111111111111',
+          createdAt: '2026-11-12T00:00:00Z',
+          updatedAt: '2026-11-12T00:00:00Z',
+        },
+      },
+    ]
+    owner.snapshot.workspace.tasks.push({
+      ...owner.snapshot.workspace.tasks[0],
+      id: 'ordinary-neighbor',
+      title: 'Ordinary neighbor',
+      bot: undefined,
+    })
+    window.setListSources([owner])
+    window.resetThreadList()
+    window.setListPreferences({ collapsedThreadSections: [] })
+    window.showThreads()
+  })
+  await page.getByTestId('Task ordinary-neighbor').waitFor()
+  assert.equal(await page.getByTestId('Task lasting-bot').count(), 0)
+  await page.evaluate(() => window.showOverview())
+  const botRow = page.getByTestId('Workspace thread Lasting release Bot')
+  await botRow.waitFor()
+  assert.equal(await botRow.count(), 1)
+  assert.equal(await botRow.locator('[data-icon="bot"]').count(), 1)
+  assert.match(await botRow.getAttribute('aria-label'), /^Bot, .*Paused/)
+  assert.doesNotMatch(await botRow.getAttribute('aria-label'), /Project|checkout|Worktree/)
+  assert.equal(await botRow.getByTestId('Bot identity').count(), 1)
+  await botRow.click()
+  assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'lasting-bot')
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )

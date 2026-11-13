@@ -27,9 +27,16 @@ export interface StudioNavigation {
   viewId: string
   entityId?: string
   pullTarget?: StudioPullTarget
+  automationTarget?: StudioAutomationTarget
   nativeAgentKey?: string
   threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
+}
+/** An automation link keeps the computer that owns its configuration and run history. */
+export interface StudioAutomationTarget {
+  runtimeId: string
+  automationId: string
+  runId?: string
 }
 /** The entity's origin survives transport handoff and shell history. */
 export interface StudioPullTarget {
@@ -50,6 +57,7 @@ export interface StudioViewProps {
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
   entityId?: string
   pullTarget?: StudioPullTarget
+  automationTarget?: StudioAutomationTarget
   /** Changes for explicit navigation, including reopening the same destination. */
   navigationKey?: number
 }

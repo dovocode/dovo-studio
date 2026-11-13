@@ -43,7 +43,7 @@ const threadStartFields = new Set<string>([
   'archiveAfterSettledDays',
   'pinned',
 ] satisfies (keyof Task)[])
-const startsCleanDraft = (task: Task) =>
+export const startsCleanDraft = (task: Task) =>
   task.status === 'draft' &&
   !task.example &&
   !task.messages.length &&

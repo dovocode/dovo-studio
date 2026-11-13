@@ -10,6 +10,7 @@ import {
 } from '@dovo/protocol'
 import { ChoicePicker, HarnessFields, LinkedCheckoutEditor } from '@dovo/studio-ui'
 import type { AutomationData, AutomationNode, Workspace } from '@dovo/studio-core'
+import { useWorkspace } from '@dovo/studio-core'
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 export function NodeInspector({
   node,
@@ -25,6 +26,10 @@ export function NodeInspector({
   onDelete: () => void
 }) {
   const data = node.data
+  const { snapshot } = useWorkspace()
+  const bots = workspace.tasks.filter(
+    (task) => task.bot && !task.archivedAt && !task.replica && !task.delegation,
+  )
   const [customSchedule, setCustomSchedule] = useState(false)
   const agents = resolveScopedAgents(
     defaults,
@@ -223,56 +228,89 @@ export function NodeInspector({
       )}
       {data.kind === 'task' && (
         <>
-          <HarnessFields
-            agents={agents}
-            selectedAgentId={data.agentId || undefined}
-            onSelectAgent={(agentId) => {
-              const agent = agents.find((entry) => entry.id === agentId)
-              if (agent)
-                field({
-                  agentId,
-                  harness: decode(taskHarnessSchema, agent),
-                  agentOverrides: undefined,
-                })
-            }}
-            value={decode(
-              taskHarnessSchema,
-              resolveTaskAgent({ ...data, id: node.id }, agents) ?? defaultTaskHarness('codex'),
-            )}
-            onChange={(harness) => field({ agentId: '', agentOverrides: undefined, harness })}
-          />
-          <FormField label="Repository">
-            <ChoicePicker
-              aria-label="Repository"
-              className="h-9 w-full rounded-md border bg-background px-2"
-              value={data.repositoryId}
-              onValueChange={(selection) => field({ repositoryId: selection })}
-            >
-              {workspace.repositories.map((repo) => (
-                <option key={repo.id} value={repo.id}>
-                  {repo.name}
-                </option>
-              ))}
-            </ChoicePicker>
-          </FormField>
-          <FormField label="Working directory">
-            <ChoicePicker
-              aria-label="Working directory"
-              className="h-9 rounded-md border bg-background px-2 text-xs"
-              value={data.execution ?? 'main'}
-              onValueChange={(selection) => {
-                const execution = selection
-                if (execution === 'main' || execution === 'worktree') field({ execution })
-              }}
-            >
-              <option value="main">Project checkout</option>
-              <option value="worktree">Dedicated thread worktree</option>
-            </ChoicePicker>
-          </FormField>
-          <LinkedCheckoutEditor
-            value={data.linkedCheckouts ?? []}
-            onChange={(linkedCheckouts) => field({ linkedCheckouts })}
-          />
+          {(snapshot?.botsSupported || data.botId) && (
+            <FormField label="Thread target">
+              <ChoicePicker
+                aria-label="Routine thread target"
+                value={data.botId ?? ''}
+                disabled={!snapshot?.botsSupported}
+                onValueChange={(botId) => field({ botId: botId || undefined })}
+              >
+                <option value="">New thread for each run</option>
+                {data.botId && !bots.some((task) => task.id === data.botId) && (
+                  <option value={data.botId} disabled>
+                    Unavailable Bot · {data.botId}
+                  </option>
+                )}
+                {bots.map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.title}
+                    {task.bot?.state === 'paused' ? ' · Paused' : ''}
+                  </option>
+                ))}
+              </ChoicePicker>
+            </FormField>
+          )}
+          {data.botId ? (
+            <p className="text-muted-foreground">
+              Send work to this Bot’s persistent thread. The Bot’s current harness, project and tool
+              permissions apply. A paused Bot cannot run routines. Resume it before running this
+              routine.
+            </p>
+          ) : (
+            <>
+              <HarnessFields
+                agents={agents}
+                selectedAgentId={data.agentId || undefined}
+                onSelectAgent={(agentId) => {
+                  const agent = agents.find((entry) => entry.id === agentId)
+                  if (agent)
+                    field({
+                      agentId,
+                      harness: decode(taskHarnessSchema, agent),
+                      agentOverrides: undefined,
+                    })
+                }}
+                value={decode(
+                  taskHarnessSchema,
+                  resolveTaskAgent({ ...data, id: node.id }, agents) ?? defaultTaskHarness('codex'),
+                )}
+                onChange={(harness) => field({ agentId: '', agentOverrides: undefined, harness })}
+              />
+              <FormField label="Repository">
+                <ChoicePicker
+                  aria-label="Repository"
+                  className="h-9 w-full rounded-md border bg-background px-2"
+                  value={data.repositoryId}
+                  onValueChange={(selection) => field({ repositoryId: selection })}
+                >
+                  {workspace.repositories.map((repo) => (
+                    <option key={repo.id} value={repo.id}>
+                      {repo.name}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              </FormField>
+              <FormField label="Working directory">
+                <ChoicePicker
+                  aria-label="Working directory"
+                  className="h-9 rounded-md border bg-background px-2 text-xs"
+                  value={data.execution ?? 'main'}
+                  onValueChange={(selection) => {
+                    const execution = selection
+                    if (execution === 'main' || execution === 'worktree') field({ execution })
+                  }}
+                >
+                  <option value="main">Project checkout</option>
+                  <option value="worktree">Dedicated thread worktree</option>
+                </ChoicePicker>
+              </FormField>
+              <LinkedCheckoutEditor
+                value={data.linkedCheckouts ?? []}
+                onChange={(linkedCheckouts) => field({ linkedCheckouts })}
+              />
+            </>
+          )}
           <FormField label="Instructions">
             <Textarea
               rows={7}

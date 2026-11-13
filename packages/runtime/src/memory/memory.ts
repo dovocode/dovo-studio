@@ -63,7 +63,20 @@ export class Memory {
     }
     return { projects }
   }
+  /** Owner column: project id, Bot thread id, or empty for system/projectless notes. */
   private repository(input: MemoryScopeRequest, requireRegistered = false) {
+    if (input.scope !== 'bot' && input.botId)
+      throw new HttpError(400, 'Only bot memory accepts a Bot')
+    if (input.scope === 'bot') {
+      if (input.repositoryId) throw new HttpError(400, 'Bot memory does not accept a project')
+      if (!input.botId) throw new HttpError(400, 'Choose a Bot')
+      if (
+        requireRegistered &&
+        !this.store.get().tasks.some((task) => task.id === input.botId && task.bot)
+      )
+        throw new HttpError(404, 'Bot not found')
+      return input.botId
+    }
     if (input.scope !== 'project') {
       if (input.repositoryId) throw new HttpError(400, 'Only project memory accepts a project')
       return ''
@@ -75,6 +88,8 @@ export class Memory {
     return input.repositoryId
   }
   configure(input: MemoryScopeRequest & { enabled: boolean }) {
+    if (input.scope === 'bot')
+      throw new HttpError(400, 'Bot memory is always available to its Bot and has no switch')
     const repositoryId = this.repository(input, input.enabled)
     const current = this.settings()
     const next =
@@ -96,8 +111,13 @@ export class Memory {
     return this.preferences.save({ memory: next }).memory
   }
   private decodeRow(raw: unknown) {
-    const row = decode(rowSchema, raw)
-    return decode(memoryEntrySchema, { ...row, repositoryId: row.repositoryId || undefined })
+    const { repositoryId, ...row } = decode(rowSchema, raw)
+    return decode(memoryEntrySchema, {
+      ...row,
+      ...(row.scope === 'bot'
+        ? { botId: repositoryId }
+        : { repositoryId: repositoryId || undefined }),
+    })
   }
   list(input: MemoryListRequest) {
     const repositoryId = this.repository(input)
@@ -141,7 +161,8 @@ export class Memory {
       const entry = decode(memoryEntrySchema, {
         ...input,
         key,
-        repositoryId: repositoryId || undefined,
+        repositoryId: input.scope === 'project' ? repositoryId : undefined,
+        botId: input.scope === 'bot' ? repositoryId : undefined,
         revision: randomUUID(),
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
@@ -183,16 +204,23 @@ export class Memory {
     const repository = this.checkouts.executionRepository(taskId)
     return repository.kind === 'scratch' ? undefined : repository
   }
+  /** Deleting a Bot removes its private notes with it. */
+  removeBot(botId: string) {
+    this.db.prepare("DELETE FROM memories WHERE scope='bot' AND repository_id=?").run(botId)
+  }
   availableScopes(taskId: string): MemoryScope[] {
     const settings = this.settings()
+    // Private Bot memory belongs to the coordinator thread only, never to its children.
+    const bot = this.store.taskSummary(taskId).bot ? (['bot'] as const) : []
     if (
       !settings.systemEnabled &&
       !settings.projectlessEnabled &&
       !settings.projectRepositoryIds.length
     )
-      return []
+      return [...bot]
     const project = this.projectForTask(taskId)
     return [
+      ...bot,
       ...(settings.systemEnabled ? ['system' as const] : []),
       ...(project && settings.projectRepositoryIds.includes(project.id)
         ? ['project' as const]
@@ -210,6 +238,7 @@ export class Memory {
     return {
       scope,
       ...(scope === 'project' ? { repositoryId: this.projectForTask(taskId)?.id } : {}),
+      ...(scope === 'bot' ? { botId: taskId } : {}),
     }
   }
 }

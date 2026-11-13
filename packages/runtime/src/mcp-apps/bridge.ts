@@ -35,6 +35,8 @@ import {
   resolveTaskAgent,
   permissionPolicyReadOnly,
   mergeResources,
+  applyBotResources,
+  inheritedResourceProject,
   type McpServer,
   type Agent,
   type McpApp,
@@ -186,9 +188,12 @@ export class McpApps {
     const agent = resolveTaskAgent(task, this.store.get().agents)
     if (!agent) throw new HttpError(409, 'The thread no longer has an agent')
     const project = this.store.get().repositories.find((item) => item.id === task.repositoryId)
-    const server = mergeResources(
-      this.store.projectSettings(task.repositoryId).resources,
-      agent.resources,
+    const server = applyBotResources(
+      mergeResources(
+        this.store.projectSettings(inheritedResourceProject(task)).resources,
+        agent.resources,
+      ),
+      task.bot,
     ).mcpServers.find((entry) => entry.enabled && entry.name === name)
     if (!server) throw new HttpError(403, 'This MCP server is no longer enabled for the thread')
     const scope = [...this.scopes.values()].find(
@@ -493,9 +498,12 @@ export class McpApps {
       agent = resolveTaskAgent(task, this.store.get().agents)
     if (!agent || permissionPolicyReadOnly(agent))
       throw new HttpError(403, 'Live feeds require an editable thread')
-    const servers = mergeResources(
-      this.store.projectSettings(task.repositoryId).resources,
-      agent.resources,
+    const servers = applyBotResources(
+      mergeResources(
+        this.store.projectSettings(inheritedResourceProject(task)).resources,
+        agent.resources,
+      ),
+      task.bot,
     ).mcpServers.filter((server) => server.enabled && server.name !== 'dovo_task')
     if (servers.length > 32) throw new HttpError(413, 'Too many configured MCP servers')
     const tools: Array<{

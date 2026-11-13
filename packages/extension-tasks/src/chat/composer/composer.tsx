@@ -170,9 +170,9 @@ export function Composer({
     files: Attachment[]
     plan: boolean
   } | null>(null)
-  const turnSettings = editing ? editing.settings : draftTurnSettings
+  const turnSettings = task.bot ? null : editing ? editing.settings : draftTurnSettings
   // One-message plan mode: kept with the draft until a plan send is accepted.
-  const plan = editing ? editing.plan : draftPlan
+  const plan = !task.bot && (editing ? editing.plan : draftPlan)
   const planSupported = snapshot?.planModeSupported === true
   const changePlan = (value: boolean) => {
     if (editing) {
@@ -571,7 +571,9 @@ export function Composer({
       ),
       agents: resolveScopedAgents(
         snapshot?.defaults,
-        workspace.repositories.find((repository) => repository.id === task.repositoryId),
+        task.bot
+          ? undefined
+          : workspace.repositories.find((repository) => repository.id === task.repositoryId),
         workspace.agents,
       ),
     }),
@@ -580,6 +582,7 @@ export function Composer({
       task.agentId,
       task.agentOverrides,
       task.harness,
+      task.bot,
       turnSettings,
       task.repositoryId,
       workspace.agents,
@@ -667,7 +670,7 @@ export function Composer({
     !stagingGapActive && task.messages.length === 0 && !task.queue?.length && !task.turns?.length
   const threadAgent = resolveTaskAgent(task, workspace.agents)
   const agent =
-    threadAgent && snapshot?.persistentTurnModelsSupported
+    !task.bot && threadAgent && snapshot?.persistentTurnModelsSupported
       ? queuedModelAgent(threadAgent, task.queue, editing?.message.id)
       : threadAgent
   const policyIssue = agent
@@ -946,7 +949,7 @@ export function Composer({
       await attachments.waitForUploads()
       composerDraft.flush()
       await flush(task.id)
-      if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
+      if (firstMessage && !task.bot && task.autoProject && !snapshot?.messageSetupSupported) {
         const selected = await request(
           '/api/tasks/projects/select',
           {
@@ -973,7 +976,7 @@ export function Composer({
           })),
         )
       }
-      if (firstMessage) {
+      if (firstMessage && !task.bot) {
         const summary =
           text ||
           `Work with the attached files: ${attachments.files.map((file) => file.name).join(', ')}`
@@ -992,7 +995,7 @@ export function Composer({
           {
             id: task.id,
             messageId: attempt.current.id,
-            ...(firstMessage && snapshot?.messageSetupSupported
+            ...(firstMessage && !task.bot && snapshot?.messageSetupSupported
               ? {
                   initialTitle: { before: task.title, after: attempt.current.title },
                   ...(task.autoProject ? { selectProject: true } : {}),
@@ -1019,7 +1022,7 @@ export function Composer({
           }))
           if (!attachmentIds.length) setAwaitingQueuedSubmission(null)
         } else if (mode === 'queue' && !result.pending) setStagingGap(null)
-        if (firstMessage && !snapshot?.messageSetupSupported)
+        if (firstMessage && !task.bot && !snapshot?.messageSetupSupported)
           void request(
             '/api/tasks/title',
             {
@@ -1169,7 +1172,7 @@ export function Composer({
       upload={attachments.upload}
     />
   )
-  const planControl = planSupported && (
+  const planControl = !task.bot && planSupported && (
     <Button
       type="button"
       variant="ghost"
@@ -1200,6 +1203,7 @@ export function Composer({
     </Button>
   )
   const showSendOptions =
+    !task.bot &&
     preferences.showSendOptions &&
     !editing &&
     (hasBackgroundAction ||
@@ -1270,17 +1274,19 @@ export function Composer({
     (!!connection && !connected) ||
     (firstMessage && (!connected || !task.repositoryId || !agent))
   const settingsContainer = projectSettings?.container ?? infoContainer
-  const workspaceSettings = workspaceControls?.(accessSlot) ?? (
-    <ComposerWorkspace
-      task={task}
-      showBranch={canChangeTaskCheckout(task)}
-      disabled={sending || !!task.archived}
-      onMachineMoving={setMachineMoving}
-      onSelectRemote={onSelectRemote}
-    >
-      {accessSlot}
-    </ComposerWorkspace>
-  )
+  const workspaceSettings = task.bot
+    ? accessSlot
+    : (workspaceControls?.(accessSlot) ?? (
+        <ComposerWorkspace
+          task={task}
+          showBranch={canChangeTaskCheckout(task)}
+          disabled={sending || !!task.archived}
+          onMachineMoving={setMachineMoving}
+          onSelectRemote={onSelectRemote}
+        >
+          {accessSlot}
+        </ComposerWorkspace>
+      ))
   const settings = (
     <section
       aria-label="Environment and access"
@@ -1367,44 +1373,46 @@ export function Composer({
             <>
               <div className="composer-add-actions">
                 {attachmentControl}
-                <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
-                  <Popover.Trigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      aria-label="More composer actions"
-                      aria-pressed={!preferences.showPlanButton && plan}
-                      className={cn(
-                        'composer-add-menu',
-                        !preferences.showPlanButton && plan && 'text-primary bg-primary/15',
-                      )}
-                      disabled={sending || !!task.archivedAt}
-                    >
-                      <ChevronDown className="size-4" />
-                    </Button>
-                  </Popover.Trigger>
-                  <Popover.Portal forceMount>
-                    <Popover.Content
-                      forceMount
-                      hidden={!addOpen}
-                      side="top"
-                      align="start"
-                      sideOffset={12}
-                      onCloseAutoFocus={(event) => {
-                        if (document.activeElement === input.current) event.preventDefault()
-                      }}
-                      className="z-50 w-72 rounded-2xl border bg-popover p-2 text-popover-foreground shadow-xl"
-                    >
-                      {extraActions}
-                    </Popover.Content>
-                  </Popover.Portal>
-                </Popover.Root>
+                {!task.bot && (
+                  <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
+                    <Popover.Trigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label="More composer actions"
+                        aria-pressed={!preferences.showPlanButton && plan}
+                        className={cn(
+                          'composer-add-menu',
+                          !preferences.showPlanButton && plan && 'text-primary bg-primary/15',
+                        )}
+                        disabled={sending || !!task.archivedAt}
+                      >
+                        <ChevronDown className="size-4" />
+                      </Button>
+                    </Popover.Trigger>
+                    <Popover.Portal forceMount>
+                      <Popover.Content
+                        forceMount
+                        hidden={!addOpen}
+                        side="top"
+                        align="start"
+                        sideOffset={12}
+                        onCloseAutoFocus={(event) => {
+                          if (document.activeElement === input.current) event.preventDefault()
+                        }}
+                        className="z-50 w-72 rounded-2xl border bg-popover p-2 text-popover-foreground shadow-xl"
+                      >
+                        {extraActions}
+                      </Popover.Content>
+                    </Popover.Portal>
+                  </Popover.Root>
+                )}
               </div>
               {preferences.showMarkdownSourceToggle && (
                 <ComposerModeToggle input={input} disabled={!!task.archivedAt} />
               )}
               {preferences.showPlanButton && planControl}
-              {!startup && !projectSettings && (
+              {!task.bot && !startup && !projectSettings && (
                 <Popover.Root open={infoOpen} onOpenChange={setInfoOpen}>
                   <Popover.Trigger asChild>
                     <IconButton label="Thread info" className="size-8" type="button">
@@ -1434,7 +1442,7 @@ export function Composer({
             <span className="text-xs text-muted-foreground">
               Answer the question above to continue.
             </span>
-          ) : usesTurnSettings && agent ? (
+          ) : task.bot ? null : usesTurnSettings && agent ? (
             <TurnModelControls
               allowHandoff={!editing}
               task={task}

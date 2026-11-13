@@ -15,6 +15,8 @@ import { mutableArray, mutableStruct, strictStruct } from './shared/schema.js'
 import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
 import { subagentSchema } from './conversation/workflow/subagents.js'
 import { agentSecretReferencesSchema } from './tasks/secret-references.js'
+import { botSchema } from './tasks/bots.js'
+import { maxThreadActions, threadActionSchema } from './tasks/thread-actions.js'
 import { agentTodosSchema } from './conversation/workflow/agent-interactions.js'
 import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './scm/forges/jira.js'
 import { taskWorkItemSchema } from './scm/work/work-task.js'
@@ -938,6 +940,10 @@ export const taskSchema = mutableStruct({
       key: maxValue(minValue(Schema.String, 1), 100),
     }),
   ),
+  /** Runtime-owned persistent assistant identity. Present only on a Bot's coordinator thread. */
+  bot: Schema.optional(botSchema),
+  /** Runtime-owned new-thread actions prepared by this thread's agent. */
+  threadActions: Schema.optional(maxValue(mutableArray(threadActionSchema), maxThreadActions)),
   id: Schema.String,
   title: minValue(Schema.String, 1),
   repositoryId: Schema.String,
@@ -1087,6 +1093,8 @@ export const nodeDataSchema = mutableStruct({
   repositoryId: Schema.String,
   execution: Schema.optional(executionSchema),
   linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
+  /** Task steps with a Bot post their objective into that Bot's thread, using its settings. */
+  botId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
 })
 export const flowNodeSchema = mutableStruct({
   id: Schema.String,

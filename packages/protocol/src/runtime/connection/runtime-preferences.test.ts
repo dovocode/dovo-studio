@@ -17,6 +17,7 @@ it('defaults new preferences and accepts only Git-safe branch prefixes', () => {
     enableSmartModelSelection: false,
     autoProjectModelSelection: 'inherit',
     enablePullRequestWatching: false,
+    enablePullRequestBabysitting: false,
     enablePipelineWatching: false,
     enableLinkedProjectsTool: true,
     enableStudioThreads: false,

@@ -17,7 +17,10 @@ export function automationOnceTime(runAt: string | undefined, timezone: string):
 
 export function automationIssues(
   flow: Automation,
-  workspace: Pick<Workspace, 'agents' | 'repositories'>,
+  /** Pass `tasks` to check Bot step targets; clients without thread data skip that check. */
+  workspace: Pick<Workspace, 'agents' | 'repositories'> & {
+    tasks?: readonly { id: string; bot?: unknown; archivedAt?: string | null }[]
+  },
 ): string[] {
   const errors: string[] = []
   if (!flow.name.trim()) errors.push('Give the automation a name.')
@@ -88,7 +91,14 @@ export function automationIssues(
       if (config?.actor && !/^[A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?$/.test(config.actor))
         errors.push('Enter a GitHub actor login without @.')
     }
-    if (data.kind === 'task') {
+    if (data.kind === 'task' && data.botId !== undefined) {
+      // A Bot step runs in the Bot's own thread with the Bot's current settings.
+      // Dormant normal-step settings (harness, agent, project, linked projects) are ignored.
+      if (!data.objective.trim()) errors.push(`Add instructions to ${data.label}.`)
+      const target = workspace.tasks?.find((task) => task.id === data.botId)
+      if (workspace.tasks && (!target?.bot || target.archivedAt))
+        errors.push(`Choose an available Bot for ${data.label}.`)
+    } else if (data.kind === 'task') {
       const checkouts = data.linkedCheckouts ?? []
       if (new Set(checkouts.map((item) => item.id)).size !== checkouts.length)
         errors.push(`Use unique linked checkout IDs for ${data.label}.`)

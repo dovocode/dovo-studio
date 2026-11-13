@@ -354,3 +354,37 @@ it('never prunes tabs or drafts merely because a fresh resource or computer is a
     ).toBe(state)
   }
 })
+
+it('shows Bot identity without its internal backing project or branch', () => {
+  const bot = decode(taskSchema, {
+    ...task,
+    bot: {
+      role: 'Release assistant',
+      responsibilities: '',
+      state: 'active',
+      revision: '00000000-0000-4000-8000-000000000001',
+      createdAt: task.createdAt,
+      updatedAt: task.createdAt,
+    },
+  })
+  const identity = workspaceIdentity(
+    { kind: 'thread', runtimeId: 'mac', id: bot.id },
+    {
+      ...sources,
+      computers: [
+        {
+          ...owner,
+          snapshot: {
+            ...owner.snapshot!,
+            workspace: { ...owner.snapshot!.workspace, tasks: [bot] },
+          },
+        },
+      ],
+    },
+  )
+  expect(identity.kindLabel).toBe('Bot')
+  expect(identity.title).toBe(task.title)
+  expect(identity.project).toBeUndefined()
+  expect(identity.repository).toBeUndefined()
+  expect(identity.branch).toBeUndefined()
+})

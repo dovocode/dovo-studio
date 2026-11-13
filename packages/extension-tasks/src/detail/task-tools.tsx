@@ -136,7 +136,9 @@ export function TaskTools({
             label: 'Thread workspace',
             tools: [
               ['files', 'Files', Files, 0],
-              ['projects', 'Linked projects', FolderSymlink, 0],
+              ...(task.bot
+                ? [['bot-settings', 'Bot settings', Bot, 0] as const]
+                : [['projects', 'Linked projects', FolderSymlink, 0] as const]),
               ...(hasArtifacts ? [['artifacts', 'Artifacts', Shapes, 0] as const] : []),
               ...(hasDiff
                 ? [['changes', 'Diff', FileCode2, task.files?.length ?? 0] as const]

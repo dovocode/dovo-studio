@@ -47,7 +47,7 @@ export function HarnessDialog({
   const { workspace, setWorkspace, flush, request, connected, snapshot } = useWorkspace()
   const agents = resolveScopedAgents(
     snapshot?.defaults,
-    workspace.repositories.find((repo) => repo.id === task.repositoryId),
+    task.bot ? undefined : workspace.repositories.find((repo) => repo.id === task.repositoryId),
     workspace.agents,
   )
   const customAgent = onSave ? undefined : agents.find((agent) => agent.id === task.agentId)
@@ -87,7 +87,9 @@ export function HarnessDialog({
             current,
             resolveScopedAgents(
               snapshot?.defaults,
-              workspace.repositories.find((repo) => repo.id === current.repositoryId),
+              current.bot
+                ? undefined
+                : workspace.repositories.find((repo) => repo.id === current.repositoryId),
               workspace.agents,
             ),
             value,

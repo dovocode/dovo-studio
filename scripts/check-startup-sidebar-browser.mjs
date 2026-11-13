@@ -44,12 +44,12 @@ const built = await build({
     contents: `
       import {useState,useCallback} from 'react';
       import {createRoot} from 'react-dom/client';
-      import {WorkspaceValueProvider,useStudioHost} from '@dovo/studio-core';
+      import {WorkspaceValueProvider,useStudioHost,createTask,randomUUID} from '@dovo/studio-core';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {TaskList} from '../extension-tasks/src/list/task-list';
       import {collectTasks,taskCollectionKey} from '../extension-tasks/src/list/task-collection';
       import {saveTaskListViewState} from '../extension-tasks/src/list/task-list-view-state';
-      saveTaskListViewState(useStudioHost(), {query:'does-not-match',expanded:{active:false,'project:["mac","scratch"]':false}});
+      saveTaskListViewState(useStudioHost(), {query:window.botListCase?'':'does-not-match',expanded:{active:false,'project:["mac","scratch"]':false}});
       window.preferences={taskSort:'priority',taskGrouping:window.testGrouping||'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled']};
       window.commits=0;window.requests=[];
       function App(){
@@ -68,7 +68,16 @@ const built = await build({
           {open&&<StartupDraft key={version} onProject={()=>{}} onDraftChange={report} onCommit={task=>{window.commits++;setSelected(taskCollectionKey('mac',task.id));setOpen(false)}}/>}
         </WorkspaceValueProvider>
       }
-      createRoot(document.getElementById('app')).render(<App/>);
+      function BotListCase(){
+        const base=createTask({title:'Normal thread',objective:'',repositoryId:'scratch',agentId:''});
+        const bot={...base,id:'bot',title:'Persistent Bot',bot:{role:'Assistant',responsibilities:'',state:'active',revision:randomUUID(),createdAt:base.createdAt,updatedAt:base.createdAt}};
+        const child={...base,id:'child',title:'Delegated work',delegation:{parentTaskId:'bot',parentRunId:'run',key:'child',fingerprint:'child'}};
+        const workspace={tasks:[base,bot,child],agents:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]};
+        const source={runtimeId:'mac',name:'Mac',workspace,snapshot:null,online:true};
+        const store={workspace,snapshot:null,activeRuntimeId:'mac',connected:true,runtimes:[],request:async()=>({taskIds:[],hits:[]}),runtimeRegistry:{profiles:[]}};
+        return <WorkspaceValueProvider value={store}><TaskList projectId="" onProjectChange={()=>{}} selectedId={window.botSelected?'["mac","bot"]':''} onSelect={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} sources={[source]} activeRuntimeId="mac" busy={false} error=""/></WorkspaceValueProvider>
+      }
+      createRoot(document.getElementById('app')).render(window.botListCase?<BotListCase/>:<App/>);
     `,
     resolveDir,
     loader: 'tsx',
@@ -133,8 +142,26 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   }
+  for (const selected of [false, true]) {
+    const page = await browser.newPage()
+    await page.setContent('<div id="app"></div>')
+    await page.evaluate((selected) => {
+      window.botListCase = true
+      window.botSelected = selected
+    }, selected)
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.getByLabel('Search threads', { exact: true }).waitFor()
+    assert.equal(await page.locator('[data-task-id="bot"]').count(), 0)
+    await page.getByLabel('Search threads', { exact: true }).fill('Persistent Bot')
+    await page.waitForTimeout(150)
+    assert.equal(await page.locator('[data-task-id="bot"]').count(), 0)
+    await page.getByLabel('Search threads', { exact: true }).fill('Delegated work')
+    await page.locator('[data-task-id="child"]').waitFor()
+    assert.equal(await page.locator('[data-task-id="bot"]').count(), 0)
+    await page.close()
+  }
   console.log(
-    'Startup sidebar: untouched drafts appear selected without persistence, disappear on leave, and retain their row when committed.',
+    'Startup sidebar: untouched drafts retain their row on commit. Real TaskList excludes Bots with no selection, selected Bot and search; delegated work remains reachable.',
   )
 } finally {
   await browser.close()

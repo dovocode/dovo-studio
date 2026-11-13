@@ -27,7 +27,10 @@ const selectResources = (value: ReturnType<typeof useRuntime>) => ({
 export function UserMessageText({ text, onLink }: { text: string; onLink: (url: string) => void }) {
   const { styles, colors } = useTheme()
   const id = useConversationSelector((value) => value.task.id)
-  const repositoryId = useConversationSelector((value) => value.task.repositoryId)
+  const bot = useConversationSelector((value) => value.task.bot)
+  const repositoryId = useConversationSelector((value) =>
+    value.task.bot ? '' : value.task.repositoryId,
+  )
   const agentId = useConversationSelector((value) => value.task.agentId)
   const agentOverrides = useConversationSelector((value) => value.task.agentOverrides)
   const harness = useConversationSelector((value) => value.task.harness)
@@ -35,7 +38,7 @@ export function UserMessageText({ text, onLink }: { text: string; onLink: (url: 
   const resources = useMemo(
     () => ({
       ...taskResources(
-        { id, repositoryId, agentId, agentOverrides, harness },
+        { id, repositoryId, agentId, agentOverrides, harness, bot },
         { agents: agents ?? [], repositories: repositories ?? [] },
         defaults,
       ),
@@ -45,7 +48,7 @@ export function UserMessageText({ text, onLink }: { text: string; onLink: (url: 
         agents ?? [],
       ),
     }),
-    [id, repositoryId, agentId, agentOverrides, harness, agents, repositories, defaults],
+    [id, repositoryId, agentId, agentOverrides, harness, bot, agents, repositories, defaults],
   )
   const references = useMemo(() => messageReferences(text, resources), [text, resources])
   const parts = useMemo(() => {

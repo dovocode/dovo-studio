@@ -11,7 +11,7 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
 window.requests=[];window.fail=true;window.finish=null;
-window.request=(path,input)=>path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
+window.workspacePatches=[];window.request=(path,input)=>path==='/api/workspace'?Effect.sync(()=>{window.workspacePatches.push(input);window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
 function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'review',archived:false,draft:'',messages:[{id:'previous',role:'user',text:'Earlier request'}],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <><textarea aria-label="Message" value={actions.draft.text} disabled={!!task.archivedAt||(actions.busy&&!actions.submitting)} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/><button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root,
@@ -48,7 +48,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../../runtime/connection/provider',
       importer: actions,
-      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queuePausePreservationSupported:true,directMessageSupported:window.directSupported!==false,promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
+      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{messageSetupSupported:window.firstSetupSupported===true,queuePausePreservationSupported:true,directMessageSupported:window.directSupported!==false,promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
     },
     {
       path: '../../../runtime/preferences/app-preferences',
@@ -326,6 +326,55 @@ try {
   await page.evaluate(() => void window.actions.run(() => window.actions.submit('direct')))
   await page.waitForFunction(() => window.actions.error.includes('send without resuming'))
   assert.equal(await page.evaluate(() => window.requests.length), directIndex + 2)
+  for (const bot of [true, false]) {
+    await page.evaluate((bot) => {
+      window.directSupported = true
+      window.firstSetupSupported = true
+      window.fail = false
+      window.setTask((task) => ({
+        ...task,
+        id: bot ? 'bot-first-send' : 'ordinary-first-send',
+        title: bot ? 'Stable Bot name' : 'Ordinary name',
+        status: 'draft',
+        messages: [],
+        turns: [],
+        queue: [],
+        queuePaused: false,
+        autoProject: false,
+        draftTurnSettings: bot ? { model: 'stale-hidden-model', reasoning: 'high' } : undefined,
+        draftPlan: bot,
+        bot: bot
+          ? {
+              role: 'Reviewer',
+              responsibilities: 'Review',
+              state: 'active',
+              revision: '11111111-1111-4111-8111-111111111111',
+              createdAt: '2026-11-12T00:00:00Z',
+              updatedAt: '2026-11-12T00:00:00Z',
+            }
+          : undefined,
+      }))
+    }, bot)
+    await input.fill(bot ? 'Bot first prompt' : 'Ordinary first prompt')
+    const before = await page.evaluate(() => window.requests.length)
+    await page.evaluate(() => void window.actions.run(() => window.actions.submit('direct')))
+    await page.waitForFunction((index) => window.requests.length > index, before)
+    const request = await page.evaluate(() => window.requests.at(-1))
+    assert.equal(request.path, '/api/tasks/message')
+    if (bot) {
+      assert.equal(request.input.initialTitle, undefined)
+      assert.equal(request.input.selectProject, undefined)
+      assert.equal(request.input.turnSettings, undefined)
+      assert.equal(request.input.plan, undefined)
+    } else
+      assert.deepEqual(request.input.initialTitle, {
+        before: 'Ordinary name',
+        after: 'Ordinary first prompt',
+      })
+    await page.evaluate(() => window.finish())
+    await page.waitForFunction(() => !window.actions.busy)
+    if (bot) assert.equal(await page.evaluate(() => window.task.title), 'Stable Bot name')
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Mobile queue staging: capability gate, atomic queue-only payload, synchronous admission, retry identity, editable focused input, newer draft preservation, paused default and explicit Send passed.',

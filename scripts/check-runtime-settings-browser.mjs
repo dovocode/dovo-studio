@@ -346,6 +346,25 @@ try {
   })
   assert.equal(runtime.services.preferences.get().enableCodeReviews, true)
   await page.getByText('Changes save automatically on this computer.', { exact: true }).waitFor()
+  const care = page.getByRole('switch', { name: 'PR babysitting', exact: true })
+  await care.waitFor()
+  assert.equal(await care.isChecked(), false)
+  await care.click()
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="PR babysitting"]').getAttribute('aria-checked') ===
+        'true' && !document.querySelector('[aria-label="PR babysitting"]').disabled,
+  )
+  assert.equal(runtime.services.preferences.get().enablePullRequestBabysitting, true)
+  assert.equal(runtime.services.preferences.get().enablePullRequestWatching, true)
+  await care.click()
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="PR babysitting"]').getAttribute('aria-checked') ===
+        'false' && !document.querySelector('[aria-label="PR babysitting"]').disabled,
+  )
+  assert.equal(runtime.services.preferences.get().enablePullRequestBabysitting, false)
+  assert.equal(runtime.services.preferences.get().enablePullRequestWatching, true)
   const watcher = page.getByRole('switch', {
     name: 'Pipeline watcher (experimental)',
     exact: true,

@@ -36,7 +36,20 @@ async function bundle(mobile) {
     './device-manager': 'export const DeviceManager=()=>null;',
     './pairing-client': `export const PairingClient=({discovered})=>discovered?<div>Pairing credentials required {window.store.runtimeRegistry.profiles.map(p=><span key={p.id}>{p.name}</span>)}</div>:null;`,
     '../../runtime/connection/pair-computer': `export const PairComputer=()=> <div>Pairing credentials required {window.store.profiles.map(p=><span key={p.id}>{p.name}</span>)}</div>;`,
-    '../../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
+    '../../runtime/connection/provider': `
+      import {createContext,useContext} from 'react';
+      const RuntimeContext=createContext(null);
+      export const useRuntime=()=>useContext(RuntimeContext)??window.store;
+      // Match the owner-bound snapshot boundary. Keep the actual route, identity
+      // resolution, pairing flow and selected-computer effect under test.
+      export const RuntimeScope=({runtimeId,children})=>{
+        const runtime=useRuntime();
+        const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);
+        if(!entry)return null;
+        const value={...runtime,activeId:runtimeId,profile:entry.profile,connection:entry.profile.connection,snapshot:entry.snapshot,connected:entry.connected};
+        return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;
+      };
+    `,
     '../../shell/navigation':
       'export const useNavigation=()=>({focused:window.focused??true,navigate:()=>{}});',
     '../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
@@ -45,8 +58,7 @@ async function bundle(mobile) {
     '../runtime/state/native-effect':
       'import {Effect} from "effect";export const nativeEffect=fn=>Effect.tryPromise(fn);',
     '../creation/startup-thread': 'export const StartupThread=()=>null;',
-    './task-detail':
-      'export const TaskDetail=({task,parentNavigation})=><div><h2>{task.title}</h2>{parentNavigation}</div>;',
+    './task-detail': `import {useRuntime} from '../../runtime/connection/provider';export const TaskDetail=({task,parentNavigation})=>{const runtime=useRuntime();return <div data-task-runtime={runtime.activeId} data-task-runtime-identity={runtime.snapshot?.runtimeId}><h2>{task.title}</h2>{parentNavigation}</div>};`,
     '../../ui/controls/use-action':
       'export const useAction=()=>({busy:false,error:"",act:fn=>fn()});',
   }
@@ -54,8 +66,8 @@ async function bundle(mobile) {
     ${mobile ? `import {TaskRouteScreen as Screen} from '${root}/apps/mobile/src/tasks/detail/task-route-screen.tsx';` : `import Screen from '${root}/packages/extension-runtime/src/view.tsx';`}
     window.destination={runtimeId:'foreign-profile',runtimeIdentity:'child-identity',threadId:'selected-child',title:'Selected child',parent:{runtimeId:'parent-profile',runtimeIdentity:'parent-identity',threadId:'coordinator',title:'Parent thread'}};
     window.params={runtimeId:'foreign-profile',runtimeIdentity:'child-identity',taskId:'selected-child',parentRuntimeId:'parent-profile',parentRuntimeIdentity:'parent-identity',parentTaskId:'coordinator',parentTitle:'Parent thread'};
-    window.routes=[];window.switches=[];window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
-    window.store={runtimeRegistry:{profiles:[]},runtimes:[],profiles:[],overviews:[],ready:true,activeId:'local',snapshot:null,connected:true,selectRuntime:()=>{},selectRuntimeEffect:id=>Effect.sync(()=>{window.switches.push(id);window.store={...window.store,activeId:id,snapshot:window.store.overviews.find(s=>s.profile.id===id)?.snapshot};window.render()})};
+    window.routes=[];window.switches=[];window.refreshes=[];window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
+    window.store={runtimeRegistry:{profiles:[]},runtimes:[],profiles:[],overviews:[],ready:true,activeId:'local',snapshot:null,connected:true,refreshRuntime:async profile=>{window.refreshes.push(profile.id)},selectRuntime:()=>{},selectRuntimeEffect:id=>Effect.sync(()=>{window.switches.push(id);window.store={...window.store,activeId:id,snapshot:window.store.overviews.find(s=>s.profile.id===id)?.snapshot};window.render()})};
     const root=createRoot(document.getElementById('app'));
     window.render=()=>root.render(${mobile ? '<Screen/>' : '<Screen threadConnection={window.destination}/>'});
     window.pair=(id,identity,name)=>{
@@ -118,7 +130,8 @@ try {
       })
     await page.evaluate(() => window.pair('new-profile', 'child-identity', 'Correct computer'))
     if (mobile) {
-      await page.getByText('Opening on Correct computer…', { exact: true }).waitFor()
+      await page.getByText('Task unavailable', { exact: true }).waitFor()
+      assert.equal(await page.locator('[data-task-runtime]').count(), 0)
       assert.equal(await page.evaluate(() => window.params.runtimeId), 'foreign-profile')
       assert.deepEqual(await page.evaluate(() => window.switches), [])
       await page.evaluate(() => {
@@ -129,7 +142,16 @@ try {
     if (mobile) {
       await page.getByRole('heading', { name: 'Opened selected child' }).waitFor()
       assert.equal(await page.evaluate(() => window.params.runtimeId), 'new-profile')
+      assert.equal(
+        await page.locator('[data-task-runtime]').getAttribute('data-task-runtime'),
+        'new-profile',
+      )
+      assert.equal(
+        await page.locator('[data-task-runtime]').getAttribute('data-task-runtime-identity'),
+        'child-identity',
+      )
       assert.deepEqual(await page.evaluate(() => window.switches), ['new-profile'])
+      assert.deepEqual(await page.evaluate(() => window.refreshes), ['new-profile'])
       await page
         .getByRole('button', { name: 'Back to parent · Parent thread', exact: true })
         .click()

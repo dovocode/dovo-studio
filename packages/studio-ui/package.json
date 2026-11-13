@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./resource-editors": "./src/resource-editors.ts",
     "./native-tooltip": "./src/native-tooltip.ts",
     "./human-input-shortcuts": "./src/human-input-shortcuts.ts",
     "./image-viewer": "./src/image-viewer.tsx",

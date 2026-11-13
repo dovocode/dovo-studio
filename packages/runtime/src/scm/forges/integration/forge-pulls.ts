@@ -503,6 +503,10 @@ export class ForgePullRequests {
         await prepare()
         return target.feedback(number, source.destination)
       },
+      act: async (input: PullAction) => {
+        await prepare()
+        return target.act({ ...input, expectedDestination: source.destination })
+      },
       context: async () => ({ cwd: target.cwd, scope: await prepare() }),
     }
   }

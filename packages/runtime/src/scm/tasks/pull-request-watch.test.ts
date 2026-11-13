@@ -967,3 +967,162 @@ it('lets spawned children own PR feedback and rolls counts up without duplicate 
   expect(f.s.store.taskSummary(f.taskId).queue).toHaveLength(1)
   expect(f.s.store.taskSummary(parent.id).queue ?? []).toHaveLength(0)
 })
+
+async function careFixture() {
+  const f = await setup()
+  await f.s.pullRequestWatch.dispose()
+  const watcher = new PullRequestWatch(f.s.db, f.s)
+  cleanups.push(() => watcher.dispose())
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, checkoutBranch: 'fix' }))
+  f.s.preferences.save({ enablePullRequestBabysitting: true })
+  const send = vi.spyOn(f.s.tasks, 'send').mockResolvedValue({ ok: true })
+  const act = vi.spyOn(f.s.pulls, 'act').mockResolvedValue({ number: 7, url, status: 'updated' })
+  const base = detail()
+  let current = detail({
+    pull: { ...base.pull, behindBy: 2 },
+    capabilities: { actions: ['update-branch'], mergeMethods: [], reviewDecisions: [] },
+  })
+  f.read.mockImplementation(async () => current)
+  const setDetail = (next: PullDetail) => {
+    current = next
+  }
+  const watch = () => watcher.command({ taskId: f.taskId, action: 'watch', url })
+  const queued = () => f.s.store.task(f.taskId).queue ?? []
+  return { ...f, watcher, watch, send, act, setDetail, queued, current }
+}
+
+it('starts babysitting a linked editing PR, uses Update branch once per revision and keeps Stop durable', async () => {
+  const f = await careFixture()
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    queuePaused: false,
+    checkoutBranch: 'fix',
+    pullStatus: {
+      number: 7,
+      url,
+      state: 'open',
+      draft: false,
+      checkedAt: new Date().toISOString(),
+    },
+  }))
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledWith(
+    f.f.directory,
+    expect.objectContaining({ action: 'update-branch', headSha: 'a'.repeat(40) }),
+  )
+  expect(f.queued()).toHaveLength(1)
+  expect(f.queued()[0]?.text).toContain('Update branch completed')
+  expect(f.queued()[0]?.text).toContain('merge approval manual')
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(1)
+  expect(f.queued()).toHaveLength(1)
+  f.setDetail({
+    ...f.current,
+    pull: { ...f.current.pull, headSha: 'c'.repeat(40), baseSha: 'd'.repeat(40) },
+  })
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(2)
+  await f.watcher.command({ taskId: f.taskId, action: 'stop' })
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(2)
+  expect((await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches[0]?.status).toBe(
+    'stopped',
+  )
+})
+
+it('preserves paused queues and active turns, and reports an unavailable branch action', async () => {
+  const f = await careFixture()
+  await f.watch()
+  await f.watcher.tick()
+  expect(f.act).not.toHaveBeenCalled()
+  expect(f.s.store.task(f.taskId).queuePaused).toBe(true)
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, queuePaused: false, status: 'running' }))
+  await f.watcher.tick()
+  expect(f.act).not.toHaveBeenCalled()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  f.setDetail({ ...f.current, capabilities: undefined })
+  await f.watcher.tick()
+  expect(f.queued().at(-1)?.text).toContain('Update branch action is unavailable')
+  expect(f.act).not.toHaveBeenCalled()
+})
+
+it('keeps uncertain branch updates from replaying and retains errors for the agent', async () => {
+  const f = await careFixture()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review', queuePaused: false }))
+  f.act.mockRejectedValue(new Error('Connection lost after request'))
+  await f.watch()
+  await f.watcher.tick()
+  expect(f.queued()[0]?.text).toContain('Connection lost after request')
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(1)
+  expect(f.queued()).toHaveLength(1)
+})
+
+it('reports readiness once, reports target changes, and stops feedback-only loops', async () => {
+  const f = await careFixture()
+  f.setDetail({
+    ...f.current,
+    pull: { ...f.current.pull, behindBy: 0 },
+    checks: [{ name: 'test', status: 'success' }],
+  })
+  await f.watch()
+  await f.watcher.tick()
+  expect(f.queued()[0]?.text).toContain('Reported checks passed')
+  await f.watcher.tick()
+  expect(f.queued()).toHaveLength(1)
+  for (let index = 0; index < 12; index++) {
+    f.setDetail({
+      ...f.current,
+      pull: { ...f.current.pull, behindBy: 0 },
+      checks: [{ name: 'test', status: 'success' }],
+      comments: [comment('bot', { body: `new feedback ${index}` })],
+    })
+    await f.watcher.tick()
+  }
+  expect(f.queued()).toHaveLength(11)
+  expect(f.queued().at(-1)?.text).toContain('paused after 10')
+  expect(
+    (await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches[0]?.carePaused,
+  ).toBe(true)
+  expect(f.s.store.task(f.taskId).queuePaused).toBe(true)
+})
+
+it('keeps an unrelated PR as a feedback watch without automatic checkout work', async () => {
+  const f = await careFixture()
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    queuePaused: false,
+    checkoutBranch: 'another-feature',
+  }))
+  await f.watch()
+  await f.watcher.tick()
+  expect(f.act).not.toHaveBeenCalled()
+  expect(f.queued()).toHaveLength(0)
+  f.setDetail({ ...f.current, comments: [comment('old'), comment('new')] })
+  await f.watcher.tick()
+  expect(f.queued()).toHaveLength(1)
+  expect(f.queued()[0]?.text).toContain('Feedback new')
+  expect(f.queued()[0]?.text).not.toContain('Start PR babysitting')
+})
+
+it('does not report readiness for unknown checks or unknown branch freshness', async () => {
+  const f = await careFixture()
+  await f.watch()
+  f.setDetail({
+    ...f.current,
+    pull: { ...f.current.pull, behindBy: 0 },
+    checks: [{ name: 'test', status: 'unknown' }],
+  })
+  await f.watcher.tick()
+  expect(f.queued()[0]?.text).not.toContain('Reported checks passed')
+  f.setDetail({
+    ...f.current,
+    pull: { ...f.current.pull, behindBy: undefined },
+    checks: [{ name: 'test', status: 'success' }],
+  })
+  await f.watcher.tick()
+  expect(f.queued().some((item) => item.text.includes('Reported checks passed'))).toBe(false)
+  expect(f.act).not.toHaveBeenCalled()
+})

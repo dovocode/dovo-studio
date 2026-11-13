@@ -19,6 +19,7 @@ import {
   runtimeRequestTimeout,
   linkedProjectsCommandSchema,
   agentQuestionCommandSchema,
+  threadPrepareCommandSchema,
   agentTodosCommandSchema,
   secureInputCommandSchema,
 } from '@dovo/protocol/agent-tools'
@@ -206,6 +207,15 @@ const tools: Array<
       'Show a non-blocking question form; use a stable key per question. Prefer native forms and never duplicate them. Answers steer this turn or arrive later. Continue independent work. Never request secrets or treat silence/defaults as answers or approval. Available read-only.',
     inputSchema: (() => {
       const document = Schema.toJsonSchemaDocument(agentQuestionCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
+  {
+    name: 'thread_prepare',
+    description:
+      'Prepare a "start new agent thread" card in this conversation for the user. Runs nothing: the user reviews it, may change prompt, harness and model, and taps Send. Same project; access cannot exceed this thread. Stable key; reusing a key replaces an unsent card, never revives a dismissed/sent one. Available read-only.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(threadPrepareCommandSchema)
       return { ...document.schema, type: 'object' as const, $defs: document.definitions }
     })(),
   },
@@ -852,6 +862,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             parentRunId,
             name: string(input.name, 'name'),
           }),
+        )
+      case 'thread_prepare':
+        return text(
+          await post('/api/agent/thread-prepare', { taskId: task, parentRunId, command: input }),
         )
       case 'ask_question':
       case 'todos':

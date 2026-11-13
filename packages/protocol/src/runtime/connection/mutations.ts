@@ -53,6 +53,11 @@ const queueActionSchema = mutableStruct({
 const mutations = new Set([
   '/api/threads/metadata',
   '/api/tasks/message',
+  '/api/bots/create',
+  '/api/bots/update',
+  '/api/bots/lifecycle',
+  '/api/thread-actions/send',
+  '/api/thread-actions/dismiss',
   '/api/tasks/queue',
   '/api/scm/pulls/link-thread',
   '/api/tasks/steer',

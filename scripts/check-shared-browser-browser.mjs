@@ -29,7 +29,7 @@ function ControlledBrowser(){
 }import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';
 function Fixture(){
   const [collapsed,setCollapsed]=useState(false);window.collapseBrowserSidebar=setCollapsed;
-  const content=window.fixtureUnified ? <UnifiedWorkspace/> : window.fixtureControlled ? <ControlledBrowser/> : window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
+  const content=window.fixtureThreadSidebar ? <BrowserPane taskId="target"/> : window.fixtureUnified ? <UnifiedWorkspace/> : window.fixtureControlled ? <ControlledBrowser/> : window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
   if(!window.fixtureHeader)return <>{window.fixtureActivityBar&&<ActivityBar views={[{id:'browser',title:'Browser',icon:'browser'}]} activeId="browser" onSelect={()=>{}} onDetachBrowser={()=>window.studioCommands.get('browser.detach')?.run()}/>} {content}</>;
   const titleProps={platform:'darwin',online:1,devices:1,onDevices:()=>{},onSearch:()=>{}};
   return <SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar {...titleProps}/>}><div className="studio" data-platform="darwin"><HeaderFallback>{window.fixtureDetached?<header className="studio-titlebar" data-platform="darwin"><span className="studio-titlebar-brand">Browser</span><HeaderMainSlot/></header>:<TitleBar {...titleProps} section="Browser"/>}</HeaderFallback><div className="flex min-h-0 flex-1 flex-col">{content}</div></div></SidebarHeaderLayout>
@@ -126,7 +126,7 @@ window.browserInputs=[];window.browserViewports=[];window.remoteVisibility=[];wi
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
 const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);if(window.failWindowMove)throw Error('Destination closed');window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
-const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
+const browserExtensions=async command=>{(window.extensionCalls??=[]).push(command);return {extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}}};
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
 const task={id:'target',title:'Destination thread',repositoryId:'repo',agentId:'',status:'draft',draft:'Existing draft',createdAt:'2026-10-25T00:00:00Z',messages:[],files:[],example:false};
@@ -1305,6 +1305,99 @@ async function checkAwakeDefaultsAndDetaching() {
     await page.close()
   }
 }
+async function checkThreadBrowserProfiles() {
+  const page = await browser.newPage({ viewport: { width: 500, height: 850 } })
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<html class="dark"><body><div id="app" style="height:850px"></div></body></html>',
+      }),
+    )
+    await page.goto('http://localhost/')
+    await page.evaluate(() => {
+      window.fixtureThreadSidebar = true
+    })
+    for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+      file.endsWith('.css'),
+    )) {
+      await page.addStyleTag({
+        content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+      })
+    }
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    const profiles = page.getByRole('combobox', { name: 'Switch browser profile', exact: true })
+    await profiles.selectOption('local-work')
+    await page
+      .getByLabel('Preview URL', { exact: true })
+      .fill('http://localhost:3000/thread-profile')
+    await page.getByRole('button', { name: 'Go to address', exact: true }).click()
+    await page.waitForFunction(() =>
+      window.calls.some((call) => call.action === 'show' && call.profileId === 'local-work'),
+    )
+    const normal = await page.evaluate(() =>
+      window.calls.findLast((call) => call.action === 'show'),
+    )
+    assert.match(normal.key, /target:/)
+    await page.getByRole('button', { name: 'Extensions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Manage extensions', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Browser extensions', exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.extensionCalls.at(-1).profileId), 'local-work')
+    await page.keyboard.press('Escape')
+    await page
+      .getByRole('button', { name: 'Website permissions and site data', exact: true })
+      .click()
+    await page.waitForFunction(
+      (key) => window.calls.some((call) => call.action === 'site-permissions' && call.key === key),
+      normal.key,
+    )
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New private tab', exact: true }).click()
+    await page
+      .getByLabel('Preview URL', { exact: true })
+      .fill('http://localhost:3000/thread-private')
+    await page.getByRole('button', { name: 'Go to address', exact: true }).click()
+    await page.waitForFunction(() =>
+      window.calls.some((call) => call.action === 'show' && call.url.includes('thread-private')),
+    )
+    const privateShow = await page.evaluate(() =>
+      window.calls.findLast(
+        (call) => call.action === 'show' && call.url.includes('thread-private'),
+      ),
+    )
+    assert.match(privateShow.profileId, /^private-/)
+    assert.equal(await profiles.isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: 'Extensions', exact: true }).count(), 0)
+    assert.equal(
+      await page.evaluate(() => Object.values(localStorage).join('').includes('thread-private')),
+      false,
+    )
+    await page.getByRole('button', { name: /Close tab.*thread-private/ }).click()
+    await page.waitForFunction(
+      (key) => window.calls.some((call) => call.action === 'close' && call.key === key),
+      privateShow.key,
+    )
+    assert.equal(await profiles.inputValue(), 'local-work')
+    await page.getByRole('button', { name: 'Extensions', exact: true }).waitFor()
+    assert.deepEqual(errors, [])
+    console.log(
+      'Thread sidebar shares browser containers, extension controls, site permissions and private tabs.',
+    )
+  } finally {
+    await page.close()
+  }
+}
+if (process.argv.includes('--thread-profiles-only')) {
+  try {
+    await checkThreadBrowserProfiles()
+  } finally {
+    await browser.close()
+  }
+  process.exit(0)
+}
 if (process.argv.includes('--unified-integration-only')) {
   try {
     await checkRealUnifiedBrowserIntegration()
@@ -1315,6 +1408,7 @@ if (process.argv.includes('--unified-integration-only')) {
   process.exit(0)
 }
 try {
+  await checkThreadBrowserProfiles()
   await checkRealUnifiedBrowserIntegration()
   await checkControlledBrowserTabs()
   await checkBackgroundBrowserService()

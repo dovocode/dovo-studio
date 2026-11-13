@@ -34,6 +34,12 @@ desktop edits are reported instead of overwritten.
 The mobile editor supports a single ordered path. Existing branching graphs remain visible and
 runnable, and their connections are preserved. Edit those in the desktop/web canvas.
 
+## Run a step in a Bot
+
+A task step with `botId` posts its instructions into that [Bot](bots.md)'s thread instead of
+starting a new thread. It uses the Bot's own settings. A paused Bot fails the step without queueing
+work; resume the Bot and retry the run.
+
 ## Delete an automation
 
 On desktop/web, open the automation’s **Automation actions → Delete automation** menu. On mobile,

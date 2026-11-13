@@ -1,5 +1,6 @@
 import { isAbsolute, relative, sep } from 'node:path'
 import { taskInputOwner, planModeAgent, planModeRequested, goalCommand } from '@dovo/protocol'
+import { botPaused, botPausedMessage } from '@dovo/protocol'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
 import { requireImportedPiSession } from '../providers/pi/session-import.js'
 import {
@@ -169,6 +170,7 @@ export class Tasks {
     ) => Effect.Effect<void, RuntimeFailure> = () => Effect.void,
     studioTools: () => StudioTools = noStudioTools,
     linkedProjectsEnabled: () => boolean = () => true,
+    pullRequestBabysittingEnabled: () => boolean = () => false,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -187,6 +189,7 @@ export class Tasks {
       deviceHubEnabled,
       studioTools,
       linkedProjectsEnabled,
+      pullRequestBabysittingEnabled,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.runner.setNativeSessions(
@@ -377,7 +380,9 @@ export class Tasks {
           task.archived ||
           task.archivedAt ||
           task.example ||
-          task.machineHandoff
+          task.machineHandoff ||
+          // A paused Bot holds scheduled work until it resumes.
+          botPaused(task)
         )
           continue
         const continuation = task.quotaContinuation
@@ -808,6 +813,8 @@ export class Tasks {
       const task = this.store.task(id)
       if (task.status === 'running' || this.running.has(id))
         throw new HttpError(409, 'Stop the agent before trying again.')
+      // Check before undoing files: a paused Bot would only queue the repeated request.
+      if (botPaused(task)) throw new HttpError(409, botPausedMessage)
       if (task.turns?.some((item) => item.id !== turnId && item.checkpoint?.restorePending))
         throw new HttpError(409, 'Finish the pending undo or redo before retrying another turn.')
       const turn = task.turns?.at(-1)
@@ -1527,6 +1534,7 @@ export class Tasks {
           const task = this.store.taskSummary(id)
           return (
             !queueOnly &&
+            !botPaused(task) &&
             task.queue?.some((message) => message.id === messageId) &&
             !this.running.has(id) &&
             (sendNow || (!task.queuePaused && (!preserveQueuePause || !task.queue[0]?.paused)))
@@ -1815,6 +1823,9 @@ export class Tasks {
         )
       if (this.deletionReservations.has(id))
         return Effect.fail(new HttpError(409, 'This thread is being deleted.'))
+      // A paused Bot may finish an interrupted turn, but starts no new work.
+      if (!continuingRunId && botPaused(this.store.taskSummary(id)))
+        return Effect.fail(new HttpError(409, botPausedMessage))
       if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       if (admit && !admit()) return Effect.succeed({ completion: Effect.void })
@@ -2395,6 +2406,7 @@ export class Tasks {
                   !this.stopping &&
                   !run.controller.signal.aborted &&
                   !next.queuePaused &&
+                  !botPaused(next) &&
                   hasAgentInput(next)
                 ) {
                   // The chained turn persists its own outcome. A defect here would abort
@@ -3111,6 +3123,7 @@ export class Tasks {
       if (
         id === finalizingId ||
         parent.queuePaused ||
+        botPaused(parent) ||
         this.running.has(id) ||
         !hasAgentInput(parent)
       )
@@ -3118,7 +3131,7 @@ export class Tasks {
       this.executor.runFork(
         this.startEffect(id, false, () => {
           const task = this.store.taskSummary(id)
-          return !task.queuePaused && hasAgentInput(task)
+          return !task.queuePaused && !botPaused(task) && hasAgentInput(task)
         }).pipe(
           Effect.catch((error) =>
             Effect.sync(() => {
@@ -3140,6 +3153,41 @@ export class Tasks {
     }
   }
   /** Wake an idle parent after a remote child deposited an internal notification. */
+  /** Start held Bot input after Resume, using the same admission as queued follow-ups. */
+  releaseBotHold(id: string) {
+    // Resume is explicit consent for input that a restart held while the Bot was paused.
+    // A queue paused by the user, or an interrupted turn, keeps its own controls.
+    if (this.store.taskSummary(id).restartRecovery?.kind === 'queue')
+      this.store.updateTask(id, (current) =>
+        current.restartRecovery?.kind === 'queue'
+          ? { ...current, queuePaused: undefined, restartRecovery: undefined }
+          : current,
+      )
+    const task = this.store.taskSummary(id)
+    if (botPaused(task) || task.queuePaused || this.running.has(id) || !hasAgentInput(task)) return
+    this.executor.runFork(
+      this.startEffect(id, false, () => {
+        const current = this.store.taskSummary(id)
+        return (
+          !current.queuePaused &&
+          !botPaused(current) &&
+          !this.running.has(id) &&
+          hasAgentInput(current)
+        )
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            if (this.running.has(id)) return
+            this.store.updateTask(id, (current) => ({
+              ...current,
+              queuePaused: true,
+              error: `Held Bot work stays queued. Could not start: ${errorMessage(error)}`,
+            }))
+          }),
+        ),
+      ),
+    )
+  }
   resumeSubagentInbox() {
     this.deliverCompletions()
   }

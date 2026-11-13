@@ -57,6 +57,10 @@ export * from './auth/access.js'
 
 export * from './tasks/title-generation.js'
 export * from './tasks/task-message.js'
+export * from './tasks/bots.js'
+export * from './tasks/bot-requests.js'
+export * from './tasks/thread-actions.js'
+export * from './tasks/thread-action-requests.js'
 
 export * from './shared/resources.js'
 

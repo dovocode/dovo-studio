@@ -3,7 +3,9 @@ import { maxValue, minValue, mutableArray, mutableStruct, uuidSchema } from '../
 
 export const memoryPageSize = 50
 
-export const memoryScopeSchema = Schema.Literals(['system', 'project', 'projectless'])
+/** `bot` is private to one Bot coordinator thread. It is always on for that Bot and has no
+ * scope switch. Management requests name the Bot with `botId` (the Bot's thread id). */
+export const memoryScopeSchema = Schema.Literals(['system', 'project', 'projectless', 'bot'])
 export const memorySettingsSchema = mutableStruct({
   systemEnabled: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   projectlessEnabled: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
@@ -14,6 +16,7 @@ export const memorySettingsSchema = mutableStruct({
 export const memoryScopeRequestSchema = mutableStruct({
   scope: memoryScopeSchema,
   repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  botId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
 })
 const key = maxValue(minValue(Schema.String, 1), 120).pipe(
   Schema.check(Schema.isPattern(/^[^\0\r\n]+$/)),

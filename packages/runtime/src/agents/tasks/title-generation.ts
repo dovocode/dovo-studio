@@ -187,7 +187,8 @@ export class TitleGeneration {
               if (taskId && expectedTitle !== undefined) {
                 const task = this.store.get().tasks.find((task) => task.id === taskId)
                 // A delayed utility response must not overwrite a rename or restore deleted work.
-                if (task && !task.archivedAt && task.title === expectedTitle)
+                // A Bot's title is its user-chosen name.
+                if (task && !task.bot && !task.archivedAt && task.title === expectedTitle)
                   this.store.updateTask(taskId, (current) => ({
                     ...current,
                     title: parsed.data.title,

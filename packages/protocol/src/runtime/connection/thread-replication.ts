@@ -247,7 +247,20 @@ export function preferredThreadCopies(
       const owner = task.replica?.ownerRuntimeId ?? source.runtimeId
       const id = task.replica?.threadId ?? task.id
       const key = JSON.stringify([owner, id])
-      const rank = source.connected ? (task.replica ? 2 : 3) : task.replica ? 0 : 1
+      // A Bot lives only on its home runtime. Its known original, even cached while that
+      // runtime is offline, wins over a plain copy an earlier build shared.
+      const rank =
+        task.bot && !task.replica
+          ? source.connected
+            ? 5
+            : 4
+          : source.connected
+            ? task.replica
+              ? 2
+              : 3
+            : task.replica
+              ? 0
+              : 1
       const previous = preferred.get(key)
       if (
         !previous ||

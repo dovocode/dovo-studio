@@ -47,6 +47,7 @@ import {
   Pin,
   Network,
   SquareTerminal,
+  Pause,
 } from 'lucide-react'
 import { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
@@ -56,6 +57,7 @@ import { useTaskNow } from './task-clock'
 import { threadTreeSummary } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
   Draft: FilePenLine,
+  Paused: Pause,
   Working: CircleDashed,
   Done: CircleCheck,
   Finished: CircleCheck,
@@ -183,12 +185,13 @@ function TaskRowView({
   )
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
-  const projectIcon =
-    displayProject?.kind === 'scratch' ? (
-      <MessageCircleDashed className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-    ) : (
-      <ProjectIcon repository={displayProject} className="size-4 shrink-0 rounded-sm text-[10px]" />
-    )
+  const projectIcon = task.bot ? (
+    <Bot className="size-4 shrink-0" aria-hidden="true" />
+  ) : displayProject?.kind === 'scratch' ? (
+    <MessageCircleDashed className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+  ) : (
+    <ProjectIcon repository={displayProject} className="size-4 shrink-0 rounded-sm text-[10px]" />
+  )
   const latest = task.turns?.at(-1)
   const provider =
     task.status === 'running'
@@ -345,7 +348,7 @@ function TaskRowView({
                       data-thread-copy=""
                       title={`${statusDetail} · ${agentDetail}`}
                     >
-                      {projectName}
+                      {task.bot ? task.bot.role : projectName}
                     </span>
                     {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
                     {!hideReviewStatus && (
@@ -395,7 +398,7 @@ function TaskRowView({
                     {statusTime && <span className="tabular-nums">{statusTime}</span>}
                   </span>
                 )}
-                {!compact && !general && (
+                {!task.bot && !compact && !general && (
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
                     <MiddleTruncate
@@ -424,18 +427,20 @@ function TaskRowView({
             <p className="mb-3 text-sm font-medium leading-5">{task.title}</p>
             <div className="space-y-2 text-xs text-muted-foreground">
               <p className="flex items-center gap-2">
-                {general ? (
+                {task.bot ? (
+                  <Bot className="size-3 shrink-0" />
+                ) : general ? (
                   <MessageCircleDashed className="size-3 shrink-0" />
                 ) : (
                   <FolderGit2 className="size-3 shrink-0" />
                 )}
-                {projectName}
+                {task.bot ? task.bot.role : projectName}
               </p>
               <p className="flex items-center gap-2 break-all">
                 <RuntimeIcon icon={owner.runtimeIcon} className="size-3 shrink-0" />
                 {host ?? 'Unknown host'}
               </p>
-              {!general && (
+              {!task.bot && !general && (
                 <p className="flex items-center gap-2 break-all">
                   <GitBranch className="size-3 shrink-0" />
                   {branch || 'Unknown branch'}

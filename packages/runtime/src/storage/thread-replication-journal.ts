@@ -310,12 +310,29 @@ export class ThreadReplicationJournal {
         this.record({ ...descriptor.value, historyRevision: descriptor.value.historyRevision + 1 })
     }
   }
+  /** Publish a removed descriptor and withdraw shared message copies of a Bot that an
+   * earlier build replicated. Peers then drop the copy. Nothing on the owner is deleted. */
+  private retireBot(task: TaskSummary | Task, workspace: WorkspaceSummary) {
+    const descriptor = this.get(JSON.stringify([this.runtimeId, task.id, 'thread']))
+    if (!descriptor || descriptor.deleted || descriptor.value.kind !== 'thread') return
+    if (!descriptor.value.removed) this.record(this.descriptor(task, workspace, true))
+    for (const version of this.thread(this.runtimeId, task.id))
+      if (!version.deleted && version.value.kind === 'message' && version.value.message)
+        this.record({ ...version.value, message: null })
+  }
   capture(change: WorkspaceChange) {
     if (this.disabled) return
     const before = new Map(change.before.tasks.map((task) => [task.id, task]))
     for (const task of change.after.tasks) {
       if (task.example || task.replica) continue
+      // A Bot stays on its home runtime: it is never shared, and an earlier copy is retired.
       const previous = before.get(task.id)
+      if (task.bot) {
+        // Only the change that makes a shared thread a Bot can leave a copy to retire. Startup
+        // seeding retires copies from earlier builds; other Bot updates touch nothing here.
+        if (previous && !previous.bot) this.retireBot(task, change.after)
+        continue
+      }
       if (previous === task && change.before.repositories === change.after.repositories) continue
       if (
         !previous ||
@@ -344,11 +361,22 @@ export class ThreadReplicationJournal {
     const retained = new Set(change.after.tasks.map((task) => task.id))
     for (const task of change.before.tasks)
       if (!task.example && !task.replica && !retained.has(task.id))
-        this.record(this.descriptor(task, change.before, true))
+        if (task.bot) this.retireBot(task, change.before)
+        else this.record(this.descriptor(task, change.before, true))
   }
   seed(store: WorkspaceStore) {
     if (this.initializationFailed)
       throw new Error('Thread replication storage could not initialize')
+    // Development builds shared Bots before Bots stayed on their home runtime. Retire those
+    // copies once; the owner keeps the Bot, its history and settings.
+    if (!this.db.prepare("SELECT 1 FROM documents WHERE id='thread-replication-bots:v1'").get())
+      store.transaction(() => {
+        const workspace = store.get()
+        for (const task of workspace.tasks) if (task.bot) this.retireBot(task, workspace)
+        this.db
+          .prepare("INSERT OR IGNORE INTO documents VALUES ('thread-replication-bots:v1','true')")
+          .run()
+      })
     const seeded = !!this.db
       .prepare("SELECT 1 FROM documents WHERE id='thread-replication-seeded:v1'")
       .get()
@@ -361,6 +389,10 @@ export class ThreadReplicationJournal {
       const workspace = store.get()
       for (const task of workspace.tasks) {
         if (task.example || task.replica) continue
+        if (task.bot) {
+          this.retireBot(task, workspace)
+          continue
+        }
         this.record(this.descriptor(task, workspace, false))
         if (!seeded) {
           this.metadata(task)
@@ -473,7 +505,8 @@ export class ThreadReplicationJournal {
           if (version.deleted || version.value.ownerRuntimeId !== this.runtimeId) continue
           const value = version.value,
             task = local.get(value.threadId)
-          if (!task || task.replica) continue
+          // A Bot is not shared; a stale peer edit can never rename or pin it.
+          if (!task || task.replica || task.bot) continue
           if (value.kind === 'title' && task.title !== value.value)
             local.set(task.id, { ...task, title: value.value })
           if (value.kind === 'pinned' && (task.pinned ?? false) !== value.value)

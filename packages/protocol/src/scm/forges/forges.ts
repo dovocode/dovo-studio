@@ -275,6 +275,7 @@ export const forgeCapabilitiesSchema = mutableStruct({
       'merge',
       'draft',
       'auto-merge',
+      'update-branch',
       'close',
       'reopen',
     ]),
@@ -300,6 +301,7 @@ const action = mutableStruct({
   headSha: revision,
 })
 export const pullActionSchema = Schema.Union([
+  mutableStruct({ ...action.fields, action: Schema.Literal('update-branch') }),
   mutableStruct({
     ...action.fields,
     action: Schema.Literal('draft'),

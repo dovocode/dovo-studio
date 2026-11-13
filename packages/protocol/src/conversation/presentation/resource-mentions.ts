@@ -2,6 +2,7 @@ import { resolveScopedSettings } from '../../runtime/connection/scoped-settings.
 import type { RuntimeDefaults } from '../../runtime/connection/runtime-setup.js'
 import { mergeResources, type ResourceSettings } from '../../shared/resources.js'
 import { resolveTaskAgent, type Agent, type Repository, type Task } from '../../workspace.js'
+import { applyBotResources, inheritedResourceProject } from '../../tasks/bots.js'
 
 /** @ files and MCP servers (like Claude), $ skills (like Codex), / skills at a line start,
  * and # saved prompts. */
@@ -23,18 +24,22 @@ export function composerMention(text: string, caret: number): ComposerMention | 
   return undefined
 }
 
-/** The skills and MCP servers a task's agent receives: its project's merged with its agent's. */
+/** The skills and MCP servers a task's agent receives: its project's merged with its agent's,
+ * then a Bot's own resources on its coordinator thread. A Bot skips project resources.
+ * Bot settings show inherited rows with `{ ...task, bot: { ...task.bot, resources: undefined } }`. */
 export function taskResources(
-  task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness' | 'repositoryId'>,
+  task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness' | 'repositoryId' | 'bot'>,
   workspace: { agents: readonly Agent[]; repositories: readonly Repository[] },
   defaults?: RuntimeDefaults,
 ): ResourceSettings {
-  const repository = workspace.repositories.find(
-    (repository) => repository.id === task.repositoryId,
-  )
-  return mergeResources(
-    resolveScopedSettings(defaults, repository).resources,
-    resolveTaskAgent(task, workspace.agents)?.resources,
+  const project = inheritedResourceProject(task)
+  const repository = workspace.repositories.find((repository) => repository.id === project)
+  return applyBotResources(
+    mergeResources(
+      resolveScopedSettings(defaults, repository).resources,
+      resolveTaskAgent(task, workspace.agents)?.resources,
+    ),
+    task.bot,
   )
 }
 

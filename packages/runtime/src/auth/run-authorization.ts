@@ -13,6 +13,7 @@ const allowed = new Set([
   '/api/agent/todos',
   '/api/agent/secure-input',
   '/api/agent/skill',
+  '/api/agent/thread-prepare',
   '/api/subagents/spawn',
   '/api/subagents/list',
   '/api/subagents/send',

@@ -1,10 +1,11 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import {
   decode,
   mutableStruct,
   SCRATCH_PROJECT_ID,
   taskMetadataSchema,
+  type Bot,
   type Task,
 } from '@dovo/protocol'
 import type { Services } from '../../services.js'
@@ -24,9 +25,9 @@ function canonical(value: unknown): unknown {
       .map(([key, entry]) => [key, canonical(entry)]),
   )
 }
-const fingerprint = (task: Task) =>
+const fingerprint = (value: unknown) =>
   createHash('sha256')
-    .update(JSON.stringify(canonical(task)))
+    .update(JSON.stringify(canonical(value)))
     .digest('hex')
 const reject = (message: string) => new HttpError(409, message, { mutationRejected: true })
 
@@ -35,10 +36,24 @@ const reject = (message: string) => new HttpError(409, message, { mutationReject
  * The bootstrap record commits in the same transaction as the task. A retry after a lost
  * response or a restart may continue only with the same message and draft. It can never
  * replace another draft, and a deleted thread stays deleted. */
-export function startThreadEffect(s: Services, input: { messageId: string; createTask: Task }) {
+export function startThreadEffect(
+  s: Services,
+  input: {
+    messageId: string
+    createTask: Task
+    /** Bot identity committed with the thread. It is part of the request identity. */
+    bot?: Pick<Bot, 'role' | 'responsibilities'>
+    /** Runs inside the creating transaction, also on an idempotent replay. Throwing rolls
+     * the new thread back. */
+    commit?: () => void
+  },
+) {
   const task = input.createTask
   const key = `task-bootstrap:${task.id}`
-  const identity = { messageId: input.messageId, fingerprint: fingerprint(task) }
+  const identity = {
+    messageId: input.messageId,
+    fingerprint: fingerprint(input.bot ? { task, bot: input.bot } : task),
+  }
   return Effect.gen(function* () {
     // Filesystem preparation is idempotent and must stay outside SQLite transactions.
     if (task.repositoryId === SCRATCH_PROJECT_ID && !s.store.wasTaskDeleted(task.id))
@@ -54,7 +69,7 @@ export function startThreadEffect(s: Services, input: { messageId: string; creat
             : undefined
         if (s.store.get().tasks.some((item) => item.id === task.id)) {
           if (saved?.messageId === identity.messageId && saved.fingerprint === identity.fingerprint)
-            return
+            return input.commit?.()
           throw reject(
             saved?.messageId === identity.messageId
               ? 'This thread already started with a different draft. It has been preserved.'
@@ -62,16 +77,24 @@ export function startThreadEffect(s: Services, input: { messageId: string; creat
           )
         }
         s.tasks.requireCheckoutReferencesAvailable(decode(taskMetadataSchema, task))
-        const { reconciled } = s.store.patch({
-          collection: 'tasks',
-          id: task.id,
-          create: task,
-          changes: {},
-        })
+        const now = new Date().toISOString()
+        const bot: Bot | undefined = input.bot && {
+          ...input.bot,
+          state: 'active',
+          revision: randomUUID(),
+          createdAt: now,
+          updatedAt: now,
+        }
+        // A Bot is created with its identity in the same write, so it is never shared.
+        const { reconciled } = s.store.patch(
+          { collection: 'tasks', id: task.id, create: task, changes: {} },
+          { bot },
+        )
         if (reconciled) throw reject('This thread could not be created. Start a new thread.')
         s.db
           .prepare('INSERT OR REPLACE INTO documents (id,value) VALUES (?,?)')
           .run(key, JSON.stringify(identity))
+        input.commit?.()
       }),
     )
   })

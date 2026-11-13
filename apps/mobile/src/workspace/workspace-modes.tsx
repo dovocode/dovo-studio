@@ -1,3 +1,4 @@
+import { useRuntime } from '../runtime/connection/provider'
 import { router } from 'expo-router'
 import { View, Pressable } from 'react-native'
 import {
@@ -10,14 +11,19 @@ import { useTheme } from '../ui/theme'
 import { Glass } from '../ui/layout/glass'
 import { contentColumn } from '../ui/layout/content-column'
 
-export function WorkspaceModes({ mode }: { mode: 'tasks' | 'browser' | 'terminal' | 'workspace' }) {
+export function WorkspaceModes({
+  mode,
+}: {
+  mode: 'tasks' | 'browser' | 'terminal' | 'workspace' | 'bots'
+}) {
   const preferences = useMobilePreferences()
+  const { overviews } = useRuntime()
   const { colors } = useTheme()
   const unified = mode === 'workspace'
   const modes: {
-    id: 'tasks' | 'browser' | 'terminal' | 'workspace'
+    id: 'tasks' | 'browser' | 'terminal' | 'workspace' | 'bots'
     label: string
-    path: '/' | '/browser' | '/terminal'
+    path: '/' | '/browser' | '/terminal' | '/bots'
     icon: IconName
     enabled: boolean
   }[] = [
@@ -29,6 +35,13 @@ export function WorkspaceModes({ mode }: { mode: 'tasks' | 'browser' | 'terminal
       enabled: preferences.unifiedWorkspaceEnabled,
     },
     { id: 'tasks', label: 'Threads', path: '/', icon: 'tasks', enabled: true },
+    {
+      id: 'bots',
+      label: 'Bots',
+      path: '/bots',
+      icon: 'bot',
+      enabled: overviews.some((owner) => owner.snapshot?.botsSupported),
+    },
     {
       id: 'browser',
       label: 'Browser',
@@ -60,7 +73,9 @@ export function WorkspaceModes({ mode }: { mode: 'tasks' | 'browser' | 'terminal
           .filter(
             (item) =>
               item.enabled &&
-              (item.id === 'workspace' || !(unified && preferences.hideNormalWorkspaceModes)),
+              (item.id === 'workspace' ||
+                item.id === 'bots' ||
+                !(unified && preferences.hideNormalWorkspaceModes)),
           )
           .map((item) => {
             const selected = mode === item.id

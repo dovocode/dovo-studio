@@ -1,0 +1,237 @@
+import { useRef, useState } from 'react'
+import { View } from 'react-native'
+import { router } from 'expo-router'
+import { automationHref } from '../shell/source-route'
+import { useSheetNavigation } from '../ui/layout/sheet'
+import { runClientEffect } from '@dovo/client-runtime'
+import {
+  botResultSchema,
+  workspacePatchResultSchema,
+  emptyBotResources,
+  taskResources,
+  type Task,
+} from '@dovo/protocol'
+import { useRuntime } from '../runtime/connection/provider'
+import { detailDraftKey } from '../runtime/state/detail-drafts'
+import { HarnessSettings } from '../tasks/detail/harness-settings'
+import { Action } from '../ui/controls/action'
+import { Text } from '../ui/content/text'
+import { BotEditor } from './bot-editor'
+import { BotResources } from './bot-resources'
+import { BotMemory } from './bot-memory'
+import { useAction } from '../ui/controls/use-action'
+
+export function BotSettings(props: { task: Task; onClose: () => void }) {
+  const { profile } = useRuntime()
+  return (
+    <BotSettingsEditor
+      key={detailDraftKey(profile?.connection ?? null, 'bot-settings', props.task.id)}
+      {...props}
+    />
+  )
+}
+function BotSettingsEditor({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { profile, connected, snapshot, callEffect } = useRuntime()
+  const { act, busy, error } = useAction()
+  const [harness, setHarness] = useState(false)
+  const [resources, setResources] = useState(false)
+  const [memory, setMemory] = useState(false)
+  const [revision] = useState(task.bot?.revision)
+  const title = useRef(task.title)
+  const currentRevision = useRef(revision)
+  const baseline = useRef(task.bot)
+  const bot = task.bot
+  if (!bot) return null
+  return (
+    <BotEditor
+      draftKey={detailDraftKey(profile?.connection ?? null, 'bot', task.id)}
+      initial={{
+        name: task.title,
+        role: bot.role,
+        responsibilities: bot.responsibilities,
+        expectedRevision: bot.revision,
+        resources: bot.resources ?? emptyBotResources(),
+        originalName: task.title,
+        originalRole: bot.role,
+        originalResponsibilities: bot.responsibilities,
+      }}
+      unavailable={
+        !connected
+          ? 'Reconnect this computer to save Bot settings.'
+          : snapshot?.botsSupported !== true
+            ? 'Update this runtime to use Bots.'
+            : undefined
+      }
+      onClose={onClose}
+      onSave={async (value, retain) => {
+        if (value.name !== (value.originalName ?? title.current)) {
+          const renamed = await runClientEffect(
+            callEffect(
+              '/api/workspace',
+              {
+                collection: 'tasks',
+                action: 'update',
+                id: task.id,
+                changes: {
+                  title: { before: value.originalName ?? title.current, after: value.name },
+                },
+              },
+              workspacePatchResultSchema,
+              'PATCH',
+            ),
+          )
+          if (
+            renamed.outcome === 'rejected' ||
+            renamed.outcome === 'reconciled' ||
+            renamed.reconciled
+          )
+            throw Error('Bot name changed. Your draft is kept. Refresh before saving again.')
+          title.current = value.name
+          retain({ originalName: value.name })
+        }
+        if (
+          JSON.stringify(value.resources) !==
+            JSON.stringify(baseline.current?.resources ?? emptyBotResources()) ||
+          value.role !== (value.originalRole ?? baseline.current?.role) ||
+          value.responsibilities !==
+            (value.originalResponsibilities ?? baseline.current?.responsibilities)
+        ) {
+          const result = await runClientEffect(
+            callEffect(
+              '/api/bots/update',
+              {
+                id: task.id,
+                expectedRevision: value.expectedRevision ?? currentRevision.current,
+                role: value.role,
+                ...(snapshot?.botResourcesSupported ? { resources: value.resources } : {}),
+                responsibilities: value.responsibilities,
+              },
+              botResultSchema,
+            ),
+          )
+          currentRevision.current = result.bot.revision
+          baseline.current = result.bot
+          retain({
+            expectedRevision: result.bot.revision,
+            originalRole: result.bot.role,
+            originalResponsibilities: result.bot.responsibilities,
+          })
+        }
+      }}
+    >
+      {(draft, retain) => (
+        <>
+          <View style={{ gap: 12 }}>
+            <Text>
+              {bot.state === 'paused'
+                ? 'Paused. New messages stay queued until you resume.'
+                : 'Active. This Bot keeps one conversation across its work.'}
+            </Text>
+            {!!error && <Text accessibilityRole="alert">{error}</Text>}
+            <Action
+              label={bot.state === 'paused' ? 'Resume Bot' : 'Pause Bot'}
+              disabled={!connected || busy || !snapshot?.botsSupported}
+              onPress={() =>
+                act(async () => {
+                  const result = await runClientEffect(
+                    callEffect(
+                      '/api/bots/lifecycle',
+                      {
+                        id: task.id,
+                        action: bot.state === 'paused' ? 'resume' : 'pause',
+                        expectedRevision: bot.revision,
+                      },
+                      botResultSchema,
+                    ),
+                  )
+                  // A no-op may acknowledge an external edit. Advance only our own unchanged baseline.
+                  if (
+                    draft.expectedRevision === bot.revision &&
+                    result.bot.role === bot.role &&
+                    result.bot.responsibilities === bot.responsibilities &&
+                    JSON.stringify(result.bot.resources ?? emptyBotResources()) ===
+                      JSON.stringify(bot.resources ?? emptyBotResources())
+                  )
+                    retain({ expectedRevision: result.bot.revision })
+                })
+              }
+            />
+            <Text>
+              Pause holds new work. The current turn can finish. Use Stop in the chat to cancel it.
+            </Text>
+            <Action
+              label="Harness, model and tool permissions"
+              secondary
+              onPress={() => setHarness(true)}
+            />
+            {snapshot?.botResourcesSupported && (
+              <Action
+                label="Bot MCP servers and skills"
+                secondary
+                onPress={() => setResources(true)}
+              />
+            )}
+            <BotRoutines taskId={task.id} />
+            <Action label="Bot memory" secondary onPress={() => setMemory(true)} />
+          </View>
+          {harness && <HarnessSettings task={task} onClose={() => setHarness(false)} />}
+          {memory && <BotMemory taskId={task.id} onClose={() => setMemory(false)} />}
+          {resources && snapshot?.botResourcesSupported && (
+            <BotResources
+              value={draft.resources ?? emptyBotResources()}
+              inherited={taskResources(
+                {
+                  ...task,
+                  bot: task.bot ? { ...task.bot, resources: undefined } : undefined,
+                  repositoryId: '',
+                },
+                snapshot.workspace,
+                snapshot.defaults,
+              )}
+              disabled={!connected}
+              onClose={() => setResources(false)}
+              save={async (update) => {
+                retain({ resources: update(draft.resources ?? emptyBotResources()) })
+              }}
+            />
+          )}
+        </>
+      )}
+    </BotEditor>
+  )
+}
+
+function BotRoutines({ taskId }: { taskId: string }) {
+  const { snapshot, profile } = useRuntime()
+  const navigate = useSheetNavigation()
+  const routines =
+    snapshot?.workspace.automations.filter((flow) =>
+      flow.nodes.some((node) => node.data.botId === taskId),
+    ) ?? []
+  return (
+    <View style={{ gap: 8 }}>
+      <Text>
+        Routines are optional.{' '}
+        {routines.length
+          ? `${routines.length} ${routines.length === 1 ? 'routine uses' : 'routines use'} this Bot.`
+          : 'No routines use this Bot.'}
+      </Text>
+      {routines.map((flow) => (
+        <Action
+          key={flow.id}
+          label={`${flow.name}${flow.enabled ? '' : ' · Disabled'}`}
+          secondary
+          disabled={!profile}
+          onPress={() => {
+            if (profile) navigate(() => router.navigate(automationHref(profile.id, flow.id)))
+          }}
+        />
+      ))}
+      <Action
+        label="Manage routines"
+        secondary
+        onPress={() => navigate(() => router.navigate('/settings/automations'))}
+      />
+    </View>
+  )
+}

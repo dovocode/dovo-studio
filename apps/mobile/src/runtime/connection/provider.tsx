@@ -196,12 +196,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         return previous
       },
     ),
-    [ready, setReady] = useApplicationState(false),
+    [ready, setReady, readyRef] = useApplicationState(false),
     [recovering, setRecovering] = useApplicationState(true),
     [storageError, setStorageError] = useApplicationState(''),
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
   const networkAvailable = useRef(true)
+  const wakeSelectedFallback = useRef<(() => void) | undefined>(undefined)
   const [networkConnected, setNetworkConnected] = useApplicationState(true)
   const mutationRecoveryWorker = useRef<{
     refresh: (connection?: RuntimeConnection) => void
@@ -1384,16 +1385,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           ),
         )
       const active = saved.profiles.find((profile) => profile.id === saved.activeId)
-      if (active) yield* restoreCache(active)
-      if (disposed) return
-      setReady(true)
-      yield* Effect.forEach(
-        saved.profiles.filter((profile) => profile.id !== active?.id),
-        restoreCache,
-        {
-          concurrency: 3,
-          discard: true,
-        },
+      yield* Effect.all(
+        [
+          (active ? restoreCache(active) : Effect.void).pipe(
+            Effect.tap(() => Effect.sync(() => !disposed && setReady(true))),
+          ),
+          Effect.forEach(
+            saved.profiles.filter((profile) => profile.id !== active?.id),
+            restoreCache,
+            { concurrency: 2, discard: true },
+          ),
+        ],
+        { concurrency: 2, discard: true },
       )
     }).pipe(
       Effect.catch((error) =>
@@ -1439,8 +1442,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [registryLoaded, storageLock, persistRegistryEffect, beforeReplace])
   useEffect(() => {
-    // Restore the selected computer's cache before deciding whether HTTP fallback is needed.
-    if (!ready || recovering || !profile || !appActive) return
+    // Connect while disk restoration runs. A live baseline must not wait for saved history.
+    if (!registryLoaded || recovering || !profile || !appActive) return
     let stopped = false
     let wakeFallback = () => {}
     let connecting = true
@@ -1474,6 +1477,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           error: null,
           unauthorized: false,
         }))
+        setReady(true)
       },
     })
     const needsFallback = () =>
@@ -1483,7 +1487,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       !entryRef.current[profile.id]?.unauthorized &&
       // Cached UI is usable during the first handshake. Its existing deadlines/status
       // changes wake fallback on failure, without downloading two workspace baselines.
-      (!connecting || !entryRef.current[profile.id]?.snapshot)
+      (!connecting || (readyRef.current && !entryRef.current[profile.id]?.snapshot))
     const polling = startPolling(
       Effect.suspend(() => (needsFallback() ? refreshProfileEffect(profile) : Effect.void)),
       {
@@ -1497,6 +1501,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       },
     )
     wakeFallback = polling.refresh
+    wakeSelectedFallback.current = wakeFallback
     // Wi-Fi to cellular, a VPN toggle or captive portal: ask the runtime at once instead of
     // waiting for the socket watchdog or the next failed poll.
     let lastConnected = networkAvailable.current
@@ -1515,16 +1520,32 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     })
     return () => {
       stopped = true
+      if (wakeSelectedFallback.current === wakeFallback) wakeSelectedFallback.current = undefined
       network.remove()
       live.stop()
       void polling.stop()
     }
-  }, [ready, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
+  }, [registryLoaded, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
+  useEffect(() => {
+    // Once cache lookup finishes, an uncached computer needs its immediate HTTP fallback.
+    if (ready) wakeSelectedFallback.current?.()
+  }, [ready])
   useEffect(() => {
     if (!ready || !appActive || computerRefresh === 'manual') return
+    let initial = true
     const polling = startPolling(
       Effect.suspend(() => {
         if (AppState.currentState !== 'active' || !networkAvailable.current) return Effect.void
+        if (initial) {
+          initial = false
+          // Initial thread metadata is needed on cellular too. Pull requests and recurring
+          // background refreshes retain the reduced setting's network policy below.
+          return Effect.forEach(
+            current.current.profiles.filter((owner) => owner.id !== current.current.activeId),
+            refreshOverviewEffect,
+            { concurrency: 3, discard: true },
+          )
+        }
         if (computerRefresh !== 'reduced') return refreshAllEffect(false)
         // Reduced background activity on a metered link keeps other computers' summaries as
         // they are; the active computer still refreshes through its own connection.
@@ -1541,7 +1562,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }),
       {
         interval: computerRefresh === 'reduced' ? 120000 : 30000,
-        immediate: false,
+        // Fetch the other computers at launch, instead of showing their replicas for 30s.
+        immediate: true,
         onError: (error) => setStorageError(String(error)),
       },
     )
@@ -1552,7 +1574,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       void polling.stop()
       subscription.remove()
     }
-  }, [ready, appActive, registry.profiles, refreshAllEffect, computerRefresh])
+  }, [
+    ready,
+    appActive,
+    registry.profiles,
+    refreshAllEffect,
+    refreshOverviewEffect,
+    computerRefresh,
+  ])
   const refresh = useCallback(
     (...args: Parameters<typeof refreshEffect>) => runClientEffect(refreshEffect(...args)),
     [refreshEffect],

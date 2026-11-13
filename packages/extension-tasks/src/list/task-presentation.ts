@@ -29,22 +29,24 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
         ? 'Snoozed'
         : needsInput
           ? 'Needs input'
-          : working
-            ? task.status === 'running' && task.runPhase === 'finalizing'
-              ? 'Saving changes'
-              : 'Working'
-            : task.waitingForFeedback
-              ? 'Waiting'
-              : hasUnviewedTaskCompletion(task)
-                ? 'Done'
-                : {
-                    draft: 'Draft',
-                    running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
-                    review: 'Review',
-                    done: 'Finished',
-                    failed: 'Failed',
-                    cancelled: 'Stopped',
-                  }[task.status]
+          : task.bot?.state === 'paused' && !working
+            ? 'Paused'
+            : working
+              ? task.status === 'running' && task.runPhase === 'finalizing'
+                ? 'Saving changes'
+                : 'Working'
+              : task.waitingForFeedback
+                ? 'Waiting'
+                : hasUnviewedTaskCompletion(task)
+                  ? 'Done'
+                  : {
+                      draft: 'Draft',
+                      running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
+                      review: 'Review',
+                      done: 'Finished',
+                      failed: 'Failed',
+                      cancelled: 'Stopped',
+                    }[task.status]
   const tone: 'active' | 'attention' | 'success' | 'danger' | 'neutral' = [
     'Working',
     'Saving changes',
@@ -72,6 +74,7 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
             'Waiting',
             'Snoozed',
             'Saving changes',
+            'Paused',
           ].includes(state)
         ? state
         : time.replace(' ago', '') || state

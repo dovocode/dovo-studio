@@ -15,7 +15,7 @@ import { RuntimeDefaults, validateDefaultHarness } from './runtime-defaults.js'
 import { McpSecrets } from './mcp-secrets.js'
 import { newSecret } from '../auth/devices.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
-import { decode, decodeResult } from '@dovo/protocol'
+import { decode, decodeResult, SCRATCH_PROJECT_ID, type Bot } from '@dovo/protocol'
 import { migrateJiraSources } from './jira-migration.js'
 import type Database from 'better-sqlite3'
 import { Schema, Struct } from 'effect'
@@ -1359,9 +1359,11 @@ export class WorkspaceStore {
         'Plain folders and projectless threads do not support Git worktree settings',
       )
   }
-  patch(patch: WorkspacePatch) {
+  /** `bot` is runtime-owned identity for a created task. Clients can never send it; the Bot
+   * create route passes it so the thread is a Bot from its first write (never replicated). */
+  patch(patch: WorkspacePatch, created?: { bot?: Bot }) {
     const outcome = { reconciled: false }
-    this.transaction(() => this.applyPatch(patch, outcome))
+    this.transaction(() => this.applyPatch(patch, outcome, created))
     return outcome
   }
   recoveredEdits(): WorkspaceRecovery[] {
@@ -1418,7 +1420,11 @@ export class WorkspaceStore {
       ),
     }
   }
-  private applyPatch(patch: WorkspacePatch, outcome: { reconciled: boolean }) {
+  private applyPatch(
+    patch: WorkspacePatch,
+    outcome: { reconciled: boolean },
+    created?: { bot?: Bot },
+  ) {
     patch = decode(patchSchema, {
       ...patch,
       create: this.secrets.restore(patch.create, this.workspace, true),
@@ -1500,7 +1506,9 @@ export class WorkspaceStore {
           record.sideChats !== undefined ||
           record.sideThread !== undefined ||
           record.forkedFrom !== undefined ||
-          record.consumedMessageIds !== undefined)
+          record.consumedMessageIds !== undefined ||
+          record.bot !== undefined ||
+          record.threadActions !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')
       const parsed = decode(
@@ -1536,7 +1544,10 @@ export class WorkspaceStore {
       }
       this.update((w) => ({
         ...w,
-        [patch.collection]: [...list, parsed],
+        [patch.collection]: [
+          ...list,
+          patch.collection === 'tasks' && created?.bot ? { ...parsed, bot: created.bot } : parsed,
+        ],
       }))
       return
     }
@@ -1597,6 +1608,24 @@ export class WorkspaceStore {
       ].some((key) => patch.changes[key])
     )
       throw new HttpError(400, 'Child threads cannot change their checkout')
+    // Bots are standalone. One that predates this rule may leave its project, never join one.
+    if (patch.collection === 'tasks' && current.bot) {
+      const after = (key: string) => patch.changes[key]?.after
+      if (
+        (patch.changes.repositoryId && after('repositoryId') !== SCRATCH_PROJECT_ID) ||
+        (patch.changes.execution && after('execution') === 'worktree') ||
+        [
+          'autoProject',
+          'autoProjectExecution',
+          'existingWorktreePath',
+          'worktreeBaseBranch',
+          'worktreeIncludeChanges',
+          'submodules',
+          'setupCommand',
+        ].some((key) => patch.changes[key] && !!after(key))
+      )
+        throw new HttpError(400, 'Bots are standalone and do not join a project')
+    }
     const allowed =
       patch.collection === 'tasks'
         ? new Set([

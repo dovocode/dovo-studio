@@ -23,7 +23,7 @@ export type WorkspaceIdentitySources = {
   browserTabs: readonly BrowserTab[] | undefined
 }
 export type WorkspaceIdentity = {
-  kindLabel: 'Thread' | 'Page' | 'Terminal'
+  kindLabel: 'Thread' | 'Bot' | 'Page' | 'Terminal'
   title: string
   detail: string
   /** Absence is unknown; missing is reserved for positively identified ineligible thread shells. */
@@ -194,11 +194,13 @@ export function workspaceIdentity(
       ...fallback,
       availability: 'present',
       title: task.title || 'Untitled thread',
-      project: projectName(task.repositoryId),
-      repository,
-      branch:
-        task.checkoutBranch ??
-        (task.execution === 'worktree' ? latest?.branch : repository?.branch),
+      kindLabel: task.bot ? 'Bot' : 'Thread',
+      project: task.bot ? undefined : projectName(task.repositoryId),
+      repository: task.bot ? undefined : repository,
+      branch: task.bot
+        ? undefined
+        : (task.checkoutBranch ??
+          (task.execution === 'worktree' ? latest?.branch : repository?.branch)),
       activityAt: latestTimestamp(
         task.createdAt,
         task.updatedAt,

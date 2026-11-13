@@ -4,6 +4,8 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  // Bot settings have their own browser coverage; this fixture checks normal-thread startup.
+  './bots/bot-settings': 'export const BotSettings=()=>null;',
   './detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   // Session import has its own browser regression; this fixture exercises startup continuity.

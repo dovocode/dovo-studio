@@ -19,6 +19,8 @@ describe('mobile workbench route context', () => {
     ['/settings/automations/host/release', 'settings', true],
     ['/settings', 'settings', false],
     ['/artifacts', 'artifacts', false],
+    ['/bots', 'bots', false],
+    ['/bots-other', 'tasks', true],
     ['/browser', 'browser', false],
     ['/terminal', 'terminal', false],
     ['/terminal/new', 'terminal', true],

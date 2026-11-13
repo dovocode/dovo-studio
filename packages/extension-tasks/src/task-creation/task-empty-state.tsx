@@ -20,6 +20,19 @@ export function TaskEmptyState({
   onMoving?: (moving: boolean) => void
   onSelectRemote?: SelectRemoteProject
 }) {
+  if (task?.bot)
+    return (
+      <section
+        className="mx-auto grid max-w-xl gap-2 px-6 py-10 text-center"
+        aria-label="Bot introduction"
+      >
+        <h2 className="text-xl font-semibold">{task.title}</h2>
+        <p className="text-sm text-muted-foreground">{task.bot.role}</p>
+        <p className="text-sm text-muted-foreground">
+          Send a message to start working with your Bot.
+        </p>
+      </section>
+    )
   return (
     <StartupHeading data-thread-start="" welcome={welcome}>
       {projectName && !task && <p className="text-xs text-muted-foreground">In {projectName}</p>}

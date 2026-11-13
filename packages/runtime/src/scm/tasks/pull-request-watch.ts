@@ -1,3 +1,4 @@
+import { pullMatchesCheckoutBranch } from './task-pulls.js'
 import { watchSourceSchema, type WatchSource } from './watch-source.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
@@ -48,6 +49,14 @@ const stateSchema = z.object({
   commentVersions: z.record(z.string(), z.string()).default({}),
   failedChecks: z.array(z.string()),
   error: z.string().optional(),
+  careStarted: z.boolean().optional(),
+  careHead: z.string().optional(),
+  careBase: z.string().optional(),
+  careStatus: z.string().optional(),
+  careReady: z.boolean().optional(),
+  careCommentWakes: z.number().int().nonnegative().optional(),
+  carePaused: z.boolean().optional(),
+  updateAttempt: z.string().optional(),
 })
 type State = z.infer<typeof stateSchema>
 type WatchServices = Pick<
@@ -86,6 +95,8 @@ const watchSummary = (state: State) => ({
   startedAt: state.startedAt,
   checkedAt: state.checkedAt,
   error: state.error,
+  careStatus: state.careStatus,
+  carePaused: state.carePaused,
 })
 
 /** Opt-in feedback deliveries outlive agent turns; queue receipts and cursors commit together. */
@@ -231,7 +242,11 @@ export class PullRequestWatch {
   manage(input: typeof pullRequestWatchRequestSchema.Type & { action: 'status' | 'stop' }) {
     return this.execute(input, true)
   }
-  private async execute(input: typeof pullRequestWatchRequestSchema.Type, manageExisting: boolean) {
+  private async execute(
+    input: typeof pullRequestWatchRequestSchema.Type,
+    manageExisting: boolean,
+    automatic = false,
+  ) {
     if (!manageExisting || input.action === 'watch') this.enabled()
     this.s.tasks.assertToolScope(input.taskId, input.parentRunId)
     const task =
@@ -357,6 +372,20 @@ export class PullRequestWatch {
         503,
         'PR feedback is incomplete or unavailable. Retry registration when the forge is available.',
       )
+    if (
+      automatic &&
+      (!this.s.preferences.get().enablePullRequestBabysitting ||
+        latest.queuePaused ||
+        latest.archived ||
+        latest.archivedAt ||
+        latest.settledAt ||
+        !latest.checkoutBranch ||
+        !pullMatchesCheckoutBranch(detail.pull, latest.checkoutBranch))
+    )
+      throw new HttpError(
+        409,
+        'Only the PR for this editing checkout can start babysitting automatically.',
+      )
     if (detail.pull.state !== 'open') throw new HttpError(409, 'Watch an open pull request')
     // A repeated registration preserves its cursor, including feedback awaiting delivery.
     const current = this.read(input.taskId, repositoryId)
@@ -364,7 +393,8 @@ export class PullRequestWatch {
       current?.status === 'watching' &&
       current.url === detail.pull.url &&
       current.repositoryId === repositoryId &&
-      current.source?.destination === source?.destination
+      current.source?.destination === source?.destination &&
+      !current.carePaused
     )
       return { watches: [watchSummary(current)], failedChecks: failedChecks(detail) }
     const now = new Date().toISOString()
@@ -399,10 +429,50 @@ export class PullRequestWatch {
     const latest = this.read(state.taskId, state.repositoryId)
     return latest?.id === state.id && latest.status === 'watching'
   }
+  private async startLinkedBabysitting() {
+    if (!this.s.preferences.get().enablePullRequestBabysitting) return
+    const watches = this.readAll()
+    for (const task of this.s.store.get().tasks) {
+      if (
+        this.stopped ||
+        !this.s.preferences.get().enablePullRequestWatching ||
+        !this.s.preferences.get().enablePullRequestBabysitting
+      )
+        return
+      // A read/review checkout must never become an automatic editing session.
+      if (
+        !task.checkoutBranch ||
+        task.status === 'draft' ||
+        task.settledAt ||
+        (task.pullStatus && task.pullStatus.state !== 'open') ||
+        task.example ||
+        task.archived ||
+        task.archivedAt ||
+        task.queuePaused ||
+        (task.pullRequest && task.pullRequest.checkoutMode !== 'pr-branch') ||
+        permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents))
+      )
+        continue
+      const pull = task.pullStatus?.state === 'open' ? task.pullStatus : task.pullRequest
+      if (!pull?.url || task.ignoredPullRequestUrls?.includes(pull.url)) continue
+      // Stop remains a user decision, including across restarts and setting changes.
+      if (watches.some((state) => state.taskId === task.id && state.url === pull.url)) continue
+      try {
+        await this.execute({ taskId: task.id, action: 'watch', url: pull.url }, false, true)
+      } catch (cause) {
+        this.s.activity.add(
+          'task',
+          task.id,
+          `Could not start PR babysitting: ${errorMessage(cause)}`,
+        )
+      }
+    }
+  }
   async tick() {
     if (this.busy || this.stopped || !this.s.preferences.get().enablePullRequestWatching) return
     this.busy = true
     try {
+      await this.startLinkedBabysitting()
       const reads = new Map<string, Promise<PullDetail>>()
       for (const state of this.readAll()) {
         if (this.stopped) return
@@ -412,7 +482,11 @@ export class PullRequestWatch {
           this.db.prepare('DELETE FROM task_pull_watches WHERE task_id=?').run(state.taskId)
           continue
         }
-        if (!this.current(state)) continue
+        if (
+          !this.current(state) ||
+          (state.carePaused && this.s.preferences.get().enablePullRequestBabysitting)
+        )
+          continue
         // Respect explicit lifecycle/access changes and never unpause a stopped queue.
         if (
           task.archived ||
@@ -506,6 +580,7 @@ export class PullRequestWatch {
           )
           const next: State = {
             ...state,
+            careStatus: undefined,
             checkedAt: new Date().toISOString(),
             error: detail.warnings.join('\n') || undefined,
             failedChecks: checksUnavailable
@@ -514,6 +589,31 @@ export class PullRequestWatch {
             seenComments: state.seenComments.filter((key) => !versions[key]),
             commentVersions: versions,
           }
+          const babysitting =
+            this.s.preferences.get().enablePullRequestBabysitting &&
+            !state.carePaused &&
+            !latest.settledAt &&
+            detail.pull.state === 'open' &&
+            !detail.pull.draft &&
+            (!latest.pullRequest || latest.pullRequest.checkoutMode === 'pr-branch') &&
+            pullMatchesCheckoutBranch(detail.pull, latest.checkoutBranch)
+          const revisionChanged =
+            state.careHead !== detail.pull.headSha || state.careBase !== detail.pull.baseSha
+          const behind = detail.pull.behindBy
+          const ready =
+            !detail.warnings.length &&
+            detail.pull.mergeable === true &&
+            behind === 0 &&
+            detail.checks.length > 0 &&
+            detail.checks.every(
+              (check) =>
+                checkOutcome(check.status) === 'passed' ||
+                ['neutral', 'skipped', 'not_applicable'].includes(check.status.toLowerCase()),
+            ) &&
+            detail.pull.reviewDecision?.toUpperCase() !== 'CHANGES_REQUESTED' &&
+            !detail.comments.some(
+              (comment) => comment.kind === 'inline' && comment.resolved === false,
+            )
           const chunks: string[] = []
           let size = 0
           let remaining = false
@@ -526,9 +626,82 @@ export class PullRequestWatch {
             chunks.push(text)
             return true
           }
+          if (babysitting) {
+            if (!state.careStarted)
+              append(
+                'Start PR babysitting. Inspect current CI failures and unresolved review feedback, make needed fixes, test and push them, then wait. Keep merge approval manual.',
+              )
+            if (revisionChanged && state.careStarted)
+              append(
+                `PR revision changed. Head: ${detail.pull.headSha}. Target: ${detail.pull.base} (${detail.pull.baseSha}). Recheck branch freshness and checks.`,
+              )
+            const updateKey = JSON.stringify([detail.pull.headSha, detail.pull.baseSha])
+            if (
+              behind !== undefined &&
+              behind > 0 &&
+              !latest.queuePaused &&
+              !latest.activeRunId &&
+              latest.status !== 'running' &&
+              state.updateAttempt !== updateKey
+            ) {
+              // Save the attempt before crossing the forge boundary. An uncertain response
+              // requires a fresh revision or explicit restart, never an automatic replay.
+              next.updateAttempt = updateKey
+              this.save({ ...state, updateAttempt: updateKey })
+              if (
+                detail.capabilities?.actions.includes('update-branch') &&
+                !detail.pull.inMergeQueue
+              ) {
+                try {
+                  const input = {
+                    action: 'update-branch' as const,
+                    number: state.number,
+                    headSha: detail.pull.headSha,
+                    expectedDestination: detail.destination ?? detail.pull.destination,
+                  }
+                  if (state.source) await this.s.pulls.watchReader(state.source).act(input)
+                  else await this.s.pulls.act(cwd, input)
+                  if (!this.current(state)) continue
+                  this.s.pullCache.invalidate(cwd, state.number)
+                  append(
+                    'GitHub Update branch completed with a merge. Synchronize the local checkout without discarding local work, then verify the new checks. Repository rules determine whether approvals remain valid.',
+                  )
+                } catch (cause) {
+                  append(
+                    `Update branch needs attention: ${errorMessage(cause)}. Do not fall back to a rebase or force-push.`,
+                  )
+                }
+              } else
+                append(
+                  'The target branch has new commits, but the forge Update branch action is unavailable. Resolve the blocker with the user; do not rebase or force-push.',
+                )
+            }
+            if (detail.pull.mergeable === false && (revisionChanged || !state.careStarted))
+              append(
+                'This PR has merge conflicts. Inspect them and preserve both intents. Test any fix before pushing.',
+              )
+            if (ready && !state.careReady)
+              append(
+                'Reported checks passed and the branch is current with its target. Check review requirements and report readiness. Merge still needs the user’s approval.',
+              )
+            next.careStarted = true
+            next.careHead = detail.pull.headSha
+            next.careBase = detail.pull.baseSha
+            next.careReady = ready
+            next.careStatus =
+              behind && behind > 0
+                ? 'Babysitting PR · target branch update needed'
+                : failures.length
+                  ? 'Babysitting PR · fixing failed checks'
+                  : ready
+                    ? 'Babysitting PR · ready for review or merge approval'
+                    : behind === undefined
+                      ? 'Babysitting PR · branch freshness unavailable'
+                      : 'Babysitting PR · waiting for checks and reviews'
+          }
           for (const check of failures) {
             const key = checkKey(detail, check)
-            if (knownFailures.has(key)) continue
+            if (knownFailures.has(key) && (!babysitting || state.careStarted)) continue
             if (
               append(
                 `Failed check: ${check.name.slice(0, 300)} (${check.status.slice(0, 100)})\n${check.url ?? ''}\n${(check.summary ?? '').slice(0, 1200)}`,
@@ -536,11 +709,32 @@ export class PullRequestWatch {
             )
               next.failedChecks.push(key)
           }
+          const nonCommentNews = chunks.length
           for (const comment of comments) {
+            if (
+              babysitting &&
+              detail.pull.viewerIsAuthor &&
+              comment.author.toLowerCase() === detail.pull.author.toLowerCase()
+            ) {
+              next.commentVersions[commentKey(comment)] = commentVersion(comment)
+              continue
+            }
             const text = `${state.commentVersions[commentKey(comment)] ? 'Updated ' : ''}${comment.kind} by ${comment.author.slice(0, 200)}${comment.state ? ` (${comment.state})` : ''}${comment.path ? ` at ${comment.path.slice(0, 300)}${comment.line ? `:${comment.line}` : ''}` : ''}${comment.replyTo ? `\nReply to: ${comment.replyTo.slice(0, 200)}` : ''}${comment.commitId ? `\nReview commit: ${comment.commitId.slice(0, 100)}` : ''}\n${comment.url}\n${comment.body.slice(0, 4000)}${comment.body.length > 4000 ? '\n[Excerpt; open the comment URL for the full text.]' : ''}`
             if (append(text)) {
               const key = commentKey(comment)
               next.commentVersions[key] = commentVersion(comment)
+            }
+          }
+          if (babysitting && chunks.length) {
+            const feedbackOnly =
+              state.careStarted && !revisionChanged && nonCommentNews === 0 && comments.length > 0
+            next.careCommentWakes = feedbackOnly ? (state.careCommentWakes ?? 0) + 1 : 0
+            if (next.careCommentWakes >= 10) {
+              next.carePaused = true
+              next.careStatus = 'PR babysitting paused · repeated review feedback needs your input'
+              chunks.push(
+                'PR babysitting paused after 10 feedback-only wakeups without a new revision or check result. Ask the user to review the loop. Do not continue posting replies or restart automatically.',
+              )
             }
           }
           if (detail.pull.state !== 'open' && !remaining && !unavailable.size)
@@ -578,13 +772,16 @@ export class PullRequestWatch {
       this.busy = false
     }
   }
+  refresh() {
+    this.poller?.refresh()
+  }
   start() {
     if (this.poller || this.stopped) return
     this.poller = startPolling(
       Effect.tryPromise(() => this.tick()),
       {
-        interval: 120_000,
-        immediate: false,
+        interval: () => (this.s.preferences.get().enablePullRequestBabysitting ? 30_000 : 120_000),
+        immediate: this.s.preferences.get().enablePullRequestBabysitting,
         onError: (error) => console.error('PR feedback watcher failed', error),
       },
     )

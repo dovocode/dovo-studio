@@ -31,6 +31,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Harness instruction files](harness-instructions.md): edit native instructions on a selected
   computer from desktop or mobile.
 - [Memory](memory.md): optional project, system-wide and projectless notes shared across threads.
+- [Bots](bots.md): persistent assistant threads with responsibilities, private memory, pause and
+  routines.
 - [Studio editing and recovery](studio-editing-recovery.md): draft guards, preference retry,
   terminal clipboard, mobile code blocks, and replicated thread search.
 - [General settings](general-settings.md): organized device preferences, task defaults and lifecycle

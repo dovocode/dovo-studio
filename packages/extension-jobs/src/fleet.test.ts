@@ -1,3 +1,4 @@
+import { automationDestination } from './automation-destination'
 import { decode } from '@dovo/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import {
@@ -188,5 +189,39 @@ describe('unified automation collection', () => {
       ['open', flow.name, true],
       ['other', flow.name, true],
     ])
+  })
+})
+
+// Bot routine links carry an explicit owner, including when IDs match across computers.
+describe('automation destinations', () => {
+  it('opens the requested computer and run without falling back to a matching local ID', () => {
+    const first = runtime('first')
+    const second = runtime('second')
+    const rows = aggregateAutomations([first, second])
+    const result = automationDestination(rows, first.profile.id, run.id, {
+      runtimeId: second.profile.id,
+      automationId: flow.id,
+      runId: run.id,
+    })
+    expect(result?.row.runtime.profile.id).toBe(second.profile.id)
+    expect(result?.runId).toBe(run.id)
+    expect(
+      automationDestination(rows, first.profile.id, flow.id, {
+        runtimeId: 'missing-computer',
+        automationId: flow.id,
+      }),
+    ).toBeUndefined()
+  })
+  it('resolves old run links on the active computer and keeps normal automation links working', () => {
+    const first = runtime('first')
+    const second = runtime('second')
+    const rows = aggregateAutomations([second, first])
+    expect(automationDestination(rows, first.profile.id, run.id)?.row.runtime.profile.id).toBe(
+      first.profile.id,
+    )
+    expect(automationDestination(rows, second.profile.id, flow.id)?.row.runtime.profile.id).toBe(
+      second.profile.id,
+    )
+    expect(automationDestination(rows, first.profile.id, 'deleted-run')).toBeUndefined()
   })
 })

@@ -92,10 +92,10 @@ export function useConversationActions(task: Task) {
     },
     [],
   )
-  const turnSettings = editing ? editing.settings : draftTurnSettings
+  const turnSettings = task.bot ? null : editing ? editing.settings : draftTurnSettings
   // One-message plan mode: kept with the draft until a plan send is accepted.
-  const plan = editing ? editing.plan : draftPlan
-  const planSupported = snapshot?.planModeSupported === true
+  const plan = !task.bot && (editing ? editing.plan : draftPlan)
+  const planSupported = !task.bot && snapshot?.planModeSupported === true
   const latestDraftText = useRef(storedDraft.text)
   latestDraftText.current = storedDraft.text
   const currentDraftKey = useRef(storedDraft.key)
@@ -390,7 +390,7 @@ export function useConversationActions(task: Task) {
       ? 'Update the task computer to use plan mode.'
       : planModeIssue(agent)
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
-  const checkoutEditable = canChangeTaskCheckout(task)
+  const checkoutEditable = !task.bot && canChangeTaskCheckout(task)
   const hasInput =
     !!draft.text.trim() || !!(editing ? editing.files.length : submissionFiles.length)
   const canSend =
@@ -594,7 +594,7 @@ export function useConversationActions(task: Task) {
           !task.queuePaused &&
           snapshot?.queuePausePreservationSupported === true,
       })
-      if (firstMessage) {
+      if (firstMessage && !task.bot) {
         const summary =
           text ||
           `Work with attached files: ${task.draftAttachments?.map((file) => file.name).join(', ')}`
@@ -627,14 +627,14 @@ export function useConversationActions(task: Task) {
       })
       yield* nativeEffect(() => attachmentPicker.waitForUploads())
       yield* storedDraft.stageEffect(attempt)
-      if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
+      if (firstMessage && !task.bot && task.autoProject && !snapshot?.messageSetupSupported) {
         yield* callEffect(
           '/api/tasks/projects/select',
           { id: task.id, requestId: attempt.id, text: text || 'Work with the attached files' },
           taskSchema,
         )
       }
-      if (firstMessage) {
+      if (firstMessage && !task.bot) {
         if (!snapshot?.messageSetupSupported)
           yield* patchEffect(
             {
@@ -654,7 +654,7 @@ export function useConversationActions(task: Task) {
           {
             id: task.id,
             messageId: attempt.id,
-            ...(firstMessage && snapshot?.messageSetupSupported
+            ...(firstMessage && !task.bot && snapshot?.messageSetupSupported
               ? {
                   initialTitle: { before: task.title, after: attempt.title },
                   ...(task.autoProject ? { selectProject: true } : {}),
@@ -714,7 +714,7 @@ export function useConversationActions(task: Task) {
         else if (attempt.mode === 'queue')
           setStageIntents((current) => current.filter((intent) => intent.scope !== pendingScope))
         yield* storedDraft.confirmEffect(attempt, clearDraft)
-        if (firstMessage && messageAcknowledged && !snapshot?.messageSetupSupported)
+        if (firstMessage && !task.bot && messageAcknowledged && !snapshot?.messageSetupSupported)
           void runClientEffect(
             readEffect(
               '/api/tasks/title',

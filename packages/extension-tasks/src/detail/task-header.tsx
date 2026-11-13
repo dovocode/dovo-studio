@@ -43,6 +43,7 @@ import { TaskPullStatus } from './task-pull-status'
 import { taskPullLinks } from './task-pull-links'
 import { useThreadInfoContext } from './thread-info-context'
 export type TaskSurface =
+  | 'bot-settings'
   | 'pull-preview'
   | 'linked-pulls'
   | 'chat'
@@ -121,7 +122,7 @@ export function TaskHeader({
           <span>{parentTitle.slice(parentTitleMiddle).join('')}</span>
         </span>
       </button>
-      <span className="studio-titlebar-divider" aria-hidden="true">
+      <span hidden={!!task.bot} className="studio-titlebar-divider" aria-hidden="true">
         /
       </span>
     </>
@@ -159,7 +160,16 @@ export function TaskHeader({
   const surfaces = [
     ['chat', 'Chat', MessageSquare, 0],
     ['files', 'Files', Files, 0],
-    ['projects', 'Linked projects', FolderSymlink, task.linkedCheckouts?.length ?? 0],
+    ...(task.bot
+      ? [['bot-settings', 'Bot settings', Bot, 0] as const]
+      : [
+          [
+            'projects',
+            'Linked projects',
+            FolderSymlink,
+            task.linkedCheckouts?.length ?? 0,
+          ] as const,
+        ]),
     ...(snapshot?.artifactsEnabled ? [['artifacts', 'Artifacts', Shapes, 0] as const] : []),
     ...(hasDiff ? [['changes', 'Diff', FileCode2, task.files.length] as const] : []),
     ...(linkedPulls.length
@@ -230,7 +240,7 @@ export function TaskHeader({
       ? 'No project'
       : task.checkoutBranch ||
         (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')
-  const actions = (
+  const actions = !task.bot && (
     <>
       {compact ? (
         <IconButton
@@ -289,10 +299,10 @@ export function TaskHeader({
             data-window-edge
             data-window-right-edge={windowRightEdge || undefined}
           >
-            <ProjectIcon repository={displayProject} className="size-4" />
+            {!task.bot && <ProjectIcon repository={displayProject} className="size-4" />}
             <nav className="studio-titlebar-heading min-w-0 flex-1" aria-label="Thread breadcrumb">
-              <span className="studio-titlebar-project">{projectName}</span>
-              <span className="studio-titlebar-divider" aria-hidden="true">
+              {!task.bot && <span className="studio-titlebar-project">{projectName}</span>}
+              <span hidden={!!task.bot} className="studio-titlebar-divider" aria-hidden="true">
                 /
               </span>
               {parentCrumb}
@@ -318,7 +328,7 @@ export function TaskHeader({
             </span>
           </nav>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.625rem] text-muted-foreground">
-            {displayProject && displayProject.kind !== 'scratch' && (
+            {!task.bot && displayProject && displayProject.kind !== 'scratch' && (
               <span className="inline-flex min-w-0 max-w-36 items-center gap-1" title={projectName}>
                 <ProjectIcon repository={displayProject} className="size-3 shrink-0" />
                 <span className="truncate">{projectName}</span>
@@ -329,7 +339,7 @@ export function TaskHeader({
                 {presentation.label}
               </span>
             )}
-            {!projectPanelOpen && (
+            {!task.bot && !projectPanelOpen && (
               <>
                 {task.forkedFrom && (
                   <button

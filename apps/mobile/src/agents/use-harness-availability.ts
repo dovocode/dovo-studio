@@ -17,7 +17,7 @@ const cache = new DiscoveryCache<HarnessAvailability>(30_000, {
   maxPending: 64,
 })
 
-export function useHarnessAvailability(repositoryId: string, agents: readonly Agent[]) {
+export function useHarnessAvailability(repositoryId: string | undefined, agents: readonly Agent[]) {
   const { profile, connected, readRuntime, snapshot } = useRuntime()
   const foreground = useAppActive()
   const key = JSON.stringify([

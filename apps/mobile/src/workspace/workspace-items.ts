@@ -95,20 +95,25 @@ export function workspaceItems(
         repository,
         needsInput,
         title: task.title,
-        detail: `${repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'Project')} · ${computer}`,
-        status: task.archived
-          ? 'Settled'
-          : needsInput
-            ? 'Needs input'
-            : taskIsWorking(task)
-              ? 'Working'
-              : task.waitingForFeedback
-                ? 'Waiting'
-                : task.status === 'failed'
-                  ? 'Failed'
-                  : task.status === 'draft'
-                    ? 'Draft'
-                    : 'Ready',
+        detail: task.bot
+          ? `Bot · ${task.bot.role} · ${computer}`
+          : `${repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'Project')} · ${computer}`,
+        status:
+          task.bot?.state === 'paused' && !taskIsWorking(task) && !needsInput
+            ? 'Paused'
+            : task.archived
+              ? 'Settled'
+              : needsInput
+                ? 'Needs input'
+                : taskIsWorking(task)
+                  ? 'Working'
+                  : task.waitingForFeedback
+                    ? 'Waiting'
+                    : task.status === 'failed'
+                      ? 'Failed'
+                      : task.status === 'draft'
+                        ? 'Draft'
+                        : 'Ready',
         section,
         pinned: !!task.pinned,
         offline: !owner.connected,

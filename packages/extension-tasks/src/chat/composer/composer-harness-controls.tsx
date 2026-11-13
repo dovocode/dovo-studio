@@ -40,10 +40,10 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
     () =>
       resolveScopedAgents(
         snapshot?.defaults,
-        workspace.repositories.find((repo) => repo.id === task.repositoryId),
+        task.bot ? undefined : workspace.repositories.find((repo) => repo.id === task.repositoryId),
         workspace.agents,
       ),
-    [snapshot?.defaults, workspace.repositories, workspace.agents, task.repositoryId],
+    [snapshot?.defaults, workspace.repositories, workspace.agents, task.repositoryId, task.bot],
   )
   const providerLock = lockedTaskProvider(task, agents)
   const handoff = useInlineHarnessHandoff(task, !disabled)
@@ -75,7 +75,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
             t,
             resolveScopedAgents(
               snapshot?.defaults,
-              w.repositories.find((repo) => repo.id === t.repositoryId),
+              t.bot ? undefined : w.repositories.find((repo) => repo.id === t.repositoryId),
               w.agents,
             ),
           ),
@@ -123,19 +123,21 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
           }))
         }
         onSelectMode={
-          canChangeTaskCheckout(task) && !task.delegation
+          !task.bot && canChangeTaskCheckout(task) && !task.delegation
             ? (mode) =>
                 save((current) =>
                   changeTaskModelSelection(
                     current,
                     mode,
-                    workspace.repositories.find((repo) => repo.id === current.repositoryId),
+                    current.bot
+                      ? undefined
+                      : workspace.repositories.find((repo) => repo.id === current.repositoryId),
                     snapshot?.defaults,
                   ),
                 )
             : undefined
         }
-        repositoryId={task.repositoryId}
+        repositoryId={task.bot ? undefined : task.repositoryId}
         agents={agents}
         selectedAgent={customAgent}
         value={value}

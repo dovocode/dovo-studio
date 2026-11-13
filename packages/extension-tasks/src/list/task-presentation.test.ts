@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { createTask, type Task } from '@dovo/studio-core'
+import { createTask, randomUUID, type Task } from '@dovo/studio-core'
 import { taskPresentation } from './task-presentation'
 const now = Date.parse('2026-09-20T12:10:00Z')
 const task = (status: Task['status']): Task => ({
@@ -23,6 +23,22 @@ const task = (status: Task['status']): Task => ({
       status: status === 'running' ? 'running' : 'completed',
     },
   ],
+})
+it('shows a paused Bot without hiding current work or a request for human input', () => {
+  const bot = {
+    role: 'Release assistant',
+    responsibilities: '',
+    state: 'paused' as const,
+    revision: randomUUID(),
+    createdAt: new Date(now).toISOString(),
+    updatedAt: new Date(now).toISOString(),
+  }
+  expect(taskPresentation({ ...task('done'), bot }, false, now)).toMatchObject({
+    state: 'Paused',
+    compactLabel: 'Paused',
+  })
+  expect(taskPresentation({ ...task('running'), bot }, false, now).state).toBe('Working')
+  expect(taskPresentation({ ...task('done'), bot }, true, now).state).toBe('Needs input')
 })
 it('keeps review, failure and completion visible alongside the finish age', () => {
   expect(taskPresentation(task('review'), false, now).label).toBe('Review · 5m ago')

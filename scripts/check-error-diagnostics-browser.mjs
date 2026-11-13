@@ -12,9 +12,10 @@ import {createRoot} from 'react-dom/client';
 import {ErrorBoundary} from '${root}packages/studio-ui/src/components/error-boundary';
 import {workbenchDiagnosticContext} from '${root}packages/studio-shell/src/workbench-diagnostics';
 window.fixed=false;window.copied=[];
-function Broken(){if(!window.fixed)throw Error('Failed http://user:secret@host/api?token=private#hash Bearer credential');return <p>Recovered</p>}
+function Broken(){if(!window.fixed){const error=Error('Failed http://user:secret@host/api?token=private#hash Bearer credential');error.stack='RAW_ERROR_STACK_PRIVATE';throw error};return <p>Recovered</p>}
+Object.defineProperty(Broken,'name',{value:'Broken token=stack-secret https://user:pass@host/source?token=query-secret#fragment '+ 'x'.repeat(3000)});
 const desktopContext=workbenchDiagnosticContext({version:'0.0.9',channel:'nightly',viewer:{platform:'darwin',architecture:'arm64',processArchitecture:'arm64'}},'MacIntel');
-const root=createRoot(document.getElementById('app'));root.render(<ErrorBoundary scope="app" diagnosticContext={{...desktopContext,runtimeVersion:'0.0.9-nightly.526'}}><Broken/></ErrorBoundary>);window.nested=()=>root.render(<ErrorBoundary key="nested" scope="app" diagnosticContext={workbenchDiagnosticContext({version:'0.0.9',channel:'nightly'},'MacIntel')}><ErrorBoundary><Broken/></ErrorBoundary></ErrorBoundary>);
+const root=createRoot(document.getElementById('app'));root.render(<ErrorBoundary scope="app" diagnosticContext={{...desktopContext,viewId:'must-not-appear-on-app',runtimeVersion:'0.0.9-nightly.526'}}><Broken/></ErrorBoundary>);window.nested=(viewId="tasks")=>root.render(<ErrorBoundary key={viewId} scope="app" diagnosticContext={{...desktopContext,runtimeVersion:'0.0.9-nightly.526'}}><ErrorBoundary diagnosticContext={{viewId}}><Broken/></ErrorBoundary></ErrorBoundary>);
 `,
     },
     bundle: true,
@@ -51,15 +52,32 @@ try {
   assert.equal(first.context.platform, undefined)
   assert.equal(first.context.browserPlatformLegacy, undefined)
   assert.equal(first.context.surface, 'app')
+  assert.equal(first.context.viewId, undefined)
+  assert.equal(first.componentStack.length, 2000)
+  assert.ok(first.componentStack.includes('Broken'))
+  for (const secret of [
+    'stack-secret',
+    'user:pass',
+    'query-secret',
+    '#fragment',
+    'RAW_ERROR_STACK_PRIVATE',
+  ])
+    assert.ok(!JSON.stringify(first).includes(secret))
   for (const secret of ['user:secret', 'private', 'credential', '#hash'])
     assert.ok(!first.error.includes(secret))
   await page.getByRole('button', { name: 'Copy diagnostics', exact: true }).click()
-  assert.equal(await page.evaluate(() => window.copied[1].id), first.id)
+  assert.deepEqual(await page.evaluate(() => window.copied[1]), first)
   await page.evaluate(() => {
     window.failCopy = true
   })
   await page.getByRole('button', { name: 'Copy diagnostics', exact: true }).click()
   await page.getByRole('status').getByText('Copy failed').waitFor()
+  await page.evaluate(() => {
+    window.failCopy = false
+  })
+  await page.getByRole('button', { name: 'Copy diagnostics', exact: true }).click()
+  await page.getByRole('status').getByText('Diagnostics copied').waitFor()
+  assert.deepEqual(await page.evaluate(() => window.copied.at(-1)), first)
   await page.evaluate(() => {
     window.fixed = true
   })
@@ -75,8 +93,33 @@ try {
   const nested = await page.evaluate(() => window.copied.at(-1))
   assert.equal(nested.context.appVersion, '0.0.9')
   assert.equal(nested.context.surface, 'view')
-  assert.equal(nested.context.browserPlatformLegacy, 'MacIntel')
-  assert.equal(nested.context.viewerArchitecture, undefined)
+  assert.equal(nested.context.viewId, 'tasks')
+  assert.equal(nested.context.runtimeVersion, '0.0.9-nightly.526')
+  assert.equal(nested.context.viewerPlatform, 'darwin')
+  assert.equal(nested.context.viewerArchitecture, 'arm64')
+  assert.equal(nested.context.viewerProcessArchitecture, 'arm64')
+  assert.equal(nested.componentStack.length, 2000)
+  assert.notEqual(nested.id, first.id)
+  await page.getByRole('button', { name: 'Copy diagnostics', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.copied.at(-1)), nested)
+  await page.evaluate(() => {
+    window.fixed = true
+  })
+  await page.getByRole('button', { name: 'Retry view', exact: true }).click()
+  await page.getByText('Recovered', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.fixed = false
+    window.nested(
+      'token=view-secret https://user:pass@host/view?token=query-secret#fragment ' +
+        'x'.repeat(500),
+    )
+  })
+  await page.getByText('This view could not load', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Copy diagnostics', exact: true }).click()
+  const boundedView = await page.evaluate(() => window.copied.at(-1))
+  assert.equal(boundedView.context.viewId.length, 256)
+  for (const secret of ['view-secret', 'user:pass', 'query-secret', '#fragment'])
+    assert.ok(!boundedView.context.viewId.includes(secret))
   console.log(
     'Error recovery: bounded redacted copyable diagnostics, stable identity, failed clipboard feedback and retry passed.',
   )

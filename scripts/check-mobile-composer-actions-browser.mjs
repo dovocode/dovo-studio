@@ -436,6 +436,25 @@ try {
       await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
       0,
     )
+    await page.evaluate(() =>
+      window.setTask({
+        status: 'draft',
+        messages: [],
+        turns: [],
+        queue: [],
+        bot: {
+          role: 'Reviewer',
+          responsibilities: 'Review',
+          state: 'active',
+          revision: '11111111-1111-4111-8111-111111111111',
+          createdAt: '2026-11-12T00:00:00Z',
+          updatedAt: '2026-11-12T00:00:00Z',
+        },
+      }),
+    )
+    for (const name of ['Agent & model', 'Plan'])
+      assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0)
+    assert.equal(await page.getByTestId('Task setup').count(), 0)
     assert.deepEqual(errors, [])
     console.log(
       'Mobile held Send actions: no extra toolbar button, idle capability gate, automatic Add to queue, explicit Add without starting, preserved input focus and normal Send passed.',

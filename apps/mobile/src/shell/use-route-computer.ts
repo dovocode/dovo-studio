@@ -8,7 +8,7 @@ import { useNavigation } from './navigation'
 
 /** A host-qualified link selects its owner only while that route is in the foreground. */
 export function useRouteComputer(runtimeId: string) {
-  const { ready, activeId, profiles, selectRuntime, selectRuntimeEffect } = useRuntime()
+  const { ready, activeId, profiles, selectRuntimeEffect } = useRuntime()
   const { focused } = useNavigation()
   const [error, setError] = useApplicationState('')
   const [retry, setRetry] = useApplicationState(0)
@@ -29,7 +29,7 @@ export function useRouteComputer(runtimeId: string) {
     return () => {
       current = false
     }
-  }, [ready, focused, saved, activeId, runtimeId, selectRuntime, retry])
+  }, [ready, focused, saved, activeId, runtimeId, selectRuntimeEffect, retry])
   return {
     error,
     retry: () => setRetry((value) => value + 1),

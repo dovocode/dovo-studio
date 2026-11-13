@@ -11,7 +11,7 @@ export const Text=({children})=><span>{children}</span>;
 export const ActivityIndicator=()=>null;
 export const StyleSheet={create:styles=>styles,hairlineWidth:1};
 class Value{setValue(){} interpolate(){return 0}}
-export const Easing={cubic(value){if(this!==Easing)throw Error('Unbound easing');return value},ease(value){if(this!==Easing)throw Error('Unbound easing');return value},out(fn){fn(0);return fn},inOut(fn){fn(0);return fn}};
+export const Easing={linear:value=>value,cubic(value){if(this!==Easing)throw Error('Unbound easing');return value},ease(value){if(this!==Easing)throw Error('Unbound easing');return value},out(fn){fn(0);return fn},inOut(fn){fn(0);return fn}};
 export const Animated={Value,View,timing(value,options){let running=false;return {start(){if(!running){running=true;window.animationStarts++}},stop(){if(running){running=false;window.animationStops++}}}},loop:animation=>animation};`,
   '../runtime/connection/account-provider': `export const useMobileAccount=()=>({directory:null,client:{}});`,
   'expo-constants': `export default {expoConfig:{extra:{pushEnvironment:'sandbox'}}};`,
@@ -32,7 +32,7 @@ export const Animated={Value,View,timing(value,options){let running=false;return
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TaskWidgetProvider} from '${root}/apps/mobile/src/widgets/provider.tsx';import {updateMobilePreferences} from '${root}/apps/mobile/src/runtime/preferences/app-preferences.ts';import {LiveActivityProvider,useLiveActivities} from '${root}/apps/mobile/src/live-activities/provider.tsx';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {useForegroundInterval} from '${root}/apps/mobile/src/runtime/state/app-active.ts';import {PreparationProgress} from '${root}/apps/mobile/src/tasks/conversation/components/preparation-progress.tsx';import {decode,snapshotSchema,taskSchema,runtimeProfile} from '@dovo/protocol';window.animationStarts=0;window.animationStops=0;window.controllers=0;window.activitySyncs=0;window.activityDisposals=0;window.pollers=0;window.pollStops=0;window.writes=[];window.commands=[];window.starts=0;window.stops=0;window.ticks=0;window.tickets=0;const task=decode(taskSchema,{id:'task',title:'Build',repositoryId:'',agentId:'',status:'running',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false});const profile=runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'});window.runtime={ready:true,connection:profile.connection,call:async()=>{window.tickets++;return {ticket:'test'}},overviews:[{profile,connected:true,lastSeen:null,error:null,pulls:null,pullError:null,snapshot:decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[],agents:[],tasks:[task,{...task,id:'older-thread',title:'Older task',createdAt:'2020-01-01T00:00:00Z',updatedAt:'2030-01-01T00:00:00Z'}],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})}]};function Clock(){window.setActivities=useLiveActivities().setEnabled;window.setWidgets=value=>updateMobilePreferences({widgetUpdates:value});useForegroundInterval(()=>window.ticks++,50);return null}const node=createRoot(document.getElementById('app'));const render=()=>flushSync(()=>node.render(<LiveActivityProvider><TaskWidgetProvider><Clock/><PreparationProgress preparation={{progress:window.preparationProgress??0.1,startedAt:new Date().toISOString(),steps:[]}}/><TerminalSession id="terminal"/></TaskWidgetProvider></LiveActivityProvider>));window.changeTitle=title=>{const old=window.runtime.overviews[0];const snapshot=old.snapshot;window.runtime={...window.runtime,overviews:[{...old,snapshot:{...snapshot,workspace:{...snapshot.workspace,tasks:snapshot.workspace.tasks.map((task,index)=>index===0?{...task,title}:task)}}}]}};window.renderUpdates=render;window.unmount=()=>flushSync(()=>node.unmount());render();`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TaskWidgetProvider} from '${root}/apps/mobile/src/widgets/provider.tsx';import {updateMobilePreferences} from '${root}/apps/mobile/src/runtime/preferences/app-preferences.ts';import {LiveActivityProvider,useLiveActivities} from '${root}/apps/mobile/src/live-activities/provider.tsx';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {useForegroundInterval} from '${root}/apps/mobile/src/runtime/state/app-active.ts';import {PreparationProgress} from '${root}/apps/mobile/src/tasks/conversation/components/preparation-progress.tsx';import {decode,snapshotSchema,taskSchema,runtimeProfile} from '@dovo/protocol';window.animationStarts=0;window.animationStops=0;window.controllers=0;window.activitySyncs=0;window.activityDisposals=0;window.pollers=0;window.pollStops=0;window.writes=[];window.commands=[];window.starts=0;window.stops=0;window.ticks=0;window.tickets=0;const task=decode(taskSchema,{id:'task',title:'Build',repositoryId:'',agentId:'',status:'running',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false});const profile=runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'});window.runtime={ready:true,connection:profile.connection,call:async()=>{window.tickets++;return {ticket:'test'}},overviews:[{profile,connected:true,lastSeen:null,error:null,pulls:null,pullError:null,snapshot:decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[],agents:[],tasks:[task,{...task,id:'older-thread',title:'Older task',createdAt:'2020-01-01T00:00:00Z',updatedAt:'2030-01-01T00:00:00Z'}],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})}]};function Clock(){window.setActivities=useLiveActivities().setEnabled;window.setWidgets=value=>updateMobilePreferences({widgetUpdates:value});useForegroundInterval(()=>window.ticks++,50);return null}const node=createRoot(document.getElementById('app'));const render=()=>flushSync(()=>node.render(<LiveActivityProvider><TaskWidgetProvider><Clock/><PreparationProgress preparation={{progress:window.preparationProgress??0.1,startedAt:new Date().toISOString(),steps:window.preparationSteps??[],failed:window.preparationFailed??false}}/><TerminalSession id="terminal"/></TaskWidgetProvider></LiveActivityProvider>));window.changeTitle=title=>{const old=window.runtime.overviews[0];const snapshot=old.snapshot;window.runtime={...window.runtime,overviews:[{...old,snapshot:{...snapshot,workspace:{...snapshot.workspace,tasks:snapshot.workspace.tasks.map((task,index)=>index===0?{...task,title}:task)}}}]}};window.renderUpdates=render;window.unmount=()=>flushSync(()=>node.unmount());render();`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -197,12 +197,61 @@ try {
     window.renderUpdates()
   })
   await page.waitForFunction(() => window.animationStarts - window.animationStops === 2)
+  // Selector motion follows real active stages and never survives failure or backgrounding.
+  for (const [id, name] of [
+    ['worktree', 'Creating worktree'],
+    ['restore', 'Restoring worktree'],
+    ['fetch', 'Fetching latest changes'],
+    ['pull', 'Fetching pull request'],
+    ['setup', 'Setting up the project'],
+    ['models', 'Discovering models'],
+    ['agent', 'Starting the agent'],
+    ['tune', 'Tune'],
+    ['scope-context', 'Scope'],
+    ['scope', 'Scope'],
+    ['maestro', 'Maestro'],
+  ]) {
+    await page.evaluate((id) => {
+      window.preparationSteps = [{ id, label: id, state: 'active' }]
+      window.renderUpdates()
+    }, id)
+    await page
+      .getByText(['Scope', 'Tune', 'Maestro'].includes(name) ? `${name} is working` : name, {
+        exact: true,
+      })
+      .waitFor()
+    await page.waitForFunction(() => window.animationStarts - window.animationStops === 3)
+  }
+  await page.evaluate(() => {
+    window.setAppState('background')
+  })
+  await page.waitForFunction(() => window.animationStarts === window.animationStops)
+  await page.evaluate(() => {
+    window.setAppState('active')
+  })
+  await page.waitForFunction(() => window.animationStarts - window.animationStops === 3)
+  await page.evaluate(() => {
+    window.reduceMotion = true
+    window.renderUpdates()
+  })
+  await page.waitForFunction(() => window.animationStarts === window.animationStops)
+  await page.getByText('Maestro is working', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.reduceMotion = false
+    window.preparationFailed = true
+    window.preparationSteps = [
+      { id: 'maestro', label: 'Maestro is choosing a model', state: 'failed' },
+    ]
+    window.renderUpdates()
+  })
+  await page.getByText('Maestro stopped', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.animationStarts - window.animationStops), 0)
   await page.evaluate(() => window.unmount())
   assert.equal(await page.evaluate(() => window.animationStarts - window.animationStops), 0)
   await page.waitForFunction(() => window.activityDisposals === 1)
   assert.equal(await page.evaluate(() => window.controllers), 1)
-  assert.equal(await page.evaluate(() => window.pollStops), 4)
-  assert.equal(await page.evaluate(() => window.stops), 2)
+  assert.equal(await page.evaluate(() => window.pollStops), 5)
+  assert.equal(await page.evaluate(() => window.stops), 3)
   assert.deepEqual(errors, [])
   console.log(
     'Mobile energy: unchanged streams produce no widget writes; background timers, animations and terminals stop; foreground resumes promptly; disabling widgets and activities stops their work and re-enabling restores the latest state.',

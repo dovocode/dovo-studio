@@ -1,0 +1,46 @@
+import { Schema } from 'effect'
+import { maxValue, minValue, mutableStruct, refine, strictStruct } from '../shared/schema.js'
+import { taskSchema, turnSettingsSchema } from '../workspace.js'
+import { startsCleanDraft } from './task-message.js'
+import { threadActionSchema, threadPrepareCommandSchema } from './thread-actions.js'
+
+const id = maxValue(minValue(Schema.String, 1), 200)
+
+export const threadPrepareRequestSchema = strictStruct({
+  taskId: id,
+  parentRunId: id,
+  command: threadPrepareCommandSchema,
+})
+
+/** `POST /api/thread-actions/send`, paired human clients only.
+ *
+ * `createTask` is a thread-start draft (same rules as `/api/tasks/message` `createTask`) in the
+ * source thread's project. `text` is the edited prompt; `messageId` is its message id. Keep
+ * the whole body for retries after a lost response. Once an action is sent, every later
+ * request returns that sent action and starts nothing. */
+export const threadActionSendSchema = refine(
+  strictStruct({
+    sourceTaskId: id,
+    actionId: id,
+    messageId: id,
+    createTask: taskSchema,
+    text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120000),
+    turnSettings: Schema.optional(turnSettingsSchema),
+  }),
+  (input) =>
+    startsCleanDraft(input.createTask) &&
+    input.createTask.id !== input.sourceTaskId &&
+    !input.createTask.linkedCheckouts?.length,
+  'An action starts a new empty draft without linked projects or runtime state',
+)
+export type ThreadActionSend = Schema.Schema.Type<typeof threadActionSendSchema>
+/** `POST /api/thread-actions/dismiss`, paired human clients only. A sent action stays sent. */
+export const threadActionDismissSchema = strictStruct({ sourceTaskId: id, actionId: id })
+export type ThreadActionDismiss = Schema.Schema.Type<typeof threadActionDismissSchema>
+/** Same cursor meaning as thread-start acknowledgements. */
+export const threadActionResultSchema = mutableStruct({
+  action: threadActionSchema,
+  revision: Schema.Number,
+  runtimeInstanceId: Schema.String,
+})
+export type ThreadActionResult = Schema.Schema.Type<typeof threadActionResultSchema>

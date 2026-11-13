@@ -36,6 +36,7 @@ const keptHere = 'Provider sessions and credentials stay on this computer.'
 
 /** The runtime rejects these moves; say why before the user configures a transfer. */
 function machineMoveBlocker(task: Task, repository: Repository | undefined) {
+  if (task.bot) return 'Bots stay on their home computer to keep their memory and identity.'
   if (!repository || repository.kind === 'scratch')
     return 'Threads without a project folder stay on this computer.'
   const links = [

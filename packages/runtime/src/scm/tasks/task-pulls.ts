@@ -48,7 +48,10 @@ const same = (a: PullStatus | undefined, b: PullStatus) =>
   JSON.stringify(a.failedChecks ?? []) === JSON.stringify(b.failedChecks ?? []) &&
   JSON.stringify(a.stack) === JSON.stringify(b.stack)
 /** GitHub REST uses owner:branch labels, unlike the checkout's plain branch name. */
-function matchesBranch(pull: { head: string; url: string }, branch: string | undefined) {
+export function pullMatchesCheckoutBranch(
+  pull: { head: string; url: string },
+  branch: string | undefined,
+) {
   if (!branch) return false
   if (pull.head === branch) return true
   const colon = pull.head.indexOf(':')
@@ -150,7 +153,7 @@ export class TaskPullWatcher {
         // A bare number from a different checkout cannot attach or settle this thread.
         if (
           !reference.url &&
-          !matchesBranch(detail.pull, task.checkoutBranch) &&
+          !pullMatchesCheckoutBranch(detail.pull, task.checkoutBranch) &&
           !taskPullLinks(task).some((link) => link.url === detail.pull.url)
         )
           continue
@@ -167,7 +170,7 @@ export class TaskPullWatcher {
         this.attach(task, detail.pull)
         if (
           closed.length &&
-          (!task.checkoutBranch || matchesBranch(detail.pull, task.checkoutBranch)) &&
+          (!task.checkoutBranch || pullMatchesCheckoutBranch(detail.pull, task.checkoutBranch)) &&
           taskPullLinks(this.s.store.taskSummary(taskId)).some(
             (link) => link.url === detail.pull.url,
           )
@@ -516,16 +519,20 @@ export class TaskPullWatcher {
         if (task.checkoutBranch && !task.pullRequest && !task.pullStatus?.number)
           while (
             open.hasMore &&
-            !open.pulls.some((pull) => matchesBranch(pull, task.checkoutBranch))
+            !open.pulls.some((pull) => pullMatchesCheckoutBranch(pull, task.checkoutBranch))
           ) {
             const next = await this.s.pullCache.list(repo.path, 'open', open.page + 1, force, true)
             open = { ...next, pulls: [...open.pulls, ...next.pulls] }
             openPulls.set(repo.path, open)
             if (!next.pulls.length) break
           }
-        const branchMatches = open.pulls.filter((pull) => matchesBranch(pull, task.checkoutBranch))
+        const branchMatches = open.pulls.filter((pull) =>
+          pullMatchesCheckoutBranch(pull, task.checkoutBranch),
+        )
         const byBranch = branchMatches.length === 1 ? branchMatches[0] : undefined
-        const mentionedBranch = mentioned.filter((pull) => matchesBranch(pull, task.checkoutBranch))
+        const mentionedBranch = mentioned.filter((pull) =>
+          pullMatchesCheckoutBranch(pull, task.checkoutBranch),
+        )
         const number =
           task.pullRequest?.number ??
           byBranch?.number ??
@@ -574,7 +581,7 @@ export class TaskPullWatcher {
             !detail.stale &&
             !detail.refreshError &&
             (!!task.pullRequest ||
-              matchesBranch(detail.pull, task.checkoutBranch) ||
+              pullMatchesCheckoutBranch(detail.pull, task.checkoutBranch) ||
               commandPull?.url === detail.pull.url)
           this.attach(task, detail.pull)
           const outcomes = detail.checks.map((check) => ({
@@ -633,6 +640,8 @@ export class TaskPullWatcher {
           return (
             !!latest &&
             !latest.delegation &&
+            // Bots are persistent; a merged PR never settles or archives them.
+            !latest.bot &&
             !latest.archivedAt &&
             latest.repositoryId === task.repositoryId &&
             latest.checkoutBranch === task.checkoutBranch &&

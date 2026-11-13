@@ -85,6 +85,98 @@ export function taskPreparation(task: Task): TaskPreparation | undefined {
   }
 }
 
+/** Activity feedback follows the runtime's active step, including checkout preparation. */
+export function preparationActivity(preparation: TaskPreparation) {
+  const step = preparation.steps.find((step) => step.state === 'active' || step.state === 'failed')
+  if (!step) return undefined
+  switch (step.id) {
+    case 'tune':
+      return {
+        id: 'tune',
+        title: 'Tune is working',
+        stopped: 'Tune stopped',
+        description: 'Choosing a model for your message',
+      } as const
+    case 'maestro':
+      return {
+        id: 'maestro',
+        title: 'Maestro is working',
+        stopped: 'Maestro stopped',
+        description: 'Choosing an agent and model for your message',
+      } as const
+    case 'scope-context':
+      return {
+        id: 'scope',
+        title: 'Scope is working',
+        stopped: 'Scope stopped',
+        description: 'Reviewing available projects',
+      } as const
+    case 'scope':
+      return {
+        id: 'scope',
+        title: 'Scope is working',
+        stopped: 'Scope stopped',
+        description: 'Choosing projects for your message',
+      } as const
+    case 'worktree':
+      return {
+        id: 'worktree',
+        title: 'Creating worktree',
+        stopped: 'Worktree creation stopped',
+        description: 'Preparing a separate checkout for this thread',
+      } as const
+    case 'restore':
+      return {
+        id: 'restore',
+        title: 'Restoring worktree',
+        stopped: 'Worktree restore stopped',
+        description: 'Restoring the checkout for this thread',
+      } as const
+    case 'fetch':
+      return {
+        id: 'fetch',
+        title: 'Fetching latest changes',
+        stopped: 'Fetch stopped',
+        description: 'Checking origin before the checkout starts',
+      } as const
+    case 'pull':
+      return {
+        id: 'pull',
+        title: 'Fetching pull request',
+        stopped: 'Pull request fetch stopped',
+        description: 'Preparing the pull request branch',
+      } as const
+    case 'setup':
+      return {
+        id: 'setup',
+        title: 'Setting up the project',
+        stopped: 'Project setup stopped',
+        description: 'Running the configured setup command',
+      } as const
+    case 'models':
+      return {
+        id: 'models',
+        title: 'Discovering models',
+        stopped: 'Model discovery stopped',
+        description: 'Checking models available to this agent',
+      } as const
+    case 'agent':
+      return {
+        id: 'agent',
+        title: 'Starting the agent',
+        stopped: 'Agent startup stopped',
+        description: 'Passing your message to the selected agent',
+      } as const
+    default:
+      return {
+        id: 'other',
+        title: step.label,
+        stopped: `${step.label} stopped`,
+        description: 'Preparing this thread',
+      } as const
+  }
+}
+
 /** Seconds spent on the active step, e.g. "12s" or "2m 05s"; empty for the first few
  * seconds or an unreadable time. Clock skew between devices never shows a negative time. */
 export function preparationElapsed(startedAt: string, now = Date.now()) {

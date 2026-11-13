@@ -130,6 +130,25 @@ it('selects one reachable copy and prefers the owning runtime while keeping dist
   expect([
     ...preferredThreadCopies([source('owner', false, [original]), source('other', false, [copy])]),
   ]).toEqual([original])
+  // A cached Bot original wins over a plain copy an earlier build shared, also while its home
+  // runtime is offline; ordinary threads keep the reachable-copy rule above.
+  const bot = {
+    ...original,
+    bot: {
+      role: 'Helper',
+      responsibilities: '',
+      state: 'active' as const,
+      revision: '00000000-0000-4000-8000-000000000000',
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    },
+  }
+  expect([
+    ...preferredThreadCopies([source('owner', false, [bot]), source('other', true, [copy])]),
+  ]).toEqual([bot])
+  expect([
+    ...preferredThreadCopies([source('other', true, [copy]), source('owner', true, [bot])]),
+  ]).toEqual([bot])
 })
 it('deterministically resolves concurrent field edits and retains both versions', async () => {
   const open = (replicaId: string) =>

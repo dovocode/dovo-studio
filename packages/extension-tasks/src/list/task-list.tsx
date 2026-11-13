@@ -148,6 +148,7 @@ export function TaskList({
   const scopeMatches = useMemo(
     () => (entry: TaskEntry) =>
       !entry.task.archivedAt &&
+      !entry.task.bot &&
       (!environment || JSON.stringify(entry.source.runtimeId) === environment) &&
       (!projectId ||
         entry.projectKey === projectId ||
@@ -161,21 +162,25 @@ export function TaskList({
   )
   const threadTree = useMemo(
     () =>
-      retainThreadTree(allEntries, scopeMatches, {
-        runtimeIds: new Map(
-          sources.flatMap((source) =>
-            source.snapshot?.runtimeId
-              ? [[source.snapshot.runtimeId, source.runtimeId] as const]
-              : [],
+      retainThreadTree(
+        allEntries.filter((entry) => !entry.task.bot),
+        scopeMatches,
+        {
+          runtimeIds: new Map(
+            sources.flatMap((source) =>
+              source.snapshot?.runtimeId
+                ? [[source.snapshot.runtimeId, source.runtimeId] as const]
+                : [],
+            ),
           ),
-        ),
-        includeSnapshot: (child) =>
-          (!environment || JSON.stringify(child.runtimeId) === environment) &&
-          (!projectId ||
-            JSON.stringify([child.runtimeId, child.repositoryId]) === projectId ||
-            (projectId === 'scratch' && child.projectKind === 'scratch') ||
-            (!!child.projectIdentity && `git:${child.projectIdentity}` === projectId)),
-      }),
+          includeSnapshot: (child) =>
+            (!environment || JSON.stringify(child.runtimeId) === environment) &&
+            (!projectId ||
+              JSON.stringify([child.runtimeId, child.repositoryId]) === projectId ||
+              (projectId === 'scratch' && child.projectKind === 'scratch') ||
+              (!!child.projectIdentity && `git:${child.projectIdentity}` === projectId)),
+        },
+      ),
     [allEntries, retainThreadTree, scopeMatches, sources, environment, projectId],
   )
   const entries = threadTree.roots
@@ -339,6 +344,7 @@ export function TaskList({
     const needle = deferredQuery.toLowerCase()
     return (
       entries
+        .filter((entry) => !entry.task.bot)
         // Never-started side chat drafts live in their parent's side chats; search still finds them.
         .filter((entry) => !!needle || entry.key === selectedId || !hiddenSideDraft(entry))
         .filter(

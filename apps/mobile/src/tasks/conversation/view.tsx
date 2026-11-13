@@ -1,3 +1,4 @@
+import { ThreadActionCards } from './components/thread-actions'
 import { useMessageReveal, consumeMessageReveal } from './message-reveal'
 import { FailedTaskRetry } from './components/failed-task-retry'
 import { useForegroundInterval } from '../../runtime/state/app-active'
@@ -91,6 +92,10 @@ const checkpointSchema = mutableStruct({
   omitted: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   error: Schema.optional(Schema.String),
 })
+function ConversationThreadActions({ messageId }: { messageId?: string }) {
+  const task = useConversationSelector((value) => value.task)
+  return <ThreadActionCards task={task} messageId={messageId} />
+}
 function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
   const taskId = useConversationSelector((value) => value.task.id)
   const setAttaching = useConversationSelector((value) => value.actions.setAttaching)
@@ -868,6 +873,7 @@ export function Conversation({
         }}
       >
         {renderConversationMessage({ item })}
+        <ConversationThreadActions messageId={item} />
       </View>
     ),
     [scheduleRestore, capture],
@@ -1060,16 +1066,24 @@ export function Conversation({
               emptyDraft ? (
                 // FlatList applies its inversion and measurement props to this native view.
                 <View style={{ flex: 1 }}>
-                  <TaskEmptyState
-                    startModes={startModes}
-                    projectName={project?.kind !== 'scratch' ? project?.name : undefined}
-                  />
+                  {task.bot ? (
+                    <View style={{ gap: 8, padding: 16 }}>
+                      <Text style={styles.title}>{task.title}</Text>
+                      <Text>{task.bot.role}</Text>
+                      <Text>Send a message to this Bot to start work.</Text>
+                    </View>
+                  ) : (
+                    <TaskEmptyState
+                      startModes={startModes}
+                      projectName={project?.kind !== 'scratch' ? project?.name : undefined}
+                    />
+                  )}
                 </View>
               ) : undefined
             }
             ListFooterComponent={
               <View style={{ padding: 12, minHeight: 44, alignItems: 'center' }}>
-                {task.autoProjectFallback && (
+                {!task.bot && task.autoProjectFallback && (
                   <Text style={[styles.muted, { fontSize: 12 }]}>
                     Scope found no matching project; continued without a project.
                   </Text>
@@ -1097,6 +1111,7 @@ export function Conversation({
                   gap: 10,
                 }}
               >
+                <ConversationThreadActions />
                 {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
                 <TaskApprovals taskId={task.id} />
                 {(task.error || task.status === 'failed') && <FailedTaskRetry task={task} />}

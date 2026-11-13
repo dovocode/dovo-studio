@@ -7,6 +7,7 @@ import {
   Pin,
   SquareTerminal,
   MessageSquare,
+  Bot,
   type LucideIcon,
 } from 'lucide-react'
 import type { Task } from '@dovo/studio-core'
@@ -218,7 +219,7 @@ export const WorkspaceThreadRow = memo(function WorkspaceThreadRow({
       )}
     >
       <TaskRow
-        titleIcon={<KindMark icon={MessageSquare} />}
+        titleIcon={<KindMark icon={task.bot ? Bot : MessageSquare} />}
         task={task}
         owner={owner}
         selected={selected}

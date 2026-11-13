@@ -218,3 +218,32 @@ it('mixes page visits and latest prompts across computers, without moving on str
   owners[1].snapshot!.workspace.tasks[0].updatedAt = '2026-11-10T00:00:00Z'
   expect(titles()).toEqual(['new', 'page', 'old', 'new shell', 'old shell'])
 })
+
+it('keeps each Bot as one persistent thread row with its identity and paused state', () => {
+  const owner = computer()
+  const bot = decode(taskSchema, {
+    ...task,
+    status: 'done',
+    title: 'Release assistant',
+    bot: {
+      role: 'Release lead',
+      responsibilities: 'Check releases',
+      state: 'paused',
+      revision: '11111111-1111-4111-8111-111111111111',
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    },
+  })
+  owner.snapshot!.workspace.tasks = [bot]
+  owner.snapshot!.runs = []
+  const threads = workspaceItems([owner], [], now).filter((item) => item.kind === 'thread')
+  expect(threads).toHaveLength(1)
+  expect(threads[0]).toMatchObject({
+    title: 'Release assistant',
+    status: 'Paused',
+    runtimeId: owner.profile.id,
+    key: JSON.stringify(['thread', owner.profile.id, bot.id]),
+  })
+  expect(threads[0].detail).toContain('Bot · Release lead')
+  expect(threads[0].detail).not.toContain('Project')
+})

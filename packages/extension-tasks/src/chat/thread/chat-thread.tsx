@@ -1,3 +1,5 @@
+import { ThreadActionCard } from './thread-action-card'
+import { botScope } from '../../bots/bot-scope'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { selectConversationConnection } from './workspace-selection'
 import {
@@ -670,6 +672,20 @@ export function ChatThread({
                                     onTerminal={onTerminal}
                                     onBookmark={history.setBookmark}
                                   />
+                                  {fullTask?.threadActions
+                                    ?.filter((action) => {
+                                      const anchor = task.messages
+                                        .filter((item) => item.turnId === action.runId)
+                                        .at(-1)
+                                      return anchor?.id === message.id
+                                    })
+                                    .map((action) => (
+                                      <ThreadActionCard
+                                        key={`${botScope(activeRuntimeId, connection)}:${action.id}`}
+                                        task={fullTask}
+                                        action={action}
+                                      />
+                                    ))}
                                 </Fragment>
                               )
                             })}
@@ -694,6 +710,17 @@ export function ChatThread({
                   </section>
                 ))}
               </div>
+              {fullTask?.threadActions
+                ?.filter(
+                  (action) => !task.messages.some((message) => message.turnId === action.runId),
+                )
+                .map((action) => (
+                  <ThreadActionCard
+                    key={`${botScope(activeRuntimeId, connection)}:${action.id}`}
+                    task={fullTask}
+                    action={action}
+                  />
+                ))}
               <TaskActivity
                 tools={activityGroups.unassigned}
                 working={

@@ -29,3 +29,17 @@ it('redacts Basic authorization, API key headers and quoted embedded JSON withou
   expect(redactCredentialText(redacted)).toBe(redacted)
   expect(redactCredentialText('token count: 12 exitCode=1')).toBe('token count: 12 exitCode=1')
 })
+
+it('bounds and redacts an optional component stack without truncating the error', () => {
+  const stack =
+    '\n at View (https://user:pass@host/view?token=query-secret#hash) Bearer credential password="stack-secret"\n' +
+    'x'.repeat(3000)
+  const value = clientDiagnostic('Original failure', { viewId: 'tasks' }, stack)
+  expect(value.error).toBe('Original failure')
+  expect(value.componentStack).toHaveLength(2000)
+  expect(value.componentStack).toContain('at View (https://host/view')
+  for (const secret of ['user:pass', 'query-secret', '#hash', 'credential', 'stack-secret'])
+    expect(value.componentStack).not.toContain(secret)
+  expect(clientDiagnostic('failure')).not.toHaveProperty('componentStack')
+  expect(clientDiagnostic('failure', {}, null)).not.toHaveProperty('componentStack')
+})

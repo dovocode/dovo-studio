@@ -8,6 +8,8 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise the real route, startup controller, creation runtime and TaskDetail. Native
 // controls/conversation content are boundaries; their mount counts expose page replacement.
 const mocks = {
+  // Bot settings has its own real-component suite. Normal chat startup does not open it.
+  '../../bots/bot-settings': 'export const BotSettings=()=>null;',
   // Native handoff controls have their own desktop/mobile browser suite.
   './continue-elsewhere': 'export const ContinueElsewhere=()=>null;',
   './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
@@ -88,8 +90,7 @@ const mocks = {
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>!!window.carMode;`,
   '../../shell/navigation': `import {createContext,useContext} from 'react';export const FocusContext=createContext(true);export const useNavigation=()=>({focused:useContext(FocusContext),navigate:()=>{}});`,
-  '../../shell/use-route-computer': `export const useRouteComputer=()=>({error:'',retry:()=>{}});`,
-  '../../ui/content/text': `export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;`,
+  '../../ui/content/text': `export const Text=({children,accessibilityLabel,accessibilityRole})=><span role={accessibilityRole} aria-label={accessibilityLabel}>{children}</span>;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
@@ -198,6 +199,9 @@ mocks['../../ui/controls/field'] =
   'export const Field=({label,value,onChangeText,editable})=> <textarea aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;'
 
 const mobileRequire = createRequire(root + 'apps/mobile/package.json')
+mocks['../runtime/connection/provider'] = `export * from '../../runtime/connection/provider';`
+mocks['../runtime/state/application-state'] = mocks['../../runtime/state/application-state']
+mocks['./navigation'] = `export * from '../../shell/navigation';`
 const built = await build({
   alias: {
     react: mobileRequire.resolve('react'),
@@ -205,7 +209,7 @@ const built = await build({
   },
   stdin: {
     contents: `
-      import {useState} from 'react';
+      import {useCallback,useState} from 'react';
       import {createRoot} from 'react-dom/client';
       import {Effect} from 'effect';
       import {createRuntimeReadCache,writeRuntimeSnapshotCache,decode,snapshotSchema,taskSchema} from '@dovo/protocol';
@@ -213,7 +217,7 @@ const built = await build({
       import {RouteContext} from 'expo-router';
       import {FocusContext} from '../../shell/navigation';
       import {NewTaskScreen,TaskRouteScreen} from './src/tasks/detail/task-route-screen';
-      window.requests=[];window.navigation=[];window.watches=[];window.failure='';
+      window.requests=[];window.navigation=[];window.watches=[];window.failure='';window.ownerRefreshes=[];
       window.editorMounts=0;window.editorUnmounts=0;window.providerMounts=0;window.providerUnmounts=0;
       window.caches={};window.cacheReads=0;
       const entries=new Map();
@@ -241,6 +245,7 @@ const built = await build({
       function App(){
         const [route,setRoute]=useState({href:'/new',params:{},key:0});
         const [activeId,setActiveId]=useState('a');
+        const [recovering,setRecovering]=useState(false);window.setPairingRecovery=setRecovering;
         const [online,setOnline]=useState(true);
         const [focused,setFocused]=useState(true);window.setFocused=setFocused;
         const [snapshots,setSnapshots]=useState(Object.fromEntries(profiles.map(p=>[p.id,{
@@ -255,7 +260,7 @@ const built = await build({
         window.online=setOnline;
         window.clearSnapshots=()=>setSnapshots(saved=>{window.snapshotBackup=saved;return {a:null,b:null}});
         window.restoreSnapshots=()=>setSnapshots(window.snapshotBackup);
-        window.selectRuntime=setActiveId;
+        window.selectRuntime=setActiveId;window.globalActiveId=activeId;
         window.setLinkedProject=(present)=>setSnapshots(s=>({...s,a:{...s.a,workspace:{...s.a.workspace,repositories:[s.a.workspace.repositories[0],...(present?[{id:'repo',name:'Linked project',path:'/linked',branch:'main'}]:[])]}}}));
         window.makeGit=(runtimeId,kind)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind}))}}}));
         const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id],unauthorized:window.pairingRejected}));
@@ -269,7 +274,9 @@ const built = await build({
           if(window.failAttachment&&path==='/api/attachments/upload'){window.failAttachment=false;throw Error('Upload failed')}
           return {ok:true};
         },catch:error=>error});
-        const runtime={ready:true,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,call:(...args)=>Effect.runPromise(request(activeId,...args)),readEffect:(...args)=>request(activeId,...args),callEffect:(...args)=>request(activeId,...args),readCache:window.caches[activeId]??null,refresh:async()=>{if(window.holdRefresh)await new Promise((resolve,reject)=>window.finishRefresh={resolve,reject});if(window.failRefresh)throw Error('Computer unavailable')}};
+        const selectRuntimeEffect=useCallback(id=>Effect.tryPromise({try:async()=>{(window.selectionAttempts??=[]).push(id);if(window.holdSelection)await new Promise(resolve=>window.finishSelection=resolve);if(window.failSelection)throw Error('Secure storage unavailable');setActiveId(id)},catch:error=>error}),[]);
+        const refreshRuntime=useCallback(async profile=>{window.ownerRefreshes.push(profile.id);if(window.scopeRefreshTask)setSnapshots(s=>({...s,[profile.id]:{...s[profile.id],detailTaskIds:[window.scopeRefreshTask.id],workspace:{...s[profile.id].workspace,tasks:[window.scopeRefreshTask]}}}))},[]);
+        const runtime={ready:true,recovering,selectRuntimeEffect,refreshRuntime,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,call:(...args)=>Effect.runPromise(request(activeId,...args)),readEffect:(...args)=>request(activeId,...args),callEffect:(...args)=>request(activeId,...args),readCache:window.caches[activeId]??null,refresh:async()=>{if(window.holdRefresh)await new Promise((resolve,reject)=>window.finishRefresh={resolve,reject});if(window.failRefresh)throw Error('Computer unavailable')}};
         return <FocusContext.Provider value={focused}><RuntimeContext.Provider value={runtime}><RouteContext.Provider value={route.params}>
           {route.href==='/new'?<NewTaskScreen key={route.key}/>:<TaskRouteScreen key={route.key}/>}
         </RouteContext.Provider></RuntimeContext.Provider></FocusContext.Provider>;
@@ -1009,6 +1016,147 @@ try {
     await page.evaluate(() => window.task.id),
   )
   assert.equal(await page.getByRole('button', { name: /Back to parent ·/ }).count(), 0)
+  // A cold cross-computer route renders cached history and the composer while
+  // the real route-selection hook is still waiting for secure storage.
+  await page.evaluate(() => {
+    window.holdSelection = true
+    window.selectRuntime('a')
+    const task = {
+      ...window.task,
+      id: 'cold-owner-thread',
+      title: 'Cold owner thread',
+      draft: 'Owner draft',
+      messages: [{ id: 'owner-history', role: 'assistant', text: 'Owner cached history' }],
+    }
+    window.publish('a', { ...task, draft: 'Wrong computer draft', messages: [] })
+    window.publish('b', task)
+    window.online(false)
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: task.id } })
+  })
+  await page.waitForFunction(() => !!window.finishSelection)
+  await page.getByText('Owner cached history', { exact: true }).waitFor({ timeout: 2000 })
+  assert.equal(await input.inputValue(), 'Owner draft')
+  assert.equal(await page.evaluate(() => window.runtimeId), 'b')
+  await input.fill('Draft written before selection saved')
+  const mountedEditor = await input.elementHandle()
+  await page.evaluate(() => {
+    window.holdSelection = false
+    window.finishSelection()
+  })
+  await page.waitForFunction(() => window.globalActiveId === 'b')
+  assert.equal(await mountedEditor.evaluate((element) => element.isConnected), true)
+  assert.equal(await input.inputValue(), 'Draft written before selection saved')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.waitForFunction(() => window.requests.at(-1)?.input?.id === 'cold-owner-thread')
+  assert.equal(await page.evaluate(() => window.requests.at(-1).runtimeId), 'b')
+  await page.evaluate(() => {
+    window.failSelection = true
+    window.selectRuntime('a')
+  })
+  await page
+    .getByRole('alert')
+    .filter({ hasText: 'Could not save the selected computer' })
+    .waitFor()
+  assert.equal(await input.inputValue(), 'Draft written before selection saved')
+  assert.equal(await mountedEditor.evaluate((element) => element.isConnected), true)
+  await page.evaluate(() => {
+    window.failSelection = false
+  })
+  await page.getByRole('button', { name: 'Retry saving computer', exact: true }).click()
+  await page.waitForFunction(() => window.globalActiveId === 'b')
+  assert.equal(
+    await page.getByRole('button', { name: 'Retry saving computer', exact: true }).count(),
+    0,
+  )
+  assert.equal(await mountedEditor.evaluate((element) => element.isConnected), true)
+  assert.equal(await input.inputValue(), 'Draft written before selection saved')
+  console.log(
+    'Cold cross-computer route: cached history and composer usable before selected-computer storage finishes; owner-bound edits and draft preserved.',
+  )
+  await page.evaluate(() => {
+    window.holdSelection = true
+    window.finishSelection = undefined
+    window.selectRuntime('a')
+    const task = {
+      ...window.task,
+      id: 'uncached-history',
+      draft: 'Uncached thread draft',
+      messages: [
+        { id: 'fresh-history', role: 'assistant', text: 'History from the thread computer' },
+      ],
+    }
+    window.setPairingRecovery(true)
+    window.scopeRefreshTask = task
+    window.ownerRefreshes = []
+    window.publish('b', { ...task, messages: [] }, false)
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: task.id } })
+  })
+  await page.waitForFunction(() => !!window.finishSelection)
+  assert.deepEqual(
+    await page.evaluate(() => window.ownerRefreshes),
+    [],
+    'Thread fetch must wait for pairing recovery before using saved credentials',
+  )
+  await page.evaluate(() => window.setPairingRecovery(false))
+  await page
+    .getByText('History from the thread computer', { exact: true })
+    .waitFor({ timeout: 2000 })
+  assert.deepEqual(await page.evaluate(() => window.ownerRefreshes), ['b'])
+  assert.equal(await page.evaluate(() => window.globalActiveId), 'a')
+  assert.equal(await input.inputValue(), 'Uncached thread draft')
+  await page.evaluate(() => {
+    window.holdSelection = false
+    window.finishSelection()
+  })
+  await page.waitForFunction(() => window.globalActiveId === 'b')
+  assert.equal(await input.inputValue(), 'Uncached thread draft')
+  console.log('Uncached cross-computer history loads before the selected-computer save finishes.')
+  await page.evaluate(() => {
+    const bot = {
+      ...window.task,
+      id: 'lasting-bot-route',
+      title: 'Lasting Bot',
+      status: 'done',
+      draft: 'Bot human draft',
+      messages: [{ id: 'bot-history', role: 'assistant', text: 'Bot saved conversation' }],
+      bot: {
+        role: 'Release lead',
+        responsibilities: 'Check releases',
+        state: 'paused',
+        revision: '11111111-1111-4111-8111-111111111111',
+        createdAt: '2026-11-12T00:00:00Z',
+        updatedAt: '2026-11-12T00:00:00Z',
+      },
+    }
+    window.scopeRefreshTask = undefined
+    window.publish('b', bot)
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: bot.id } })
+  })
+  await page.getByText('Bot saved conversation', { exact: true }).waitFor()
+  await page
+    .getByText('Release lead · Paused. New messages stay queued until you resume.', { exact: true })
+    .waitFor()
+  for (const name of [
+    'Thread info',
+    'Linked projects',
+    'Edit project instructions',
+    'Project approval rules',
+    'Regenerate title',
+    'Continue elsewhere',
+  ])
+    assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0)
+  assert.equal(await input.inputValue(), 'Bot human draft')
+  await input.fill('Human edited Bot draft')
+  assert.equal(await input.inputValue(), 'Human edited Bot draft')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((request) => request.path === '/api/bots/create').length,
+    ),
+    0,
+  )
+  console.log(
+    'Mobile Bot route: real thread history, paused identity and composer drafts use the owning runtime without creating work.',
+  )
   await page.evaluate(async () => {
     await Promise.all(Object.values(window.caches).map((cache) => cache.close()))
   })

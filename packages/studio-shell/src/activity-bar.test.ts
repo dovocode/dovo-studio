@@ -62,6 +62,19 @@ it('shows accessible section dots without changing the navigation label', () => 
   expect(html.match(/class="studio-navigation-notification"/g)).toHaveLength(2)
 })
 
+it('keeps Bots in the workspace group and available when normal modes are hidden', () => {
+  const bots = view('bots', 'Bots', 'agents')
+  expect(groups([standalone[0]!, bots, ...standalone.slice(1)])).toEqual([
+    ['Threads', 'Bots', 'Browser', 'Terminals'],
+  ])
+  expect(
+    workspaceModeVisible('bots', {
+      unifiedWorkspaceEnabled: true,
+      unifiedWorkspaceHideNormalModes: true,
+    }),
+  ).toBe(true)
+})
+
 it('hides only the normal modes, and only while unified is on', () => {
   const all = [
     view('workspace', 'Workspace', 'workspace'),

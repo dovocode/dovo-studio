@@ -1,5 +1,6 @@
 export const collectionPaths = {
   tasks: '/',
+  bots: '/bots',
   issues: '/issues',
   pulls: '/pulls',
   artifacts: '/artifacts',
@@ -18,7 +19,16 @@ export function workbenchRoute(pathname: string) {
     return { tab: 'settings' as const, detail: true }
   const tab: WorkbenchTab =
     (
-      ['issues', 'pulls', 'artifacts', 'browser', 'terminal', 'workspace', 'settings'] as const
+      [
+        'bots',
+        'issues',
+        'pulls',
+        'artifacts',
+        'browser',
+        'terminal',
+        'workspace',
+        'settings',
+      ] as const
     ).find((tab) => path === collectionPaths[tab] || path.startsWith(`${collectionPaths[tab]}/`)) ??
     'tasks'
   return { tab, detail: path !== collectionPaths[tab] }

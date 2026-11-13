@@ -3,17 +3,19 @@ import { GithubEvents } from './github-events.js'
 import type { GitService } from '../scm/git/git.js'
 import { mutableStruct } from '@dovo/protocol'
 import { automationOnceTime, decode, taskFamilyRunToken } from '@dovo/protocol'
+import { botPaused, botPausedMessage } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { CronExpressionParser } from 'cron-parser'
-import { jobRunSchema, type JobRun, type AutomationNode } from '@dovo/protocol'
+import { jobRunSchema, type JobRun, type AutomationNode, type TaskSummary } from '@dovo/protocol'
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
 import { runClientEffect, startPolling } from '@dovo/client-runtime'
 import { WorkspaceStore } from '../storage/workspace.js'
 import { Tasks } from '../agents/tasks/tasks.js'
 import { HttpError, errorMessage } from '../errors.js'
 import { validateAutomation } from './validation.js'
+import { botStepState, botStepTurn } from './bot-step.js'
 import {
   storedRunSchema,
   runSteps,
@@ -33,6 +35,12 @@ function triggerContext(payload: unknown) {
     ? `${text.slice(0, TRIGGER_CONTEXT_LIMIT)}\n… (truncated; ${text.length} characters in total)`
     : text
 }
+/** One stable message per run step attempt, so restarts reconcile instead of resending. */
+export function botStepMessageId(runId: string, nodeId: string, attempt: number) {
+  const hex = createHash('sha256').update(`bot-step:${runId}:${nodeId}:${attempt}`).digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 3) | 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
 export class Jobs {
   revision = 0
   private runs = new Map<string, StoredRun>()
@@ -139,8 +147,41 @@ export class Jobs {
       },
     )
   }
+  /** Thread ids a run started for its own steps. A Bot thread is shared with people and
+   * other routines, so a run claims it only through the exact step message (below). */
+  private ownedTaskIds(run: StoredRun) {
+    const bots = new Set(
+      runSteps(run)
+        .filter((step) => run.flow.nodes.find((node) => node.id === step.nodeId)?.data.botId)
+        .map((step) => step.taskId),
+    )
+    return run.taskIds.filter((id) => !bots.has(id))
+  }
+  /** Whether restart recovery should leave this thread's interrupted turn to automations. For a
+   * Bot, only when the interrupted run took an unfinished routine step's own message. */
   ownsTask(id: string) {
-    return [...this.runs.values()].some((run) => run.taskIds.includes(id))
+    const task = this.store.get().tasks.find((item) => item.id === id)
+    return [...this.runs.values()].some(
+      (run) =>
+        this.ownedTaskIds(run).includes(id) ||
+        (!!task?.bot &&
+          runSteps(run).some(
+            (step) =>
+              step.taskId === id &&
+              step.status !== 'completed' &&
+              !!step.messageId &&
+              this.interruptedBotMessage(task, step.messageId),
+          )),
+    )
+  }
+  /** The Bot's interrupted run is the one that consumed exactly this message. */
+  private interruptedBotMessage(task: TaskSummary, messageId: string) {
+    const history = this.store.task(task.id)
+    const message = history.messages.find((item) => item.id === messageId)
+    if (!message) return false
+    if (!message.turnId) return !!task.runAttempt?.inputMessageIds.includes(messageId)
+    const turn = botStepTurn(history, messageId)
+    return !!turn && turn === history.turns?.at(-1) && task.restartRecovery?.kind === 'turn'
   }
   list(): JobRun[] {
     return [...this.runs.values()]
@@ -227,7 +268,8 @@ export class Jobs {
         run.automationId === automationId &&
         (['running', 'waiting'].includes(run.status) ||
           this.active.has(run.id) ||
-          run.taskIds.some((id) => this.tasks.hasWorkingFamily(id))),
+          // A finished run's Bot step does not own later work in that Bot's thread.
+          this.ownedTaskIds(run).some((id) => this.tasks.hasWorkingFamily(id))),
     )
   }
   startManual(id: string, requestId?: string) {
@@ -299,7 +341,10 @@ export class Jobs {
     if (
       runSteps(reconciled).some(
         (step) =>
-          step.status !== 'completed' && step.taskId && this.tasks.hasWorkingFamily(step.taskId),
+          step.status !== 'completed' &&
+          step.taskId &&
+          !reconciled.flow.nodes.find((node) => node.id === step.nodeId)?.data.botId &&
+          this.tasks.hasWorkingFamily(step.taskId),
       )
     )
       throw new HttpError(409, 'This step is still running in its task. Wait for it to finish.')
@@ -370,6 +415,26 @@ export class Jobs {
   }
   private async stopTask(run: StoredRun) {
     const taskId = runSteps(run).find((step) => step.nodeId === run.currentNodeId)?.taskId
+    const node = run.flow.nodes.find((item) => item.id === run.currentNodeId)
+    if (taskId && node?.data.botId) {
+      // Withdraw this step's own queued message, or stop its own running turn. Other Bot
+      // work, including a person's turn that happens to be running, is never touched.
+      const messageId = runSteps(run).find((step) => step.nodeId === node.id)?.messageId
+      const state = messageId ? this.botStep(taskId, messageId) : undefined
+      if (!messageId || !state) return
+      if (state.kind === 'queued') return this.withdrawBotMessage(taskId, messageId)
+      const active = this.store.get().tasks.find((task) => task.id === taskId)?.activeRunId
+      const own =
+        (state.kind === 'running' && active === state.turn.id) ||
+        (state.kind === 'starting' && state.owned)
+      if (!own || !active) return
+      try {
+        this.tasks.cancel(taskId, active)
+      } catch (error) {
+        if (!(error instanceof HttpError && error.status === 409)) throw error
+      }
+      return
+    }
     if (!taskId || !this.tasks.hasWorkingFamily(taskId)) return
     try {
       const task = this.store.taskSummary(taskId)
@@ -437,6 +502,108 @@ export class Jobs {
       ),
     )
     this.active.set(id, pending)
+  }
+  /** The state of one routine message in its Bot thread, or undefined without the Bot. */
+  private botStep(botId: string, messageId: string) {
+    const summary = this.store.get().tasks.find((task) => task.id === botId)
+    return summary && botStepState(summary, this.store.task(botId), messageId)
+  }
+  /** Post the step objective into a Bot's own thread and wait for exactly that message's
+   * turn. The Bot's current harness, permissions and checkout apply; the node's task
+   * settings do not. Unrelated Bot work (people, other routines, children) neither delays
+   * nor decides this step. */
+  private runBotStep(run: StoredRun, node: AutomationNode, botId: string) {
+    return Effect.gen({ self: this }, function* () {
+      const bot = () => this.store.get().tasks.find((task) => task.id === botId)
+      const attempt = Math.max(
+        1,
+        runSteps(run).find((step) => step.nodeId === node.id)?.attempt ?? 1,
+      )
+      // An earlier attempt interrupted by a restart or an uncertain delivery may still be
+      // queued, running or finished. Adopt it instead of sending the routine twice; a failed
+      // or stopped one is sent again under this attempt's own id.
+      let messageId = botStepMessageId(run.id, node.id, attempt)
+      for (let previous = attempt - 1; previous >= 1; previous--) {
+        const id = botStepMessageId(run.id, node.id, previous)
+        const state = this.botStep(botId, id)
+        if (!state || state.kind === 'missing') continue
+        if (state.kind !== 'failed') messageId = id
+        break
+      }
+      const target = bot()
+      if (!target?.bot || target.archivedAt)
+        return yield* Effect.fail(
+          new HttpError(409, 'The Bot for this step is no longer available'),
+        )
+      const step = runSteps(run).find((item) => item.nodeId === node.id)
+      if (step?.taskId !== botId || step.messageId !== messageId) {
+        const next: StoredRun = {
+          ...updateStep(run, node.id, { taskId: botId, messageId }),
+          taskIds: [...new Set([...run.taskIds, botId])],
+          updatedAt: new Date().toISOString(),
+        }
+        this.save(next)
+      }
+      if (this.botStep(botId, messageId)?.kind === 'missing') {
+        if (botPaused(target)) return yield* Effect.fail(new HttpError(409, botPausedMessage))
+        yield* this.tasks.sendEffect(
+          botId,
+          messageId,
+          run.triggerPayload === undefined
+            ? node.data.objective
+            : `${node.data.objective}\n\nExternal trigger data (event context):\n${triggerContext(run.triggerPayload)}`,
+          [],
+          false,
+          // Like a person's message, a routine continues after a failed turn. A queue that
+          // someone paused on purpose stays paused, and the step reports it.
+          !target.queuePaused || target.status === 'failed',
+          undefined,
+          {
+            kind: 'automation',
+            automationId: run.automationId,
+            runId: run.id,
+            title: run.flow.name.slice(0, 400),
+          },
+        )
+      }
+      for (;;) {
+        if (this.stopping || this.runs.get(run.id)?.status !== 'running') return false
+        const current = bot()
+        if (!current) return yield* Effect.fail(new HttpError(409, 'The Bot was deleted'))
+        const state = this.botStep(botId, messageId)
+        if (!state || state.kind === 'missing')
+          return yield* Effect.fail(
+            new HttpError(409, 'The routine message was removed from the Bot queue'),
+          )
+        if (state.kind === 'completed') return true
+        if (state.kind === 'failed') return yield* Effect.fail(new HttpError(409, state.error))
+        if (state.kind === 'queued') {
+          if (botPaused(current)) {
+            // Never leave held routine work behind a failed step; Retry sends it again.
+            this.withdrawBotMessage(botId, messageId)
+            return yield* Effect.fail(new HttpError(409, botPausedMessage))
+          }
+          if (current.queuePaused && !this.tasks.hasWorkingFamily(botId)) {
+            // The run fails now, so its message must not run later when the queue resumes.
+            this.withdrawBotMessage(botId, messageId)
+            return yield* Effect.fail(
+              new HttpError(
+                409,
+                current.error ?? 'The Bot queue is paused. Resume it, then retry.',
+              ),
+            )
+          }
+        }
+        yield* Effect.sleep('250 millis')
+      }
+    })
+  }
+  private withdrawBotMessage(botId: string, messageId: string) {
+    try {
+      this.tasks.queue.change(botId, 'remove', messageId)
+    } catch (error) {
+      if (!(error instanceof HttpError && [404, 409].includes(error.status))) throw error
+    }
   }
   private createTask(run: StoredRun, node: AutomationNode) {
     let next: StoredRun = run
@@ -508,7 +675,9 @@ export class Jobs {
           waitingNodeId: node.data.kind === 'review' ? node.id : undefined,
         })
         if (node.data.kind === 'review') return
-        if (node.data.kind === 'task') {
+        if (node.data.kind === 'task' && node.data.botId) {
+          if (!(yield* this.runBotStep(run, node, node.data.botId))) return
+        } else if (node.data.kind === 'task') {
           // A deleted thread must not make every retry fail; start the step over instead.
           const existingTask =
             step.taskId && this.store.get().tasks.find((item) => item.id === step.taskId)

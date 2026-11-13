@@ -68,6 +68,9 @@ export function useMoreActions(navigate: StudioNavigation['navigate']): HeaderAc
           },
         ]
       : []),
+    ...(!car && overviews.some((entry) => entry.snapshot?.botsSupported)
+      ? [{ label: 'Bots', icon: 'bot' as const, onPress: () => navigate('bots') }]
+      : []),
     ...(!car
       ? [{ label: 'Issues', icon: 'issues' as const, onPress: () => navigate('issues') }]
       : []),

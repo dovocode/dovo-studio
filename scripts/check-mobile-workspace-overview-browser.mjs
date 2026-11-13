@@ -113,7 +113,7 @@ window.preferences={threadDensity:'compact',threadSectionOrder:['pinned','active
 window.routes=[];window.navigations=[];window.alerts=[];window.updates=[];window.navigation={focused:true,navigate:(...args)=>window.navigations.push(args)};
 const task=decode(taskSchema,{id:'same',title:'Thread A',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-11-04T00:00:00Z',messages:[],files:[],draft:'',example:false,pinned:true});
 const profile=runtimeProfile({address:'http://mac.lan',token:'device-token-private-at-least-32-characters'},'Mac');
-const snapshot=decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[{id:'repo',name:'Project',path:'/project',branch:'main'}],agents:[],automations:[],tasks:[task]},questions:[],approvals:[],terminals:[{id:'same',taskId:'studio:terminals',title:'Shell A',exited:false,repositoryId:'repo',pinned:true},{id:'thread-pty',taskId:'same',title:'Thread PTY',exited:false}],runs:[],devices:[],pendingDevices:[]});
+const snapshot=decode(snapshotSchema,{revision:1,owner:false,botsSupported:true,workspace:{version:1,runtimeAddress:'',repositories:[{id:'repo',name:'Project',path:'/project',branch:'main'}],agents:[],automations:[],tasks:[task]},questions:[],approvals:[],terminals:[{id:'same',taskId:'studio:terminals',title:'Shell A',exited:false,repositoryId:'repo',pinned:true},{id:'thread-pty',taskId:'same',title:'Thread PTY',exited:false}],runs:[],devices:[],pendingDevices:[]});
 window.runtime={profiles:[profile],overviews:[{profile,snapshot,connected:true,lastSeen:null,error:null,pulls:null,pullError:null}],refreshAll:async()=>{},refreshRuntime:async()=>window.publish(),readRuntime:async(_profile,path,input)=>{window.updates.push({owner:_profile.id,path,input});if(path==='/api/terminals/update'){const index=snapshot.terminals.findIndex(item=>item.id===input.id);snapshot.terminals[index]={...snapshot.terminals[index],...(input.pinned!==undefined?{pinned:input.pinned}:{}),...(input.settled!==undefined?{settledAt:input.settled?new Date().toISOString():undefined}:{})};window.runtime.overviews=[{...window.runtime.overviews[0],snapshot:{...snapshot}}];window.publish();return snapshot.terminals[index]}throw Error(path)}};
 function App(){const[mode,setMode]=useState(null);window.showModes=value=>{window.previewModes=true;setMode(value)};const[show,setShow]=useState(true);window.mountOverview=value=>setShow(value);const browser=useBrowserWorkspace();window.setPages=tabs=>browser.change(state=>({...state,tabs,active:tabs[0]?.id??state.active}));window.pages=browser.state.tabs;return mode?<WorkspaceModes mode={mode}/>:show?<WorkspaceOverview unified/>:null};
 createRoot(document.getElementById('app')).render(<WorkspaceViewProvider><BrowserWorkspaceProvider><App/></BrowserWorkspaceProvider></WorkspaceViewProvider>);
@@ -337,12 +337,14 @@ try {
   await page
     .getByRole('button', { name: 'Threads workspace', exact: true })
     .waitFor({ state: 'detached' })
-  assert.equal(await page.getByRole('button').count(), 1)
+  assert.equal(await page.getByRole('button').count(), 2)
+  await page.getByRole('button', { name: 'Bots workspace', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.routes.at(-1)), '/bots')
   await unifiedButton.click()
   assert.equal(await page.evaluate(() => window.preferences.unifiedWorkspaceActive), false)
   await page.evaluate(() => window.showModes('tasks'))
   await page.getByRole('button', { name: 'Threads workspace', exact: true }).waitFor()
-  assert.equal(await page.getByRole('button').count(), 4)
+  assert.equal(await page.getByRole('button').count(), 5)
   await page.evaluate(() => {
     window.preferences.browserWorkspaceEnabled = false
     window.preferences.terminalWorkspaceEnabled = false
@@ -354,7 +356,7 @@ try {
   await page
     .getByRole('button', { name: 'Terminal workspace', exact: true })
     .waitFor({ state: 'detached' })
-  assert.equal(await page.getByRole('button').count(), 2)
+  assert.equal(await page.getByRole('button').count(), 3)
   await page.evaluate(() => {
     window.preferences.unifiedWorkspaceEnabled = false
     window.publish()

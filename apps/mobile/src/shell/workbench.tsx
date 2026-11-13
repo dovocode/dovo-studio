@@ -553,6 +553,7 @@ export function Workbench() {
     })
     return {
       tasks: value('tasks'),
+      bots: value('bots'),
       issues: value('issues'),
       pulls: value('pulls'),
       artifacts: value('artifacts'),
@@ -568,6 +569,7 @@ export function Workbench() {
     const content: Record<string, ReactNode> = {}
     for (const tab of [
       'tasks',
+      'bots',
       'issues',
       'pulls',
       'artifacts',

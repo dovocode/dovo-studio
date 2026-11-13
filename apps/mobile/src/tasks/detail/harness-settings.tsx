@@ -18,7 +18,7 @@ import {
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
 import { resolveScopedAgents, decode } from '@dovo/protocol'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Action } from '../../ui/controls/action'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -40,7 +40,7 @@ import {
 } from '../../agents/permission-policy-controls'
 import { ModelSettings } from '../../agents/model-settings'
 import { useHarnessAvailability } from '../../agents/use-harness-availability'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
@@ -72,6 +72,8 @@ export function HarnessSettings({
   const { styles } = useTheme()
   const [turnError, setTurnError] = useState('')
   const [advanced, setAdvanced] = useState(false)
+  const sheet = useRef<SheetHandle>(null)
+  const completed = useRef(false)
 
   const { snapshot, connected, profile, callEffect, previewTaskEffect } = useRuntime(),
     { act, busy, error } = useAction()
@@ -84,13 +86,26 @@ export function HarnessSettings({
       runClientEffect(callEffect('/api/tasks/continue-harness', input, responses.ok)),
   })
   useEffect(() => {
+    // A completed switch returns to the composer. Do not leave a success panel over input.
+    if (!handoff.notice) {
+      completed.current = false
+      return
+    }
+    if (completed.current) return
+    completed.current = true
+    if (inline) onClose()
+    else sheet.current?.dismiss()
+  }, [handoff.notice, inline, onClose])
+  useEffect(() => {
     // An inline editor must keep its enclosing sheet mounted until saving finishes.
     onBusyChange?.(busy || handoff.busy)
     return () => onBusyChange?.(false)
   }, [busy, handoff.busy, onBusyChange])
   const agents = resolveScopedAgents(
     snapshot?.defaults,
-    snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+    task.bot
+      ? undefined
+      : snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
     snapshot?.workspace.agents ?? [],
   )
   const threadAgent = resolveTaskAgent(task, agents) ?? {
@@ -112,7 +127,7 @@ export function HarnessSettings({
     : selectionTask
   const custom = selection.startsWith('agent:')
   const installations = snapshot?.acpInstallations ?? []
-  const availability = useHarnessAvailability(task.repositoryId, agents)
+  const availability = useHarnessAvailability(task.bot ? undefined : task.repositoryId, agents)
   const choices = taskHarnessChoices(
     pickerTask,
     agents,
@@ -250,7 +265,11 @@ export function HarnessSettings({
                 const next = changeTaskModelSelection(
                   task,
                   value,
-                  snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+                  task.bot
+                    ? undefined
+                    : snapshot?.workspace.repositories.find(
+                        (repo) => repo.id === task.repositoryId,
+                      ),
                   snapshot?.defaults,
                 )
                 yield* previewTaskEffect(
@@ -360,11 +379,6 @@ export function HarnessSettings({
       {!!handoff.error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {handoff.error}
-        </Text>
-      )}
-      {!!handoff.notice && (
-        <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          {handoff.notice}
         </Text>
       )}
       {(turn || (task.modelSelection !== 'auto' && task.modelSelection !== 'smart')) && (
@@ -549,7 +563,12 @@ export function HarnessSettings({
       {content}
     </View>
   ) : (
-    <Sheet title={advanced ? 'Model settings' : 'Agent & model'} onClose={onClose} busy={busy}>
+    <Sheet
+      ref={sheet}
+      title={advanced ? 'Model settings' : 'Agent & model'}
+      onClose={onClose}
+      busy={busy || handoff.busy}
+    >
       {content}
     </Sheet>
   )

@@ -68,6 +68,8 @@ import {
   useWindowDimensions,
 } from 'react-native'
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -104,6 +106,10 @@ type StartupControls = {
   onNewThread: () => void
   onSelectRemote: NonNullable<ComponentProps<typeof Composer>['onSelectRemote']>
 }
+
+const BotSettings = lazy(() =>
+  import('../../bots/bot-settings').then((module) => ({ default: module.BotSettings })),
+)
 
 function threadHasChanges(task: Task, localRepository: boolean) {
   return (
@@ -303,12 +309,12 @@ export function TaskDetail({
     snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
   })
   const subtitle = [
-    projectDisplayName(displayProject, ''),
+    task.bot ? task.bot.role : projectDisplayName(displayProject, ''),
     profiles.length > 1 ? runtimeHost : undefined,
   ]
     .filter(Boolean)
     .join(' · ')
-  const hasProject = !!displayProject && displayProject.kind !== 'scratch'
+  const hasProject = !task.bot && !!displayProject && displayProject.kind !== 'scratch'
   const pendingFileEdit =
     !loaded &&
     !history &&
@@ -421,7 +427,7 @@ function TaskDetailContent({
   const canShare = !!account?.directory && !account.deletionPending
   const [sharingTaskId, setSharingTaskId] = useState<string>()
   const worktreeActions: HeaderAction[] =
-    task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
+    !task.bot && task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
       ? (['reuse', 'fork'] as const).map((mode) => ({
           label: mode === 'reuse' ? 'New thread in this worktree' : 'Fork worktree',
           icon: mode === 'reuse' ? 'chat' : 'changes',
@@ -468,40 +474,41 @@ function TaskDetailContent({
   }, [projectAction.error])
   // Project actions run in the task's terminal on the computer; a worktree needs a first message.
   const actionsReady = !(task.execution === 'worktree' && canChangeTaskCheckout(task))
-  const projectActions: HeaderAction[] = actionsReady
-    ? (
-        snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.actions ??
-        []
-      ).map((action): HeaderAction => ({
-        label: `Run ${action.name}`,
-        group: 'Project',
-        icon: 'terminal',
-        overflow: true,
-        disabled: !connected || projectAction.busy,
-        onPress: () =>
-          Alert.alert(`Run ${action.name}?`, action.command, [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Run',
-              onPress: () =>
-                projectAction.act(() =>
-                  callEffect(
-                    '/api/terminals/run',
-                    { taskId: task.id, command: action.command },
-                    responses.terminal,
-                  ).pipe(
-                    Effect.tap((terminal) =>
-                      Effect.sync(() => {
-                        setTerminalId(terminal.id)
-                        setPane('terminal')
-                      }),
+  const projectActions: HeaderAction[] =
+    !task.bot && actionsReady
+      ? (
+          snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.actions ??
+          []
+        ).map((action): HeaderAction => ({
+          label: `Run ${action.name}`,
+          group: 'Project',
+          icon: 'terminal',
+          overflow: true,
+          disabled: !connected || projectAction.busy,
+          onPress: () =>
+            Alert.alert(`Run ${action.name}?`, action.command, [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Run',
+                onPress: () =>
+                  projectAction.act(() =>
+                    callEffect(
+                      '/api/terminals/run',
+                      { taskId: task.id, command: action.command },
+                      responses.terminal,
+                    ).pipe(
+                      Effect.tap((terminal) =>
+                        Effect.sync(() => {
+                          setTerminalId(terminal.id)
+                          setPane('terminal')
+                        }),
+                      ),
                     ),
                   ),
-                ),
-            },
-          ]),
-      }))
-    : []
+              },
+            ]),
+        }))
+      : []
   const copyConversation = useAction()
   const copyOperation = useRef<AbortController | null>(null)
   useLayoutEffect(() => {
@@ -616,8 +623,9 @@ function TaskDetailContent({
   const inWorktree = task.execution === 'worktree'
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const displayProject = taskDisplayProject(task, snapshot?.workspace.repositories ?? [])
-  const hasProject = !!displayProject && displayProject.kind !== 'scratch'
+  const hasProject = !task.bot && !!displayProject && displayProject.kind !== 'scratch'
   const moveActions: HeaderAction[] =
+    !task.bot &&
     !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind &&
     !canChangeTaskCheckout(task) &&
     !task.pullRequest &&
@@ -654,7 +662,7 @@ function TaskDetailContent({
         ]
       : []
   const continueActions: HeaderAction[] =
-    snapshot?.threadHandoffsSupported && task.status !== 'draft'
+    !task.bot && snapshot?.threadHandoffsSupported && task.status !== 'draft'
       ? [
           {
             label: 'Continue elsewhere',
@@ -687,17 +695,18 @@ function TaskDetailContent({
           },
         ]
       : []
-  const branchActions: HeaderAction[] = branch
-    ? [
-        {
-          label: 'Copy branch name',
-          group: 'Project',
-          icon: 'copy',
-          overflow: true,
-          onPress: () => copied(branch),
-        },
-      ]
-    : []
+  const branchActions: HeaderAction[] =
+    !task.bot && branch
+      ? [
+          {
+            label: 'Copy branch name',
+            group: 'Project',
+            icon: 'copy',
+            overflow: true,
+            onPress: () => copied(branch),
+          },
+        ]
+      : []
   const needsInput =
     snapshot?.secureInputs?.some((q) => q.taskId === task.id) ||
     snapshot?.questions.some((q) => q.taskId === task.id) ||
@@ -709,7 +718,7 @@ function TaskDetailContent({
   })
   // Name the computer only when there is more than one to tell apart.
   const subtitle = [
-    projectDisplayName(displayProject, ''),
+    task.bot ? task.bot.role : projectDisplayName(displayProject, ''),
     profiles.length > 1 ? runtimeHost : undefined,
   ]
     .filter(Boolean)
@@ -800,6 +809,7 @@ function TaskDetailContent({
   }, [focused, native, pane])
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
+  const [botSettings, setBotSettings] = useState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
   const [sideChanges, setSideChanges] = useState(false)
   const [projectInfo, setProjectInfo] = useState(false)
@@ -917,6 +927,16 @@ function TaskDetailContent({
                 }))
                 .concat(
                   [
+                    ...(task.bot
+                      ? [
+                          {
+                            label: 'Bot settings',
+                            icon: 'bot' as const,
+                            group: 'Tools',
+                            onPress: () => setBotSettings(true),
+                          },
+                        ]
+                      : []),
                     {
                       label: 'Thread info',
                       group: 'Project',
@@ -1103,12 +1123,41 @@ function TaskDetailContent({
                   transferActions,
                   continueActions,
                 )
+                .filter(
+                  (action) =>
+                    !task.bot ||
+                    (action.group !== 'Project' &&
+                      ![
+                        'Edit project instructions',
+                        'Project approval rules',
+                        'Regenerate title',
+                      ].includes(action.label)),
+                )
                 .sort((a, b) => {
                   const order = ['Tools', 'Navigate', 'Thread', 'Project', 'Advanced', 'Delete']
                   return order.indexOf(a.group ?? '') - order.indexOf(b.group ?? '')
                 })
         }
       />
+      {!native && !expandedPreview && task.bot && (
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            flexDirection: 'row',
+            gap: 8,
+            alignItems: 'center',
+          }}
+        >
+          <Action label="Bot settings" icon="bot" secondary onPress={() => setBotSettings(true)} />
+          <Text style={{ flex: 1 }}>
+            {task.bot.role}
+            {task.bot.state === 'paused'
+              ? ' · Paused. New messages stay queued until you resume.'
+              : ''}
+          </Text>
+        </View>
+      )}
       {!native && !expandedPreview && parentNavigation}
       {!native && !expandedPreview && (
         <SideThreadActions task={task} onReview={() => setSideChanges(true)} />
@@ -1121,7 +1170,12 @@ function TaskDetailContent({
           onClose={() => setSideChanges(false)}
         />
       )}
-      {projectInfo && !native && (
+      {botSettings && task.bot && (
+        <Suspense fallback={<ActivityIndicator />}>
+          <BotSettings task={task} onClose={() => setBotSettings(false)} />
+        </Suspense>
+      )}
+      {projectInfo && !native && !task.bot && (
         <TaskProjectSheet
           key={`${activeId}:${task.id}`}
           inline={!car}
@@ -1481,7 +1535,7 @@ function TaskDetailContent({
           )}
         </ConversationProvider>
       </View>
-      {transferring && repository && (
+      {transferring && repository && !task.bot && (
         <ProjectTransferDialog
           repository={repository}
           sourceTask={task}
@@ -1531,7 +1585,7 @@ function TaskDetailContent({
           onClose={() => setThreadBehavior(false)}
         />
       )}
-      {linkingProjects && (
+      {linkingProjects && !task.bot && (
         <Sheet title="Linked projects" onClose={() => setLinkingProjects(false)}>
           <LinkedProjects key={task.id} task={task} />
         </Sheet>
