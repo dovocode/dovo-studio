@@ -1408,6 +1408,22 @@ it('keeps an explicitly awake page loaded and unthrottled until the setting is d
   await vi.advanceTimersByTimeAsync(30_000)
   expect(mocks.contents.close).toHaveBeenCalledOnce()
 })
+it('adopts a background startup page without loading it again when Browser opens', async () => {
+  const call = handler()
+  await call(event, {
+    action: 'keep-awake',
+    key: 'shared',
+    url: workspaceShow.url,
+    profileId: 'work',
+    enabled: true,
+  })
+  expect(mocks.contents.loadURL).toHaveBeenCalledOnce()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  const count = mocks.create.mock.calls.length
+  await call(event, { ...workspaceShow, profileId: 'work', keepAwake: true })
+  expect(mocks.create).toHaveBeenCalledTimes(count)
+  expect(mocks.contents.loadURL).toHaveBeenCalledOnce()
+})
 it.each([
   'https://teams.microsoft.com/v2/',
   'https://outlook.office.com/mail/',

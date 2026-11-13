@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./browser-startup": "./src/browser/browser-startup.tsx",
     "./thread-share": "./src/thread-share.tsx",
     "./approval-details": "./src/chat/actions/approval-details.tsx",
     "./terminal-session": "./src/terminal/terminal-session.tsx",

@@ -160,10 +160,11 @@ Studio exits. See [Shared-browser APIs](browser-apis.md#website-notifications) f
 
 Right-click a local HTTP/HTTPS tab and enable **Keep awake** to keep its page running in the
 background and exclude it from inactive-page eviction and automatic settle/close rules. The setting
-persists with the tab and restores background pages when that Browser workspace is opened. Closing
-the tab still closes the page. PiP and active call media are protected independently of this
-setting. Keep awake does not keep the computer powered on after Studio exits or the operating system
-sleeps.
+persists with the tab. Studio loads these pages in the background at app startup, even when it opens
+in Threads. Opening Browser reuses those pages and their saved profiles. Private, remote, snoozed
+and settled tabs do not load through this startup path. Closing the tab still closes the page. PiP
+and active call media are protected independently of this setting. Keep awake does not keep the
+computer powered on after Studio exits or the operating system sleeps.
 
 Teams, Outlook (Microsoft 365 and personal), Gmail, Slack, Discord, WhatsApp Web and Google Chat
 stay awake by default in the desktop browser. This includes Teams and Outlook's `cloud.microsoft`

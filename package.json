@@ -168,7 +168,7 @@
     "test:browser-media:native": "node apps/desktop/scripts/check-browser-media-native.mjs",
     "test:browser-idle:native": "pnpm --filter @dovo/protocol build && node apps/desktop/scripts/check-browser-idle-native.mjs",
     "test:browser-permissions:native": "pnpm --filter @dovo/protocol build && node apps/desktop/scripts/check-browser-permissions-native.mjs",
-    "test:browser-tabs:browser": "pnpm --filter @dovo/desktop build && node scripts/check-browser-tabs-browser.mjs && node scripts/check-native-browser-layout-browser.mjs && node scripts/check-shared-browser-browser.mjs && node scripts/check-website-customizations-browser.mjs && node scripts/check-browser-extensions-browser.mjs && node scripts/check-browser-media-browser.mjs && node scripts/check-mobile-shared-browser-browser.mjs",
+    "test:browser-tabs:browser": "pnpm --filter @dovo/desktop build && node scripts/check-browser-startup-browser.mjs && node scripts/check-browser-tabs-browser.mjs && node scripts/check-native-browser-layout-browser.mjs && node scripts/check-shared-browser-browser.mjs && node scripts/check-website-customizations-browser.mjs && node scripts/check-browser-extensions-browser.mjs && node scripts/check-browser-media-browser.mjs && node scripts/check-mobile-shared-browser-browser.mjs",
     "test:browser-uploads:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-browser-uploads-browser.mjs",
     "test:browser-downloads:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-browser-downloads-browser.mjs && node scripts/check-browser-downloads-viewer-browser.mjs",
     "test:browser-viewer-ui:browser": "node scripts/build-browser-viewer.mjs && node scripts/check-browser-viewer-ui-browser.mjs",

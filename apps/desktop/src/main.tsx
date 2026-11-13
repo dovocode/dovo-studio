@@ -8,6 +8,7 @@ import { ApplicationStateProvider } from '@dovo/studio-core/state'
 import { InputPreviewWindow } from './input-preview'
 import { Workbench, TaskLauncherWindow } from '@dovo/studio-shell'
 import { tasksExtension } from '@dovo/extension-tasks'
+import { BrowserStartup } from '@dovo/extension-tasks/browser-startup'
 import { ThreadShare } from '@dovo/extension-tasks/thread-share'
 import { scmExtension } from '@dovo/extension-scm'
 import { agentsExtension } from '@dovo/extension-agents'
@@ -48,6 +49,7 @@ createRoot(root).render(
     ) : (
       <WindowsRuntimeGate>
         {window.dovo?.accountStorage && <SharingDeviceSync />}
+        {!threadWindow && !browserWindowId && <BrowserStartup browser={window.dovo?.browser} />}
         <Workbench
           extensions={extensions}
           threadWindow={threadWindow}
