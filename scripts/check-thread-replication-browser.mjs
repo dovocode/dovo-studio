@@ -135,6 +135,10 @@ function App(){const[task,setTask]=useState(project(selected,undefined,false));c
     )
     assert.deepEqual(await page.evaluate(() => window.writes), [])
     await page.evaluate(() => window.setConnection(false))
+    // Wait for React to commit offline state; the cached message may already be visible.
+    await page
+      .getByRole('button', { name: 'Refresh messages', exact: true, disabled: true })
+      .waitFor()
     if (!mobile) await page.locator('article').last().scrollIntoViewIfNeeded()
     await page.getByText('first message 84', { exact: true }).waitFor()
     await page.evaluate(() => {
