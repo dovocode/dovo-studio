@@ -663,3 +663,51 @@ it('retains separate hosts and credentials and skips summaries within their fres
   )
   expect(fetch).not.toHaveBeenCalled()
 })
+
+it('shows owner-scoped rows and drops old mirrors rather than falling back to another computer', () => {
+  const copy = {
+    ...task,
+    id: 'mirror',
+    replica: {
+      ownerRuntimeId: 'owner',
+      threadId: task.id,
+      ownerName: 'Owner',
+      projectName: 'Project',
+    },
+  }
+  const withMirror = {
+    ...overview,
+    snapshot: {
+      ...snapshot,
+      runtimeId: 'owner',
+      workspace: { ...snapshot.workspace, tasks: [task, copy] },
+    },
+  }
+  const remote = {
+    ...overview,
+    profile: other,
+    connected: false,
+    snapshot: {
+      ...snapshot,
+      runtimeId: 'other',
+      workspace: { ...snapshot.workspace, tasks: [{ ...task, title: 'Other owner' }, copy] },
+    },
+  }
+  const rows = aggregateRuntimeTasks([withMirror, remote])
+  expect(rows.map((row) => row.task.title)).toEqual(
+    expect.arrayContaining(['Build it', 'Other owner']),
+  )
+  expect(rows).toHaveLength(2)
+  expect(rows.every((row) => !row.task.replica)).toBe(true)
+  expect(
+    aggregateRuntimeTasks([
+      {
+        ...remote,
+        snapshot: {
+          ...remote.snapshot,
+          workspace: { ...remote.snapshot.workspace, tasks: [copy] },
+        },
+      },
+    ]),
+  ).toEqual([])
+})

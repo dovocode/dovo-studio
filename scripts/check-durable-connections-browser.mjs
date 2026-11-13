@@ -30,11 +30,13 @@ const built = await build({
     resolveDir: root,
     contents: `
 import {DurableState,jsonStateStorage,startReplication} from './packages/durable-connections/src/index.ts';
-import {browserSharedStateStorage,browserThreadStateStorage} from './packages/studio-core/src/runtime/shared-state-storage.ts';
+import {browserSharedStateStorage} from './packages/studio-core/src/runtime/shared-state-storage.ts';
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {decode,runtimeProfile,runtimeRegistrySchema,retainRuntimeConnections,decodeThreadRecord,validateThreadVersion,recoverThreadParentVersion,threadReplicationChannel,threadRecordKey} from './packages/protocol/src/index.ts';
+import {readWorkspaceDocument,writeWorkspaceDocument,updateWorkspaceDocument} from './packages/studio-core/src/workspace/read-cache.ts';
+const browserThreadStateStorage=jsonStateStorage({read:()=>readWorkspaceDocument('dovo.shared-threads.v1'),write:value=>writeWorkspaceDocument('dovo.shared-threads.v1',value),update:change=>updateWorkspaceDocument('dovo.shared-threads.v1',change)});
 import {clientScopeKey} from './packages/client-runtime/src/effects/request-scope.ts';
 import {createDetailDrafts,detailDraftKey,useDetailDraft} from './apps/mobile/src/runtime/state/detail-drafts.ts';
 const drafts=createDetailDrafts();let registry,draftRoot;

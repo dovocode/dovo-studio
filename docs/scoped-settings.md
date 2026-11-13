@@ -106,8 +106,13 @@ self-hosted Git paths, SSH aliases and custom ports are not globally equated.
 
 Literal MCP credentials remain private on the environment that stores them. Global and shared
 project MCP entries must use host environment-variable references; use environment-specific entries
-for literal credentials. Installed ACP agent IDs are environment-specific and cannot be saved in
-shared scopes. HTTP LAN/VPN connections and existing pairing/device tokens remain supported.
+for literal credentials. Agent literal environment values, local secret references, executable
+paths, configuration directories and installed ACP agent IDs are computer-specific. Save them at
+Computer or Project on computer. Shared profiles use each computer’s installation and login. They
+can reference environment variable names that each computer resolves locally. Editors reject private
+shared values before sending a save. Runtime saves and sync apply the same rule. Old incompatible
+shared records stay saved for repair and block their settings exchange; they are never copied to
+another computer. HTTP LAN/VPN connections and existing pairing/device tokens remain supported.
 
 Catalog skills keep their pinned source revision. Each runtime installs and caches its own
 supporting files before using the skill, preserving edited instruction text. Cached bundles can be

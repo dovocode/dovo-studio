@@ -96,7 +96,6 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         async (request) => (await serveRetrieval(services, request, true)).value,
       )
       const finalizers = [
-        () => services.threadReplication.stop(),
         () => services.stateReplication.stop(),
         () => services.retrieval.stop(),
         () => housekeeping.dispose(),
@@ -138,7 +137,6 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       for (const close of [...finalizers].reverse())
         yield* Effect.addFinalizer(() => release(close))
       yield* startOptional('Shared state replication', () => services.stateReplication.start())
-      yield* startOptional('Thread replication', () => services.threadReplication.start())
       // In-memory runtimes are ephemeral (tests and packaging smoke checks).
       if (db.name !== ':memory:') services.browsers.prepare()
       const http = yield* Effect.acquireRelease(
@@ -169,7 +167,6 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                   Effect.gen(function* () {
                     const schedulers = yield* Effect.all(
                       [
-                        () => services.threadReplication.stop(),
                         () => services.stateReplication.stop(),
                         () => services.store.usageHubs.dispose(),
                         () => services.retrieval.stop(),

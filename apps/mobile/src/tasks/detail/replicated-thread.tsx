@@ -6,16 +6,10 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
-import {
-  mergeThreadReplicaPage,
-  threadReplicaPageSchema,
-  responses,
-  type Task,
-} from '@dovo/protocol'
+import { mergeThreadReplicaPage, threadReplicaPageSchema, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
-import { Field } from '../../ui/controls/field'
 import { ScreenHeader } from '../../ui/layout/screen-header'
 import { useTheme } from '../../ui/theme'
 import { applyOlderReplicaPage, olderReplicaPageFit, replacedReplicaWindow } from './replica-window'
@@ -37,14 +31,9 @@ const renderMessage: ListRenderItem<Message> = ({ item }) => <ReplicaMessage mes
 const messageKey = (message: Message) => message.id
 
 export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => void }) {
-  // Page reads use `read`: only the metadata edits are mutations that settle a snapshot.
-  const { call, read, connected } = useRuntime()
+  const { read, connected } = useRuntime()
   const { styles } = useTheme()
   const [view, setView] = useState(task)
-  // Without a local edit the field follows the shared title, including remote renames.
-  const [titleDraft, setTitleDraft] = useState<string | null>(null)
-  const title = titleDraft ?? view.title
-  const [busy, setBusy] = useState(false)
   const [paging, setPaging] = useState(false)
   const pagingRef = useRef(false)
   const [error, setError] = useState('')
@@ -84,29 +73,6 @@ export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => v
       cancelled = true
     }
   }, [owner?.ownerRuntimeId, owner?.threadId, task.historyRevision, reload, connected, read])
-  const edit = async (field: 'title' | 'pinned', value: string | boolean) => {
-    if (!owner || busy) return
-    readGeneration.current++
-    setBusy(true)
-    setError('')
-    try {
-      await call(
-        '/api/threads/metadata',
-        { ownerRuntimeId: owner.ownerRuntimeId, threadId: owner.threadId, field, value },
-        responses.ok,
-      )
-      setView((current) => ({
-        ...current,
-        ...(field === 'title' && typeof value === 'string' ? { title: value } : {}),
-        ...(field === 'pinned' && typeof value === 'boolean' ? { pinned: value } : {}),
-      }))
-      if (field === 'title') setTitleDraft(null)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setBusy(false)
-    }
-  }
   const before = view.historyBefore
   const older = useCallback(async () => {
     // Reaching the start fires repeatedly while a page is in flight; request each page once.
@@ -160,28 +126,12 @@ export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => v
           {owner?.projectName} · {view.status}
         </Text>
         <Text style={styles.muted}>
-          Shared conversation. Agent execution stays on {owner?.ownerName}.
+          Stored recovery copy. Connect to {owner?.ownerName} to continue this thread.
         </Text>
-        <Field
-          label="Thread title"
-          value={title}
-          onChangeText={setTitleDraft}
-          editable={connected && !busy}
-        />
         <View style={styles.row}>
           <Action
-            label="Save title"
-            disabled={!connected || busy || !title.trim()}
-            onPress={() => void edit('title', title.trim())}
-          />
-          <Action
-            label={view.pinned ? 'Unpin' : 'Pin'}
-            disabled={!connected || busy}
-            onPress={() => void edit('pinned', !view.pinned)}
-          />
-          <Action
             label="Refresh messages"
-            disabled={!connected || busy}
+            disabled={!connected}
             onPress={() => setReload((value) => value + 1)}
           />
         </View>
@@ -191,7 +141,7 @@ export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => v
           </Text>
         )}
         {!view.messages.length && (
-          <Text style={styles.muted}>Completed messages appear here after synchronization.</Text>
+          <Text style={styles.muted}>No messages are stored in this recovery copy.</Text>
         )}
       </View>
       <FlatList

@@ -9,6 +9,7 @@
     "src/**/*.tsx",
     "*.ts",
     "*.cts",
+    "scripts/question-recovery-native.tsx",
     "plugins/**/*.ts",
     "modules/**/*.ts",
     "modules/**/*.tsx",

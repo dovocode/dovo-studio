@@ -545,7 +545,7 @@ only missed updates. The real Chromium-to-runtime check reopened a changed threa
 application bytes versus a 184,251-byte saved snapshot. It used one socket and kept the checkpoint
 object. Reconnect used the existing cursor without another full baseline. These checks use loopback
 HTTP/WebSocket. They do not measure radio traffic, WAN delay, physical phones or cold app startup.
-Shared-thread archive replication keeps its existing durable protocol.
+Thread data stays on its owning runtime. See [owner-scoped threads](owner-scoped-threads.md).
 
 The latency review with Fable 5.2 and Opus 5.5 added immediate replacement of obsolete pending
 watches, cursor pinning until watch acknowledgment, cancellation of redundant HTTP fallback, and
@@ -628,7 +628,11 @@ Use the commands without `xvfb-run -a` on a machine with an active display. The 
 supplies the synchronous app-info response used by the production preload and checks incremental
 events, so it does not mistake a healthy stream of patches for missing snapshots.
 
-## Shared thread replication
+## Retained shared thread archives
+
+Automatic thread mirroring is retired. The journal notes and benchmarks below describe retained
+archive internals and the earlier implementation. Normal lists and search now use owned threads
+only. See [owner-scoped threads](owner-scoped-threads.md).
 
 The runtime journal reads records after its current sequence. A transaction saves new records and
 checkpoints together. A sequence index lets integrity checks count records without reading message
@@ -910,9 +914,9 @@ measurements, not whole-runtime memory or startup guarantees.
 
 Per-agent MCP bridges import dedicated protocol and terminal-input entries instead of the full
 package barrels. The import-graph regression checks the transitive graph as well as exported schema
-identity. Isolation and tool authorization are preserved. Unchanged live shared threads compare
-their title and committed history identity before hydrating or hashing content; authorization still
-runs on every tick, and artifact feeds retain their own refresh cadence.
+identity. Isolation and tool authorization are preserved. Unchanged live threads compare their title
+and committed history identity before hydrating or hashing content; authorization still runs on
+every tick, and artifact feeds retain their own refresh cadence.
 
 Signed-in sharing recovery uses a five-minute settled cadence, a ten-second unsettled cadence and
 exponential failure backoff capped at five minutes. Hidden documents park the worker; returning to

@@ -50,4 +50,3 @@ const storage = (name: string) =>
       }),
   })
 export const mobileSharedStateStorage = storage('shared-settings')
-export const mobileThreadStateStorage = storage('shared-threads')

@@ -10,7 +10,7 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {DeferredTurn} from './src/chat/thread/deferred-turn';import {FloatingPreview} from './src/detail/floating-preview';
 window.intersections=[];window.IntersectionObserver=class{constructor(callback,options){this.callback=callback;this.options=options;window.intersections.push(this)}observe(target){this.target=target}unobserve(){}disconnect(){}};
 window.setNear=near=>{for(const observer of window.intersections){const margin=observer.options.rootMargin;if(near&&margin==='1200px 0px'||!near&&margin==='3600px 0px')observer.callback([{target:observer.target,isIntersecting:near}])}};
-function Preview(){const [placement,setPlacement]=useState('inline');return <FloatingPreview title="Counter" placement={placement} onPlacementChange={setPlacement} onClose={placement==='inline'?undefined:()=>setPlacement('inline')}><iframe title="Counter frame" srcDoc={'<button onclick="this.textContent=Number(this.textContent)+1">0</button>'}/></FloatingPreview>}
+function Preview(){const [placement,setPlacement]=useState('inline');return <FloatingPreview title="Counter" topLayer placement={placement} onPlacementChange={setPlacement} onClose={placement==='inline'?undefined:()=>setPlacement('inline')}><iframe title="Counter frame" srcDoc={'<button onclick="this.textContent=Number(this.textContent)+1">0</button>'}/></FloatingPreview>}
 createRoot(document.getElementById('app')).render(<DeferredTurn id="turn" pinned={false}>{()=> <Preview/>}</DeferredTurn>);`,
     },
     bundle: true,

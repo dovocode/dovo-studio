@@ -9,13 +9,9 @@ import {
   type RuntimeTask,
   type Subagent,
 } from '@dovo/protocol'
-import {
-  taskListProjection,
-  mobileThreadTree,
-  mobileThreadListSources,
-} from './task-list-projection'
+import { taskListProjection, mobileThreadTree } from './task-list-projection'
 
-it('uses complete cached owner rows during startup, then keeps shared copies available on failure', () => {
+it('uses complete cached owner rows at once and never substitutes old shared copies on failure', () => {
   const owner = overview()
   owner.connected = false
   owner.profile.connection.runtimeId = 'owner'
@@ -44,29 +40,20 @@ it('uses complete cached owner rows during startup, then keeps shared copies ava
       },
     },
   ]
-  const sources = mobileThreadListSources([peer, owner], true)
-  const rows = [...taskListProjection(sources.entries, now).values()]
+  const rows = [...taskListProjection([peer, owner], now).values()]
   expect(rows.map(({ row }) => row.task.id)).toEqual(['running', 'untouched'])
   expect(rows[0].row.task.harness?.provider).toBe('claude')
   expect(rows[0].owner.displayProject?.iconOverride).toBe('data:image/png;base64,cmVhbA==')
-  expect(sources.waiting).toBe(false)
-  expect(mobileThreadListSources([peer, { ...owner, snapshot: null }], true).waiting).toBe(true)
-  const failed = mobileThreadListSources([peer, { ...owner, error: 'Timed out' }], true)
-  expect(
-    [...taskListProjection(failed.entries, now).values()].some(({ row }) => row.task.replica),
-  ).toBe(true)
-  // Manual refresh, unpaired owners and offline-only saved copies do not wait for a request.
-  expect(mobileThreadListSources([peer, owner], false).entries).toEqual([peer, owner])
-  expect(mobileThreadListSources([peer], true).entries[0]).toBe(peer)
-  expect(
-    mobileThreadListSources(
-      [
-        { ...peer, connected: false },
-        { ...owner, snapshot: null },
-      ],
-      true,
-    ).waiting,
-  ).toBe(false)
+  const failed = [...taskListProjection([peer, { ...owner, error: 'Timed out' }], now).values()]
+  expect(failed.map(({ row }) => row.task.id)).toEqual(['running', 'untouched'])
+  expect(failed[0].row.task.harness?.provider).toBe('claude')
+  expect(failed[0].owner.displayProject?.iconOverride).toBe('data:image/png;base64,cmVhbA==')
+  for (const entries of [
+    [peer],
+    [peer, { ...owner, snapshot: null }],
+    [{ ...peer, connected: false }],
+  ])
+    expect(taskListProjection(entries, now).size).toBe(0)
 })
 
 it('retains mobile pill data across native agent payload updates but refreshes visible activity', () => {

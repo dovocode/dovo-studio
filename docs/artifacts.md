@@ -100,6 +100,12 @@ and saved versions, preview/source switching and explicit refresh. Desktop can c
 sources; mobile can share the selected version through the system share sheet. **Export PDF or PNG**
 on desktop and **Export** on mobile open compact export options for every artifact format.
 
+Floating and expanded previews inside desktop messages keep their toolbar above clipped thread
+content. Use **Close preview** or **Return to thread** to return to the message. Escape also works
+when focus is on the preview toolbar. These actions keep the same iframe and its current state. The
+browser checks cover clipped parents, iframe state, offscreen turns and native caption bounds; they
+do not replace a native desktop UI check.
+
 PDF offers automatic/artifact-defined paper sizing or A4, A3, US Letter and US Legal, portrait or
 landscape orientation, 0–50 mm margins, 10–200% content scaling and optional backgrounds. Automatic
 sizing keeps the artifact's authored page size and orientation, with A4 as the fallback. An explicit

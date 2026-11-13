@@ -6,7 +6,7 @@ import { STUDIO_BROWSER_SCOPE, isPrivateBrowserProfile } from '@dovo/protocol'
 import { usageHubs } from './endpoints/usage-hubs.js'
 import { peerConfigSchema } from '@dovo/protocol'
 import { sharingWriterConfigSchema } from '@dovo/protocol'
-import { threadReplicaReadSchema, threadMetadataEditSchema } from '@dovo/protocol'
+import { threadReplicaReadSchema } from '@dovo/protocol'
 import { remoteDesktopRequestSchema, remoteDesktopUnlockSchema } from '@dovo/protocol'
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
@@ -648,25 +648,15 @@ export function route(
       }
       if (path.startsWith('/api/threads/state/') || path === '/api/threads/replica/read') {
         if (agentDeviceAccess)
-          throw new HttpError(403, 'Thread replication requires a paired human client')
-        if (method === 'GET' && path === '/api/threads/state/status')
-          return s.threadReplication.status()
-        if (method !== 'POST') throw new HttpError(405, 'Use POST for thread state requests')
-        const input = yield* serviceResult(
-          body(request, path.endsWith('/exchange') ? STATE_MAX_EXCHANGE_BYTES : 4096),
-        )
-        if (path === '/api/threads/state/exchange')
-          return yield* serviceResult(
-            s.threadReplication.exchange(input).catch((error: unknown) => {
-              if (error instanceof StateProtocolError) throw new HttpError(400, error.message)
-              throw error
-            }),
-          )
-        if (path === '/api/threads/replica/read') {
-          const read = decode(threadReplicaReadSchema, input)
-          return s.threadReplication.read(read.ownerRuntimeId, read.threadId, read.before)
+          throw new HttpError(403, 'Thread archives require a paired human client')
+        if (method === 'POST' && path === '/api/threads/replica/read') {
+          const read = decode(threadReplicaReadSchema, yield* serviceResult(body(request, 4096)))
+          return s.threadArchive.read(read.ownerRuntimeId, read.threadId, read.before)
         }
-        throw new HttpError(404, 'Thread state endpoint not found')
+        throw new HttpError(
+          410,
+          'Thread mirroring has been retired. Connect to the owning computer.',
+        )
       }
       if (method === 'GET' && path === '/api/state/status') return s.stateReplication.status()
       if (method === 'POST' && path === '/api/state/exchange') {
@@ -873,15 +863,11 @@ export function route(
           ? threadStartReplay(s, value)
           : value
       }
-      if (method === 'POST' && path === '/api/threads/metadata') {
-        if (agentDeviceAccess)
-          throw new HttpError(403, 'Thread replication requires a paired human client')
-        return yield* serviceResult(
-          s.threadReplication.metadata(
-            decode(threadMetadataEditSchema, yield* serviceResult(body(request, 4096))),
-          ),
+      if (method === 'POST' && path === '/api/threads/metadata')
+        throw new HttpError(
+          410,
+          'Edit this thread on its owning computer. Stored copies are recovery archives.',
         )
-      }
       if (method === 'POST' && path === '/api/mcp-apps/rpc') {
         const input = decode(mcpAppRpcSchema, yield* serviceResult(body(request, 256 * 1024)))
         return yield* serviceResult(

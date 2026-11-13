@@ -120,7 +120,24 @@ try {
         })
         const entries = [
           entry('desktop', { releaseDistribution: 'desktop' }),
-          entry('server'),
+          entry('server', {
+            workspace: {
+              ...base.workspace,
+              tasks: [
+                {
+                  id: 'mirrored-running-thread',
+                  title: 'Cod work',
+                  status: 'running',
+                  replica: {
+                    ownerRuntimeId: 'cod',
+                    threadId: 'original',
+                    ownerName: 'Cod',
+                    projectName: 'Dovo',
+                  },
+                },
+              ],
+            },
+          }),
           { ...entry('offline'), connected: false },
           entry('current', { releaseVersion: '1.0.1' }),
           entry('external', { releaseCanUpdate: false }),
@@ -210,7 +227,7 @@ try {
       await page.close()
     }
   console.log(
-    'Computer updates: desktop/mobile idle polling, sheet reopen, background automatic restarts and consent choices passed',
+    'Computer updates: desktop/mobile ignore running mirrors, idle polling, sheet reopen, background automatic restarts and consent choices passed',
   )
 } finally {
   await browser.close()

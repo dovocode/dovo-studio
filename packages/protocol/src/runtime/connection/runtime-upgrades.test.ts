@@ -2,6 +2,7 @@ import { runtimeUpdate } from './runtime-releases.js'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
+import { taskSchema } from '../../workspace.js'
 import {
   createRuntimeUpgradeManager,
   runtimeUpgradeTargets,
@@ -462,4 +463,39 @@ it('ignores a stale status response after changing the connection', async () => 
   finish()
   await poll
   expect(f.manager.getSnapshot().statuses).toEqual({})
+})
+
+it('permits updating an idle mirror host but still blocks its own running thread', async () => {
+  const idle = entry('mirror-host')
+  const task = decode(taskSchema, {
+    id: 'running',
+    title: 'Work',
+    repositoryId: '',
+    agentId: '',
+    status: 'running',
+    createdAt: '2026-01-01',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  if (!idle.snapshot) throw Error('Missing snapshot')
+  idle.snapshot.workspace.tasks = [
+    {
+      ...task,
+      replica: {
+        ownerRuntimeId: 'cod',
+        threadId: 'running',
+        ownerName: 'Cod',
+        projectName: 'Dovo',
+      },
+    },
+  ]
+  expect(runtimeUpgradeBlocked(idle)).toBeUndefined()
+  const f = fixture([idle])
+  await f.manager.check()
+  await f.manager.start(['mirror-host'])
+  expect(f.commands).toEqual([{ id: 'mirror-host', path: '/api/runtime/update/start' }])
+  idle.snapshot.workspace.tasks.push(task)
+  expect(runtimeUpgradeBlocked(idle)).toContain('Finish running')
 })

@@ -576,7 +576,6 @@ class RuntimeSync {
     const s = this.services
     return JSON.stringify([
       s.store.version(),
-      s.threadReplication.version(),
       s.approvals.list(),
       s.questions.list(),
       s.secureInputs.list(),

@@ -1,3 +1,4 @@
+import { sharedSettingsIssue } from '@dovo/protocol'
 import { Disclosure } from '@dovo/studio-ui'
 import { settingsChanges } from '@dovo/protocol'
 import { secretReferenceIssue, responses } from '@dovo/protocol'
@@ -59,6 +60,7 @@ export function AgentEditor({
   inline = false,
   onDirtyChange,
   fixedProvider = false,
+  shared = false,
 }: {
   initial: Agent
   creating: boolean
@@ -68,6 +70,7 @@ export function AgentEditor({
   inline?: boolean
   onDirtyChange?: (dirty: boolean) => void
   fixedProvider?: boolean
+  shared?: boolean
 }) {
   const { connected, snapshot, request } = useWorkspace()
   const pending = useRef(false)
@@ -158,6 +161,11 @@ export function AgentEditor({
           const result = decodeResult(agentSchema, { ...agent, env, name: agent.name.trim() })
           if (!result.success) {
             setError('Enter an agent name.')
+            return
+          }
+          const sharedIssue = shared && sharedSettingsIssue({ agents: [result.data] })
+          if (sharedIssue) {
+            setError(sharedIssue)
             return
           }
           if (
@@ -421,6 +429,13 @@ export function AgentEditor({
                   </section>
                   <Disclosure title={<> Connection & account </>}>
                     <div className="mt-4 space-y-4">
+                      {shared && (
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          Shared profiles use each computer’s installation and login. Use
+                          environment-variable names for credentials. Save local paths and literal
+                          values at Computer or Project on computer.
+                        </p>
+                      )}
                       <p className="text-xs leading-relaxed text-muted-foreground">
                         Optional. Leave blank to use the provider installed and signed in on the
                         computer that runs the thread. Paths refer to that computer.

@@ -291,3 +291,101 @@ it('publishes PR counts, freshness and errors immediately without replacing an u
       }),
     ).toBe(true)
 })
+
+it('keeps recent history before disk persistence, while respecting revision and computer boundaries', () => {
+  const task = {
+    id: 'recent',
+    title: 'Recent',
+    agentId: '',
+    repositoryId: '',
+    status: 'review' as const,
+    createdAt: '2026-11-12',
+    draft: '',
+    example: false,
+    historyRevision: 1,
+    messages: [{ id: 'answer', role: 'assistant' as const, text: 'Recent reply' }],
+    files: [],
+  }
+  const detailed = {
+    ...snapshot,
+    runtimeId: 'owner',
+    runtimeInstanceId: 'process',
+    detailTaskIds: [task.id],
+    workspace: { ...snapshot.workspace, tasks: [task] },
+  }
+  const summary = {
+    ...detailed,
+    revision: 2,
+    detailTaskIds: [],
+    workspace: {
+      ...detailed.workspace,
+      tasks: [{ ...task, title: 'Fresh title', draft: 'Fresh draft', messages: [] }],
+    },
+  }
+  const previous = overview(detailed)
+  const next = retainOverviewSnapshot(previous, overview(summary))
+  expect(next.snapshot?.detailTaskIds).toEqual(['recent'])
+  expect(next.snapshot?.workspace.tasks[0]).toMatchObject({
+    title: 'Fresh title',
+    draft: 'Fresh draft',
+    messages: task.messages,
+  })
+  for (const changed of [
+    { ...summary, runtimeId: 'replacement' },
+    { ...summary, runtimeInstanceId: 'restart' },
+    {
+      ...summary,
+      workspace: {
+        ...summary.workspace,
+        tasks: [{ ...summary.workspace.tasks[0]!, historyRevision: 2 }],
+      },
+    },
+    { ...summary, workspace: { ...summary.workspace, tasks: [] } },
+  ]) {
+    const received = overview(changed)
+    expect(retainOverviewSnapshot(next, received).snapshot).toBe(changed)
+  }
+  const replaced = {
+    ...overview(summary),
+    profile: { ...profile, connection: { ...profile.connection, token: 'new-device-credential' } },
+  }
+  expect(retainOverviewSnapshot(previous, replaced).snapshot).toBe(summary)
+})
+
+it('keeps retained rows stable during live updates and preserves conditional-read validators', async () => {
+  const task = {
+    id: 'idle',
+    title: 'Idle',
+    agentId: '',
+    repositoryId: '',
+    status: 'review' as const,
+    createdAt: '2026-11-12',
+    draft: '',
+    example: false,
+    messages: [{ id: 'answer', role: 'assistant' as const, text: 'Recent reply' }],
+    files: [],
+  }
+  const detailed = {
+    ...snapshot,
+    detailTaskIds: [task.id],
+    workspace: { ...snapshot.workspace, tasks: [task] },
+  }
+  let previous = overview(await readSnapshot(detailed, 'detail'))
+  const retainedRows: unknown[] = []
+  for (let revision = 2; revision <= 31; revision++) {
+    const received = await readSnapshot(
+      {
+        ...detailed,
+        revision,
+        detailTaskIds: [],
+        workspace: { ...detailed.workspace, tasks: [{ ...task, messages: [] }] },
+      },
+      'summary-' + revision,
+    )
+    previous = retainOverviewSnapshot(previous, overview(received))
+    retainedRows.push(previous.snapshot?.workspace.tasks[0])
+    const unchanged = retainOverviewSnapshot(previous, overview(received))
+    expect(unchanged.snapshot).toBe(previous.snapshot)
+  }
+  expect(new Set(retainedRows).size).toBe(1)
+})

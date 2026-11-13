@@ -140,20 +140,16 @@ export function runtimeSnapshot(
         pagedHistory,
       },
     )
-    const replicaSummaries = s.threadReplication.replicas([])
-    const completeWorkspace = replicaSummaries.length
-      ? { ...localWorkspace, tasks: [...localWorkspace.tasks, ...replicaSummaries] }
-      : localWorkspace
     const page =
       settledLimit === undefined
         ? undefined
-        : pagedWorkspace(completeWorkspace, s.runtimeId, settledLimit, [
+        : pagedWorkspace(localWorkspace, s.runtimeId, settledLimit, [
             ...(taskIds ?? []),
             ...s.approvals.list().map((request) => request.taskId),
             ...s.questions.list().map((request) => request.taskId),
             ...s.secureInputs.list().map((request) => request.taskId),
           ])
-    const storedWorkspace = page?.workspace ?? completeWorkspace
+    const storedWorkspace = page?.workspace ?? localWorkspace
     const forgeConnections = new Map(
       storedWorkspace.repositories.some((repository) => repository.forge)
         ? s.forges.list().map((connection) => [connection.id, connection] as const)
@@ -275,24 +271,6 @@ export function runtimeSnapshot(
       storedWorkspace,
       repositories.map((repository) => sharedProjectPresentation(currentDefaults, repository)),
     )
-    const detailReplicas =
-      !overview && replicaSummaries.length
-        ? new Map(
-            s.threadReplication
-              .replicas(
-                enrichedWorkspace.tasks
-                  .filter((task) => task.replica && (!taskIds || taskIds.includes(task.id)))
-                  .map((task) => task.id),
-              )
-              .map((task) => [task.id, task]),
-          )
-        : undefined
-    const selectedWorkspace = detailReplicas
-      ? {
-          ...enrichedWorkspace,
-          tasks: enrichedWorkspace.tasks.map((task) => detailReplicas.get(task.id) ?? task),
-        }
-      : enrichedWorkspace
     return yield* serviceResult({
       ...(taskIds ? { detailTaskIds: [...taskIds] } : {}),
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
@@ -331,7 +309,6 @@ export function runtimeSnapshot(
       terminalRecoverySupported: s.terminals.supportsRecovery(),
       settingsScopesSupported: true,
       ...(s.stateReplication.available() ? { stateReplicationVersion: 1 as const } : {}),
-      ...(s.threadReplication.available() ? { threadReplicationVersion: 1 as const } : {}),
       taskBehaviorSupported: true,
       threadBehaviorSupported: true,
       queuedTurnSettingsSupported: true,
@@ -376,7 +353,7 @@ export function runtimeSnapshot(
             },
           }
         : {}),
-      workspace: selectedWorkspace,
+      workspace: enrichedWorkspace,
       approvals: s.approvals.list(),
       questions: s.questions.list().filter((question) => question.routing !== 'parent'),
       secureInputs: s.secureInputs.list(),

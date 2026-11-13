@@ -95,39 +95,26 @@ it('keeps historical uncertain actions visible without making healthy infrastruc
   }
 })
 
-it('reports unavailable replication while keeping task execution readiness separate', async () => {
-  const { ThreadReplication } = await import('../storage/thread-replication')
+it('keeps execution ready when an unused legacy thread archive is damaged', async () => {
   const runtime = await startRuntime({
     databasePath: ':memory:',
     ownerToken: 'replication-diagnostics-token-with-thirty-two-characters',
     port: 0,
   })
   const s = runtime.services
-  await s.threadReplication.stop()
-  s.db.prepare('INSERT INTO thread_state_log VALUES (?,?)').run(1, 'invalid json')
-  const failed = new ThreadReplication(s.threadReplication.journal, s.store, s.retrievalPeers)
-  s.threadReplication = failed
   try {
-    await expect(failed.start()).rejects.toThrow(/invalid json|JSON/)
+    s.db.prepare('INSERT INTO thread_state_log VALUES (?,?)').run(1, 'invalid json')
     const now = Date.now()
     s.tasks.schedulerStatus.lastSuccess = s.jobs.schedulerStatus.lastSuccess = new Date(
       now,
     ).toISOString()
     const status = decode(runtimeDiagnosticsSchema, await runtimeDiagnostics(s, now))
     expect(status.ready).toBe(true)
-    expect(status.replication).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          channel: 'shared-threads:v1',
-          error: expect.stringContaining('preserved'),
-        }),
-      ]),
+    expect((status.replication ?? []).map((channel) => channel.channel)).not.toContain(
+      'shared-threads:v1',
     )
-    expect(status.warnings).toEqual(
-      expect.arrayContaining([expect.stringContaining('Thread replication is unavailable')]),
-    )
+    expect(s.db.prepare('SELECT value FROM thread_state_log').pluck().get()).toBe('invalid json')
   } finally {
-    await failed.stop()
     await runtime.close()
   }
 })

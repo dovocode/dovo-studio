@@ -12,21 +12,27 @@ async function bundle(mobile) {
         contents: `
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import {runtimeProfile,defaultTaskHarness,decode,snapshotSchema,agentPresetSchema} from '@dovo/protocol';
+import {runtimeProfile,defaultTaskHarness,decode,snapshotSchema,agentPresetSchema,taskSchema,aggregateRuntimeTasks} from '@dovo/protocol';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {readAppPreferences,updateAppPreferences} from './packages/studio-core/src/preferences.ts';
 import {${mobile ? 'RuntimeProvider as Provider,useRuntime as useProvider' : 'WorkspaceProvider as Provider,useWorkspace as useProvider'}} from './${mobile ? 'apps/mobile/src/runtime/connection' : 'packages/studio-core/src/workspace'}/provider.tsx';
+window.cacheModule=import('./packages/studio-core/src/workspace/read-cache.ts');window.protocolModule=import('@dovo/protocol');
 window.profiles=['one','two'].map(name=>runtimeProfile({address:'http://'+name+'.lan:8787',token:'test-private-token-at-least-32-characters-'+name},name));
 window.saved=JSON.stringify({version:1,activeId:window.profiles[0].id,profiles:window.profiles});
 localStorage.setItem('dovo.runtimes.v1',window.saved);
 window.preset=decode(agentPresetSchema,{...defaultTaskHarness('codex'),id:'preset',name:'Team agent',instructions:'Initial baseline'});
+window.ownedTask=host=>decode(taskSchema,{id:'same-thread',title:'Owned by '+host,repositoryId:'repo',agentId:'agent',status:'review',createdAt:'2026-01-01',messages:[{id:'message',role:'user',text:'History for '+host}],files:[],draft:'Draft for '+host,example:false});
+window.mirrorTask={...window.ownedTask('foreign'),id:'legacy-mirror',status:'running',replica:{ownerRuntimeId:'foreign',threadId:'same-thread',ownerName:'Foreign',projectName:'Original project'}};
+window.rows=()=>aggregateRuntimeTasks(window.entries);
 window.calls=[];window.failures={presets:{},settings:{}};window.offline={};
-window.servers=Object.fromEntries(window.profiles.map(profile=>[new URL(profile.connection.address).hostname,decode(snapshotSchema,{revision:1,runtimeInstanceId:profile.id,owner:false,settingsScopesSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[],defaults:{scopedSettings:{environment:{},shared:[]}}})]));
+window.servers=Object.fromEntries(window.profiles.map(profile=>[new URL(profile.connection.address).hostname,decode(snapshotSchema,{revision:1,runtimeId:profile.id,runtimeInstanceId:profile.id,owner:false,threadReplicationVersion:1,settingsScopesSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[window.ownedTask(profile.name),window.mirrorTask],repositories:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[],defaults:{scopedSettings:{environment:{},shared:[]}}})]));
 window.fetch=async(url,init={})=>{
   const {hostname:host,pathname:path}=new URL(url);
   const input=init.body?JSON.parse(init.body):undefined;
   window.calls.push({host,path,input});
   const server=window.servers[host];
+  if(path==='/health')return Response.json({service:'dovo-runtime',runtimeId:server.runtimeId});
+  if(path==='/api/snapshot' && window.startupOffline)throw new TypeError('Offline at launch');
   if(path==='/api/snapshot')return window.offline[host]?Response.json({error:'Runtime offline'},{status:403}):Response.json(server);
   // Legacy runtimes reject invalid settings without retaining a blocked command.
   if(path==='/api/mutations/status')return Response.json({error:'Unsupported'},{status:404});
@@ -45,6 +51,10 @@ window.changePreset=instructions=>{
   window.preset={...window.preset,instructions};
   updateAppPreferences({globalAgentPresets:[window.preset]});
 };
+window.privatePreset=()=>{window.preset={...window.preset,env:{TOKEN:'private-preset-fixture-marker'}};updateAppPreferences({globalAgentPresets:[window.preset]})};
+window.restorePortablePreset=()=>{const {env,...portable}=window.preset;window.preset=portable;window.changePreset('Portable after private preset')};
+window.privateShared=()=>updateAppPreferences({sharedScopedSettings:[{key:'global',updatedAt:10000,changeId:'private-fixture',value:{taskDefaults:{harness:{...defaultTaskHarness('codex'),env:{TOKEN:'private-shared-fixture-marker'}}}}}]});
+window.preferences=()=>readAppPreferences();
 window.changeSettings=version=>updateAppPreferences({sharedScopedSettings:[{key:'global',updatedAt:version,changeId:'settings-'+version,value:{taskDefaults:{setupCommand:'echo '+version}}}]});
 window.reconcile=(host,kind)=>{
   const server=window.servers[host];
@@ -100,7 +110,7 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Pro
             },
             {
               path: 'react-native',
-              contents: `export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+              contents: `window.appStateListeners=new Set();export const AppState={currentState:'active',addEventListener:(event,listener)=>{window.appStateListeners.add(listener);return{remove:()=>window.appStateListeners.delete(listener)}}};`,
             },
             {
               path: 'expo-network',
@@ -145,9 +155,117 @@ try {
     )
     await page.goto('http://preset-sync.lan/')
     await page.addScriptTag({ content: built.outputFiles[0].text })
-    await page.waitForFunction(() => window.store?.connected)
+    await page
+      .waitForFunction(() => window.store?.connected)
+      .catch(async (error) => {
+        console.error({
+          mobile,
+          errors,
+          state: await page.evaluate(() => ({
+            error: window.syncError,
+            calls: window.calls,
+            ready: window.store?.ready,
+            server: window.servers,
+          })),
+        })
+        throw error
+      })
     await page.evaluate(() => window.refresh())
+    await page
+      .waitForFunction(() => window.entries.every((entry) => entry.connected))
+      .catch(async (error) => {
+        console.error({
+          mobile,
+          errors,
+          state: await page.evaluate(() => ({
+            error: window.syncError,
+            calls: window.calls,
+            entries: window.entries,
+          })),
+        })
+        throw error
+      })
+
+    // Actual desktop/mobile providers accept old runtime snapshots but present owned rows only.
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.entries.map((entry) => entry.snapshot.workspace.tasks.map((task) => task.id)),
+      ),
+      [['same-thread'], ['same-thread']],
+    )
+    assert.equal(await page.evaluate(() => window.rows().length), 2)
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.entries.map((entry) => entry.snapshot.workspace.tasks[0].draft).sort(),
+      ),
+      ['Draft for one', 'Draft for two'],
+    )
+
+    // Explicitly flush the cache through the page lifecycle before a real IndexedDB reload.
+    await page.evaluate((mobile) => {
+      if (mobile) for (const listener of window.appStateListeners) listener('background')
+      else window.dispatchEvent(new Event('pagehide'))
+    }, mobile)
+    await page.waitForFunction(async () => {
+      const { browserReadCache } = await window.cacheModule
+      const { runtimeSnapshotCacheSchema } = await window.protocolModule
+      return (
+        await Promise.all(
+          window.profiles.map((profile) =>
+            browserReadCache(profile.connection).read('snapshot', runtimeSnapshotCacheSchema),
+          ),
+        )
+      ).every(Boolean)
+    })
+    await page.reload()
+    await page.evaluate(() => (window.startupOffline = true))
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page
+      .waitForFunction(
+        () =>
+          window.entries?.length === 2 &&
+          window.entries.every((entry) => entry.snapshot && !entry.connected),
+      )
+      .catch(async (error) => {
+        console.error(
+          JSON.stringify({
+            mobile,
+            state: await page.evaluate(() => ({
+              entries: window.entries,
+              error: window.syncError,
+              calls: window.calls,
+            })),
+          }),
+        )
+        throw error
+      })
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window
+          .rows()
+          .map((row) => row.task.title)
+          .sort(),
+      ),
+      ['Owned by one', 'Owned by two'],
+    )
+    assert.equal(
+      await page.evaluate(() =>
+        window.entries.some((entry) => entry.snapshot.workspace.tasks.some((task) => task.replica)),
+      ),
+      false,
+    )
+    await page.evaluate(async () => {
+      window.startupOffline = false
+      await window.refresh()
+    })
     await page.waitForFunction(() => window.entries.every((entry) => entry.connected))
+    assert.equal(await page.evaluate(() => window.rows().length), 2)
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.calls.filter((call) => call.path.startsWith('/api/threads/')),
+      ),
+      [],
+    )
 
     const count = (kind) =>
       page.evaluate(
@@ -259,8 +377,46 @@ try {
       )
       await waitSynced()
     }
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.calls.filter((call) => call.path.startsWith('/api/threads/')),
+      ),
+      [],
+    )
+    const presetCalls = await count('presets')
+    await page.evaluate(() => window.privatePreset())
+    await waitError('environment values')
+    assert.equal(await count('presets'), presetCalls)
+    assert.equal(
+      await page.evaluate(() =>
+        JSON.stringify(window.calls).includes('private-preset-fixture-marker'),
+      ),
+      false,
+    )
+    assert.equal(await page.evaluate(() => !!window.preferences().globalAgentPresets[0].env), true)
+    await page.evaluate(() => window.restorePortablePreset())
+    await waitSynced()
+    await page.evaluate(() => window.privateShared())
+    await waitError('environment values')
+    assert.equal(
+      await page.evaluate(() =>
+        JSON.stringify(window.calls).includes('private-shared-fixture-marker'),
+      ),
+      false,
+    )
+    assert.equal(
+      await page.evaluate(
+        () => !!window.preferences().sharedScopedSettings[0].value.taskDefaults.harness.env,
+      ),
+      true,
+    )
+    await page.evaluate(() => window.changeSettings(10001))
+    await waitSynced()
     assert.deepEqual(errors, [])
-    console.log((mobile ? 'Mobile' : 'Desktop') + ' per-runtime preset and settings sync passed')
+    console.log(
+      (mobile ? 'Mobile' : 'Desktop') +
+        ' per-runtime preset/settings sync, owner-only rows, no mirroring, and IndexedDB offline/reconnect passed',
+    )
     await context.close()
   }
 } finally {

@@ -1,7 +1,11 @@
 import { DurableState, type StateStorage } from '@dovo/durable-connections'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
-import { scopedSettingsValueSchema, type SharedSettingsEntry } from '../../workspace.js'
+import {
+  defaultTaskHarness,
+  scopedSettingsValueSchema,
+  type SharedSettingsEntry,
+} from '../../workspace.js'
 import { runtimeProfile, type RuntimeOverview } from './runtime-fleet.js'
 import { snapshotSchema } from './runtime.js'
 import { mergeSharedSettings } from './scoped-settings.js'
@@ -441,4 +445,29 @@ it('recovers a rolled-back app actor without clearing settings or paired-runtime
   await flush()
   expect(runtime.get('global')?.taskDefaults?.setupCommand).toBe('after recovery')
   expect(runtime.history('global')).toHaveLength(3)
+})
+
+it('preserves an incompatible stored journal and sends no historical private values', async () => {
+  vi.useFakeTimers()
+  const storage = memory()
+  const legacy = await DurableState.open({
+    channel: 'shared-settings:v1',
+    replicaId: 'app:legacy',
+    storage,
+    decode: (value) => decode(scopedSettingsValueSchema, value),
+  })
+  await legacy.set('global', {
+    taskDefaults: {
+      harness: { ...defaultTaskHarness('codex'), env: { TOKEN: 'private-journal-fixture' } },
+    },
+  })
+  await legacy.set('global', { taskDefaults: { setupCommand: 'portable current value' } })
+  const saved = storage.load()
+  const request = vi.fn<SharedStateSyncOptions['request']>(async () => ({}))
+  const h = harness([], request, storage)
+  h.synchronization.update([target('runtime')], true)
+  await flush()
+  expect(request).not.toHaveBeenCalled()
+  expect(h.error).toHaveBeenLastCalledWith(expect.stringContaining('one computer'))
+  expect(storage.load()).toEqual(saved)
 })

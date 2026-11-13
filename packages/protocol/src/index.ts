@@ -363,7 +363,6 @@ export {
   type SharedStateSyncOptions,
 } from './runtime/connection/shared-state-sync.js'
 export * from './runtime/connection/thread-replication.js'
-export * from './runtime/connection/thread-state-sync.js'
 export * from './scm/repositories/project-browser.js'
 
 export * from './conversation/reading-position.js'
@@ -390,3 +389,5 @@ export * from './conversation/presentation/composer-references.js'
 export * from './conversation/workflow/question-recovery.js'
 export * from './conversation/workflow/secure-input.js'
 export * from './conversation/workflow/secure-input-crypto.js'
+
+export * from './runtime/connection/shared-settings-policy.js'

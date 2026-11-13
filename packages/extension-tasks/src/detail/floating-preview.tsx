@@ -59,6 +59,7 @@ export function FloatingPreview({
   hideInlineHeader = false,
   startCentered = false,
   contained = false,
+  topLayer = false,
 }: {
   title: string
   displayTitle?: string
@@ -74,8 +75,19 @@ export function FloatingPreview({
   hideInlineHeader?: boolean
   startCentered?: boolean
   contained?: boolean
+  topLayer?: boolean
 }) {
   const section = useRef<HTMLElement>(null)
+  const detachedLayer = topLayer && !contained && placement !== 'inline'
+  useLayoutEffect(() => {
+    const element = section.current
+    if (!element || !detachedLayer) return
+    // The top layer escapes message clipping without moving or remounting the live iframe.
+    element.showPopover()
+    return () => {
+      if (element.matches(':popover-open')) element.hidePopover()
+    }
+  }, [detachedLayer])
   const customized = useRef(false)
   const viewport = useCallback((): Viewport => {
     const parent = contained ? section.current?.parentElement : null
@@ -109,6 +121,7 @@ export function FloatingPreview({
   return (
     <section
       ref={section}
+      popover={detachedLayer ? 'manual' : undefined}
       aria-label={hideInlineHeader && placement === 'inline' ? undefined : `${title} preview`}
       data-preview-dragging={dragging ? true : undefined}
       data-preview-overlay={placement !== 'inline' ? true : undefined}
@@ -123,11 +136,17 @@ export function FloatingPreview({
               )
             : cn(contained ? 'absolute' : 'fixed', 'z-40 rounded-xl border shadow-2xl'),
       )}
-      style={
-        floating
-          ? { left: frame.x, top: frame.y, width: frame.width, height: frame.height }
-          : undefined
-      }
+      style={{
+        ...(detachedLayer && {
+          margin: 0,
+          padding: 0,
+          width: 'auto',
+          height: 'auto',
+          overflow: 'visible',
+          color: 'inherit',
+        }),
+        ...(floating && { left: frame.x, top: frame.y, width: frame.width, height: frame.height }),
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && placement !== 'inline') {
           event.stopPropagation()

@@ -7,6 +7,8 @@ import { Effect, Schema } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import {
   checkOutcome,
+  gitRemoteIdentity,
+  pullRepositoryIdentity,
   maxValue,
   minValue,
   strictStruct,
@@ -57,6 +59,9 @@ const stateSchema = z.object({
   careCommentWakes: z.number().int().nonnegative().optional(),
   carePaused: z.boolean().optional(),
   updateAttempt: z.string().optional(),
+  updateNotice: z.string().optional(),
+  updateUnavailable: z.string().optional(),
+  careMergeable: z.boolean().nullable().optional(),
 })
 type State = z.infer<typeof stateSchema>
 type WatchServices = Pick<
@@ -375,6 +380,7 @@ export class PullRequestWatch {
     if (
       automatic &&
       (!this.s.preferences.get().enablePullRequestBabysitting ||
+        latest.bot ||
         latest.queuePaused ||
         latest.archived ||
         latest.archivedAt ||
@@ -429,6 +435,32 @@ export class PullRequestWatch {
     const latest = this.read(state.taskId, state.repositoryId)
     return latest?.id === state.id && latest.status === 'watching'
   }
+  private canBabysit(state: State, detail: PullDetail) {
+    if (!this.current(state) || !this.s.preferences.get().enablePullRequestBabysitting) return false
+    const task = this.s.store.taskSummary(state.taskId)
+    const repository = this.s.store
+      .get()
+      .repositories.find((item) => item.id === task.repositoryId && !item.kind)
+    const identity = repository && pullRepositoryIdentity(repository)
+    return (
+      !!identity &&
+      gitRemoteIdentity(detail.pull.repositoryUrl) === identity &&
+      (!detail.pull.headCloneUrl ||
+        gitRemoteIdentity(detail.pull.headCloneUrl) === (repository?.gitIdentity ?? identity)) &&
+      !watchRepositoryError(task, state.repositoryId, state.primaryRepositoryId, state.source) &&
+      !state.carePaused &&
+      !task.settledAt &&
+      !task.archived &&
+      !task.archivedAt &&
+      !task.example &&
+      !task.bot &&
+      !permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents)) &&
+      detail.pull.state === 'open' &&
+      !detail.pull.draft &&
+      (!task.pullRequest || task.pullRequest.checkoutMode === 'pr-branch') &&
+      pullMatchesCheckoutBranch(detail.pull, task.checkoutBranch)
+    )
+  }
   private async startLinkedBabysitting() {
     if (!this.s.preferences.get().enablePullRequestBabysitting) return
     const watches = this.readAll()
@@ -441,6 +473,7 @@ export class PullRequestWatch {
         return
       // A read/review checkout must never become an automatic editing session.
       if (
+        task.bot ||
         !task.checkoutBranch ||
         task.status === 'draft' ||
         task.settledAt ||
@@ -580,7 +613,7 @@ export class PullRequestWatch {
           )
           const next: State = {
             ...state,
-            careStatus: undefined,
+            careStatus: state.updateNotice,
             checkedAt: new Date().toISOString(),
             error: detail.warnings.join('\n') || undefined,
             failedChecks: checksUnavailable
@@ -589,14 +622,7 @@ export class PullRequestWatch {
             seenComments: state.seenComments.filter((key) => !versions[key]),
             commentVersions: versions,
           }
-          const babysitting =
-            this.s.preferences.get().enablePullRequestBabysitting &&
-            !state.carePaused &&
-            !latest.settledAt &&
-            detail.pull.state === 'open' &&
-            !detail.pull.draft &&
-            (!latest.pullRequest || latest.pullRequest.checkoutMode === 'pr-branch') &&
-            pullMatchesCheckoutBranch(detail.pull, latest.checkoutBranch)
+          const babysitting = this.canBabysit(state, detail)
           const revisionChanged =
             state.careHead !== detail.pull.headSha || state.careBase !== detail.pull.baseSha
           const behind = detail.pull.behindBy
@@ -627,6 +653,7 @@ export class PullRequestWatch {
             return true
           }
           if (babysitting) {
+            if (state.updateNotice && append(state.updateNotice)) next.updateNotice = undefined
             if (!state.careStarted)
               append(
                 'Start PR babysitting. Inspect current CI failures and unresolved review feedback, make needed fixes, test and push them, then wait. Keep merge approval manual.',
@@ -644,14 +671,15 @@ export class PullRequestWatch {
               latest.status !== 'running' &&
               state.updateAttempt !== updateKey
             ) {
-              // Save the attempt before crossing the forge boundary. An uncertain response
-              // requires a fresh revision or explicit restart, never an automatic replay.
-              next.updateAttempt = updateKey
-              this.save({ ...state, updateAttempt: updateKey })
               if (
                 detail.capabilities?.actions.includes('update-branch') &&
                 !detail.pull.inMergeQueue
               ) {
+                // Persist only issued mutations. A missing capability can recover at the same revision.
+                next.updateUnavailable = undefined
+                next.updateAttempt = updateKey
+                this.save({ ...state, updateAttempt: updateKey })
+                let notice: string
                 try {
                   const input = {
                     action: 'update-branch' as const,
@@ -661,22 +689,39 @@ export class PullRequestWatch {
                   }
                   if (state.source) await this.s.pulls.watchReader(state.source).act(input)
                   else await this.s.pulls.act(cwd, input)
-                  if (!this.current(state)) continue
                   this.s.pullCache.invalidate(cwd, state.number)
-                  append(
-                    'GitHub Update branch completed with a merge. Synchronize the local checkout without discarding local work, then verify the new checks. Repository rules determine whether approvals remain valid.',
-                  )
+                  notice =
+                    'GitHub Update branch completed with a merge. Synchronize the local checkout without discarding local work, then verify the new checks. Repository rules determine whether approvals remain valid.'
                 } catch (cause) {
-                  append(
-                    `Update branch needs attention: ${errorMessage(cause)}. Do not fall back to a rebase or force-push.`,
-                  )
+                  notice = `Update branch needs attention: ${errorMessage(cause)}. Do not fall back to a rebase or force-push.`
                 }
-              } else
+                if (!this.current(state)) continue
+                const saved = this.read(state.taskId, state.repositoryId)
+                if (!saved) continue
+                // Delivery can fail after the forge write. Retry the notice without replaying the write.
+                this.save({ ...saved, updateNotice: notice, careStatus: notice })
+                const currentTask = this.s.store.taskSummary(state.taskId)
+                if (
+                  !this.canBabysit(saved, detail) ||
+                  currentTask.queuePaused ||
+                  currentTask.activeRunId ||
+                  currentTask.status === 'running'
+                )
+                  continue
+                if (append(notice)) next.updateNotice = undefined
+              } else if (
+                state.updateUnavailable !== updateKey &&
                 append(
                   'The target branch has new commits, but the forge Update branch action is unavailable. Resolve the blocker with the user; do not rebase or force-push.',
                 )
+              ) {
+                next.updateUnavailable = updateKey
+              }
             }
-            if (detail.pull.mergeable === false && (revisionChanged || !state.careStarted))
+            if (
+              detail.pull.mergeable === false &&
+              (revisionChanged || !state.careStarted || state.careMergeable !== false)
+            )
               append(
                 'This PR has merge conflicts. Inspect them and preserve both intents. Test any fix before pushing.',
               )
@@ -684,6 +729,7 @@ export class PullRequestWatch {
               append(
                 'Reported checks passed and the branch is current with its target. Check review requirements and report readiness. Merge still needs the user’s approval.',
               )
+            next.careMergeable = detail.pull.mergeable
             next.careStarted = true
             next.careHead = detail.pull.headSha
             next.careBase = detail.pull.baseSha

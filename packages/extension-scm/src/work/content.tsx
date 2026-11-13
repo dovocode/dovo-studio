@@ -142,7 +142,7 @@ export function WorkContent({
     sources,
     JSON.stringify([mode, selected]),
     workRemoteKey,
-    true,
+    false,
     active,
   )
   const readConnected = active && (reader?.connected ?? (!origin && connected))

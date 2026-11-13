@@ -1050,3 +1050,43 @@ it('keeps pin and archive on this computer for local-only projects and rejects b
     await f.close()
   }
 })
+
+it('keeps agent values and local installations out of shared saves and sync while preserving local overrides', async () => {
+  const f = await fixture()
+  try {
+    const privateHarness = {
+      ...defaultTaskHarness('codex'),
+      env: { TOKEN: 'private-agent-fixture-marker' },
+      executablePath: '/local/codex',
+    }
+    expect(
+      (await f.save('environment', { taskDefaults: { harness: privateHarness } })).status,
+    ).toBe(200)
+    const before = f.runtime.services.defaults.get().scopedSettings
+    for (const value of [
+      { taskDefaults: { harness: privateHarness } },
+      { agents: [{ ...privateHarness, id: 'private', name: 'Private' }] },
+    ]) {
+      const includeAgents = 'agents' in value
+      const previous = decode(
+        scopedSettingsResultSchema,
+        await (await f.call('settings/read', { scope: 'global', includeAgents })).json(),
+      )
+      const save = await f.call('settings/save', {
+        scope: 'global',
+        includeAgents,
+        before: previous.value,
+        after: value,
+      })
+      expect(save.status).toBe(400)
+      expect(await save.text()).not.toContain('private-agent-fixture-marker')
+      const sync = await f.call('settings/sync', {
+        shared: [{ key: 'global', updatedAt: 1, changeId: 'unsafe', value }],
+      })
+      expect(sync.status).toBe(400)
+    }
+    expect(f.runtime.services.defaults.get().scopedSettings).toEqual(before)
+  } finally {
+    await f.close()
+  }
+})

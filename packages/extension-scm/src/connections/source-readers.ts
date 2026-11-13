@@ -253,7 +253,7 @@ export function useSourceReaders<T extends Source>(
     source.repository ? pullRepositoryKey(source.repository, source.key) : source.key,
   enabled = true,
   origin?: T,
-  allowHandoff = true,
+  allowHandoff = false,
   active = true,
 ) {
   const { activeRuntimeId } = useWorkspace()
@@ -383,15 +383,15 @@ export function useSourceReaders<T extends Source>(
   }, [allSources, namespace, identityRevision, enabled, allowHandoff, refresh])
 }
 
-/** Reading may use a same-account alternate; cached data and all mutations keep
- * the originating source and its retained account/destination. */
+/** Reads, cached data and mutations stay with their originating computer and account.
+ * An explicit caller can allow same-account alternates; normal integration views do not. */
 export function useDetailReader<T extends Source>(
   origin: T | undefined,
   allSources: readonly T[],
   entity: string,
   remote: (source: T) => string = (source) =>
     source.repository ? pullRepositoryKey(source.repository, source.key) : source.key,
-  allowHandoff = true,
+  allowHandoff = false,
   active = true,
 ) {
   const group = useMemo(

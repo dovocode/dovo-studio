@@ -1,3 +1,4 @@
+import { sharedSettingsIssue } from './shared-settings-policy.js'
 import {
   sharedSettingsVersions,
   sharedSettingsFromVersions,
@@ -92,7 +93,10 @@ export class SharedStateSynchronization {
             !/^project:[^/\s]+\/[^\r\n]+$/.test(sharedSettingsVersionEntry(entry).key))
         )
           throw new Error('Invalid shared settings state')
-        decode(sharedSettingsSchema, [sharedSettingsVersionEntry(entry)])
+        const value = sharedSettingsVersionEntry(entry)
+        decode(sharedSettingsSchema, [value])
+        const issue = sharedSettingsIssue(value.value)
+        if (issue) throw new Error(issue)
       },
       validateState: (latest) => {
         decode(sharedSettingsSchema, sharedSettingsFromVersions(latest))

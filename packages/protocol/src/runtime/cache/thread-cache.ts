@@ -1,5 +1,5 @@
 import { Effect, Semaphore } from 'effect'
-import { getRuntimeSnapshotTag } from '../../shared/client.js'
+import { copyRuntimeSnapshotTag, getRuntimeSnapshotTag } from '../../shared/client.js'
 import type { Task } from '../../workspace.js'
 import { taskBudgetUsage } from '../../tasks/task-budget.js'
 import type { RuntimeSnapshot } from '../connection/runtime.js'
@@ -103,9 +103,11 @@ export function retainCachedThreads(
     ids.add(id)
     retained.set(id, restored)
   }
+  if (!retained.size) return next
   const tasks = next.workspace.tasks.map((task) => retained.get(task.id) ?? task)
-
-  return { ...next, detailTaskIds: [...ids], workspace: { ...next.workspace, tasks } }
+  const snapshot = { ...next, detailTaskIds: [...ids], workspace: { ...next.workspace, tasks } }
+  copyRuntimeSnapshotTag(next, snapshot)
+  return snapshot
 }
 
 /** Bound the persistent aggregate too, including full snapshots from older runtimes. */

@@ -174,37 +174,24 @@ above applies to GitHub.
 
 ## Projects on multiple computers
 
-If the original runtime goes offline, PR lists and open PR details can continue reading through
-another connected runtime with the same registered remote repository and verified GitHub account.
-Project filters still include matching checkouts on other computers. An unknown or different account
-cannot take over automatically; saved content remains visible when no verified reader is available.
-Desktop and web retain the last verified source identity in their device cache so this handoff can
-also work after reopening while the original runtime is offline.
+PR lists and open PR details keep their selected computer and verified account. If that computer is
+offline, saved content stays visible and reads wait for it to reconnect. The client does not
+silently use another computer with the same remote repository and account. An explicit source choice
+can select another checkout. GitHub credentials stay on each runtime.
 
-Reading through another computer does not move comments, edits, merges, task creation or drafts to
-it. Those actions retain the original runtime and destination and remain unavailable while that
-runtime is offline. GitHub credentials stay on each runtime.
+Project filters still include matching checkouts on other computers. Clients group matching remote
+repositories, but keep the selected source's account and destination. The remote host is part of the
+identity, so forks and repositories on different hosts remain separate.
 
-Each routed read, including later pages, checks the reader's captured credential and verified
-account and destination; an unchanged credential can reuse the account verification described above.
-If a saved source is rebound to another repository without changing its source scope, automatic
-recovery stops rather than relabeling that repository's data as the original project. Refresh the
-project's binding or explicitly choose its source to accept the new binding.
+Each guarded read, including later pages, checks the source's captured credential, verified account
+and destination. An unchanged credential can reuse the account verification described above. If a
+saved source is rebound to another repository without changing its source scope, recovery stops.
+Refresh the project's binding or explicitly choose its source to accept the new binding.
 
-The PR clients and desktop issue/pipeline views read each remote repository through one connected
-computer, including when several checkouts or worktrees point at it. When sources advertise
-persistent runtime IDs, clients use the same deterministic preference per remote, independent of
-their active computer, address or discovery order. Replicas must match the retained verified forge
-account. The same preference is used again after the preferred computer recovers; while it is
-unavailable, a verified same-account alternate serves reads. Older runtimes retain the previous
-client-local routing. A remote that moves keeps its last loaded rows until the new reader answers.
-The remote host is part of the identity, so forks and repositories on different hosts remain
-separate.
-
-This is shared placement, not a distributed lease: clients with different reachable server sets can
-choose different readers. Thread-owned watches also remain on their owning runtime. Dovo does not
-require a coordination service, move credentials between computers, or move writes to a read
-replica.
+Comments, edits, merges, task creation and drafts keep the original runtime and destination. These
+actions remain unavailable while that runtime is offline. Thread-owned watches also stay on their
+owning runtime. Explicit PR delegation retains its existing account and permission checks. See
+[Owner-scoped threads](owner-scoped-threads.md) for connection and cache behavior.
 
 Choose a specific project in the PR filter to use that checkout and its configured account. PR rows
 keep that source's personal relationship flags; flags from different accounts are never combined.
@@ -301,12 +288,13 @@ Enable **PR babysitting**. The setting is off by default. Enabling it also enabl
 watcher. This permits agent runs, tests and pushes for the thread's authorized task and uses agent
 tokens. Merge approval stays manual.
 
-Dovo starts a durable watch for a linked open PR when it matches an editing thread's checkout
-branch. It excludes review checkouts, read-only threads, paused queues and settled or archived
-threads. An agent can also register an authorized PR through `pull_request_watch`. A watch for an
-unrelated branch remains a feedback watch and does not start automatic checkout work. The thread's
-project information shows the current babysitting status. Stop its PR watch there to opt out for
-that thread. Stopped watches survive restarts and do not start again on their own.
+Dovo starts a durable watch for a linked open PR when it matches an editing thread's checkout branch
+and verified repository identity. It excludes Bots, review checkouts, read-only threads, paused
+queues and settled or archived threads. An agent can also register an authorized PR through
+`pull_request_watch`. A watch for an unrelated branch remains a feedback watch and does not start
+automatic checkout work. The thread's project information shows the current babysitting status. Stop
+its PR watch there to opt out for that thread. Stopped watches survive restarts and do not start
+again on their own.
 
 The runtime checks active PRs every 30 seconds while babysitting is enabled. Normal feedback
 watching keeps its two-minute interval. New check failures, review feedback, conflicts and target
@@ -323,8 +311,11 @@ intact. Repository rules decide whether approvals remain valid.
 After a server update, the agent must fetch and synchronize its checkout before making more fixes.
 It must retain local commits and uncommitted work. A blocked or uncertain update produces an agent
 notification. Dovo does not repeat the same mutation for the same head/target pair. Refresh the PR
-and explicitly restart its watch to retry that pair. Other forges retain CI/review monitoring; Dovo
-reports when branch freshness or the server update action is unavailable.
+and explicitly restart its watch to retry that pair. A missing action is checked again without
+replaying an issued mutation. Mutation outcomes survive queue admission failures. Disabling
+babysitting during an update retains its outcome and does not queue new fix work. Other forges
+retain CI/review monitoring; Dovo reports when branch freshness or the server update action is
+unavailable.
 
 This follows the durable-watch and expected-head update approach in T3 Code, inspected at
 `4fd40e1a`: `apps/server/src/orchestration-v2/pullRequestWatch.ts` and

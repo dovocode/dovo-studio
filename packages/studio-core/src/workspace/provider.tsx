@@ -1,14 +1,10 @@
-import {
-  browserSharedStateStorage,
-  browserThreadStateStorage,
-} from '../runtime/shared-state-storage'
+import { browserSharedStateStorage } from '../runtime/shared-state-storage'
 import {
   createRuntimeClient,
   runtimeComputerName,
   runtimeHasCustomName,
   mergeSharedSettings,
   SharedStateSynchronization,
-  ThreadStateSynchronization,
   randomUUID,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
@@ -23,6 +19,7 @@ import {
   isUnauthorizedRuntimeError,
   retainWorkspace,
   pendingAgentPresets,
+  sharedSettingsIssue,
   recoverRuntimePairings,
   mutableStruct,
   decode,
@@ -178,9 +175,7 @@ export function WorkspaceProvider({
     null,
   )
   const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
-  const [threadSyncError, setThreadSyncError] = useApplicationState('')
   const sharedStateSync = useRef<SharedStateSynchronization | null>(null)
-  const threadStateSync = useRef<ThreadStateSynchronization | null>(null)
   const presetRequests = useRef(new Set<string>())
   const failedPresetRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   const [presetSyncError, setPresetSyncError] = useApplicationState<string | null>(null)
@@ -360,7 +355,7 @@ export function WorkspaceProvider({
     installedSnapshot.current = null
     const next = {
       ...value,
-      tasks: value.tasks.filter((task) => !task.example),
+      tasks: value.tasks.filter((task) => !task.example && !task.replica),
     }
     setState(retainWorkspace(current.current, next))
   }, [])
@@ -490,9 +485,7 @@ export function WorkspaceProvider({
     if (!resolveRuntimeTarget(registryRef.current.profiles, value.profile)) return
     const next = {
       ...overviewsRef.current,
-      [value.profile.id]: overviewsRef.current[value.profile.id]
-        ? retainOverviewSnapshot(overviewsRef.current[value.profile.id], value)
-        : value,
+      [value.profile.id]: retainOverviewSnapshot(overviewsRef.current[value.profile.id], value),
     }
     setOverviews(next)
     if (value.connected && value.snapshot) cacheDirty.current = true
@@ -1142,8 +1135,8 @@ export function WorkspaceProvider({
         )
       } catch (error) {
         assertProfile(profile)
-        // A failed auxiliary read does not disconnect a healthy live stream. Otherwise
-        // replication refreshes repeatedly replace owner rows with replicas and back again.
+        // A failed auxiliary read does not disconnect a healthy live stream. Late cache
+        // refreshes must not replace live rows during connection setup.
         if (
           snapshotOrder.current.get(profile.id) === order &&
           (isUnauthorizedRuntimeError(error) || !runtimeSyncOnline(profile.connection))
@@ -1346,7 +1339,6 @@ export function WorkspaceProvider({
     failedPresetRequests.current.clear()
     setPresetSyncError(null)
     sharedStateSync.current?.retry()
-    threadStateSync.current?.retry()
     if (connection) await runClientEffect(mutations.recoverEffect(connection, true))
     await synchronization.retry()
     const profile = registryRef.current.profiles.find(
@@ -1980,6 +1972,11 @@ export function WorkspaceProvider({
         modelPreferences,
         globalModelPreferencesUpdatedAt,
       ])
+      const issue = sharedSettingsIssue({ agents: presets })
+      if (issue) {
+        failedPresetRequests.current.set(entry.profile.id, { fingerprint, error: issue })
+        continue
+      }
       if (!presets.length && !retired.length && !modelPreferences) {
         failedPresetRequests.current.delete(entry.profile.id)
         continue
@@ -2058,15 +2055,6 @@ export function WorkspaceProvider({
       request,
       refreshed: (profile) => refreshSharedRuntime.current(profile),
     })
-    const threads = new ThreadStateSynchronization({
-      storage: browserThreadStateStorage,
-      createReplicaId: () => `app:${randomUUID()}`,
-      request,
-      refreshed: (profile) => refreshSharedRuntime.current(profile),
-      error: setThreadSyncError,
-      intervalMs: backgroundActivity === 'reduced' ? 120000 : 30000,
-    })
-    threadStateSync.current = threads
     sharedStateSync.current = synchronization
     const update = () => {
       const input = sharedStateInput.current
@@ -2074,15 +2062,10 @@ export function WorkspaceProvider({
         input.targets,
         input.ready && (input.inputPreview || document.visibilityState === 'visible'),
       )
-      threads.update(
-        input.targets,
-        input.ready && (input.inputPreview || document.visibilityState === 'visible'),
-      )
     }
     const retry = () => {
       update()
       synchronization.retry()
-      threads.retry()
     }
     update()
     document.addEventListener('visibilitychange', update)
@@ -2090,8 +2073,6 @@ export function WorkspaceProvider({
     window.addEventListener('focus', retry)
     return () => {
       if (sharedStateSync.current === synchronization) sharedStateSync.current = null
-      if (threadStateSync.current === threads) threadStateSync.current = null
-      void threads.stop().catch((error) => console.error('Thread state cleanup failed', error))
       document.removeEventListener('visibilitychange', update)
       window.removeEventListener('online', retry)
       window.removeEventListener('focus', retry)
@@ -2102,10 +2083,6 @@ export function WorkspaceProvider({
   }, [backgroundActivity, setSettingsSyncError])
   useEffect(() => {
     sharedStateSync.current?.update(
-      visibleRuntimes,
-      ready && (inputPreview || document.visibilityState === 'visible'),
-    )
-    threadStateSync.current?.update(
       visibleRuntimes,
       ready && (inputPreview || document.visibilityState === 'visible'),
     )
@@ -2145,7 +2122,6 @@ export function WorkspaceProvider({
       connected,
       syncError:
         settingsSyncError ||
-        threadSyncError ||
         presetSyncError ||
         syncError ||
         (connection ? mutations.status(connection).error : null),
@@ -2194,7 +2170,6 @@ export function WorkspaceProvider({
       syncError,
       presetSyncError,
       settingsSyncError,
-      threadSyncError,
       connect,
       cancelPairing,
       disconnect,

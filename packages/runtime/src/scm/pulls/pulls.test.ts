@@ -29,7 +29,7 @@ const comment = {
   created_at: '2026-09-07T10:00:00Z',
 }
 afterEach(() => vi.restoreAllMocks())
-it('loads background PR feedback without files, thread metadata, repository settings or annotations', async () => {
+it('loads background PR feedback and branch readiness without files, thread metadata, repository settings or annotations', async () => {
   const git = new GitService()
   const run = vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
     if (args[0] === 'repo')
@@ -44,6 +44,28 @@ it('loads background PR feedback without files, thread metadata, repository sett
         ],
       })
     const endpoint = args[3]
+    if (endpoint === 'graphql') {
+      return JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              id: 'PR_7',
+              headRefOid: pull.head.sha,
+              state: 'OPEN',
+              isDraft: false,
+              mergeStateStatus: 'BEHIND',
+              isInMergeQueue: false,
+              viewerCanUpdate: true,
+              viewerCanUpdateBranch: true,
+              baseRef: { compare: { behindBy: 2 } },
+              viewerCanEnableAutoMerge: false,
+              viewerCanDisableAutoMerge: false,
+              autoMergeRequest: null,
+            },
+          },
+        },
+      })
+    }
     if (endpoint.endsWith('/pulls/7')) return JSON.stringify(pull)
     if (endpoint.includes('/issues/')) return JSON.stringify([[comment]])
     if (endpoint.includes('/reviews?'))
@@ -84,7 +106,15 @@ it('loads background PR feedback without files, thread metadata, repository sett
   ])
   expect(result.files).toEqual([])
   expect(result.warnings).toEqual([])
-  expect(run.mock.calls.filter(([, args]) => args[0] !== 'repo')).toHaveLength(7)
+  expect(result.pull.behindBy).toBe(2)
+  expect(result.capabilities?.actions).toContain('update-branch')
+  const graphql = run.mock.calls.filter(([, args]) => args[3] === 'graphql')
+  expect(graphql).toHaveLength(1)
+  expect(graphql[0]?.[1]).toContain('head=refs/pull/7/head')
+  const query = graphql[0]?.[1].find((arg) => arg.startsWith('query='))
+  expect(query).toContain('baseRef{compare(headRef:$head){behindBy}}')
+  expect(query).not.toContain('reviewThreads')
+  expect(run.mock.calls.filter(([, args]) => args[0] !== 'repo')).toHaveLength(8)
   expect(
     run.mock.calls.filter(([, args]) => args[0] !== 'repo').every(([, , background]) => background),
   ).toBe(true)

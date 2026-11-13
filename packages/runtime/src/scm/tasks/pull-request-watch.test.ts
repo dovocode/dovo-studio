@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { PullComment, PullDetail } from '@dovo/protocol'
 import type { AgentAdapter } from '../../agents/execution/types.js'
@@ -973,6 +974,13 @@ async function careFixture() {
   await f.s.pullRequestWatch.dispose()
   const watcher = new PullRequestWatch(f.s.db, f.s)
   cleanups.push(() => watcher.dispose())
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repository) => ({
+      ...repository,
+      gitIdentity: 'github.com/team/project',
+    })),
+  }))
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, checkoutBranch: 'fix' }))
   f.s.preferences.save({ enablePullRequestBabysitting: true })
   const send = vi.spyOn(f.s.tasks, 'send').mockResolvedValue({ ok: true })
@@ -1126,3 +1134,133 @@ it('does not report readiness for unknown checks or unknown branch freshness', a
   expect(f.queued().some((item) => item.text.includes('Reported checks passed'))).toBe(false)
   expect(f.act).not.toHaveBeenCalled()
 })
+
+it.each(['another/unrelated', 'fork/project'])(
+  'keeps same-name branches in %s as feedback-only watches',
+  async (repository) => {
+    const f = await careFixture()
+    f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review', queuePaused: false }))
+    const externalUrl = `https://github.com/${repository}/pull/7`
+    f.setDetail({
+      ...f.current,
+      pull: {
+        ...f.current.pull,
+        url: externalUrl,
+        repositoryUrl: `https://github.com/${repository}`,
+      },
+    })
+    await f.watcher.command({ taskId: f.taskId, action: 'watch', url: externalUrl })
+    await f.watcher.tick()
+    expect(f.act).not.toHaveBeenCalled()
+    expect(f.queued()).toHaveLength(0)
+  },
+)
+
+it('does not update a fork head in the target repository with the same branch name', async () => {
+  const f = await careFixture()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review', queuePaused: false }))
+  f.setDetail({
+    ...f.current,
+    pull: { ...f.current.pull, headCloneUrl: 'https://github.com/fork/project.git' },
+  })
+  await f.watch()
+  await f.watcher.tick()
+  expect(f.act).not.toHaveBeenCalled()
+  expect(f.queued()).toHaveLength(0)
+})
+
+it('keeps a completed Update branch notice without queuing fix work after opt-out', async () => {
+  const f = await careFixture()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review', queuePaused: false }))
+  let release!: () => void
+  f.act.mockImplementation(async () => {
+    await new Promise<void>((resolve) => (release = resolve))
+    return { number: 7, url, status: 'updated' }
+  })
+  await f.watch()
+  const tick = f.watcher.tick()
+  await vi.waitFor(() => expect(f.act).toHaveBeenCalledTimes(1))
+  f.s.preferences.save({ enablePullRequestBabysitting: false })
+  release()
+  await tick
+  expect(f.queued()).toHaveLength(0)
+  expect(f.send).not.toHaveBeenCalled()
+  expect(
+    (await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches[0]?.careStatus,
+  ).toContain('Update branch completed')
+  f.s.preferences.save({ enablePullRequestBabysitting: true })
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(1)
+  expect(f.queued()[0]?.text).toContain('Update branch completed')
+})
+
+it('rechecks Update branch capability at the same revision without replaying issued writes', async () => {
+  const f = await careFixture()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review', queuePaused: false }))
+  await f.watch()
+  f.setDetail({ ...f.current, capabilities: undefined })
+  await f.watcher.tick()
+  const notices = f.queued().length
+  await f.watcher.tick()
+  expect(f.queued()).toHaveLength(notices)
+  f.setDetail(f.current)
+  await f.watcher.tick()
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(1)
+})
+
+it('delivers an Update branch result after queue admission recovers without replaying the mutation', async () => {
+  const f = await careFixture()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review', queuePaused: false }))
+  await f.watch()
+  vi.spyOn(f.s.tasks.queue, 'add').mockImplementationOnce(() => {
+    throw new Error('Admission unavailable')
+  })
+  await f.watcher.tick()
+  expect(f.queued()).toHaveLength(0)
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(1)
+  expect(f.queued()[0]?.text).toContain('Update branch completed')
+})
+
+it('reports late conflicts at the same head and target revision once', async () => {
+  const f = await careFixture()
+  await f.watch()
+  f.setDetail({ ...f.current, pull: { ...f.current.pull, mergeable: null, behindBy: 0 } })
+  await f.watcher.tick()
+  f.setDetail({ ...f.current, pull: { ...f.current.pull, mergeable: false, behindBy: 0 } })
+  await f.watcher.tick()
+  await f.watcher.tick()
+  expect(
+    f.queued().filter((item) => item.text.includes('This PR has merge conflicts')),
+  ).toHaveLength(1)
+})
+
+it.each([false, true])(
+  'does not enroll Bots or promote their existing feedback watch into babysitting (existing=%s)',
+  async (existing) => {
+    const f = await careFixture()
+    if (existing) await f.watch()
+    const now = new Date().toISOString()
+    f.s.store.updateTask(f.taskId, (task) => ({
+      ...task,
+      status: 'review',
+      queuePaused: false,
+      bot: {
+        role: 'Watcher',
+        responsibilities: 'Watch releases',
+        state: 'active',
+        revision: randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+      },
+      pullStatus: { number: 7, url, state: 'open', draft: false, checkedAt: now },
+    }))
+    await f.watcher.tick()
+    expect(f.act).not.toHaveBeenCalled()
+    expect(f.queued()).toHaveLength(0)
+    expect((await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches).toHaveLength(
+      existing ? 1 : 0,
+    )
+  },
+)

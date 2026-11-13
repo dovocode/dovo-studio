@@ -7,6 +7,7 @@ import {
   type SharedSettingsEntry,
 } from '../../workspace.js'
 import { mergeSharedSettings } from './scoped-settings.js'
+import { sharedSettingsIssue } from './shared-settings-policy.js'
 
 const categories = Struct.keys(scopedSettingsValueSchema.fields)
 
@@ -22,6 +23,10 @@ export function sharedSettingsVersions(
     )
   )
     throw new Error('Shared settings require a compatible app version; saved data was kept')
+  for (const entry of entries) {
+    const issue = sharedSettingsIssue(entry.value)
+    if (issue) throw new Error(issue)
+  }
   return entries.flatMap((entry): StateVersion<ScopedSettingsValue>[] =>
     entry.revisions
       ? categories.flatMap((category) => {

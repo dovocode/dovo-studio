@@ -1,3 +1,4 @@
+import { sharedSettingsIssue } from '@dovo/protocol'
 import { SettingsSaveBar } from '../screens/settings-save-bar'
 import { SecretEnvironmentEditor } from './secret-environment-editor'
 import { secretReferenceIssue, responses } from '@dovo/protocol'
@@ -30,6 +31,7 @@ export function AgentEditor({
   onSave,
   scopeLabel,
   fixedProvider = false,
+  shared = false,
 }: {
   original: Agent
   creating: boolean
@@ -37,6 +39,7 @@ export function AgentEditor({
   onSave: (agent: Agent) => Promise<void>
   scopeLabel?: string
   fixedProvider?: boolean
+  shared?: boolean
 }) {
   const { styles } = useTheme()
 
@@ -72,6 +75,8 @@ export function AgentEditor({
       env: parseAgentEnvironment(environment),
       name: draft.name.trim(),
     })
+    const sharedIssue = shared && sharedSettingsIssue({ agents: [valid] })
+    if (sharedIssue) throw new Error(sharedIssue)
     await onSave(valid)
     onClose()
   }
@@ -182,6 +187,13 @@ export function AgentEditor({
       />
       {showConnection && (
         <View style={{ gap: 12 }}>
+          {shared && (
+            <Text style={styles.muted}>
+              Shared profiles use each computer’s installation and login. Use environment-variable
+              names for credentials. Save local paths and literal values at Computer or Project on
+              computer.
+            </Text>
+          )}
           {draft.provider === 'hermes' && (
             <Text style={styles.muted}>
               Uses Hermes on the runtime computer, including its memory and skills. Configure its

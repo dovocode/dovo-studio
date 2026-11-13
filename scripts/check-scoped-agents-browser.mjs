@@ -629,8 +629,61 @@ try {
       await confirmation.getByRole('button', { name: 'Discard changes', exact: true }).click()
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Cursor worker')
     }
+    // Shared profiles reject computer-owned values before the request leaves either client.
+    for (const sharedProject of ['git:github.com/team/repo', '']) {
+      await project.selectOption(sharedProject)
+      await environment.selectOption('')
+      await page
+        .getByRole('button', { name: mobile ? 'New configuration' : 'Add profile', exact: true })
+        .click()
+      const sharedEditor = mobile ? page : page.getByRole('dialog')
+      if (!mobile) {
+        await sharedEditor.getByRole('button', { name: 'Codex', exact: true }).click()
+        await sharedEditor.getByRole('button', { name: 'Next', exact: true }).click()
+      }
+      const name = sharedProject ? 'Shared project worker' : 'Shared global worker'
+      await sharedEditor.getByLabel('Name', { exact: true }).fill(name)
+      if (!mobile) await sharedEditor.getByRole('button', { name: 'Next', exact: true }).click()
+      await sharedEditor.getByText('Connection & account', { exact: true }).click()
+      await sharedEditor
+        .getByText(/Shared profiles use each computer’s installation and login/)
+        .waitFor()
+      const environmentValues = sharedEditor.getByRole('textbox', {
+        name: /^Environment variables/,
+      })
+      const save = sharedEditor.getByRole('button', {
+        name: mobile ? 'Save agent' : 'Add agent profile',
+        exact: true,
+      })
+      const writesBefore = await page.evaluate(() => window.writes.length)
+      await environmentValues.fill('TOKEN=private-shared-editor-fixture')
+      await save.click()
+      await sharedEditor
+        .getByText(/Agent environment values and secret references belong to one computer/)
+        .waitFor()
+      assert.equal(await page.evaluate(() => window.writes.length), writesBefore)
+      assert.equal(await environmentValues.inputValue(), 'TOKEN=private-shared-editor-fixture')
+      if (!mobile) await sharedEditor.getByRole('button', { name: 'Back', exact: true }).click()
+      assert.equal(await sharedEditor.getByLabel('Name', { exact: true }).inputValue(), name)
+      if (!mobile) {
+        await sharedEditor.getByRole('button', { name: 'Next', exact: true }).click()
+        await sharedEditor.getByText('Connection & account', { exact: true }).click()
+      }
+      assert.equal(await environmentValues.inputValue(), 'TOKEN=private-shared-editor-fixture')
+      await environmentValues.fill('')
+      await save.click()
+      await (
+        mobile
+          ? page.getByText(name, { exact: true })
+          : page.getByRole('heading', { name, exact: true })
+      ).waitFor()
+      const write = await page.evaluate(() => window.writes.at(-1))
+      assert.equal(write.scope, sharedProject ? 'project' : 'global')
+      assert.equal(JSON.stringify(write).includes('private-shared-editor-fixture'), false)
+    }
     if (!mobile) {
       await project.selectOption('')
+      await environment.selectOption('linux')
       await page.locator('summary[data-setting-label="Installations & sign-in"]').click()
       await page.getByRole('button', { name: 'Configure titles & dictation', exact: true }).click()
       assert.deepEqual(await page.evaluate(() => window.navigation), {

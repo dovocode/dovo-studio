@@ -263,6 +263,7 @@ export function ScopedAgents({
       )}
       {editing && (
         <AgentEditor
+          shared={scope === 'global' || scope === 'project'}
           original={editing}
           creating={!agents.some((agent) => agent.id === editing.id)}
           scopeLabel={settingsScopeLabels[scope]}

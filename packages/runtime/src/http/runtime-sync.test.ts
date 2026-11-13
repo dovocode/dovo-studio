@@ -1,14 +1,8 @@
 /// <reference lib="es2024" />
-import { DurableState } from '@dovo/durable-connections'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
 import { WebSocket } from 'ws'
 import {
-  threadReplicationChannel,
-  decodeThreadRecord,
-  validateThreadVersion,
-  threadRecordKey,
-  type ThreadRecord,
   applySnapshotDelta,
   artifactReferences,
   decode,
@@ -1513,55 +1507,32 @@ it('exposes older recovery pages and rejects invalid cursors', async () => {
   ).toBe(400)
 })
 
-it('pushes replicated thread changes without an execution workspace edit and scopes history to the selected copy', async () => {
+it('streams local changes without exposing stored foreign history', async () => {
   const { runtime, open } = await setup()
-  const state = await DurableState.open({
-    channel: threadReplicationChannel,
-    replicaId: 'foreign',
-    storage: { load: () => undefined, save: () => {} },
-    decode: decodeThreadRecord,
-    validateVersion: validateThreadVersion,
+  const { ThreadReplicationJournal } = await import('../storage/thread-replication-journal.js')
+  const journal = new ThreadReplicationJournal(runtime.services.db, runtime.services.runtimeId)
+  const identity = { ownerRuntimeId: 'foreign', threadId: 'task' }
+  journal.record({
+    ...identity,
+    kind: 'thread',
+    ownerName: 'Other computer',
+    projectName: 'Project',
+    createdAt: '2026-01-01',
+    status: 'running',
+    historyRevision: 0,
+    removed: false,
   })
-  cleanup.push(() => state.close())
+  journal.record({ ...identity, kind: 'title', value: 'Foreign conversation' })
   const client = await open(token, 5, [], true)
   client.socket.send(JSON.stringify({ type: 'resume' }))
   const baseline = await client.wait('snapshot')
-  const workspaceRevision = runtime.services.store.version()
-  const identity = { ownerRuntimeId: 'foreign', threadId: 'remote-thread' }
-  const records: ThreadRecord[] = [
-    {
-      ...identity,
-      kind: 'thread',
-      ownerName: 'Other computer',
-      projectName: 'Project',
-      createdAt: '2026-01-01',
-      status: 'review',
-      historyRevision: 0,
-      removed: false,
-    },
-    { ...identity, kind: 'title', value: 'Shared conversation' },
-    {
-      ...identity,
-      kind: 'message',
-      messageId: 'remote-message',
-      position: 0,
-      message: { id: 'remote-message', role: 'assistant', text: 'Replicated history' },
-    },
-  ]
-  for (const record of records) await state.set(threadRecordKey(record), record)
-  await runtime.services.threadReplication.exchange(state.request())
-  expect(runtime.services.store.version()).toBe(workspaceRevision)
+  expect(baseline.snapshot.workspace.tasks.every((task) => !task.replica)).toBe(true)
+  expect(baseline.snapshot.threadReplicationVersion).toBeUndefined()
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Local change' }))
   const delta = await client.wait('delta')
-  const copy = applySnapshotDelta(baseline.snapshot, delta.delta).workspace.tasks.find(
-    (task) => task.replica,
+  const next = applySnapshotDelta(baseline.snapshot, delta.delta)
+  expect(next.workspace.tasks.map((task) => task.title)).toEqual(['Local change'])
+  expect(runtime.services.threadArchive.read('foreign', 'task').task.title).toBe(
+    'Foreign conversation',
   )
-  expect(copy?.title).toBe('Shared conversation')
-  expect(copy?.messages).toEqual([])
-  client.frames.length = 0
-  client.socket.send(JSON.stringify({ type: 'watch', tasks: [copy?.id], scopes: [] }))
-  const detail = await client.wait('snapshot')
-  expect(detail.snapshot.workspace.tasks.find((task) => task.replica)?.messages[0]?.text).toBe(
-    'Replicated history',
-  )
-  expect(runtime.services.store.get().tasks).toHaveLength(1)
 })

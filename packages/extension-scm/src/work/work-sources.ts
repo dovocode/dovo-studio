@@ -26,9 +26,8 @@ export { workRemoteKey, matchesWorkSource } from './work-source-identity'
 import { workRemoteKey } from './work-source-identity'
 import { useSourceReaders } from '../connections/source-readers'
 
-/** Issue trackers and code repositories have separate identities and lifecycles. Like pull
- * requests, each remote and each Jira project is read through one computer: this computer when
- * it has the source, otherwise the least loaded connected computer, kept until it disconnects. */
+/** Issue trackers and code repositories have separate identities and lifecycles.
+ * Deduplicated lists keep their original computer, including while it is offline. */
 export function useIssueSources(includeJira: boolean, deduplicate = true): WorkSource[] {
   const allRepositories = useRepositorySources()
   const {

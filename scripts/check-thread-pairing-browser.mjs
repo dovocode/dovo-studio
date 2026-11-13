@@ -38,27 +38,22 @@ async function bundle(mobile) {
     '../../runtime/connection/pair-computer': `export const PairComputer=()=> <div>Pairing credentials required {window.store.profiles.map(p=><span key={p.id}>{p.name}</span>)}</div>;`,
     '../../runtime/connection/provider': `
       import {createContext,useContext} from 'react';
-      const RuntimeContext=createContext(null);
-      export const useRuntime=()=>useContext(RuntimeContext)??window.store;
-      // Match the owner-bound snapshot boundary. Keep the actual route, identity
-      // resolution, pairing flow and selected-computer effect under test.
+      const Scope=createContext(null);
+      export const useRuntime=()=>useContext(Scope)??window.store;
       export const RuntimeScope=({runtimeId,children})=>{
-        const runtime=useRuntime();
-        const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);
-        if(!entry)return null;
-        const value={...runtime,activeId:runtimeId,profile:entry.profile,connection:entry.profile.connection,snapshot:entry.snapshot,connected:entry.connected};
-        return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;
-      };
-    `,
+        const root=useRuntime();
+        const entry=root.overviews.find(source=>source.profile.id===runtimeId);
+        return entry?<Scope.Provider value={{...root,activeId:runtimeId,profile:entry.profile,connection:entry.profile.connection,snapshot:entry.snapshot,connected:entry.connected}}><section data-runtime-owner={runtimeId}>{children}</section></Scope.Provider>:null;
+      };`,
     '../../shell/navigation':
       'export const useNavigation=()=>({focused:window.focused??true,navigate:()=>{}});',
-    '../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
+    '../runtime/connection/provider': `export * from '../../runtime/connection/provider';`,
     './navigation': 'export const useNavigation=()=>({focused:window.focused??true});',
     '../runtime/state/application-state': `import {useState} from 'react';export const useApplicationState=useState;`,
     '../runtime/state/native-effect':
       'import {Effect} from "effect";export const nativeEffect=fn=>Effect.tryPromise(fn);',
     '../creation/startup-thread': 'export const StartupThread=()=>null;',
-    './task-detail': `import {useRuntime} from '../../runtime/connection/provider';export const TaskDetail=({task,parentNavigation})=>{const runtime=useRuntime();return <div data-task-runtime={runtime.activeId} data-task-runtime-identity={runtime.snapshot?.runtimeId}><h2>{task.title}</h2>{parentNavigation}</div>};`,
+    './task-detail': `import {useRuntime} from '../../runtime/connection/provider';export const TaskDetail=({task,parentNavigation})=><div data-opened-owner={useRuntime().activeId} data-task-runtime={useRuntime().activeId} data-task-runtime-identity={useRuntime().snapshot?.runtimeId}><h2>{task.title}</h2>{parentNavigation}</div>;`,
     '../../ui/controls/use-action':
       'export const useAction=()=>({busy:false,error:"",act:fn=>fn()});',
   }
@@ -130,8 +125,8 @@ try {
       })
     await page.evaluate(() => window.pair('new-profile', 'child-identity', 'Correct computer'))
     if (mobile) {
-      await page.getByText('Task unavailable', { exact: true }).waitFor()
-      assert.equal(await page.locator('[data-task-runtime]').count(), 0)
+      await page.locator('[data-runtime-owner="new-profile"]').waitFor()
+      assert.equal(await page.getByRole('heading', { name: 'Opened selected child' }).count(), 0)
       assert.equal(await page.evaluate(() => window.params.runtimeId), 'foreign-profile')
       assert.deepEqual(await page.evaluate(() => window.switches), [])
       await page.evaluate(() => {
@@ -151,7 +146,8 @@ try {
         'child-identity',
       )
       assert.deepEqual(await page.evaluate(() => window.switches), ['new-profile'])
-      assert.deepEqual(await page.evaluate(() => window.refreshes), ['new-profile'])
+      assert.equal(await page.locator('[data-opened-owner="new-profile"]').count(), 1)
+      assert.ok(await page.evaluate(() => window.refreshes.every((id) => id === 'new-profile')))
       await page
         .getByRole('button', { name: 'Back to parent · Parent thread', exact: true })
         .click()

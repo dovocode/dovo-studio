@@ -2,7 +2,7 @@ import { pullRepositoryKey } from '@dovo/protocol'
 import type { JiraSource } from '@dovo/studio-core'
 import type { WorkSource } from './work-sources'
 
-/** The same Jira project on several computers is one list source; its reader can change. */
+/** The same Jira project on several computers is one remote group. The selected owner stays fixed. */
 const jiraRemoteKey = (jira: Pick<JiraSource, 'site' | 'project'>) =>
   JSON.stringify(['jira', new URL(jira.site).origin, jira.project])
 

@@ -7,12 +7,7 @@ import {
   useState,
   type RefObject,
 } from 'react'
-import {
-  mergeThreadReplicaPage,
-  threadReplicaPageSchema,
-  responses,
-  type Task,
-} from '@dovo/protocol'
+import { mergeThreadReplicaPage, threadReplicaPageSchema, type Task } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import {
   Button,
@@ -20,7 +15,6 @@ import {
   ConversationContent,
   ConversationHistory,
   ConversationScrollButton,
-  Input,
   useConversationHistory,
 } from '@dovo/studio-ui'
 import { DeferredTurn } from '../chat/thread/deferred-turn'
@@ -116,10 +110,6 @@ function ReplicaMessages({ messages, anchor }: { messages: Message[]; anchor: Pr
 export function ReplicatedThread({ task }: { task: Task }) {
   const { request, connected } = useWorkspace()
   const [view, setView] = useState(task)
-  // Without a local edit the field follows the shared title, including remote renames.
-  const [titleDraft, setTitleDraft] = useState<string | null>(null)
-  const title = titleDraft ?? view.title
-  const [busy, setBusy] = useState(false)
   const [paging, setPaging] = useState(false)
   const pagingRef = useRef(false)
   const [error, setError] = useState('')
@@ -162,29 +152,6 @@ export function ReplicatedThread({ task }: { task: Task }) {
       cancelled = true
     }
   }, [owner?.ownerRuntimeId, owner?.threadId, task.historyRevision, reload, connected, request])
-  const edit = async (field: 'title' | 'pinned', value: string | boolean) => {
-    if (!owner || busy) return
-    readGeneration.current++
-    setBusy(true)
-    setError('')
-    try {
-      await request(
-        '/api/threads/metadata',
-        { ownerRuntimeId: owner.ownerRuntimeId, threadId: owner.threadId, field, value },
-        responses.ok,
-      )
-      setView((current) => ({
-        ...current,
-        ...(field === 'title' && typeof value === 'string' ? { title: value } : {}),
-        ...(field === 'pinned' && typeof value === 'boolean' ? { pinned: value } : {}),
-      }))
-      if (field === 'title') setTitleDraft(null)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setBusy(false)
-    }
-  }
   const before = view.historyBefore
   const older = useCallback(async () => {
     // Scrolling near the start fires repeatedly while a page is in flight; request it once.
@@ -221,38 +188,9 @@ export function ReplicatedThread({ task }: { task: Task }) {
           {owner?.projectName} · {owner?.ownerName} · {view.status}
         </p>
         <p className="text-sm text-muted-foreground">
-          Shared conversation. Agent execution stays on {owner?.ownerName}.
+          Stored recovery copy. Connect to {owner?.ownerName} to continue this thread.
         </p>
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void edit('title', title.trim())
-          }}
-        >
-          <Input
-            aria-label="Thread title"
-            value={title}
-            onChange={(event) => setTitleDraft(event.target.value)}
-            disabled={!connected || busy}
-            maxLength={2000}
-          />
-          <Button type="submit" disabled={!connected || busy || !title.trim()}>
-            Save title
-          </Button>
-          <Button
-            type="button"
-            disabled={!connected || busy}
-            onClick={() => void edit('pinned', !view.pinned)}
-          >
-            {view.pinned ? 'Unpin' : 'Pin'}
-          </Button>
-        </form>
-        <Button
-          type="button"
-          disabled={!connected || busy}
-          onClick={() => setReload((value) => value + 1)}
-        >
+        <Button type="button" disabled={!connected} onClick={() => setReload((value) => value + 1)}>
           Refresh messages
         </Button>
         {error && (
@@ -289,7 +227,7 @@ export function ReplicatedThread({ task }: { task: Task }) {
               <ReplicaMessages messages={view.messages} anchor={anchor} />
               {!view.messages.length && (
                 <p className="text-sm text-muted-foreground">
-                  Completed messages appear here after synchronization.
+                  No messages are stored in this recovery copy.
                 </p>
               )}
             </ConversationContent>

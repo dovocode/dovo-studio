@@ -180,13 +180,14 @@ Older clients that edit individual thread fields cannot remove a Bot's identity.
 
 ## Limits
 
-- Bots exist on one computer. They do not sync or move between computers. Shared thread history
-  between paired computers excludes Bot threads: a paired computer shows no copy of a Bot, its
-  messages or its settings. Paired clients reach the Bot on its home computer. A Bot's delegated
-  child threads are ordinary threads and are shared as usual.
-- A development build could share Bot threads before this rule. On first start, the runtime marks
-  those shared copies as removed and withdraws their shared message copies. The Bot, its history and
-  its settings stay unchanged on its home computer.
+- Bots exist on one computer. They do not sync or move between computers. Paired clients reach the
+  Bot on its home computer and keep a cache for offline use. Delegated child threads also stay on
+  their owning computer. Clients combine these owner-scoped thread lists.
+- Automatic thread mirroring is retired. New runtimes reject old mirroring and shared-metadata
+  requests. They preserve old journals as read-only archives. They do not publish new Bot messages
+  or settings. Existing Bots, their history and their settings stay unchanged on their home
+  computer. See [Owner-scoped threads](owner-scoped-threads.md) for archive access and cache
+  behavior.
 - Dovo enforces no Bot-specific budget or run limit. Thread budgets and harness limits still apply.
 - After a restart, an interrupted turn of a paused Bot does not continue automatically. Resume the
   Bot, then retry the turn.
