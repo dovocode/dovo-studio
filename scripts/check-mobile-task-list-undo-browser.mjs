@@ -19,6 +19,8 @@ export const Icon=()=>null;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 `
 const stubs = [
+  { path: '../ui/controls/icon', importer: mobile + 'bots/bot-avatar.tsx', contents: controls },
+  { path: '../ui/theme', importer: mobile + 'bots/bot-avatar.tsx', contents: controls },
   { path: 'react-native', contents: native },
   { path: 'react-native-gesture-handler', contents: native },
   {

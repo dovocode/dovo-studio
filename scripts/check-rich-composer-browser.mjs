@@ -70,12 +70,12 @@ const listeners = new Set(); let preferences = { sendWith: 'enter', richTextComp
 export const readAppPreferences = () => preferences;
 export const updateAppPreferences = changes => { preferences = { ...preferences, ...changes }; listeners.forEach(listener => listener()) };
 export const useAppPreferences = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener) }, () => preferences);
-const workspace = { connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files')return {files:[]}; if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
+const workspace = { workspace: {tasks:[]}, connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files')return {files:[]}; if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
 export const useWorkspace = () => workspace;
 export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
 export const useResolvedTheme = () => 'dark';`
-            : `export { cn } from '../studio-ui/src/lib/utils'; export { ComposerTextarea } from '../studio-ui/src/composer-surface';
+            : `export {BotAvatar} from '../studio-ui/src/bot-avatar'; export { cn } from '../studio-ui/src/lib/utils'; export { ComposerTextarea } from '../studio-ui/src/composer-surface';
 export const Button = ({ children, variant, ...props }) => <button {...props}>{children}</button>;
 export const IconButton = ({ label, children, ...props }) => <button aria-label={label} {...props}>{children}</button>;`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),

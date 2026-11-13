@@ -9,7 +9,7 @@ async function bundle(mobile) {
   const mocks = {
     '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.runtime;`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-    '@dovo/studio-ui/resource-editors': `export {resourceError} from '${root}/packages/studio-ui/src/resources/error.ts';`,
+    '@dovo/studio-ui/resource-editors': `export {CatalogPicker} from '${root}/packages/studio-ui/src/resources/catalog-picker.tsx';export {resourceError} from '${root}/packages/studio-ui/src/resources/error.ts';`,
     '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
     '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
