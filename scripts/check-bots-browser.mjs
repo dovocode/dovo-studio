@@ -185,6 +185,7 @@ function App(){
  window.host={navigate:target=>{window.navigations??=[];window.navigations.push(target);setRoute(target)},registerCommand:command=>{window.commands.set(command.id,command.run);return ()=>window.commands.delete(command.id)}};
  window.externalRole=()=>setAll(before=>({...before,[owner]:{...before[owner],tasks:before[owner].tasks.map(t=>t.id==='bot'?{...t,bot:{...t.bot,role:'External role',revision:randomUUID()}}:t)}}));window.fresh=(scratch=true)=>{window.pairVersion=(window.pairVersion??0)+1;setInspector(false);setRoute({viewId:'bots'});setAll(before=>({...before,[owner]:{...before[owner],tasks:[],repositories:scratch?[{id:'dovo:scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]:[]}}));setVersion(v=>v+1)};window.setOwner=setOwner;window.setOffline=setOffline;window.setSupported=setSupported;window.route=setRoute;window.remount=()=>setVersion(v=>v+1);window.inspect=setInspector;
  const current=all[owner];window.all=all;window.owner=owner;window.currentRoute=route;
+ window.cloneBot=(from,to,id)=>setAll(before=>({...before,[to]:{...before[to],tasks:[...before[to].tasks.filter(task=>task.id!==id),{...before[from].tasks.find(task=>task.id===id),title:'Remote same-ID Bot'}]}}));
  window.setScratch=(id,enabled)=>setAll(before=>({...before,[id]:{...before[id],repositories:enabled?[{id:id+'-scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]:[]}}));
  const setWorkspace=useCallback(update=>setAll(before=>({...before,[owner]:typeof update==='function'?update(before[owner]):update})),[owner]);
  const rpc=useCallback(async(target,path,input,schema)=>{
@@ -414,6 +415,21 @@ try {
   )
   await page.getByLabel('Bot role', { exact: true }).fill('Owner one draft')
   await page.evaluate(() => window.setOwner('two'))
+  const originalOwnerRow = page
+    .locator('[data-bot-row="bot"]')
+    .filter({ hasText: 'Release Bot one' })
+  assert.equal(
+    await originalOwnerRow.locator('button[aria-current="true"]').count(),
+    1,
+    'A computer-only change keeps the selected owner even when both computers have the same Bot ID',
+  )
+  assert.equal(await composer().count(), 0, 'Do not render the same ID from a different computer')
+  await page
+    .locator('[data-bot-row="bot"]')
+    .filter({ hasText: 'Release Bot two' })
+    .getByRole('button')
+    .first()
+    .click()
   await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   await page.getByLabel('Bot role', { exact: true }).fill('Owner two role')
   await page.getByRole('button', { name: 'Save Bot settings', exact: true }).click()
@@ -421,6 +437,12 @@ try {
     () => window.all.two.tasks.find((t) => t.id === 'bot').bot.role === 'Owner two role',
   )
   await page.evaluate(() => window.setOwner('one'))
+  await page
+    .locator('[data-bot-row="bot"]')
+    .filter({ hasText: 'Release Bot one' })
+    .getByRole('button')
+    .first()
+    .click()
   await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   await page.waitForFunction(
     () => document.querySelector('input[aria-label="Bot role"]')?.value === 'Owner one draft',
@@ -936,7 +958,75 @@ try {
   assert.equal(await page.evaluate(() => window.switchBeforeRender), true)
   assert.equal(await createsFor(switched.input.requestId), 1)
 
-  // Notification/command navigation reuses BotsView. Stay on Y after the late create reply.
+  // An external local Bot route during the owned switch must keep its exact owner.
+  // Reuse an existing ID on both computers to catch accidental cross-computer rekeying.
+  await page.evaluate((id) => window.cloneBot('one', 'two', id), replaced.input.createTask.id)
+  await page.evaluate(() => window.setOwner('one'))
+  await startDraft('External route during switch', 'two')
+  await page.evaluate(() => {
+    window.deferSwitch = true
+    window.releaseSwitch = undefined
+  })
+  await page.getByRole('button', { name: 'Create Bot', exact: true }).click()
+  await page.waitForFunction(() => !!window.releaseSwitch)
+  const routeDuringSwitch = await lastCreate()
+  await page.evaluate(
+    (id) => window.route({ viewId: 'bots', entityId: id }),
+    replaced.input.createTask.id,
+  )
+  await page.locator('textarea[data-task-id="' + replaced.input.createTask.id + '"]').waitFor()
+  const localSameId = page
+    .locator('[data-bot-row="' + replaced.input.createTask.id + '"]')
+    .filter({ hasText: 'In-flight pairing Bot' })
+  const remoteSameId = page
+    .locator('[data-bot-row="' + replaced.input.createTask.id + '"]')
+    .filter({ hasText: 'Remote same-ID Bot' })
+  assert.equal(await localSameId.locator('button[aria-current="true"]').count(), 1)
+  assert.equal(await remoteSameId.locator('button[aria-current="true"]').count(), 0)
+  await page.evaluate(() => {
+    window.deferSwitch = false
+    window.releaseSwitch()
+  })
+  await page.waitForFunction(() => window.owner === 'two')
+  await page.getByRole('heading', { name: 'Select a Bot', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.currentRoute.entityId),
+    replaced.input.createTask.id,
+  )
+  assert.equal(
+    await localSameId.locator('button[aria-current="true"]').count(),
+    1,
+    'The local owner key stays selected after the old switch finishes',
+  )
+  assert.equal(
+    await remoteSameId.locator('button[aria-current="true"]').count(),
+    0,
+    'A matching resource ID on the new computer cannot take the selection',
+  )
+  assert.equal(
+    await page.locator('textarea[data-task-id="' + replaced.input.createTask.id + '"]').count(),
+    0,
+    'Do not show a wrong-computer conversation while the selected owner is inactive',
+  )
+  assert.equal(
+    await page
+      .locator('[data-thread-header="' + routeDuringSwitch.input.createTask.id + '"]')
+      .count(),
+    0,
+    'The invalidated auto-open cannot replace the external route',
+  )
+  await page.getByRole('button', { name: 'New Bot', exact: true }).click()
+  assert.equal(
+    await page.getByLabel('Bot name', { exact: true }).inputValue(),
+    'External route during switch',
+  )
+  await page.getByRole('button', { name: 'Open Bot', exact: true }).click()
+  await page
+    .locator('textarea[data-task-id="' + routeDuringSwitch.input.createTask.id + '"]')
+    .waitFor()
+  assert.equal(await createsFor(routeDuringSwitch.input.requestId), 1)
+
+  // An external route in the Bots view reuses BotsView. Stay on Y after the late create reply.
   await page.evaluate(() => window.setOwner('one'))
   await selectBot(replaced.input.createTask.id)
   await startDraft('External route during create', 'two')
@@ -1229,7 +1319,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Bots: real TasksView/TaskRow/composer integration, owner-scoped settings and memory, hold/resume UI, draft recovery, old/offline runtime, normal-chat regression, idempotent creation, routine targeting, desktop machine selection/defaults/ownership, refresh failure, frozen retries, pairing replacement, deferred switch/context commits and control locks, external Bot routes, retained selection, remount single-flight, stale draft protection, explicit discard and saved-action recovery passed. Transport and visual shells are fixtures; native harness execution is not tested.',
+    'Bots: real TasksView/TaskRow/composer integration, owner-scoped settings and memory, hold/resume UI, draft recovery, old/offline runtime, normal-chat regression, idempotent creation, routine targeting, desktop machine selection/defaults/ownership, refresh failure, frozen retries, pairing replacement, deferred switch/context commits and control locks, external Bot routes during create and switch, same-ID owner retention, remount single-flight, stale draft protection, explicit discard and saved-action recovery passed. Transport and visual shells are fixtures; native harness execution is not tested.',
   )
 } finally {
   await browser.close()

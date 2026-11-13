@@ -67,12 +67,11 @@ request while the first is in progress. A failed snapshot refresh keeps the succ
 does not repeat creation. A late reply keeps a newer Bot selection and cannot replace or clear a
 newer draft. Select **Open Bot** to open a retained successful result.
 
-**New Bot** clears the previous Bot from the route. A notification, routine or command that opens
-another Bot closes creation and selects that conversation. A late create reply keeps that selection.
-Reopen **New Bot** to recover the retained request. Changing only the active computer keeps the
-creation form open. While Dovo switches to the created Bot's computer, Bot rows, **New Bot** and
-**Back to Bots** stay disabled. Back remains available during the create request before that switch
-starts.
+**New Bot** clears the previous Bot from the route. An external route to another Bot in the Bots
+view closes creation and selects that Bot. A late create reply keeps that selection. Reopen **New
+Bot** to recover the retained request. Changing only the active computer keeps the creation form
+open. While Dovo switches to the created Bot's computer, Bot rows, **New Bot** and **Back to Bots**
+stay disabled. Back remains available during the create request before that switch starts.
 
 A removed computer or replaced credential cannot receive the original request. A new pairing has new
 credentials. It cannot restore the old request's access. Select **Discard creation request** when

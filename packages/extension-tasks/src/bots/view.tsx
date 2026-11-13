@@ -50,7 +50,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
     [sources],
   )
   useEffect(() => {
-    // Workbench keeps this view mounted for notification and command navigation.
+    // Workbench keeps this view mounted when the Bots route entity changes.
     // Our own navigation is already selected; an external entity change cancels creation.
     if (entityId !== routeEntity.current) {
       routeEntity.current = entityId
@@ -59,7 +59,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
       setError('')
       setCreating(false)
       setSelected(entityId ? taskCollectionKey(store.activeRuntimeId, entityId) : '')
-    } else if (entityId && !creating) {
+    } else if (entityId && !creating && !bots.some((entry) => entry.key === selected)) {
       setSelected(taskCollectionKey(store.activeRuntimeId, entityId))
     }
   }, [entityId, store.activeRuntimeId])
