@@ -37,7 +37,7 @@ const mocks = {
     export const formatDateTime=value=>value;
   `,
   '../../dialogs/harness-dialog': 'export const HarnessDialog=()=>null;',
-  '@dovo/studio-ui': `
+  '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';
 export {Card} from '@dovo/web-ui/card';
 export {ConversationHistory,useConversationHistory,Conversation,ConversationContent,ConversationScrollButton} from '../studio-ui/src/components/ai-elements/conversation';
 export {permissionPolicyUIIssue} from './src/permission-policy-fields';

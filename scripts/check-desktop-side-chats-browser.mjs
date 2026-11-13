@@ -33,7 +33,7 @@ const mocks = {
     export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});
     export const formatDateTime=value=>value;
   `,
-  '@dovo/studio-ui': `
+  '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';
 export {Card} from '@dovo/web-ui/card';
 export {ConversationHistory,useConversationHistory} from '../studio-ui/src/components/ai-elements/conversation';
 export {SearchField} from './src/search-field';

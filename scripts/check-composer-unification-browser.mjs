@@ -28,7 +28,7 @@ const mocks = {
     export const useStudioHost=()=>({registerCommand:()=>()=>{}});
   `,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `
+  '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';
     export {permissionPolicyUIIssue} from './src/permission-policy-fields';
     export {ComposerSurface,ComposerTextarea,ComposerSubmit,ComposerWorkspaceBar} from './src/composer-surface';
     export {ComposerSettingsControls} from './src/composer-settings-controls';
