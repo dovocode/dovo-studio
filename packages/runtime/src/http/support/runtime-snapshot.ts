@@ -320,6 +320,7 @@ export function runtimeSnapshot(
       botsSupported: true,
       botResourcesSupported: true,
       botAvatarsSupported: true,
+      botAvatarHarnessSelectionSupported: true,
       botContextResetSupported: true,
       threadActionsSupported: true,
       responseActionsSupported: true,

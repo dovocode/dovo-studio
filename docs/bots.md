@@ -40,13 +40,16 @@ The Bot tools panel has separate Settings, MCP servers, Skills, Memory and Routi
 servers includes MCP Registry. Skills includes skills.sh. Imports apply to this Bot only; review the
 definition before saving it. Mobile exposes the same entries in the conversation menu.
 
-In Settings, choose an avatar image or describe one and select **Generate avatar**. A temporary
-agent uses the Bot's harness, permissions and installed image tools on its computer. Install an
-image-generation tool or skill there first. Generation can incur provider charges. The agent has no
-Dovo coordinator token and does not post to the conversation. Its temporary folder is removed after
-completion, failure or cancellation. Generation times out after five minutes. A retry with the same
-request returns the same preview rather than charging for another run. After an interrupted request,
-use Cancel generation to clear the request before generating another preview.
+In Settings, choose an avatar image or describe one and select **Generate avatar**. A temporary chat
+uses the Bot's harness by default. Choose another harness, saved agent or installed ACP agent with
+**Avatar generation harness**. This choice does not change the Bot's saved harness. The temporary
+chat runs on the Bot's computer and keeps its access limits. It uses the selected agent's resources
+and the Bot's own resources. Install an image-generation tool or skill there first. Generation can
+incur provider charges. The agent has no Dovo coordinator token and does not post to the
+conversation. Its temporary folder is removed after completion, failure or cancellation. Generation
+times out after five minutes. A retry with the same request returns the same preview rather than
+charging for another run. After an interrupted request, use Cancel generation to clear the request
+before generating another preview.
 
 Select **Use avatar** to apply a preview, **Discard preview** to keep the current avatar, or
 **Remove avatar** to return to the default icon. Uploads accept PNG, JPEG, WebP and GIF up to 5 MB.

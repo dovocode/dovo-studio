@@ -9,6 +9,9 @@ import {
   botAvatarPreviewSchema,
   decode,
   effectivePermissionPolicy,
+  harnessAvailabilityCandidates,
+  inheritedPermissionPolicy,
+  narrowerPermissionLimits,
   resolveTaskAgent,
   taskResources,
 } from '@dovo/protocol'
@@ -48,7 +51,7 @@ export class BotAvatars {
   constructor(
     private s: Pick<
       Services,
-      'store' | 'agents' | 'defaults' | 'approvals' | 'mutations' | 'tasks'
+      'store' | 'agents' | 'defaults' | 'approvals' | 'mutations' | 'tasks' | 'acpInstallations'
     >,
   ) {}
 
@@ -62,9 +65,28 @@ export class BotAvatars {
       await this.s.mutations.execute(`bot-avatar:${input.id}`, input.requestId, input, async () => {
         if (this.running.has(input.id))
           throw new HttpError(409, 'An avatar is already generating for this Bot.')
-        const agent = resolveTaskAgent(task, this.s.store.get().agents)
+        const botAgent = resolveTaskAgent(task, this.s.store.get().agents)
+        const selected = input.harnessId
+          ? harnessAvailabilityCandidates(
+              this.s.store.get().agents,
+              this.s.acpInstallations.list(),
+            ).find((candidate) => candidate.id === input.harnessId)?.agent
+          : botAgent
+        if (!selected)
+          throw new HttpError(400, 'The selected avatar harness is no longer available.')
+        const agent = botAgent && {
+          ...selected,
+          ...inheritedPermissionPolicy(
+            botAgent,
+            selected,
+            narrowerPermissionLimits(botAgent, selected),
+          ),
+        }
         if (!agent || effectivePermissionPolicy(agent).readOnly)
-          throw new HttpError(400, 'Choose a Bot harness with tools enabled to generate an image.')
+          throw new HttpError(
+            400,
+            'The Bot and selected harness must allow image-generation tools.',
+          )
         const controller = new AbortController()
         const timer = setTimeout(
           () => controller.abort(new Error('Avatar generation timed out.')),
@@ -98,7 +120,11 @@ export class BotAvatars {
     const directory = await mkdtemp(join(tmpdir(), 'dovo-bot-avatar-'))
     try {
       const task = this.s.store.taskSummary(id)
-      const resources = taskResources(task, this.s.store.get(), this.s.defaults.get())
+      const resources = taskResources(
+        { ...task, harness: agent, agentId: agent.id, agentOverrides: undefined },
+        this.s.store.get(),
+        this.s.defaults.get(),
+      )
       // The temporary worker has no coordinator credentials or permission to manage Studio.
       resources.mcpServers = resources.mcpServers.filter((server) => server.name !== 'dovo_task')
       const adapter = await this.s.agents.get(agent.provider)

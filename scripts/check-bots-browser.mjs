@@ -227,7 +227,7 @@ function App(){
  const request=useCallback((...args)=>rpc(owner,...args),[rpc,owner]);
  window.updateHost=(id,changes)=>{window.hostOptions??={};window.hostOptions[id]={...window.hostOptions[id],...changes};setAll(before=>({...before}))};
  const profiles=['one','two'].filter(id=>!window.hostOptions?.[id]?.removed).map(id=>({id,name:id,connection:{address:window.hostOptions?.[id]?.address??'http://'+id+'.lan',token:'paired'+(window.pairVersion??'')+(window.hostOptions?.[id]?.credential??''),runtimeId:id,...window.hostOptions?.[id]?.routes}}));
- const snapshot={runtimeId:owner,messageSetupSupported:window.messageSetupSupported,planModeSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,botsSupported:supported?true:undefined,botResourcesSupported:true,botAvatarsSupported:true,permissionPolicySupported:true,questions:[],approvals:[],defaults:{},workspace:current};
+ const snapshot={runtimeId:owner,messageSetupSupported:window.messageSetupSupported,planModeSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,botsSupported:supported?true:undefined,botResourcesSupported:true,botAvatarsSupported:true,botAvatarHarnessSelectionSupported:true,permissionPolicySupported:true,questions:[],approvals:[],defaults:{},workspace:current};
  const runtimes=profiles.map(profile=>({profile,connected:!(window.hostOptions?.[profile.id]?.offline??offline),snapshot:{...snapshot,botsSupported:window.hostOptions?.[profile.id]?.unsupported?undefined:snapshot.botsSupported,runtimeId:profile.id,defaults:{fixtureModel:profile.id+'-model'},workspace:all[profile.id]}}));
  const readRuntime=async(profile,...args)=>{if(!resolveRuntimeTarget(window.latestProfiles,profile))throw Error('Runtime pairing changed');window.explicitOwners??=[];window.explicitOwners.push({id:profile.id,address:profile.connection.address,token:profile.connection.token});const result=await rpc(profile.id,...args);if(!resolveRuntimeTarget(window.latestProfiles,profile))throw Error('Runtime pairing changed');if(args[0]==='/api/bots/create'){window.createReturned??=[];window.createReturned.push(args[1].requestId)}return result};
  const store={workspace:current,setWorkspace,snapshot:{...snapshot,...runtimes.find(r=>r.profile.id===owner)?.snapshot},activeRuntimeId:owner,localRuntimeId:'one',connection:profiles.find(p=>p.id===owner)?.connection,connected:runtimes.find(r=>r.profile.id===owner)?.connected??false,runtimes,runtimeRegistry:{profiles},switchRuntime:async id=>{if(window.deferSwitch)await new Promise(resolve=>window.releaseSwitch=resolve);setOwner(id);window.switchBeforeRender=window.owner!==id},mutationStatus:profile=>({pending:window.savedActions?.[profile.id]?.length??0,error:null,actions:window.savedActions?.[profile.id]??[]}),discardMutations:async(profile,id)=>{if(!id)throw Error("Fixture requires review of a single action");window.discardedActions??=[];window.discardedActions.push(id);window.savedActions[profile.id]=window.savedActions[profile.id].filter(action=>action.id!==id);setAll(before=>({...before}))},retryMutations:async()=>{throw Error("Fixture saved actions require explicit review")},request,readRuntime,readRuntimeEffect:(profile,...args)=>Effect.tryPromise({try:()=>readRuntime(profile,...args),catch:cause=>cause}),runtimeReadCache:()=>({read:async()=>null}),flush:async()=>{window.calls.push({owner,path:'flush'})},readCache:{read:async()=>null},refreshRuntime:async()=>{if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}},refreshRuntimes:async()=>{},previewTask:(_connection,_id,_updates,action)=>action()};
@@ -353,9 +353,15 @@ try {
     }
     await page.setViewportSize({ width: 1440, height: 900 })
   }
+  await page.getByLabel('Avatar generation harness', { exact: true }).selectOption('harness:claude')
   await page.evaluate(() => (window.failAvatar = true))
   await page.getByRole('button', { name: 'Generate avatar', exact: true }).click()
   await page.getByText('Avatar response lost', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByLabel('Avatar generation harness', { exact: true }).isDisabled(),
+    true,
+  )
+  assert.equal(await page.evaluate(() => window.avatarCalls[0].harnessId), 'harness:claude')
   await page.getByRole('button', { name: 'Retry generation', exact: true }).click()
   await page.getByRole('button', { name: 'Use avatar', exact: true }).waitFor()
   assert.equal(

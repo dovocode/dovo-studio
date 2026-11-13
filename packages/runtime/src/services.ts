@@ -275,7 +275,15 @@ export function createServices(
       () => preferences.get().enablePullRequestBabysitting,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy)
-  const botAvatars = new BotAvatars({ store, agents, defaults, approvals, mutations, tasks })
+  const botAvatars = new BotAvatars({
+    store,
+    agents,
+    defaults,
+    approvals,
+    mutations,
+    tasks,
+    acpInstallations,
+  })
   const secureInputs = new SecureInputs(
     () => activity.add('integration', 'secure-input', 'Secure input state changed', {}),
     (taskId, runId, id, status) => tasks.reportSecureInput(taskId, runId, id, status),

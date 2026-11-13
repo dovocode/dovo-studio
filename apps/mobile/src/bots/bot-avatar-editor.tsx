@@ -5,6 +5,9 @@ import {
   botAvatarPreviewSchema,
   botResultSchema,
   randomUUID,
+  harnessAvailabilityCandidates,
+  providerDisplayName,
+  type BotAvatarGenerate,
   responses,
   type BotResult,
   type Task,
@@ -13,14 +16,16 @@ import { useRuntime } from '../runtime/connection/provider'
 import { detailDraftKey } from '../runtime/state/detail-drafts'
 import { Sheet } from '../ui/layout/sheet'
 import { Action } from '../ui/controls/action'
+import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
 import { BotAvatar } from './bot-avatar'
 
 type Draft = {
   prompt: string
+  harnessId?: string
   preview?: string
-  request?: { id: string; requestId: string; prompt: string }
+  request?: BotAvatarGenerate
 }
 const drafts = new Map<string, Draft>()
 
@@ -44,6 +49,15 @@ export function BotAvatarEditor({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const lock = useRef(false)
+  const harnesses = harnessAvailabilityCandidates(
+    snapshot?.workspace.agents ?? [],
+    snapshot?.acpInstallations ?? [],
+  ).map(({ id, agent }) => ({
+    id,
+    name: id.startsWith('harness:') ? providerDisplayName(agent.provider) : agent.name,
+  }))
+  if (draft.harnessId && !harnesses.some((choice) => choice.id === draft.harnessId))
+    harnesses.push({ id: draft.harnessId, name: 'Unavailable harness' })
   const retain = (value: Draft) => {
     drafts.set(key, value)
     setDraft(value)
@@ -103,6 +117,13 @@ export function BotAvatarEditor({
             })
           }
         />
+        <Choice
+          label="Avatar generation harness"
+          value={draft.harnessId ?? ''}
+          items={[{ id: '', name: 'Use Bot harness' }, ...harnesses]}
+          disabled={disabled || !!draft.request || !snapshot?.botAvatarHarnessSelectionSupported}
+          onChange={(harnessId) => retain({ ...draft, harnessId: harnessId || undefined })}
+        />
         <Field
           label="Avatar description"
           value={draft.prompt}
@@ -111,8 +132,9 @@ export function BotAvatarEditor({
           onChangeText={(prompt) => retain({ ...draft, prompt })}
         />
         <Text>
-          A temporary agent uses this Bot’s harness, access and installed image tools. It returns a
-          preview without posting to the conversation. Image generation can incur provider charges.
+          A temporary chat uses the selected harness, this Bot’s access limits and installed image
+          tools. It returns a preview without posting to the conversation. Image generation can
+          incur provider charges.
         </Text>
         <Action
           label={busy ? 'Working…' : draft.request ? 'Retry generation' : 'Generate avatar'}
@@ -123,6 +145,7 @@ export function BotAvatarEditor({
                 id: task.id,
                 requestId: randomUUID(),
                 prompt: draft.prompt.trim(),
+                ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
               }
               retain({ ...draft, request: input })
               const result = await call('/api/bots/avatar/generate', input, botAvatarPreviewSchema)

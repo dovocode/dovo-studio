@@ -51,7 +51,10 @@ export const botAvatarGenerateSchema = strictStruct({
   id,
   requestId: uuidSchema,
   prompt: maxValue(minValue(Schema.String, 1), 2000),
+  /** A temporary session choice; never changes the Bot harness. */
+  harnessId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
 })
+export type BotAvatarGenerate = Schema.Schema.Type<typeof botAvatarGenerateSchema>
 export const botContextResetRequestSchema = strictStruct({
   id,
   turnId: id,

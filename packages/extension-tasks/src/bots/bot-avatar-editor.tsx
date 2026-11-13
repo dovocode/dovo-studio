@@ -3,6 +3,9 @@ import {
   botAvatarPreviewSchema,
   botResultSchema,
   randomUUID,
+  harnessAvailabilityCandidates,
+  providerDisplayName,
+  type BotAvatarGenerate,
   type BotResult,
   type Task,
 } from '@dovo/protocol'
@@ -12,8 +15,9 @@ import { botScope } from './bot-scope'
 
 type Draft = {
   prompt: string
+  harnessId?: string
   preview?: string
-  request?: { id: string; requestId: string; prompt: string }
+  request?: BotAvatarGenerate
 }
 const drafts = new Map<string, Draft>()
 
@@ -35,6 +39,15 @@ export function BotAvatarEditor({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const lock = useRef(false)
+  const harnesses = harnessAvailabilityCandidates(
+    snapshot?.workspace.agents ?? [],
+    snapshot?.acpInstallations ?? [],
+  ).map(({ id, agent }) => ({
+    id,
+    name: id.startsWith('harness:') ? providerDisplayName(agent.provider) : agent.name,
+  }))
+  if (draft.harnessId && !harnesses.some((choice) => choice.id === draft.harnessId))
+    harnesses.push({ id: draft.harnessId, name: 'Unavailable harness' })
   const disabled = !connected || !snapshot?.botAvatarsSupported || busy
   const retain = (next: Draft) => {
     drafts.set(scope, next)
@@ -103,6 +116,23 @@ export function BotAvatarEditor({
         />
       </label>
       <label className="grid gap-1 text-xs">
+        Avatar generation harness
+        <select
+          aria-label="Avatar generation harness"
+          className="rounded-md border border-input bg-background p-2 text-foreground"
+          value={draft.harnessId ?? ''}
+          disabled={disabled || !!draft.request || !snapshot?.botAvatarHarnessSelectionSupported}
+          onChange={(event) => retain({ ...draft, harnessId: event.target.value || undefined })}
+        >
+          <option value="">Use Bot harness</option>
+          {harnesses.map((choice) => (
+            <option key={choice.id} value={choice.id}>
+              {choice.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1 text-xs">
         Describe an avatar
         <Input
           aria-label="Avatar description"
@@ -113,8 +143,9 @@ export function BotAvatarEditor({
         />
       </label>
       <p className="text-xs text-muted-foreground">
-        A temporary agent uses this Bot’s harness, access and installed image tools. It returns a
-        preview without posting to the conversation. Image generation can incur provider charges.
+        A temporary chat uses the selected harness, this Bot’s access limits and installed image
+        tools. It returns a preview without posting to the conversation. Image generation can incur
+        provider charges.
       </p>
       <div className="flex flex-wrap gap-2" data-studio-human-only>
         <Button
@@ -127,6 +158,7 @@ export function BotAvatarEditor({
                 id: task.id,
                 requestId: randomUUID(),
                 prompt: draft.prompt.trim(),
+                ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
               }
               retain({ ...draft, request: input })
               const result = await request(

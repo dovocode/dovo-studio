@@ -23,6 +23,7 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';
 import {useState,useSyncExternalStore} from 'react';
 import {BotEditor} from './apps/mobile/src/bots/bot-editor';
+import {BotAvatarEditor} from './apps/mobile/src/bots/bot-avatar-editor';
 import {BotMemory} from './apps/mobile/src/bots/bot-memory';
 import {BotSettings} from './apps/mobile/src/bots/bot-settings';
 import BotsScreen from './apps/mobile/src/bots/bots-screen';
@@ -48,7 +49,7 @@ return decode(schema,result)},catch:error=>error})};
 import {RegistryProvider} from '@effect/atom-react';
 const initial={name:'Release assistant',role:'Release lead',responsibilities:'Check release readiness'};
 window.saved=[];window.rejectSave=false;
-function App(){useSyncExternalStore(window.subscribe,()=>window.version);const [mode,setMode]=useState('editor');window.showMode=value=>{setMode(value);setShow(true)};const [show,setShow]=useState(true);const [owner,setOwner]=useState('owner-a');const [offline,setOffline]=useState(false);window.disableFields=()=>setOffline(true);window.openEditor=next=>{setOwner(next);setOffline(false);setShow(true)};return !show?null:mode==='list'?<BotsScreen/>:mode==='memory'?<BotMemory taskId='bot-a' onClose={()=>setShow(false)}/>:mode==='settings'?<BotSettings task={window.botTask} onClose={()=>setShow(false)}/>:show?<BotEditor draftKey={owner} initial={initial} unavailable={offline?'Computer is offline':undefined} onClose={()=>setShow(false)} onSave={async value=>{if(window.rejectSave)throw Error('Runtime unavailable');window.saved.push({owner,value})}}/>:null}
+function App(){useSyncExternalStore(window.subscribe,()=>window.version);const [mode,setMode]=useState('editor');window.showMode=value=>{setMode(value);setShow(true)};const [show,setShow]=useState(true);const [owner,setOwner]=useState('owner-a');const [offline,setOffline]=useState(false);window.disableFields=()=>setOffline(true);window.openEditor=next=>{setOwner(next);setOffline(false);setShow(true)};return !show?null:mode==='avatar'?<BotAvatarEditor task={window.botTask} onSaved={()=>{}} onClose={()=>setShow(false)}/>:mode==='list'?<BotsScreen/>:mode==='memory'?<BotMemory taskId='bot-a' onClose={()=>setShow(false)}/>:mode==='settings'?<BotSettings task={window.botTask} onClose={()=>setShow(false)}/>:show?<BotEditor draftKey={owner} initial={initial} unavailable={offline?'Computer is offline':undefined} onClose={()=>setShow(false)} onSave={async value=>{if(window.rejectSave)throw Error('Runtime unavailable');window.saved.push({owner,value})}}/>:null}
 createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);
 `,
     },
@@ -68,6 +69,12 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
   },
   [
     { path: 'react-native', contents: native },
+    {
+      path: '../ui/controls/choice',
+      importer: mobile + 'bots/',
+      contents:
+        'export const Choice=({label,value,items,disabled,onChange})=><select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;',
+    },
     {
       path: 'expo-image-picker',
       contents: 'export const launchImageLibraryAsync=async()=>({canceled:true});',
@@ -444,6 +451,36 @@ try {
   await page.getByLabel('Search Bots', { exact: true }).fill('')
   await page.getByTestId('Bot thread Human renamed Bot').click()
   assert.deepEqual(await page.evaluate(() => window.navigation), ['tasks', 'bot-a', 'paired-owner'])
+  // Exercise the actual avatar editor; only the native choice control is replaced.
+  await page.evaluate(() => {
+    window.runtime.snapshot.botAvatarsSupported = true
+    window.runtime.snapshot.botAvatarHarnessSelectionSupported = true
+    window.runtime.call = async (path, input) => {
+      window.avatarCalls ??= []
+      window.avatarCalls.push({ path, input })
+      if (window.avatarCalls.length === 1) throw Error('Avatar response lost')
+      return {
+        avatar: 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA',
+      }
+    }
+    window.showMode('avatar')
+  })
+  await page.getByLabel('Avatar generation harness', { exact: true }).selectOption('harness:claude')
+  await page.getByRole('button', { name: 'Generate avatar', exact: true }).click()
+  await page.getByText('Avatar response lost', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByLabel('Avatar generation harness', { exact: true }).isDisabled(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Retry generation', exact: true }).click()
+  await page.getByRole('button', { name: 'Use avatar', exact: true }).waitFor()
+  const calls = await page.evaluate(() => window.avatarCalls)
+  assert.deepEqual(calls[0], calls[1])
+  assert.equal(calls[0].input.harnessId, 'harness:claude')
+  assert.equal(
+    await page.getByLabel('Avatar generation harness', { exact: true }).isDisabled(),
+    false,
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile Bots: real settings/memory/list components, owner scope, pause/resume, private notes, conflict drafts and old runtime gates pass.',
