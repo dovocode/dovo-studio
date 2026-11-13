@@ -111,7 +111,9 @@ export function automationIssues(
       }
       if (!data.objective.trim()) errors.push(`Add instructions to ${data.label}.`)
       const agent = resolveTaskAgent({ ...data, id: node.id }, workspace.agents)
-      if (!agent) errors.push(`Choose an agent for ${data.label}.`)
+      // With no explicit agent or harness, Tasks.create applies the project defaults.
+      if (!agent && (data.agentId || data.harness))
+        errors.push(`Choose an agent for ${data.label}.`)
       if (agent && !supportsAccess(agent.provider, agent.permission))
         errors.push(`Choose a supported permission mode for ${data.label}.`)
       if (agent?.provider === 'acp' && !agent.acpInstallationId && !agent.endpoint.trim())

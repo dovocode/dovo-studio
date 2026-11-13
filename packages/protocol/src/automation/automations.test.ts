@@ -102,6 +102,16 @@ it('validates direct harnesses without predefined agents and checks provider per
   expect(automationIssues(automation, workspace)).toEqual([])
 })
 
+it('allows project defaults while rejecting an unavailable explicit agent', () => {
+  const automation = flow()
+  automation.nodes[1].data.agentId = ''
+  expect(automationIssues(automation, { ...workspace, agents: [] })).toEqual([])
+  automation.nodes[1].data.agentId = 'deleted-agent'
+  expect(automationIssues(automation, { ...workspace, agents: [] })).toContain(
+    'Choose an agent for Review.',
+  )
+})
+
 it('validates GitHub configuration and preserves it through workspace decoding', () => {
   const automation = flow()
   const trigger = automation.nodes[0].data

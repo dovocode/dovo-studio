@@ -41,7 +41,7 @@ it.each([false, true])(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 44 : 17)
+      expect(tools).toHaveLength(full ? 46 : 19)
       // Preserve the existing budget for all prior tools. Account for the new private-input
       // schema separately so adding this tool cannot hide growth in unrelated tools.
       const secureInput = tools.find((tool) => tool.name === 'secure_input')
@@ -53,13 +53,26 @@ it.each([false, true])(
       expect(threadPrepare).toBeDefined()
       const prepareCharacters = JSON.stringify(threadPrepare).length + 1
       expect(prepareCharacters).toBeLessThanOrEqual(1600)
-      expect(characters - secureCharacters - prepareCharacters).toBeLessThanOrEqual(
-        full ? 48500 : 10000,
+      // Workflow discovery and review have their own budgets; prior tools keep theirs.
+      const automationTools = ['automation_list', 'automation_prepare'].map((name) => {
+        const tool = tools.find((item) => item.name === name)
+        expect(tool).toBeDefined()
+        expect(JSON.stringify(tool).length + 1).toBeLessThanOrEqual(1600)
+        expect(tool?.description?.length ?? 0).toBeLessThanOrEqual(500)
+        return tool
+      })
+      const automationCharacters = automationTools.reduce(
+        (total, tool) => total + JSON.stringify(tool).length + 1,
+        0,
       )
+      expect(
+        characters - secureCharacters - prepareCharacters - automationCharacters,
+      ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
         descriptionCharacters -
           (secureInput?.description?.length ?? 0) -
-          (threadPrepare?.description?.length ?? 0),
+          (threadPrepare?.description?.length ?? 0) -
+          automationTools.reduce((total, tool) => total + (tool?.description?.length ?? 0), 0),
       ).toBeLessThanOrEqual(full ? 12900 : 3200)
       expect(tools.map((tool) => tool.name)).toEqual(
         expect.arrayContaining([

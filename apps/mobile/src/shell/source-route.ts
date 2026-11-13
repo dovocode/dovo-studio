@@ -66,10 +66,11 @@ export function pullHref(
   }
 }
 
-export function automationHref(runtimeId: string, automationId: string) {
+/** `runId` opens that exact run. It stays exact after later runs or when the flow is deleted. */
+export function automationHref(runtimeId: string, automationId: string, runId?: string) {
   return {
     pathname: '/settings/automations/[runtimeId]/[automationId]' as const,
-    params: { runtimeId, automationId },
+    params: { runtimeId, automationId, ...(runId ? { runId } : {}) },
   }
 }
 

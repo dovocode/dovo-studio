@@ -49,7 +49,7 @@ export function AutomationDetail({
   const runs = (snapshot?.runs.filter((run) => run.automationId === flow?.id) ?? []).sort(
     (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
   )
-  const run = runs.find((item) => item.id === runId) ?? runs[0]
+  const run = runId ? runs.find((item) => item.id === runId) : runs[0]
   const selectRun = (id: string) => {
     setRunId(id)
     setSurface('runs')
@@ -242,17 +242,31 @@ export function AutomationDetail({
           <div className="flex min-h-0 min-w-0 flex-1">
             {surface === 'runs' ? (
               <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-col">
-                <RunDetails
-                  flow={flow}
-                  runs={runs}
-                  run={run}
-                  selectRun={selectRun}
-                  actions={actions}
-                  onStep={(id) => {
-                    setSurface('canvas')
-                    configure(id)
-                  }}
-                />
+                {runId && !run && (
+                  <div className="grid justify-items-start gap-3 p-4">
+                    <p role="status" className="text-sm text-muted-foreground">
+                      This run is not in this computer's recent history.
+                    </p>
+                    {runs.length > 0 && (
+                      <Button size="sm" variant="outline" onClick={() => setRunId(null)}>
+                        Show latest run
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {(!runId || run) && (
+                  <RunDetails
+                    flow={flow}
+                    runs={runs}
+                    run={run}
+                    selectRun={selectRun}
+                    actions={actions}
+                    onStep={(id) => {
+                      setSurface('canvas')
+                      configure(id)
+                    }}
+                  />
+                )}
               </div>
             ) : surface === 'canvas' ? (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">

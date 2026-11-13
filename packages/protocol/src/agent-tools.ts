@@ -25,4 +25,8 @@ export {
   type StudioTools,
 } from './runtime/studio-tools.js'
 export { secureInputCommandSchema } from './conversation/workflow/secure-input.js'
-export { threadPrepareCommandSchema } from './tasks/thread-actions.js'
+export {
+  threadPrepareCommandSchema,
+  automationPrepareCommandSchema,
+  automationListCommandSchema,
+} from './tasks/thread-actions.js'

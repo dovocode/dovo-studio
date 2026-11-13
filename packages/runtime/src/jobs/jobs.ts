@@ -280,7 +280,9 @@ export class Jobs {
     if (existing) return existing.id
     return this.start(id, key)
   }
-  start(id: string, key?: string, triggerPayload?: unknown) {
+  /** The optional receipt callback runs in the run/delivery transaction, before launch.
+   * It must be synchronous. WorkspaceStore restores its snapshot if any write fails. */
+  start(id: string, key?: string, triggerPayload?: unknown, commit?: (runId: string) => undefined) {
     if (key?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     const flow = this.store.get().automations.find((flow) => flow.id === id)
     if (!flow) throw new HttpError(404, 'Automation not found')
@@ -309,7 +311,7 @@ export class Jobs {
       steps: runSteps(initial),
     }
     // A delivery is consumed only if its accepted run also commits successfully.
-    this.db.transaction(() => {
+    this.store.transaction(() => {
       if (key) {
         const result = this.db
           .prepare('INSERT OR IGNORE INTO deliveries VALUES (?,?)')
@@ -317,7 +319,8 @@ export class Jobs {
         if (!result.changes) throw new HttpError(409, 'This trigger was already delivered')
       }
       this.write(run)
-    })()
+      commit?.(run.id)
+    })
     this.runs.set(run.id, run)
     this.revision++
     this.launch(run.id)

@@ -694,6 +694,8 @@ it('keeps read-only providers from sending task terminal or device input', async
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
       'ask_question',
       'thread_prepare',
+      'automation_list',
+      'automation_prepare',
       'todos',
       'linked_projects',
       'browser',

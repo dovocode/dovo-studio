@@ -15,7 +15,7 @@ export const Pressable=({children,onPress,accessibilityLabel,disabled})=><button
 const controls = `
 export const Sheet=({title,children,footer,onClose})=><section role="dialog" aria-label={title}>{children}{footer}<button onClick={onClose}>Close sheet</button></section>;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;
-export const useTheme=()=>({styles:{},colors:{}});export const Icon=()=>null;export const HarnessIcon=()=>null;export const IconButton=()=>null;
+export const useTheme=()=>({styles:{},colors:{}});export const useSheetNavigation=()=>navigate=>navigate();export const Icon=()=>null;export const HarnessIcon=()=>null;export const IconButton=()=>null;
 `
 const built = await bundleBrowser(
   {
@@ -75,6 +75,18 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       contents: 'export const useNavigation=()=>({navigate:(...args)=>window.routes.push(args)});',
     },
     { path: '../../../ui/theme', importer: mobile + 'tasks/conversation/', contents: controls },
+    // Automation cards share this module; this fixture covers new-thread cards only.
+    {
+      path: '../../../ui/layout/sheet',
+      importer: mobile + 'tasks/conversation/',
+      contents: controls,
+    },
+    {
+      path: '../../../shell/source-route',
+      importer: mobile + 'tasks/conversation/',
+      contents: 'export const automationHref=()=>null;',
+    },
+    { path: 'expo-router', contents: 'export const router={push(){}};' },
     { path: './icon-button', importer: mobile + 'ui/controls/', contents: controls },
     { path: './icon', importer: mobile + 'ui/controls/', contents: controls },
     {

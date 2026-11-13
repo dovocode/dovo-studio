@@ -27,6 +27,7 @@ import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { useAction } from '../../../ui/controls/use-action'
 import { McpThreadEditor } from '../../../ui/content/mcp-thread-editor'
+import { AutomationActionCard } from './automation-action-card'
 
 const attempts = createDetailDrafts<ThreadActionSend>()
 
@@ -42,13 +43,22 @@ export function ThreadActionCards({ task, messageId }: { task: Task; messageId?:
   if (!snapshot?.threadActionsSupported) return null
   return (
     <>
-      {mobileThreadActions(task, messageId).map((action) => (
-        <ThreadActionCard
-          key={detailDraftKey(profile?.connection ?? null, task.id, action.id)}
-          task={task}
-          action={action}
-        />
-      ))}
+      {mobileThreadActions(task, messageId).map((action) =>
+        // Cards without `automation` are new-thread cards, including all older runtimes' cards.
+        action.automation ? (
+          <AutomationActionCard
+            key={detailDraftKey(profile?.connection ?? null, task.id, action.id)}
+            task={task}
+            action={action}
+          />
+        ) : (
+          <ThreadActionCard
+            key={detailDraftKey(profile?.connection ?? null, task.id, action.id)}
+            task={task}
+            action={action}
+          />
+        ),
+      )}
     </>
   )
 }

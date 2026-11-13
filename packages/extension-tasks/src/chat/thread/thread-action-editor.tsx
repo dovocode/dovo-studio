@@ -102,7 +102,8 @@ export function ThreadActionEditor({
         if (!open && !busy) onClose()
       }}
     >
-      <DialogContent className="max-h-[85dvh] overflow-y-auto">
+      {/* Portaled outside the card, so it needs its own human-only marker. */}
+      <DialogContent className="max-h-[85dvh] overflow-y-auto" data-studio-human-only="true">
         <DialogHeader>
           <DialogTitle>New agent thread</DialogTitle>
           <DialogDescription>

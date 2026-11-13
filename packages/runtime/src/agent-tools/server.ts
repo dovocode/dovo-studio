@@ -20,6 +20,8 @@ import {
   linkedProjectsCommandSchema,
   agentQuestionCommandSchema,
   threadPrepareCommandSchema,
+  automationPrepareCommandSchema,
+  automationListCommandSchema,
   agentTodosCommandSchema,
   secureInputCommandSchema,
 } from '@dovo/protocol/agent-tools'
@@ -213,9 +215,27 @@ const tools: Array<
   {
     name: 'thread_prepare',
     description:
-      'Prepare a "start new agent thread" card in this conversation for the user. Runs nothing: the user reviews it, may change prompt, harness and model, and taps Send. Same project; access cannot exceed this thread. Stable key; reusing a key replaces an unsent card, never revives a dismissed/sent one. Available read-only.',
+      'Prepare a "start new agent thread" card in this conversation for the user. Runs nothing: the user reviews it, may change prompt, harness and model, and taps Send. Same computer; choose any project or no project. Access cannot exceed this thread. Stable key; reusing a key replaces an unsent card, never revives a dismissed/sent one. Available read-only.',
     inputSchema: (() => {
       const document = Schema.toJsonSchemaDocument(threadPrepareCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
+  {
+    name: 'automation_list',
+    description:
+      'List workflows as id, name (at most 200 characters) and enabled state for automation_prepare. Optional limit 1–100 (default 100); pass nextCursor as cursor for the next page. A changed catalog requires restarting without cursor. Starts no work. Available read-only with MCP; Studio Tools need not be enabled.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(automationListCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
+  {
+    name: 'automation_prepare',
+    description:
+      'Prepare a review card for one existing automation in this thread. Use automation_list to discover configured workflow IDs first. Starts no work. Only a paired human can review the saved workflow, edit run-only context, and tap Start. Use a stable key; sent or dismissed decisions cannot be replaced. Every effective step must stay within this source thread’s access. Available read-only when MCP is enabled.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(automationPrepareCommandSchema)
       return { ...document.schema, type: 'object' as const, $defs: document.definitions }
     })(),
   },
@@ -861,6 +881,22 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             taskId: task,
             parentRunId,
             name: string(input.name, 'name'),
+          }),
+        )
+      case 'automation_list':
+        return text(
+          await post('/api/agent/thread-prepare', {
+            taskId: task,
+            parentRunId,
+            command: { ...input, kind: 'list-automations' },
+          }),
+        )
+      case 'automation_prepare':
+        return text(
+          await post('/api/agent/thread-prepare', {
+            taskId: task,
+            parentRunId,
+            command: { ...input, kind: 'automation' },
           }),
         )
       case 'thread_prepare':

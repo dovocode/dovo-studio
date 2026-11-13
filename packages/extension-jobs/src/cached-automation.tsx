@@ -22,7 +22,7 @@ export function CachedAutomation({
   initialRunId?: string
 }) {
   const [runId, setRunId] = useApplicationState(initialRunId ?? row.latest?.id)
-  const run = row.runs.find((run) => run.id === runId) ?? row.latest
+  const run = runId ? row.runs.find((run) => run.id === runId) : row.latest
   return (
     <section className="flex h-full min-h-0 flex-col">
       <PageHeader
@@ -84,7 +84,16 @@ export function CachedAutomation({
             </ol>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">No runs yet.</p>
+          <div className="grid justify-items-start gap-3">
+            <p role="status" className="text-sm text-muted-foreground">
+              {runId ? "This run is not in this computer's saved recent history." : 'No runs yet.'}
+            </p>
+            {runId && row.latest && (
+              <Button size="sm" variant="outline" onClick={() => setRunId(undefined)}>
+                Show latest run
+              </Button>
+            )}
+          </div>
         )}
       </div>
     </section>

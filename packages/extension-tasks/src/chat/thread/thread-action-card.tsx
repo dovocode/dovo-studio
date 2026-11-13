@@ -23,10 +23,20 @@ import { Button } from '@dovo/studio-ui'
 import { botScope } from '../../bots/bot-scope'
 import { taskActionClient } from '../../list/task-row-actions'
 import { ThreadActionEditor, type ThreadActionSelection } from './thread-action-editor'
+import { AutomationActionCard } from './automation-action-card'
 
 const attempts = new Map<string, ThreadActionSend>()
 
+/** Cards without `automation` are new-thread cards, including all cards from older runtimes. */
 export function ThreadActionCard({ task, action }: { task: Task; action: ThreadAction }) {
+  return action.automation ? (
+    <AutomationActionCard task={task} action={action} />
+  ) : (
+    <NewThreadActionCard task={task} action={action} />
+  )
+}
+
+function NewThreadActionCard({ task, action }: { task: Task; action: ThreadAction }) {
   const store = useWorkspace()
   const host = useStudioHost()
   const [editing, setEditing] = useState(false)
@@ -119,6 +129,8 @@ export function ThreadActionCard({ task, action }: { task: Task; action: ThreadA
     <section
       aria-label={`New thread action: ${action.title}`}
       data-thread-action={action.id}
+      // Paired human consent: Studio UI tools cannot click or type in this card.
+      data-studio-human-only="true"
       className="my-3 grid min-w-0 gap-3 rounded-xl border bg-card p-4 text-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">

@@ -2,14 +2,26 @@ import { Schema } from 'effect'
 import { maxValue, minValue, mutableStruct, refine, strictStruct } from '../shared/schema.js'
 import { taskSchema, turnSettingsSchema } from '../workspace.js'
 import { startsCleanDraft } from './task-message.js'
-import { threadActionSchema, threadPrepareCommandSchema } from './thread-actions.js'
+import {
+  automationPrepareCommandFields,
+  automationListCommandFields,
+  threadActionSchema,
+  threadPrepareCommandSchema,
+} from './thread-actions.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
 
 export const threadPrepareRequestSchema = strictStruct({
   taskId: id,
   parentRunId: id,
-  command: threadPrepareCommandSchema,
+  command: Schema.Union([
+    strictStruct({ ...automationListCommandFields, kind: Schema.Literal('list-automations') }),
+    strictStruct({
+      ...automationPrepareCommandFields,
+      kind: Schema.Literal('automation'),
+    }),
+    threadPrepareCommandSchema,
+  ]),
 })
 
 /** `POST /api/thread-actions/send`, paired human clients only.
@@ -44,3 +56,14 @@ export const threadActionResultSchema = mutableStruct({
   runtimeInstanceId: Schema.String,
 })
 export type ThreadActionResult = Schema.Schema.Type<typeof threadActionResultSchema>
+
+/** Paired human confirmation of the exact reviewed automation revision. */
+export const automationActionSendSchema = strictStruct({
+  sourceTaskId: id,
+  actionId: id,
+  revision: id,
+  text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
+})
+export type AutomationActionSend = Schema.Schema.Type<typeof automationActionSendSchema>
+export const threadActionReviewSchema = strictStruct({ sourceTaskId: id, actionId: id })
+export type ThreadActionReview = Schema.Schema.Type<typeof threadActionReviewSchema>

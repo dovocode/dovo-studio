@@ -28,6 +28,7 @@ import { threadStartReplay } from './endpoints/thread-start.js'
 import { botsRoute } from './endpoints/bots-routes.js'
 import {
   dismissThreadAction,
+  reviewThreadAction,
   prepareThreadAction,
   sendThreadActionEffect,
 } from '../agent-tools/thread-actions.js'
@@ -406,7 +407,9 @@ export function route(
       if (method === 'POST' && path === '/api/agent/thread-prepare') {
         if (!run) throw new HttpError(403, 'Thread actions require an active agent run')
         const input = yield* serviceResult(body(request, 64 * 1024))
-        return yield* runtimeOperation(() => prepareThreadAction(s, input, run.runId))
+        return yield* runtimeOperation(() =>
+          prepareThreadAction(s, input, run.runId, run.permissions),
+        )
       }
       if (method === 'POST' && (path === '/api/agent/question' || path === '/api/agent/todos')) {
         if (!run) throw new HttpError(403, 'Agent interaction tools require an active agent run')
@@ -926,6 +929,8 @@ export function route(
           throw new HttpError(403, 'Thread actions are sent from a paired human client.')
         const input = yield* serviceResult(body(request, 256 * 1024))
         if (path === '/api/thread-actions/send') return yield* sendThreadActionEffect(s, input)
+        if (path === '/api/thread-actions/review')
+          return yield* runtimeOperation(() => reviewThreadAction(s, input))
         if (path === '/api/thread-actions/dismiss')
           return yield* runtimeOperation(() => dismissThreadAction(s, input))
         throw new HttpError(404, 'Unknown thread action')

@@ -119,39 +119,100 @@ Rules:
   its own native or global configuration, and a full-access CLI can use any tool its user account
   can reach. Use the harness configuration directory and access settings to limit that.
 
-## New-thread actions
+## Reviewed action cards
 
-An agent can prepare a **Start new thread** card in its conversation with the `thread_prepare` tool
-(`{ key, title, prompt, provider?, model?, reasoning?, agentId? }`). Preparing starts nothing. The
-card appears in the thread on desktop and mobile. You review it, can change the prompt, harness and
-model, and then select **Send** or **Dismiss**.
+Agents can prepare native action cards in Bots, normal threads and threads started by automations.
+The regular Dovo MCP server must be enabled. Studio Tools need not be enabled. Read-only runs can
+prepare cards. Preparation and review start no work. Only a paired human client can select **Send**
+or **Start**. Agent tokens cannot start cards. Workspace edits cannot create or change cards.
 
-- The new thread starts on the same computer, in any of its projects or without a project. Its
-  access, including a first-turn harness override, must be the same as or narrower than the source
-  thread's. For broader access, start a normal thread.
-- The new thread uses the chosen harness and project settings. It does not copy a Bot's own
-  resources, memory or identity.
-- The card is a native Dovo card. It is not MCP App or artifact HTML, and no run token reaches HTML.
-- Dismiss is final: preparing the same key again returns the dismissed card. A sent card stays sent
-  and links to its thread. A new key is a new proposal. These decisions persist after a card leaves
-  the list and are deleted with the source thread.
-- Limits per thread: 20 visible cards and 64 KB (UTF-8) for the prompts of all visible cards. Each
-  prompt is at most 20,000 characters. Sent and dismissed cards leave the list first, oldest first,
-  to make room; their decisions stay. Unsent cards are never removed: when unsent prompts alone
-  exceed a limit, `thread_prepare` returns an error.
-- Send is safe to retry. The new thread, its queued first message and the sent state commit
-  together. A lost response, a double tap, another device or a restart returns the same thread. If
-  the turn does not start (for example, the runtime stops), the message stays queued in the new
-  thread. Send again to start exactly that message (other queued input stays held), or resume that
-  thread's queue. A paused queue stays paused. After a restart, queued input waits for Resume, as in
-  every thread.
+### Start a new thread
+
+Use `thread_prepare` with `{ key, title, prompt, provider?, model?, reasoning?, agentId? }`. Review
+the prompt, destination, harness and model on desktop or mobile, then select **Send** or
+**Dismiss**.
+
+- The new thread stays on the source computer. Choose any project there, or no project.
+- Its access, including a first-turn harness override, must be the same as or narrower than the
+  source thread's access and the preparing turn's access. Start a normal thread if it needs broader
+  access.
+- It uses the chosen harness and project settings. It does not copy a Bot's own resources, memory or
+  identity.
+- Send is safe to retry. The new thread, its first queued message and the sent card commit together.
+  A lost response, double tap, another device or restart returns the same thread. If the turn did
+  not start, retry Send to start that exact message, or resume the new thread's queue. Other queued
+  input stays held. A paused queue stays paused. After a restart, queued input waits for Resume.
+
+### Start an existing automation
+
+Use `automation_list` with `{}` to find configured workflows on this computer. Each page returns up
+to 100 workflows with only `id`, `name` and `enabled`. Names longer than 200 characters are
+shortened. Responses stay within 32 KB of UTF-8 JSON. Set `limit` (1–100) for a smaller page. If the
+response has `nextCursor`, pass it as `cursor` to get the next page. Continue until no cursor
+remains. If the catalog changes, restart without a cursor. Discovery starts no work and needs no
+Studio Tools. Then use `automation_prepare` with `{ key, title, automationId, prompt }`. The card
+names one saved automation on the source computer. Review its saved workflow, each step's
+instructions, effective agent, projects and access before **Start**. A Bot step uses the Bot's
+actual settings and projects. The review does not copy its private memory, standing instructions or
+secret values.
+
+When a step has a pending first-turn model choice, review shows **Tune**, **Maestro** or **Inherit**
+and says that the model is chosen or applied at start. Access stays visible. For a normal step, an
+explicit saved harness or agent clears the project default selector. A Bot with prior turns or a
+session shows its saved model. It does not select a new model for each run.
+
+Edit **Run context** to supply input for this run. Dovo labels it as external input when it adds it
+to the step prompt. The saved automation stays unchanged. The review does not edit workflow steps,
+agents or project settings.
+
+Start checks the reviewed revision. A changed workflow, effective agent, project or Bot target
+requires a new review. A missing or paused target cannot start. Use **Refresh review** after a stale
+review error; Dovo keeps your edited context. Every task step must stay within the source thread's
+access. To run an automation with broader access, use the normal automation Run action and review it
+there.
+
+The run, delivery key and sent card commit together before execution starts. Retry returns the same
+run after a lost response, double tap, restart or card removal. Dismiss cannot undo a sent run. Use
+the normal automation run controls to stop it. Run links keep the exact run ID. If that run is not
+in the computer's recent history, the view shows an unavailable notice. It does not select a
+different run.
+
+### Drafts and limits
+
+- Each card uses a stable key within its source thread. Reusing a key replaces an unsent proposal.
+  It does not revive a sent or dismissed card. Use a new key for a new proposal.
+- Sent and dismissed decisions survive removal from the card list. Deleting the source thread
+  deletes its retained decisions.
+- Each prompt is at most 20,000 characters. A thread keeps at most 20 visible cards and 64 KB of
+  prompts and automation reviews in UTF-8. Finished cards leave first, oldest first. Unsent cards
+  stay. Preparation returns an error when unsent cards alone exceed a limit.
+- Desktop and mobile keep edited drafts by computer, pairing, source thread and card. After an
+  uncertain response, Retry sends the same input. A confirmed rejection unlocks editing. A late
+  result does not replace a newer draft or a different computer's state.
+- Cards use native Dovo controls. HTML previews and external links cannot start them.
+
+### Verify the action flow
+
+Run from the repository root:
+
+```sh
+pnpm --filter @dovo/runtime... -r build
+pnpm exec vp test packages/runtime/src/http/endpoints/thread-actions.test.ts packages/runtime/src/http/endpoints/normal-thread-actions.test.ts packages/runtime/src/http/endpoints/automation-actions.test.ts --maxWorkers=1
+pnpm exec playwright install chromium
+pnpm test:thread-actions:browser
+```
+
+The integration tests use real HTTP, SQLite and the MCP stdio server with a scripted agent adapter.
+The browser tests check desktop controls and mobile components with React Native browser stubs. They
+do not establish behavior on a physical phone or with a live model provider.
 
 ## API
 
-All endpoints are `POST` and only accept paired human clients. Each accepts `x-dovo-mutation-id` for
-durable retry. Schemas are in `@dovo/protocol` (`packages/protocol/src/tasks/bots.ts`,
-`bot-requests.ts`, `thread-actions.ts` and `thread-action-requests.ts`). Snapshot capabilities:
-`botsSupported`, `botResourcesSupported` and `threadActionsSupported`.
+All endpoints are `POST` and only accept paired human clients. Create, update, lifecycle, Send and
+Dismiss accept `x-dovo-mutation-id` for durable retry. Review refresh does not use a mutation
+receipt. Schemas are in `@dovo/protocol` (`packages/protocol/src/tasks/bots.ts`, `bot-requests.ts`,
+`thread-actions.ts` and `thread-action-requests.ts`). Snapshot capabilities: `botsSupported`,
+`botResourcesSupported` and `threadActionsSupported`.
 
 | Endpoint                      | Body                                                                     |
 | ----------------------------- | ------------------------------------------------------------------------ |
@@ -159,7 +220,13 @@ durable retry. Schemas are in `@dovo/protocol` (`packages/protocol/src/tasks/bot
 | `/api/bots/update`            | `{ id, expectedRevision, role?, responsibilities?, resources? }`         |
 | `/api/bots/lifecycle`         | `{ id, action: 'pause' \| 'resume', expectedRevision? }`                 |
 | `/api/thread-actions/send`    | `{ sourceTaskId, actionId, messageId, createTask, text, turnSettings? }` |
+| `/api/thread-actions/review`  | `{ sourceTaskId, actionId }`                                             |
 | `/api/thread-actions/dismiss` | `{ sourceTaskId, actionId }`                                             |
+
+`/api/thread-actions/send` also accepts `{ sourceTaskId, actionId, revision, text }` for an
+automation card. `revision` is the opaque reviewed workflow revision. `text` is the edited run
+context. A sent automation card has `automationSent: { runId, sentAt }`. A sent new-thread card has
+`sent: { taskId, messageId, sentAt }`.
 
 Bot endpoints return `{ id, bot, revision, runtimeInstanceId }`. Thread-action endpoints return
 `{ action, revision, runtimeInstanceId }`. A snapshot of that runtime instance at `revision` or

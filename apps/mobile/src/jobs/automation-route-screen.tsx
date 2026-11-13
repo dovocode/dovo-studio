@@ -11,18 +11,44 @@ import { Text } from '../ui/content/text'
 import { useSettingsTheme as useTheme, SettingsPage } from '../screens/settings-theme'
 import { AutomationCard } from './automation-card'
 import { AutomationEditor } from './automation-editor'
+import { RunProgress } from './run-progress'
 export function AutomationRouteScreen() {
-  const { runtimeId, automationId } = useLocalSearchParams<{
+  const { runtimeId, automationId, runId } = useLocalSearchParams<{
     runtimeId: string
     automationId: string
+    runId?: string
   }>()
   return (
     <RuntimeRoute runtimeId={runtimeId} title="Automation" backTo="/settings/automations">
-      <AutomationDetail key={`${runtimeId}:${automationId}`} automationId={automationId} />
+      <AutomationDetail
+        key={`${runtimeId}:${automationId}:${runId ?? ''}`}
+        automationId={automationId}
+        runId={runId || undefined}
+      />
     </RuntimeRoute>
   )
 }
-function AutomationDetail({ automationId }: { automationId: string }) {
+/** The exact requested run, never the latest one. Runs outside the retained snapshot say so. */
+function RequestedRun({ automationId, runId }: { automationId: string; runId: string }) {
+  const { styles } = useTheme()
+  const { snapshot } = useRuntime()
+  const run = snapshot?.runs.find((item) => item.id === runId && item.automationId === automationId)
+  return (
+    <View testID="Requested automation run" style={{ gap: 8 }}>
+      <Text style={{ fontWeight: '600' }}>Requested run</Text>
+      {run ? (
+        <RunProgress key={run.id} run={run} />
+      ) : (
+        <Text style={styles.muted}>
+          {snapshot
+            ? 'This run is not in the recent run history on this computer. It may be older than the runs the computer keeps.'
+            : 'Loading run history from this computer.'}
+        </Text>
+      )}
+    </View>
+  )
+}
+function AutomationDetail({ automationId, runId }: { automationId: string; runId?: string }) {
   const { styles } = useTheme()
 
   const { snapshot, profile } = useRuntime()
@@ -31,7 +57,7 @@ function AutomationDetail({ automationId }: { automationId: string }) {
   return (
     <SettingsPage>
       <ScreenHeader
-        title={flow?.name ?? 'Automation unavailable'}
+        title={flow?.name ?? (runId ? 'Automation run' : 'Automation unavailable')}
         subtitle={runtimeComputerName({ profile, snapshot })}
         leading={
           <IconButton
@@ -53,6 +79,7 @@ function AutomationDetail({ automationId }: { automationId: string }) {
             },
           ]}
         >
+          {runId && <RequestedRun automationId={automationId} runId={runId} />}
           <AutomationCard
             flow={flow}
             onEdit={() => setEditing(true)}
@@ -60,7 +87,8 @@ function AutomationDetail({ automationId }: { automationId: string }) {
           />
         </ScrollView>
       ) : (
-        <View style={styles.content}>
+        <View style={[styles.content, { gap: 16 }]}>
+          {runId && <RequestedRun automationId={automationId} runId={runId} />}
           <Text style={styles.muted}>
             This automation may have been removed. Return to Automations to choose another.
           </Text>

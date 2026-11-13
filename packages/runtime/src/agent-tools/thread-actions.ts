@@ -1,7 +1,25 @@
 import { createHash } from 'node:crypto'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import {
   applyTurnSettings,
+  automationActionSchema,
+  automationListResultSchema,
+  automationListPageSize,
+  automationListNameLength,
+  automationListByteBudget,
+  automationReviewWorkflowSchema,
+  automationActionSendSchema,
+  automationIssues,
+  botPaused,
+  taskResources,
+  threadActionReviewSchema,
+  type AutomationAction,
+  type ThreadActionSuggestion,
+  type PermissionPolicy,
+  agentSchema,
+  providerSchema,
+  approvalPolicySchema,
+  sandboxModeSchema,
   decode,
   SCRATCH_PROJECT_ID,
   maxThreadActions,
@@ -20,7 +38,7 @@ import type { Services } from '../services.js'
 import { HttpError, runtimeOperation } from '../errors.js'
 import { startThreadEffect, threadStartAcknowledgement } from '../http/endpoints/thread-start.js'
 
-/** Card prompts kept on a thread, in UTF-8 bytes. Keeps thread summaries light. */
+/** Card prompts and review data kept on a thread, in UTF-8 bytes. */
 export const preparedPromptBudget = 64 * 1024
 
 export const threadActionId = (taskId: string, key: string) =>
@@ -31,6 +49,25 @@ export const threadActionId = (taskId: string, key: string) =>
 
 /** Sent and dismissed decisions outlive card eviction, so an agent cannot revive them by
  * preparing the same key again and a sent card keeps its link. Deleted with the thread. */
+const ceilingKey = (taskId: string, actionId: string) =>
+  `thread-action-ceiling:${taskId}:${actionId}`
+const actionCeilingSchema = Schema.Struct({
+  provider: providerSchema,
+  permission: agentSchema.fields.permission,
+  approvalPolicy: Schema.optional(approvalPolicySchema),
+  sandboxMode: Schema.optional(sandboxModeSchema),
+})
+function originalCeiling(s: Services, taskId: string, actionId: string) {
+  const stored = s.db
+    .prepare('SELECT value FROM documents WHERE id=?')
+    .get(ceilingKey(taskId, actionId))
+  return stored &&
+    typeof stored === 'object' &&
+    'value' in stored &&
+    typeof stored.value === 'string'
+    ? decode(actionCeilingSchema, JSON.parse(stored.value))
+    : undefined
+}
 const finalKey = (taskId: string, actionId: string) => `thread-action-final:${taskId}:${actionId}`
 function finalAction(s: Services, taskId: string, actionId: string) {
   const row = s.db.prepare('SELECT value FROM documents WHERE id=?').get(finalKey(taskId, actionId))
@@ -39,9 +76,10 @@ function finalAction(s: Services, taskId: string, actionId: string) {
     : undefined
 }
 export function forgetThreadActions(s: Services, taskId: string) {
-  s.db
-    .prepare('DELETE FROM documents WHERE id >= ? AND id < ?')
-    .run(`thread-action-final:${taskId}:`, `thread-action-final:${taskId};`)
+  for (const prefix of ['thread-action-final', 'thread-action-ceiling'])
+    s.db
+      .prepare('DELETE FROM documents WHERE id >= ? AND id < ?')
+      .run(`${prefix}:${taskId}:`, `${prefix}:${taskId};`)
 }
 
 const rejected = (status: number, message: string) =>
@@ -51,8 +89,8 @@ function findAction(s: Services, sourceTaskId: string, actionId: string) {
   const source = s.store.get().tasks.find((task) => task.id === sourceTaskId)
   if (!source) throw rejected(404, 'Thread not found')
   const action =
-    source.threadActions?.find((item) => item.id === actionId) ??
-    finalAction(s, sourceTaskId, actionId)
+    finalAction(s, sourceTaskId, actionId) ??
+    source.threadActions?.find((item) => item.id === actionId)
   if (!action) throw rejected(404, 'This action is no longer available')
   return { source, action }
 }
@@ -70,15 +108,70 @@ function setAction(s: Services, sourceTaskId: string, action: ThreadAction) {
 }
 
 function result(s: Services, sourceTaskId: string, actionId: string): ThreadActionResult {
-  return threadStartAcknowledgement(s, { action: findAction(s, sourceTaskId, actionId).action })
+  return threadStartAcknowledgement(s, {
+    action: decode(
+      threadActionSchema,
+      s.store.publicValue(findAction(s, sourceTaskId, actionId).action),
+    ),
+  })
 }
 
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8')
+const cardBytes = (action: ThreadAction) =>
+  bytes(action.prompt) + (action.automation ? bytes(JSON.stringify(action.automation)) : 0)
 
 /** `thread_prepare`: store or replace one unsent card. Starts no work. A dismissed or sent
  * action is a human decision; preparing the same key again returns it unchanged. */
-export function prepareThreadAction(s: Services, value: unknown, runId: string) {
+export function prepareThreadAction(
+  s: Services,
+  value: unknown,
+  runId: string,
+  sourceCeiling?: PermissionPolicy,
+) {
   const { taskId, command } = decode(threadPrepareRequestSchema, value)
+  if ('kind' in command && command.kind === 'list-automations') {
+    if (s.store.taskSummary(taskId).activeRunId !== runId)
+      throw new HttpError(409, 'Workflow discovery requires this thread’s active agent turn')
+    const flows = [...s.store.get().automations].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+    )
+    const revision = createHash('sha256')
+      .update(JSON.stringify(flows.map(({ id, name, enabled }) => [id, name, enabled !== false])))
+      .digest('hex')
+    let start = 0
+    if (command.cursor) {
+      const match = /^([a-f0-9]{64})\.([1-9][0-9]*)$/.exec(command.cursor)
+      if (!match) throw new HttpError(400, 'Invalid workflow cursor. List again without cursor.')
+      start = Number(match[2])
+      if (match[1] !== revision || !Number.isSafeInteger(start) || start >= flows.length)
+        throw new HttpError(409, 'The workflow catalog changed. List again without cursor.')
+    }
+    const page: typeof automationListResultSchema.Type.automations = []
+    const response = (end: number) => ({
+      automations: page,
+      ...(end < flows.length ? { nextCursor: `${revision}.${end}` } : {}),
+    })
+    let end = start
+    while (end < flows.length && page.length < (command.limit ?? automationListPageSize)) {
+      const flow = flows[end]
+      page.push({
+        id: flow.id,
+        name:
+          flow.name.length > automationListNameLength
+            ? flow.name.slice(0, automationListNameLength - 1) + '…'
+            : flow.name,
+        enabled: flow.enabled !== false,
+      })
+      if (bytes(JSON.stringify(response(end + 1))) > automationListByteBudget) {
+        page.pop()
+        if (!page.length)
+          throw new HttpError(409, 'A workflow summary exceeds the discovery response limit.')
+        break
+      }
+      end++
+    }
+    return decode(automationListResultSchema, response(end))
+  }
   const id = threadActionId(taskId, command.key)
   const action = s.store.transaction(() => {
     const task = s.store.taskSummary(taskId)
@@ -87,17 +180,19 @@ export function prepareThreadAction(s: Services, value: unknown, runId: string) 
     const decided = finalAction(s, taskId, id)
     if (decided) return decided
     const existing = task.threadActions?.find((item) => item.id === id)
+    const automation = 'kind' in command ? automationReview(s, command.automationId) : undefined
+    const suggestionCommand: ThreadActionSuggestion = 'kind' in command ? {} : command
     if (
-      command.agentId &&
-      !s.store.agentsFor(task.repositoryId).some((agent) => agent.id === command.agentId)
+      suggestionCommand.agentId &&
+      !s.store.agentsFor(task.repositoryId).some((agent) => agent.id === suggestionCommand.agentId)
     )
       throw new HttpError(400, 'Unknown agentId for this project. Omit it or use subagent_list.')
     const now = new Date().toISOString()
     const suggestion = {
-      ...(command.provider ? { provider: command.provider } : {}),
-      ...(command.model ? { model: command.model } : {}),
-      ...(command.reasoning ? { reasoning: command.reasoning } : {}),
-      ...(command.agentId ? { agentId: command.agentId } : {}),
+      ...(suggestionCommand.provider ? { provider: suggestionCommand.provider } : {}),
+      ...(suggestionCommand.model ? { model: suggestionCommand.model } : {}),
+      ...(suggestionCommand.reasoning ? { reasoning: suggestionCommand.reasoning } : {}),
+      ...(suggestionCommand.agentId ? { agentId: suggestionCommand.agentId } : {}),
     }
     const next: ThreadAction = {
       id,
@@ -105,6 +200,7 @@ export function prepareThreadAction(s: Services, value: unknown, runId: string) 
       title: command.title,
       prompt: command.prompt,
       ...(Object.keys(suggestion).length ? { suggestion } : {}),
+      ...(automation ? { automation } : {}),
       runId,
       state: 'prepared',
       createdAt: existing?.createdAt ?? now,
@@ -113,18 +209,18 @@ export function prepareThreadAction(s: Services, value: unknown, runId: string) 
     let actions = (task.threadActions ?? []).filter((item) => item.id !== id)
     const unsent = actions
       .filter((item) => item.state === 'prepared')
-      .reduce((total, item) => total + bytes(item.prompt), bytes(next.prompt))
+      .reduce((total, item) => total + cardBytes(item), cardBytes(next))
     if (unsent > preparedPromptBudget)
       throw new HttpError(
         409,
-        `Unsent action prompts in this thread exceed ${preparedPromptBudget / 1024} KB. Shorten the prompt, or ask the user to send or dismiss earlier actions.`,
+        `Unsent action prompts and review data in this thread exceed ${preparedPromptBudget / 1024} KB. Shorten the prompt, or ask the user to send or dismiss earlier actions.`,
       )
     const position = task.threadActions?.findIndex((item) => item.id === id) ?? -1
     if (position >= 0) actions.splice(Math.min(position, actions.length), 0, next)
     else actions.push(next)
     // Finished cards make room, oldest first, until the count and total prompt bytes fit.
     // Their decisions persist outside the thread. Unsent cards never drop.
-    const total = () => actions.reduce((sum, item) => sum + bytes(item.prompt), 0)
+    const total = () => actions.reduce((sum, item) => sum + cardBytes(item), 0)
     while (actions.length > maxThreadActions || total() > preparedPromptBudget) {
       const finished = actions.findIndex((item) => item.state !== 'prepared')
       if (finished < 0)
@@ -134,6 +230,11 @@ export function prepareThreadAction(s: Services, value: unknown, runId: string) 
         )
       actions = actions.filter((_, index) => index !== finished)
     }
+    const ceiling = sourceCeiling ?? resolveTaskAgent(task, s.store.get().agents)
+    if (!ceiling) throw rejected(409, 'The source thread no longer has an available agent.')
+    s.db
+      .prepare('INSERT OR REPLACE INTO documents (id,value) VALUES (?,?)')
+      .run(ceilingKey(taskId, id), JSON.stringify(decode(actionCeilingSchema, ceiling)))
     s.store.updateTask(taskId, (current) => ({ ...current, threadActions: actions }))
     return next
   })
@@ -141,9 +242,12 @@ export function prepareThreadAction(s: Services, value: unknown, runId: string) 
     id: action.id,
     state: action.state,
     ...(action.sent ? { sent: action.sent } : {}),
+    ...(action.automationSent ? { automationSent: action.automationSent } : {}),
     note:
       action.state === 'prepared'
-        ? 'Prepared a card in this thread. Nothing runs until the user reviews it and taps Send; they may change the prompt, harness and model. Do not wait for it.'
+        ? action.automation
+          ? 'Prepared an automation review card. Nothing runs until a paired user reviews it and taps Start. Do not wait for it.'
+          : 'Prepared a card in this thread. Nothing runs until the user reviews it and taps Send; they may change the prompt, harness and model. Do not wait for it.'
         : action.state === 'sent'
           ? 'The user already sent this action. Use a new key for a new proposal.'
           : 'The user dismissed this action. Use a new key only for a materially new proposal.',
@@ -163,8 +267,13 @@ function admit(s: Services, source: TaskSummary, input: ThreadActionSend) {
   const ceiling = resolveTaskAgent(source, agents)
   const chosen = resolveTaskAgent(input.createTask, agents)
   if (!ceiling || !chosen) throw rejected(409, 'Choose an available harness for the new thread.')
+  const prepared = findAction(s, source.id, input.actionId).action
+  const original = originalCeiling(s, source.id, prepared.id)
   // The first turn may carry its own full harness; that is the access it runs with.
   if (
+    (original &&
+      (!permissionPolicyWithinCeiling(original, chosen) ||
+        !permissionPolicyWithinCeiling(original, applyTurnSettings(chosen, input.turnSettings)))) ||
     !permissionPolicyWithinCeiling(ceiling, chosen) ||
     !permissionPolicyWithinCeiling(ceiling, applyTurnSettings(chosen, input.turnSettings))
   )
@@ -203,12 +312,16 @@ class AlreadyDecided extends Error {}
  * transaction; the turn then starts. Every later request returns the sent action. */
 export function sendThreadActionEffect(s: Services, value: unknown) {
   return Effect.gen(function* () {
+    if (typeof value === 'object' && value !== null && 'revision' in value)
+      return yield* runtimeOperation(() => sendAutomationAction(s, value))
     const input = decode(threadActionSendSchema, value)
     const { source, action } = yield* runtimeOperation(() =>
       findAction(s, input.sourceTaskId, input.actionId),
     )
     if (action.state === 'dismissed')
       return yield* Effect.fail(rejected(409, 'This action was dismissed.'))
+    if (action.automation)
+      return yield* Effect.fail(rejected(409, 'Review this automation before starting it.'))
     if (action.state === 'prepared') {
       yield* runtimeOperation(() => admit(s, source, input))
       const outcome = yield* Effect.exit(
@@ -282,5 +395,233 @@ export function dismissThreadAction(s: Services, value: unknown) {
       updatedAt: new Date().toISOString(),
     })
   })
+  return result(s, input.sourceTaskId, input.actionId)
+}
+
+/** Maximum public review bytes per card, including the complete saved workflow. */
+export const automationReviewBudget = 128 * 1024
+
+function automationReview(s: Services, automationId: string): AutomationAction {
+  const workspace = s.store.get()
+  const workflow = workspace.automations.find((item) => item.id === automationId)
+  if (!workflow) throw rejected(409, 'This automation was deleted. Choose another automation.')
+  if (workflow.nodes.length > 100 || workflow.edges.length > 1000)
+    throw rejected(
+      409,
+      'This automation is too large for an action card. Use its normal Run action.',
+    )
+  if (workflow.enabled === false)
+    throw rejected(409, 'This automation is paused. Resume it before reviewing this action.')
+  // The shared graph validator has no runtime defaults. Validate the same effective
+  // harness that Tasks.create will use, while keeping the saved workflow unchanged.
+  const issues = automationIssues(
+    {
+      ...workflow,
+      nodes: workflow.nodes.map((node) =>
+        node.data.kind === 'task' && !node.data.botId && !node.data.harness && !node.data.agentId
+          ? {
+              ...node,
+              data: { ...node.data, harness: s.store.taskDefaults(node.data.repositoryId).harness },
+            }
+          : node,
+      ),
+    },
+    workspace,
+  )
+  if (issues.length) throw rejected(409, issues[0])
+  const privateRevision: unknown[] = []
+  const resources = workflow.nodes
+    .filter((node) => node.data.kind === 'task')
+    .map((node) => {
+      const bot = node.data.botId
+        ? workspace.tasks.find((task) => task.id === node.data.botId)
+        : undefined
+      if (node.data.botId && (!bot?.bot || bot.archivedAt || botPaused(bot) || bot.queuePaused))
+        throw rejected(409, `The Bot for ${node.data.label} is unavailable or paused.`)
+      // Match Tasks.create: project defaults are applied before the node's saved settings.
+      const defaults = s.store.taskDefaults(node.data.repositoryId)
+      const target = bot ?? {
+        ...defaults,
+        ...node.data,
+        id: node.id,
+        harness: node.data.harness ?? (node.data.agentId ? undefined : defaults.harness),
+        execution: node.data.execution ?? defaults.execution,
+        modelSelection:
+          node.data.harness || node.data.agentId ? undefined : defaults.modelSelection,
+      }
+      const agent = resolveTaskAgent(target, workspace.agents)
+      if (!agent) throw rejected(409, `Choose an available agent for ${node.data.label}.`)
+      // Selection is consumed before the first turn and the concrete harness is persisted.
+      // Existing Bot turns/sessions must therefore review their saved model, not a selector.
+      const modelSelection =
+        bot && (bot.history?.turns || bot.sessionId || bot.delegation)
+          ? undefined
+          : target.modelSelection
+      const repository = workspace.repositories.find((item) => item.id === target.repositoryId)
+      if (!repository) throw rejected(409, `Choose an available project for ${node.data.label}.`)
+      const links = bot?.pendingLinkedCheckouts ?? target.linkedCheckouts ?? []
+      const projects = [
+        {
+          id: repository.id,
+          name: repository.name,
+          path: bot?.existingWorktreePath ?? repository.path,
+        },
+      ]
+      for (const link of links) {
+        const project = workspace.repositories.find((item) => item.id === link.repositoryId)
+        if (!project) throw rejected(409, `A linked project for ${node.data.label} is unavailable.`)
+        projects.push({
+          id: project.id,
+          name: project.name,
+          path:
+            bot?.linkedCheckoutSetup?.find((setup) => setup.id === link.id)?.directory ??
+            link.existingWorktreePath ??
+            project.path,
+        })
+      }
+      // Hash private configuration without copying it into the card or its tool response.
+      privateRevision.push({
+        agent,
+        bot: bot?.bot,
+        defaults: bot ? undefined : defaults,
+        resources: taskResources(target, workspace, s.defaults.get()),
+        target: {
+          repositoryId: target.repositoryId,
+          execution: target.execution,
+          linkedCheckouts: links,
+          existingWorktreePath: bot?.existingWorktreePath,
+          checkoutBranch: bot?.checkoutBranch,
+          modelSelection: target.modelSelection,
+          pendingLinkedCheckouts: bot?.pendingLinkedCheckouts,
+          linkedCheckoutSetup: bot?.linkedCheckoutSetup,
+        },
+        projects: [
+          repository,
+          ...links.map((link) =>
+            workspace.repositories.find((item) => item.id === link.repositoryId),
+          ),
+        ],
+      })
+      return {
+        nodeId: node.id,
+        label: node.data.label,
+        ...(bot ? { botId: bot.id, botName: bot.title } : {}),
+        repositoryId: repository.id,
+        repositoryName: repository.name,
+        execution: target.execution ?? 'main',
+        projects,
+        agent: {
+          name: agent.name,
+          provider: agent.provider,
+          model: agent.model,
+          ...(modelSelection ? { modelSelection } : {}),
+          reasoning: agent.reasoning,
+          permission: agent.permission,
+          approvalPolicy: agent.approvalPolicy,
+          sandboxMode: agent.sandboxMode,
+        },
+      }
+    })
+  const review = {
+    automationId,
+    revision: createHash('sha256')
+      .update(JSON.stringify([workflow, resources, privateRevision]))
+      .digest('hex'),
+    workflow: decode(automationReviewWorkflowSchema, workflow),
+    resources,
+  }
+  if (bytes(JSON.stringify(review)) > automationReviewBudget)
+    throw rejected(
+      409,
+      'This automation is too large for an action card. Use its normal Run action.',
+    )
+  return decode(automationActionSchema, review)
+}
+
+function admitAutomation(s: Services, source: TaskSummary, action: ThreadAction, revision: string) {
+  if (!action.automation) throw rejected(409, 'This is a new-thread action.')
+  const review = automationReview(s, action.automation.automationId)
+  if (revision !== action.automation.revision || revision !== review.revision)
+    throw rejected(409, 'This automation changed. Refresh its review before starting it.')
+  const ceiling = resolveTaskAgent(source, s.store.get().agents)
+  const original = originalCeiling(s, source.id, action.id)
+  if (
+    !ceiling ||
+    !original ||
+    review.resources.some(
+      (item) =>
+        !permissionPolicyWithinCeiling(ceiling, item.agent) ||
+        !permissionPolicyWithinCeiling(original, item.agent),
+    )
+  )
+    throw rejected(
+      403,
+      'Every automation step must have the same or narrower access than this thread. Use the normal automation Run action for broader access.',
+    )
+  return review
+}
+
+export function reviewThreadAction(s: Services, value: unknown) {
+  const input = decode(threadActionReviewSchema, value)
+  s.store.transaction(() => {
+    const { source, action } = findAction(s, input.sourceTaskId, input.actionId)
+    if (action.state !== 'prepared') return
+    if (!action.automation) throw rejected(409, 'This is a new-thread action.')
+    const refreshed = {
+      ...action,
+      automation: automationReview(s, action.automation.automationId),
+      updatedAt: new Date().toISOString(),
+    }
+    const total = (source.threadActions ?? []).reduce(
+      (sum, item) => sum + cardBytes(item.id === refreshed.id ? refreshed : item),
+      0,
+    )
+    if (total > preparedPromptBudget)
+      throw rejected(
+        409,
+        `Action prompts and review data in this thread exceed ${preparedPromptBudget / 1024} KB. Shorten the workflow before refreshing this review.`,
+      )
+    setAction(s, input.sourceTaskId, refreshed)
+  })
+  return result(s, input.sourceTaskId, input.actionId)
+}
+
+function sendAutomationAction(s: Services, value: unknown) {
+  const input = decode(automationActionSendSchema, value)
+  const current = findAction(s, input.sourceTaskId, input.actionId)
+  if (current.action.state === 'dismissed') throw rejected(409, 'This action was dismissed.')
+  if (current.action.state === 'sent') return result(s, input.sourceTaskId, input.actionId)
+  const review = admitAutomation(s, current.source, current.action, input.revision)
+  try {
+    s.jobs.start(
+      review.automationId,
+      `thread-action:${input.sourceTaskId}:${input.actionId}`,
+      {
+        kind: 'reviewed-action',
+        sourceTaskId: input.sourceTaskId,
+        actionId: input.actionId,
+        externalUserInput: { text: input.text },
+      },
+      (runId) => {
+        const latest = findAction(s, input.sourceTaskId, input.actionId)
+        if (latest.action.state !== 'prepared')
+          throw rejected(409, 'This action was already decided.')
+        admitAutomation(s, latest.source, latest.action, input.revision)
+        const now = new Date().toISOString()
+        setAction(s, input.sourceTaskId, {
+          ...latest.action,
+          state: 'sent',
+          updatedAt: now,
+          automationSent: { runId, sentAt: now },
+        })
+      },
+    )
+  } catch (error) {
+    // A committed receipt wins even if acknowledgement or launch failed afterwards.
+    if (finalAction(s, input.sourceTaskId, input.actionId)?.state === 'sent')
+      return result(s, input.sourceTaskId, input.actionId)
+    if (error instanceof HttpError) throw rejected(error.status, error.message)
+    throw error
+  }
   return result(s, input.sourceTaskId, input.actionId)
 }
