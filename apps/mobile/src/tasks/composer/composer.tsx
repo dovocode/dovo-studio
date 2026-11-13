@@ -1408,7 +1408,7 @@ export function Composer({
                     )}
                   </Sheet>
                 )}
-                {(task.bot || showOptions) && !dictation.active && (
+                {showOptions && !dictation.active && (
                   <Animated.View
                     entering={reveal}
                     exiting={conceal}
