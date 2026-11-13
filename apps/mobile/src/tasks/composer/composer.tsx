@@ -169,6 +169,7 @@ export function Composer({
     return () => back.remove()
   }, [composerHistory.active, composerHistory.cancel])
   const nextTurnControls =
+    !task.bot &&
     !!snapshot?.queuedTurnSettingsSupported &&
     !!agent &&
     (!!editing || task.status === 'running' || !!task.queue?.length || !!turnSettings)
@@ -1407,7 +1408,7 @@ export function Composer({
                     )}
                   </Sheet>
                 )}
-                {!task.bot && showOptions && !dictation.active && (
+                {(task.bot || showOptions) && !dictation.active && (
                   <Animated.View
                     entering={reveal}
                     exiting={conceal}

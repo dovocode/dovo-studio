@@ -654,8 +654,16 @@ try {
   )
   assert.equal(
     await page.getByRole('button', { name: 'Change Bot model', exact: true }).count(),
-    1,
-    'Persistent settings have the only model control',
+    2,
+    'Composer and settings both use the persistent model control',
+  )
+  await page
+    .locator('.task-composer')
+    .getByRole('button', { name: 'Change Bot model', exact: true })
+    .click()
+  await page.waitForFunction(
+    (id) => window.all.one.tasks.find((t) => t.id === id).harness.model === 'next-model',
+    botId,
   )
   assert.equal(
     await page.evaluate(

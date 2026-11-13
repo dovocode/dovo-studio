@@ -1144,6 +1144,7 @@ export function Composer({
   const [infoOpen, setInfoOpen] = useState(false)
   const [infoContainer, setInfoContainer] = useState<HTMLDivElement | null>(null)
   const usesTurnSettings = !!(
+    !task.bot &&
     snapshot?.queuedTurnSettingsSupported &&
     agent &&
     (!!editing || task.status === 'running' || !!task.queue?.length || !!turnSettings)
@@ -1442,7 +1443,7 @@ export function Composer({
             <span className="text-xs text-muted-foreground">
               Answer the question above to continue.
             </span>
-          ) : task.bot ? null : usesTurnSettings && agent ? (
+          ) : usesTurnSettings && agent ? (
             <TurnModelControls
               allowHandoff={!editing}
               task={task}

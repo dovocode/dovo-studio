@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
-import { botContextMessages, botResultSchema, decode } from '@dovo/protocol'
+import { botContextMessages, botResultSchema, decode, defaultTaskHarness } from '@dovo/protocol'
 import { setupBotRuntime } from '../../testing/bots'
 import { waitForRuntime } from '../../testing/integration'
 
@@ -125,4 +125,83 @@ it('keeps the Bot interactive while delegated work runs and receives the child r
     expect(s.store.taskSummary(childId).status).toBe('review')
     expect(s.tasks.hasWorkingFamily(created.id)).toBe(false)
   })
+})
+
+it('hands a Bot to another harness and model while retaining its identity, draft and reset context', async () => {
+  const f = await setupBotRuntime()
+  const created = decode(botResultSchema, await (await f.create()).response.json())
+  const s = f.runtime.services
+  const send = async (text: string) => {
+    const messageId = randomUUID()
+    expect(
+      (await f.request('/api/tasks/message', { id: created.id, messageId, text })).status,
+    ).toBe(200)
+    await waitForRuntime(() => {
+      const task = f.runtime.services.store.task(created.id)
+      expect(task.messages.some((m) => m.id === messageId)).toBe(true)
+      expect(task.status).toBe('review')
+      expect(task.queue?.length ?? 0).toBe(0)
+    })
+  }
+  await send('Keep the release plan')
+  const boundary = s.store.task(created.id).turns![0]
+  await send('Excluded later context')
+  expect(
+    (
+      await f.request('/api/bots/reset-context', {
+        id: created.id,
+        turnId: boundary.id,
+        expectedRevision: s.store.task(created.id).bot!.revision,
+      })
+    ).status,
+  ).toBe(200)
+  s.store.updateTask(created.id, (task) => ({ ...task, draft: 'Unsent human draft' }))
+  const before = s.store.task(created.id)
+  const handoff = {
+    id: created.id,
+    requestId: randomUUID(),
+    harness: defaultTaskHarness('claude'),
+    stop: false,
+  }
+  const response = await f.request('/api/tasks/continue-harness', handoff)
+  expect(await response.text()).toBe('{"ok":true}')
+  expect(response.status).toBe(200)
+  const after = s.store.task(created.id)
+  expect(after.bot).toEqual(before.bot)
+  expect(after.title).toBe(before.title)
+  expect(after.draft).toBe(before.draft)
+  expect(after.messages).toEqual(before.messages)
+  expect(after.turns).toEqual(before.turns)
+  expect(after.files).toEqual(before.files)
+  expect(after.threadActions).toEqual(before.threadActions)
+  expect(after.sessionId).toBeUndefined()
+  expect((await f.request('/api/tasks/continue-harness', handoff)).status).toBe(200)
+  await send('Continue with Claude')
+  expect(f.inputs.at(-1)?.agent.provider).toBe('claude')
+  expect(f.inputs.at(-1)?.sessionId).toBeUndefined()
+  expect(f.inputs.at(-1)?.prompt).toContain('Keep the release plan')
+  expect(f.inputs.at(-1)?.prompt).not.toContain('Excluded later context')
+  const previous = s.store.task(created.id).harness!
+  const next = { ...previous, model: 'another-model' }
+  expect(
+    (
+      await f.request(
+        '/api/workspace',
+        {
+          collection: 'tasks',
+          id: created.id,
+          changes: { harness: { before: previous, after: next } },
+        },
+        'PATCH',
+      )
+    ).status,
+  ).toBe(200)
+  await f.restart()
+  await send('Continue with the new model')
+  expect(f.inputs.at(-1)?.agent.model).toBe('another-model')
+  expect(f.inputs.at(-1)?.sessionId).toBeUndefined()
+  expect(f.inputs.at(-1)?.prompt).toContain('Keep the release plan')
+  expect(f.inputs.at(-1)?.prompt).toContain('Continue with Claude')
+  expect(f.inputs.at(-1)?.prompt).not.toContain('Excluded later context')
+  expect(f.runtime.services.store.task(created.id).bot).toEqual(before.bot)
 })

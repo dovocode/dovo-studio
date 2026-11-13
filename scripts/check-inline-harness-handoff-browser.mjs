@@ -18,8 +18,9 @@ export const ModelSettings=()=>null;
 `
 const browser = await chromium.launch()
 try {
-  for (const variant of ['thread', 'turn', 'mobile', 'mobile-sheet']) {
+  for (const variant of ['thread', 'bot', 'turn', 'mobile', 'mobile-sheet', 'mobile-bot']) {
     const isMobile = variant.startsWith('mobile')
+    const isBot = variant === 'bot' || variant === 'mobile-bot'
     const entry = isMobile
       ? mobile + 'harness-settings.tsx'
       : desktop + (variant === 'turn' ? 'turn-model-controls.tsx' : 'composer-harness-controls.tsx')
@@ -80,12 +81,12 @@ try {
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';import {${isMobile ? 'HarnessSettings' : variant === 'turn' ? 'TurnModelControls' : 'ComposerHarnessControls'} as Controls} from '${entry}';
 window.calls=[];window.flushes=0;window.fail=false;window.hold=false;window.settings=null;window.closes=0;window.deferDismissal=false;
-const original={id:'thread',title:'Thread',agentId:'',harness:defaultTaskHarness('codex'),providerLock:'codex',status:'review',checkoutLocked:true,createdAt:'',messages:[{id:'m',role:'user',text:'Saved context'}],files:[],draft:'Unsent draft'};
+const original={...(${isBot}?{bot:{role:'Helper',responsibilities:'Keep context',state:'active',revision:'11111111-1111-4111-8111-111111111111',createdAt:'',updatedAt:''}}:{}),id:'thread',title:'Thread',agentId:'',harness:defaultTaskHarness('codex'),providerLock:'codex',status:'review',checkoutLocked:true,createdAt:'',messages:[{id:'m',role:'user',text:'Saved context'}],files:[],draft:'Unsent draft'};
 function App(){const[open,setOpen]=useState(true),[task,setTask]=useState(original),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true),[scope,setScope]=useState('owner');window.task=task;window.setTask=patch=>setTask(t=>({...t,...patch}));window.setConnected=setConnected;window.setSupported=setSupported;window.setScope=setScope;window.reset=()=>{setOpen(true);window.settings=null;window.calls=[];setTask({...original});setScope('owner');setConnected(true);setSupported(true)};
 const request=async(path,input)=>{window.calls.push({path,input:structuredClone(input),scope});if(window.hold)await new Promise(resolve=>window.release=resolve);if(window.fail){window.fail=false;setTask(t=>({...t,status:'review'}));throw Error('Reply lost')}setTask(t=>({...t,harness:input.harness,providerLock:input.harness.provider,status:'review'}));return{ok:true}};
 const workspace={tasks:[task],agents:[],repositories:[]};const snapshot={workspace,threadHandoffsSupported:supported,permissionPolicySupported:true,acpInstallations:[]};
 window.store={snapshot,workspace,connected,activeRuntimeId:scope,profile:{id:scope,connection:{address:'http://'+scope+'.local'}},connection:{address:'http://'+scope+'.local'},request,flush:async()=>{window.flushes++},setWorkspace:change=>{const next=change(workspace);setTask(next.tasks[0])},callEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:e=>e})};
-return <>{(!${isMobile}||open)&&<Controls task={task} turn={task.status==='running'?{value:null,onChange:value=>window.settings=value}:undefined} agent={{...task.harness,id:'task',name:'Codex'}} disabled={false} value={window.settings} onChange={value=>window.settings=value} onClose={()=>{window.closes++;if(window.deferDismissal)window.finishDismissal=()=>setOpen(false);else setOpen(false)}} inline={${variant !== 'mobile-sheet'}}/>}<textarea aria-label="Message" value={task.draft} onChange={event=>setTask(task=>({...task,draft:event.target.value}))}/><output aria-label="Draft">{task.draft}</output><output aria-label="Provider">{task.harness.provider}</output></>}
+return <>{(!${isMobile}||open)&&<Controls task={task} turn={!${isBot}&&task.status==='running'?{value:null,onChange:value=>window.settings=value}:undefined} agent={{...task.harness,id:'task',name:'Codex'}} disabled={false} value={window.settings} onChange={value=>window.settings=value} onClose={()=>{window.closes++;if(window.deferDismissal)window.finishDismissal=()=>setOpen(false);else setOpen(false)}} inline={${variant !== 'mobile-sheet'}}/>}<textarea aria-label="Message" value={task.draft} onChange={event=>setTask(task=>({...task,draft:event.target.value}))}/><output aria-label="Draft">{task.draft}</output><output aria-label="Provider">{task.harness.provider}</output></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
         bundle: true,
@@ -146,14 +147,17 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       window.reset()
       window.setTask({ status: 'running' })
     })
-    // The regular thread control is disabled during a run; per-message controls own it.
-    if (variant !== 'thread') {
+    await page.waitForFunction(() => window.task.status === 'running')
+    // Persistent settings wait for the active run; per-message controls own running handoffs.
+    if (variant !== 'thread' && !isBot) {
       await choose.click()
       assert.equal(await page.evaluate(() => window.calls.length), 0)
       await page.getByRole('button', { name: 'Stop and switch harness', exact: true }).click()
       await page.getByLabel('Provider').filter({ hasText: 'claude' }).waitFor()
       assert.equal(await page.evaluate(() => window.calls[0].input.stop), true)
       if (isMobile) await choose.waitFor({ state: 'detached' })
+    } else {
+      assert.equal(await choose.isDisabled(), true)
     }
     await page.evaluate(() => {
       window.reset()
@@ -226,7 +230,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     await page.close()
     console.log(
       variant +
-        ': inline handoff, explicit stop, saved drafts/history, identical retry, queued-input and old-runtime guards passed.',
+        ': inline handoff, running guards, saved drafts/history, identical retry, queued-input and old-runtime guards passed.',
     )
   }
 } finally {

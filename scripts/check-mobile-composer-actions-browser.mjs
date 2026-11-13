@@ -452,8 +452,8 @@ try {
         },
       }),
     )
-    for (const name of ['Agent & model', 'Plan'])
-      assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Agent & model', exact: true }).count(), 1)
+    assert.equal(await page.getByRole('button', { name: 'Plan', exact: true }).count(), 0)
     assert.equal(await page.getByTestId('Task setup').count(), 0)
     assert.deepEqual(errors, [])
     console.log(
