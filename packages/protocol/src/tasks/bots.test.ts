@@ -63,6 +63,10 @@ it('steers supported Bots toward background delegation while respecting user lim
     'unless the user or repository instructions restrict delegation',
   )
   expect(botInstructions(bot, true)).toContain('finish your reply')
+  expect(botInstructions(bot, true)).toContain('Expected output, and Verification')
+  expect(botInstructions(bot, true)).toContain('advance only after checking')
+  expect(botInstructions(bot, true)).toContain('data.botId')
+  expect(botInstructions(bot, true)).toContain('neither you nor a worker can approve it')
   expect(botInstructions(bot)).not.toContain('subagent_spawn')
   expect(botInstructions(bot)).toContain('delegation tools are unavailable')
 })

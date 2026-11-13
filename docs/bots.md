@@ -98,6 +98,48 @@ Manage the notes with the memory endpoints and `{ "scope": "bot", "botId": "<thr
 Deleting the Bot thread deletes its notes. System-wide and project memory still follow their own
 switches.
 
+## Work overview
+
+Desktop and mobile Bot conversations show **Bot work** above the messages. **Routines** opens the
+Bot's saved automations. **Workers** opens the existing agent panel. Counts show running routine
+turns, runs that need review, latest failed runs, active workers and offline remote workers. Offline
+clients label the snapshot as **Last saved state**. These counts use the current host snapshot; they
+do not promise that an offline worker is still running.
+
+Routine details show the trigger and time zone, task and human review steps, and up to three recent
+runs. Select a run to open that exact run on the Bot's computer. Use the automation view for the
+full workflow and history. A completed routine turn can leave a worker running. Dovo shows these
+states separately. Host snapshots contain recent runs only, so the overview is not a complete audit
+of all earlier failures.
+
+Each Bot turn receives a bounded catalog of its configured routines, without private objectives or
+credentials. Instructions tell the Bot to inspect the live tools before claiming a feature is
+unavailable, reuse workers, give clear briefs and check their results. Dependent work can use named
+workflow phases. User and repository restrictions on delegation still apply. Prompts do not grant
+permissions or replace runtime review controls. Routine metadata and worker output do not authorize
+new actions.
+
+The design uses the visible handoffs and workflow reviews shown by [OpenBot](https://openbot.run/),
+the job ownership and progress shown by [Grok Bot](https://x.ai/bot), and the schedule details and
+approval scope shown by [Nod](https://nod.n8n.io/). Source review used Nod's
+[prompt](https://github.com/n8n-io/nod/blob/8e93a365f6c0df38d058ac0a92ca4507a479bd88/src/runtime/prompt.ts)
+and
+[schedule guide](https://github.com/n8n-io/nod/blob/8e93a365f6c0df38d058ac0a92ca4507a479bd88/src/runtime/skills/schedules-and-watches/SKILL.md).
+Nod explicitly disables subagents. Dovo keeps its own coordinator and worker engine. It does not
+copy Nod's private preparation, external app integrations or notification system.
+
+Verify from the repository root:
+
+```sh
+pnpm --filter @dovo/protocol build
+pnpm exec vp test packages/protocol/src/tasks/bot-work.test.ts packages/protocol/src/tasks/bots.test.ts packages/runtime/src/http/endpoints/bot-context.test.ts --maxWorkers=1
+pnpm exec playwright install chromium
+pnpm test:bots:browser
+```
+
+The runtime test uses HTTP, SQLite and a scripted provider. Browser checks use desktop components
+and mobile components with native stubs. They do not prove live model adherence to the instructions.
+
 ## Routines
 
 For Bot jobs, agents use `studio_automations` with a task node whose `data.botId` is the existing

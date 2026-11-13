@@ -99,6 +99,9 @@ it('keeps the Bot interactive while delegated work runs and receives the child r
     })
     await waitForRuntime(() => expect(s.store.taskSummary(childId).status).toBe('running'))
     expect(instructions).toContain('finish your reply')
+    expect(instructions).toContain('Expected output, and Verification')
+    expect(instructions).toContain('Configured Bot routines on this computer')
+    expect(instructions).toContain(JSON.stringify(created.id))
     await waitForRuntime(() => expect(s.store.taskSummary(created.id).status).toBe('review'))
     expect(
       (

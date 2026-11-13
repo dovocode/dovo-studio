@@ -1,4 +1,4 @@
-import { botContextMessages, botInstructions } from '@dovo/protocol'
+import { botContextMessages, botInstructions, botRoutineContext } from '@dovo/protocol'
 import { goalCommand, goalCommandText } from '@dovo/protocol'
 import { skillContext } from './skill-context.js'
 import { HookEvents, type HookTool } from './hook-events.js'
@@ -1044,6 +1044,7 @@ export class TaskTurnRunner {
           const providerInstructions = [
             agent.instructions,
             task.bot ? botInstructions(task.bot, !!this.taskTools) : '',
+            task.bot ? botRoutineContext(task.id, this.store.get().automations) : '',
             browserCdpInstructions(id),
             this.taskTools
               ? 'Regular dovo_task ask_question and todos work independently of Studio Tools, including read-only runs where MCP is permitted. Prefer native question/checklist tools; never duplicate a question or maintain parallel checklists. ask_question is a non-blocking form: use a stable key, never request secrets, continue independent work and never treat silence as approval. Answers steer this turn or arrive as a follow-up. For passwords or confidential callback URLs, use secure_input when available: the human submits directly to a reviewed local stdin command or active ACP sign-in. You receive status only. Never ask the human to paste secrets into chat or ordinary questions, or use tools to read submitted secrets. A pending request is not approval.'

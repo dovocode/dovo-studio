@@ -7,6 +7,7 @@ import { randomUUID, checkpointFileCount } from '@dovo/protocol'
 import { forgePullTarget, pullRepositoryIdentity } from '@dovo/protocol'
 import { FloatingPreview, type PreviewPlacement } from './detail/floating-preview'
 import { ResizableSidebar } from './detail/resizable-sidebar'
+import { BotWorkSummary } from './bots/bot-work-summary'
 import { BotSettings } from './bots/bot-settings'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
@@ -1240,6 +1241,13 @@ export default function TasksView({
                     <X className="size-3.5" />
                   </IconButton>
                 </div>
+              )}
+              {task.bot && !temporary && (
+                <BotWorkSummary
+                  task={task}
+                  onRoutines={() => selectSurface('bot-routines', true)}
+                  onWorkers={() => selectSurface('agents', true)}
+                />
               )}
               <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
                 <ResizablePanel

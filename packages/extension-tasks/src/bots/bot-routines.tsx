@@ -1,21 +1,12 @@
-import { formatDateTime, useStudioHost, useWorkspace, type JobRun } from '@dovo/studio-core'
+import { formatDateTime, useStudioHost, useWorkspace } from '@dovo/studio-core'
+import { botRoutines, botRunStatusLabels } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
-
-const statusLabels = {
-  running: 'Working',
-  waiting: 'Needs review',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-} satisfies Record<JobRun['status'], string>
 
 /** Run links use the normal automation history, with its owning computer intact. */
 export function BotRoutines({ taskId }: { taskId: string }) {
   const { workspace, snapshot, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
-  const routines = workspace.automations.filter((routine) =>
-    routine.nodes.some((node) => node.data.kind === 'task' && node.data.botId === taskId),
-  )
+  const routines = botRoutines(taskId, workspace.automations, snapshot?.runs ?? [])
   const open = (automationId: string, runId?: string) =>
     host.navigate({
       viewId: 'jobs',
@@ -27,10 +18,7 @@ export function BotRoutines({ taskId }: { taskId: string }) {
   return (
     <section className="grid gap-3" aria-label="Bot routines">
       <h2 className="font-semibold">Routines</h2>
-      {routines.map((routine) => {
-        const runs = (snapshot?.runs ?? [])
-          .filter((run) => run.automationId === routine.id)
-          .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      {routines.map(({ flow: routine, runs, triggers, steps }) => {
         return (
           <div key={routine.id} className="grid min-w-0 gap-2 rounded-lg border p-3">
             <Button
@@ -44,6 +32,23 @@ export function BotRoutines({ taskId }: { taskId: string }) {
             <p className="text-xs text-muted-foreground">
               {routine.enabled ? 'Triggers enabled' : 'Triggers disabled'}
             </p>
+            <p className="text-xs text-muted-foreground">
+              {triggers.join(' · ') || 'No trigger configured'}
+            </p>
+            <ul aria-label={`${routine.name} steps`} className="grid gap-1 text-xs">
+              {steps.map((step) => (
+                <li key={step.id}>
+                  {step.label} ·{' '}
+                  {step.botJob
+                    ? 'This Bot'
+                    : step.review
+                      ? 'Human review'
+                      : step.botId
+                        ? 'Bot job'
+                        : 'Agent task'}
+                </li>
+              ))}
+            </ul>
             {!runs.length && <p className="text-xs text-muted-foreground">No runs yet.</p>}
             {runs.slice(0, 3).map((run) => (
               <Button
@@ -54,7 +59,7 @@ export function BotRoutines({ taskId }: { taskId: string }) {
                 aria-label={`Open ${routine.name} run ${formatDateTime(run.createdAt)}`}
                 onClick={() => open(routine.id, run.id)}
               >
-                {formatDateTime(run.createdAt)} · {statusLabels[run.status]}
+                {formatDateTime(run.createdAt)} · {botRunStatusLabels[run.status]}
               </Button>
             ))}
             {!!runs.length && (

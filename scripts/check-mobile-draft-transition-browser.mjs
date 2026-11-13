@@ -203,6 +203,8 @@ mocks['../../ui/controls/field'] =
   'export const Field=({label,value,onChangeText,editable})=> <textarea aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;'
 
 const mobileRequire = createRequire(root + 'apps/mobile/package.json')
+mocks['../ui/controls/action'] = mocks['../../ui/controls/action']
+mocks['../ui/content/text'] = mocks['../../ui/content/text']
 mocks['../runtime/connection/provider'] = `export * from '../../runtime/connection/provider';`
 mocks['../runtime/state/application-state'] = mocks['../../runtime/state/application-state']
 mocks['./navigation'] = `export * from '../../shell/navigation';`

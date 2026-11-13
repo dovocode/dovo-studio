@@ -1,3 +1,4 @@
+import { BotWorkSummary } from '../../bots/bot-work-summary'
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
 import { BotAvatar } from '../../bots/bot-avatar'
 import { TaskPipelineProgress } from './task-pipeline-progress'
@@ -1175,6 +1176,13 @@ function TaskDetailContent({
             {' · Paused. New messages stay queued until you resume.'}
           </Text>
         </View>
+      )}
+      {!native && !expandedPreview && task.bot && (
+        <BotWorkSummary
+          task={task}
+          onRoutines={() => setBotSettings('routines')}
+          onWorkers={() => setPane('agents')}
+        />
       )}
       {!native && !expandedPreview && parentNavigation}
       {!native && !expandedPreview && (

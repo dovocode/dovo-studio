@@ -7,6 +7,8 @@ import { Sheet, useSheetNavigation } from '../ui/layout/sheet'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   botResultSchema,
+  botRoutines,
+  botRunStatusLabels,
   workspacePatchResultSchema,
   emptyBotResources,
   taskResources,
@@ -251,10 +253,7 @@ function BotSettingsEditor({
 function BotRoutines({ taskId }: { taskId: string }) {
   const { snapshot, profile } = useRuntime()
   const navigate = useSheetNavigation()
-  const routines =
-    snapshot?.workspace.automations.filter((flow) =>
-      flow.nodes.some((node) => node.data.botId === taskId),
-    ) ?? []
+  const routines = botRoutines(taskId, snapshot?.workspace.automations ?? [], snapshot?.runs ?? [])
   return (
     <View style={{ gap: 8 }}>
       <Text>
@@ -263,16 +262,43 @@ function BotRoutines({ taskId }: { taskId: string }) {
           ? `${routines.length} ${routines.length === 1 ? 'routine uses' : 'routines use'} this Bot.`
           : 'No routines use this Bot.'}
       </Text>
-      {routines.map((flow) => (
-        <Action
-          key={flow.id}
-          label={`${flow.name}${flow.enabled ? '' : ' · Disabled'}`}
-          secondary
-          disabled={!profile}
-          onPress={() => {
-            if (profile) navigate(() => router.navigate(automationHref(profile.id, flow.id)))
-          }}
-        />
+      {routines.map(({ flow, triggers, steps, runs }) => (
+        <View key={flow.id} style={{ gap: 8 }}>
+          <Action
+            label={`${flow.name}${flow.enabled ? '' : ' · Disabled'}`}
+            secondary
+            disabled={!profile}
+            onPress={() => {
+              if (profile) navigate(() => router.navigate(automationHref(profile.id, flow.id)))
+            }}
+          />
+          <Text>{triggers.join(' · ') || 'No trigger configured'}</Text>
+          {steps.map((step) => (
+            <Text key={step.id}>
+              {step.label} ·{' '}
+              {step.botJob
+                ? 'This Bot'
+                : step.review
+                  ? 'Human review'
+                  : step.botId
+                    ? 'Bot job'
+                    : 'Agent task'}
+            </Text>
+          ))}
+          {!runs.length && <Text>No runs yet.</Text>}
+          {runs.slice(0, 3).map((run) => (
+            <Action
+              key={run.id}
+              secondary
+              disabled={!profile}
+              label={`${botRunStatusLabels[run.status]} · ${new Date(run.createdAt).toLocaleString()}`}
+              onPress={() => {
+                if (profile)
+                  navigate(() => router.navigate(automationHref(profile.id, flow.id, run.id)))
+              }}
+            />
+          ))}
+        </View>
       ))}
       <Action
         label="Manage routines"

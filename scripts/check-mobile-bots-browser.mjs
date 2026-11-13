@@ -26,6 +26,7 @@ import {BotEditor} from './apps/mobile/src/bots/bot-editor';
 import {BotAvatarEditor} from './apps/mobile/src/bots/bot-avatar-editor';
 import {BotMemory} from './apps/mobile/src/bots/bot-memory';
 import {BotSettings} from './apps/mobile/src/bots/bot-settings';
+import {BotWorkSummary} from './apps/mobile/src/bots/bot-work-summary';
 import BotsScreen from './apps/mobile/src/bots/bots-screen';
 import {Effect} from 'effect';
 import {RuntimeRequestError,snapshotSchema,decode,taskSchema,botCreateSchema,botUpdateSchema,botLifecycleSchema,memoryWriteSchema} from '@dovo/protocol';
@@ -49,7 +50,7 @@ return decode(schema,result)},catch:error=>error})};
 import {RegistryProvider} from '@effect/atom-react';
 const initial={name:'Release assistant',role:'Release lead',responsibilities:'Check release readiness'};
 window.saved=[];window.rejectSave=false;
-function App(){useSyncExternalStore(window.subscribe,()=>window.version);const [mode,setMode]=useState('editor');window.showMode=value=>{setMode(value);setShow(true)};const [show,setShow]=useState(true);const [owner,setOwner]=useState('owner-a');const [offline,setOffline]=useState(false);window.disableFields=()=>setOffline(true);window.openEditor=next=>{setOwner(next);setOffline(false);setShow(true)};return !show?null:mode==='avatar'?<BotAvatarEditor task={window.botTask} onSaved={()=>{}} onClose={()=>setShow(false)}/>:mode==='list'?<BotsScreen/>:mode==='memory'?<BotMemory taskId='bot-a' onClose={()=>setShow(false)}/>:mode==='settings'?<BotSettings task={window.botTask} onClose={()=>setShow(false)}/>:show?<BotEditor draftKey={owner} initial={initial} unavailable={offline?'Computer is offline':undefined} onClose={()=>setShow(false)} onSave={async value=>{if(window.rejectSave)throw Error('Runtime unavailable');window.saved.push({owner,value})}}/>:null}
+function App(){useSyncExternalStore(window.subscribe,()=>window.version);const [mode,setMode]=useState('editor');window.showMode=value=>{setMode(value);setShow(true)};const [show,setShow]=useState(true);const [owner,setOwner]=useState('owner-a');const [offline,setOffline]=useState(false);window.disableFields=()=>setOffline(true);window.openEditor=next=>{setOwner(next);setOffline(false);setShow(true)};return !show?null:mode==='work'?<BotWorkSummary task={window.botTask} onRoutines={()=>window.workTarget='routines'} onWorkers={()=>window.workTarget='workers'}/>:mode==='avatar'?<BotAvatarEditor task={window.botTask} onSaved={()=>{}} onClose={()=>setShow(false)}/>:mode==='list'?<BotsScreen/>:mode==='memory'?<BotMemory taskId='bot-a' onClose={()=>setShow(false)}/>:mode==='settings'?<BotSettings task={window.botTask} onClose={()=>setShow(false)}/>:show?<BotEditor draftKey={owner} initial={initial} unavailable={offline?'Computer is offline':undefined} onClose={()=>setShow(false)} onSave={async value=>{if(window.rejectSave)throw Error('Runtime unavailable');window.saved.push({owner,value})}}/>:null}
 createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);
 `,
     },
@@ -264,12 +265,56 @@ try {
         id: 'release-check',
         name: 'Release check',
         enabled: true,
-        nodes: [{ data: { botId: 'bot-a' } }],
+        nodes: [
+          {
+            id: 'trigger',
+            data: {
+              kind: 'trigger',
+              trigger: 'schedule',
+              schedule: '0 9 * * 1-5',
+              timezone: 'Europe/Amsterdam',
+            },
+          },
+          { id: 'job', data: { kind: 'task', botId: 'bot-a', label: 'Check release' } },
+          { id: 'review', data: { kind: 'review', label: 'Approve publication' } },
+        ],
+      },
+    ]
+    window.runtime.snapshot.runs = [
+      {
+        id: 'release-review',
+        automationId: 'release-check',
+        status: 'waiting',
+        createdAt: '2026-11-13T09:00:00Z',
+        completedNodes: [],
+        taskIds: [],
+      },
+      {
+        id: 'unrelated-run',
+        automationId: 'other-flow',
+        status: 'failed',
+        createdAt: '2026-11-13T10:00:00Z',
+        completedNodes: [],
+        taskIds: [],
       },
     ]
     window.publish()
   })
+  await page.evaluate(() => window.showMode('work'))
+  await page.getByRole('button', { name: 'Routines · 1 · 1 need review', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.workTarget), 'routines')
+  await page.getByRole('button', { name: 'Workers · 0 active', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.workTarget), 'workers')
+  await page.evaluate(() => window.showMode('settings'))
   await page.getByRole('button', { name: 'Bot routines', exact: true }).click()
+  await page.getByText('Weekdays at 09:00 · Europe/Amsterdam', { exact: true }).waitFor()
+  await page.getByText('Check release · This Bot', { exact: true }).waitFor()
+  await page.getByText('Approve publication · Human review', { exact: true }).waitFor()
+  await page.getByRole('button', { name: /^Needs review ·/ }).click()
+  assert.deepEqual(await page.evaluate(() => window.route), {
+    pathname: '/settings/automations/[runtimeId]/[automationId]',
+    params: { runtimeId: 'paired-owner', automationId: 'release-check', runId: 'release-review' },
+  })
   await page.getByRole('button', { name: 'Release check', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.route), {
     pathname: '/settings/automations/[runtimeId]/[automationId]',
