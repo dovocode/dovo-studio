@@ -1,12 +1,22 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { resourceError } from './error'
-import { skillPackageSchema, type SkillPackage } from '@dovo/protocol'
+import {
+  skillPackageSchema,
+  catalogSortOptions,
+  sortCatalogEntries,
+  skillInstallLabel,
+  mcpRegistrySources,
+  registrySignals,
+  type SkillPackage,
+} from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import {
   managedSkillSchema,
   registryCatalogSchema,
   skillCatalogSchema,
   useWorkspace,
+  useAppPreferences,
+  updateAppPreferences,
   type McpServer,
   type ManagedSkill,
   type RegistryEntry,
@@ -44,6 +54,13 @@ export function CatalogPicker({
 }) {
   const { request } = useWorkspace()
   const [query, setQuery] = useApplicationState('')
+  const { mcpRegistrySource: source } = useAppPreferences()
+  const setSource = (mcpRegistrySource: typeof source) =>
+    updateAppPreferences({ mcpRegistrySource })
+  const [view, setView] = useApplicationState('search')
+  const [reload, setReload] = useApplicationState(0)
+  const [sort, setSort] = useApplicationState('provider')
+  const [detailsLoading, setDetailsLoading] = useApplicationState(false)
   const [servers, setServers] = useApplicationState<RegistryEntry[]>([])
   const [skills, setSkills] = useApplicationState<SkillCatalogEntry[]>([])
   const [cursor, setCursor] = useApplicationState<string | undefined>(undefined)
@@ -61,7 +78,7 @@ export function CatalogPicker({
     setCursor(undefined)
     setServers([])
     setSkills([])
-    if (kind === 'skill' && query.trim().length < 2) {
+    if (kind === 'skill' && view === 'search' && query.trim().length < 2) {
       setLoading(false)
       return
     }
@@ -73,6 +90,7 @@ export function CatalogPicker({
             '/api/agents/catalogs/mcp',
             {
               query,
+              source,
             },
             registryCatalogSchema,
           )
@@ -84,11 +102,15 @@ export function CatalogPicker({
           const result = await request(
             '/api/agents/catalogs/skills',
             {
-              query,
+              query: view === 'search' ? query : '',
+              view,
             },
             skillCatalogSchema,
           )
-          if (id === generation.current) setSkills(result.entries)
+          if (id === generation.current) {
+            setSkills(result.entries)
+            setCursor(result.cursor)
+          }
         }
       } catch (error) {
         if (id === generation.current) setError(resourceError(error))
@@ -100,30 +122,75 @@ export function CatalogPicker({
       clearTimeout(timer)
       ++generation.current
     }
-  }, [kind, query, request])
+  }, [kind, query, source, view, reload, request])
   const more = async () => {
     const id = generation.current
     setLoading(true)
     setError('')
     try {
-      const result = await request(
-        '/api/agents/catalogs/mcp',
-        {
-          query,
-          cursor,
-        },
-        registryCatalogSchema,
-      )
-      if (id === generation.current) {
-        setServers((entries) => [
-          ...new Map([...entries, ...result.entries].map((entry) => [entry.name, entry])).values(),
-        ])
-        setCursor(result.cursor)
+      if (kind === 'mcp') {
+        const result = await request(
+          '/api/agents/catalogs/mcp',
+          { query, source, cursor },
+          registryCatalogSchema,
+        )
+        if (id === generation.current) {
+          setServers((entries) => [
+            ...new Map(
+              [...entries, ...result.entries].map((entry) => [
+                entry.providerId ?? entry.name,
+                entry,
+              ]),
+            ).values(),
+          ])
+          setCursor(result.cursor)
+        }
+      } else {
+        const result = await request(
+          '/api/agents/catalogs/skills',
+          { query: view === 'search' ? query : '', view, cursor },
+          skillCatalogSchema,
+        )
+        if (id === generation.current) {
+          setSkills((entries) => [
+            ...new Map(
+              [...entries, ...result.entries].map((entry) => [
+                `${entry.source}/${entry.id}`,
+                entry,
+              ]),
+            ).values(),
+          ])
+          setCursor(result.cursor)
+        }
       }
     } catch (error) {
       if (id === generation.current) setError(resourceError(error))
     } finally {
       if (id === generation.current) setLoading(false)
+    }
+  }
+  const selectServer = async (entry: RegistryEntry) => {
+    setSelected(entry)
+    setVariantId((entry.variants.find((item) => item.server) ?? entry.variants[0])?.id ?? '')
+    if (entry.provider !== 'smithery') return
+    const id = generation.current
+    setDetailsLoading(true)
+    setError('')
+    try {
+      const result = await request(
+        '/api/agents/catalogs/mcp',
+        { query: '', source: 'smithery', server: entry.providerId },
+        registryCatalogSchema,
+      )
+      if (id !== generation.current) return
+      const detail = result.entries[0]
+      if (!detail) throw new Error('The registry did not return this server.')
+      setSelected({ ...entry, variants: detail.variants })
+      setVariantId((detail.variants.find((item) => item.server) ?? detail.variants[0])?.id ?? '')
+    } catch (cause) {
+      if (id === generation.current) setError(resourceError(cause))
+    } finally {
+      if (id === generation.current) setDetailsLoading(false)
     }
   }
   const install = async (entry: SkillCatalogEntry) => {
@@ -246,6 +313,7 @@ export function CatalogPicker({
               variant="ghost"
               size="sm"
               className="justify-self-start"
+              disabled={detailsLoading}
               onClick={() => setSelected(undefined)}
             >
               <ArrowLeft className="size-3.5" />
@@ -255,10 +323,24 @@ export function CatalogPicker({
               <h3 className="text-sm font-medium break-all">{selected.name}</h3>
               <p className="mt-2 text-xs text-muted-foreground">{selected.description}</p>
               <a className="text-xs underline" href={selected.url} target="_blank" rel="noreferrer">
-                Registry entry · {selected.version}
+                {selected.provider === 'glama'
+                  ? 'View on Glama'
+                  : selected.provider === 'smithery'
+                    ? 'View on Smithery'
+                    : 'Registry entry'}{' '}
+                {selected.version}
               </a>
             </div>
-            {selected.variants.length ? (
+            <div className="space-y-1 text-xs text-muted-foreground">
+              {registrySignals(selected).map((signal) => (
+                <p key={signal}>{signal}</p>
+              ))}
+            </div>
+            {detailsLoading ? (
+              <p role="status" className="text-xs">
+                Loading configuration…
+              </p>
+            ) : selected.variants.length ? (
               <>
                 <Select value={variantId} onValueChange={setVariantId}>
                   <SelectTrigger aria-label="Installation variant" className="h-9 text-xs">
@@ -289,44 +371,137 @@ export function CatalogPicker({
               </>
             ) : (
               <p className="text-xs text-muted-foreground">
-                No installation variants are published for this entry.
+                Open the provider listing for setup instructions, then add the MCP configuration
+                manually.
               </p>
             )}
           </div>
         ) : (
           <>
+            {kind === 'mcp' ? (
+              <Select
+                disabled={importing}
+                value={source}
+                onValueChange={(value) => {
+                  const option = mcpRegistrySources.find((item) => item.id === value)
+                  if (option) {
+                    setSource(option.id)
+                    setSort('provider')
+                  }
+                }}
+              >
+                <SelectTrigger aria-label="MCP registry source">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {mcpRegistrySources.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Select
+                disabled={importing}
+                value={view}
+                onValueChange={(value) => {
+                  setView(value)
+                  setSort('provider')
+                }}
+              >
+                <SelectTrigger aria-label="Browse skills">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    { id: 'search', name: 'Search' },
+                    { id: 'all-time', name: 'All time' },
+                    { id: 'trending', name: 'Trending (24h)' },
+                    { id: 'hot', name: 'Hot' },
+                  ].map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Select value={sort} onValueChange={setSort}>
+              <SelectTrigger aria-label="Sort loaded results">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {catalogSortOptions[kind]
+                  .filter((item) => item.id !== 'updated' || source === 'official')
+                  .filter((item) => item.id !== 'uses' || source === 'smithery')
+                  .filter((item) => item.id !== 'quality' || source === 'glama')
+                  .map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Sorting applies to loaded results. Popularity does not establish safety.
+            </p>
+            {kind === 'mcp' && source === 'glama' && (
+              <a
+                className="text-xs underline"
+                href="https://glama.ai/mcp/servers"
+                target="_blank"
+                rel="noreferrer"
+              >
+                MCP data from Glama
+              </a>
+            )}
             <Input
               autoFocus
               aria-label="Search catalog"
               placeholder={kind === 'mcp' ? 'Search MCP servers…' : 'Search skills.sh…'}
               value={query}
-              disabled={importing}
+              disabled={importing || (kind === 'skill' && view !== 'search')}
               onChange={(event) => setQuery(event.target.value)}
             />
             <div className="min-h-40 space-y-2 overflow-y-auto">
-              {servers.map((entry) => (
-                <button
-                  key={entry.name}
-                  type="button"
-                  className="w-full rounded-lg border p-3 text-left hover:bg-muted"
-                  onClick={() => {
-                    setSelected(entry)
-                    setVariantId(
-                      (entry.variants.find((item) => item.server) ?? entry.variants[0])?.id ?? '',
-                    )
-                  }}
-                >
-                  <p className="text-sm font-medium break-all">{entry.name}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {entry.description}
-                  </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {entry.version} · {entry.variants.filter((item) => item.server).length}{' '}
-                    supported variants
-                  </p>
-                </button>
+              {sortCatalogEntries(servers, sort).map((entry) => (
+                <div key={entry.providerId ?? entry.name}>
+                  <button
+                    type="button"
+                    className="w-full rounded-lg border p-3 text-left hover:bg-muted"
+                    onClick={() => void selectServer(entry)}
+                  >
+                    <p className="text-sm font-medium break-all">{entry.name}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      {entry.description}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {entry.version} · {entry.variants.filter((item) => item.server).length}{' '}
+                      supported variants
+                    </p>
+                    {registrySignals(entry).map((signal) => (
+                      <p key={signal} className="text-xs text-muted-foreground">
+                        {signal}
+                      </p>
+                    ))}
+                    <span className="text-xs underline">Review server</span>
+                  </button>
+                  <a
+                    className="text-xs underline"
+                    href={entry.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {entry.provider === 'glama'
+                      ? 'View on Glama'
+                      : entry.provider === 'smithery'
+                        ? 'View on Smithery'
+                        : 'View registry entry'}
+                  </a>
+                </div>
               ))}
-              {skills.map((entry) => (
+              {sortCatalogEntries(skills, sort).map((entry) => (
                 <div
                   key={`${entry.source}/${entry.id}`}
                   className="flex items-center gap-3 rounded-lg border p-3"
@@ -341,8 +516,12 @@ export function CatalogPicker({
                     >
                       {entry.source}
                     </a>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {entry.installs.toLocaleString()} installs
+                    <p className="mt-1 text-xs text-muted-foreground">{skillInstallLabel(entry)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Safety not assessed by Dovo.{' '}
+                      <a className="underline" href={entry.url} target="_blank" rel="noreferrer">
+                        Review published security audits
+                      </a>
                     </p>
                     {!entry.supported && (
                       <p className="text-xs text-muted-foreground">Import this source manually.</p>
@@ -368,11 +547,16 @@ export function CatalogPicker({
               ))}
               {!loading && !servers.length && !skills.length && (
                 <p role="status" className="py-6 text-center text-xs text-muted-foreground">
-                  {kind === 'skill' && query.trim().length < 2
+                  {kind === 'skill' && view === 'search' && query.trim().length < 2
                     ? 'Type at least two characters to search skills.sh.'
-                    : error
-                      ? 'The catalog could not be loaded.'
-                      : 'No matching entries.'}
+                    : kind === 'mcp' &&
+                        source === 'official' &&
+                        query.trim().length > 0 &&
+                        query.trim().length < 3
+                      ? 'Type at least three characters to search the official registry.'
+                      : error
+                        ? 'The catalog could not be loaded.'
+                        : 'No matching entries.'}
                 </p>
               )}
               {loading && (
@@ -392,6 +576,15 @@ export function CatalogPicker({
           <p role="status" className="text-xs text-muted-foreground">
             Importing skill and supporting files…
           </p>
+        )}
+        {error && !selected && !bundle && (
+          <Button
+            variant="outline"
+            disabled={loading || importing}
+            onClick={() => setReload((value) => value + 1)}
+          >
+            Retry catalog
+          </Button>
         )}
         {error && (
           <p role="alert" className="text-xs text-destructive">

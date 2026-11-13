@@ -451,6 +451,20 @@ try {
   await page.getByLabel('Memory note', { exact: true }).fill('Ship after checks pass')
   await page.getByRole('button', { name: 'Save memory note', exact: true }).click()
   await page.getByRole('button', { name: 'release', exact: true }).waitFor()
+  await page.getByLabel('Search loaded notes', { exact: true }).fill('missing note')
+  await page.getByText('No matching loaded notes.', { exact: true }).waitFor()
+  await page.getByLabel('Search loaded notes', { exact: true }).fill('checks pass')
+  await page.getByRole('button', { name: 'release', exact: true }).click()
+  assert.equal(await page.getByLabel('Memory key', { exact: true }).isDisabled(), true)
+  await page.getByLabel('Memory note', { exact: true }).fill('Edited memory draft')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  assert.equal(
+    await page.getByLabel('Memory note', { exact: true }).inputValue(),
+    'Edited memory draft',
+  )
+  await page.getByRole('button', { name: 'Save memory note', exact: true }).click()
+  await page.getByText('Edited memory draft', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page
     .getByLabel('Settings panel', { exact: true })

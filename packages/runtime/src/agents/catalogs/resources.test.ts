@@ -401,3 +401,124 @@ it('previews sibling skills, installs a selected package with shared assets and 
       .every((url) => url.includes(sha)),
   ).toBe(true)
 })
+
+it('uses Smithery usage and verification without inventing installation commands', async () => {
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(
+      Response.json({
+        servers: [
+          {
+            qualifiedName: 'team/docs',
+            displayName: 'Docs',
+            description: 'Documentation',
+            verified: true,
+            useCount: 240,
+          },
+        ],
+        pagination: { currentPage: 1, totalPages: 2 },
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        qualifiedName: 'team/docs',
+        description: 'Documentation',
+        connections: [
+          {
+            type: 'http',
+            deploymentUrl: 'https://example.com/mcp',
+            configSchema: { type: 'object', properties: { token: { type: 'string' } } },
+          },
+          { type: 'http', deploymentUrl: 'https://example.com/public' },
+          { type: 'http', deploymentUrl: 'javascript:alert(1)' },
+        ],
+      }),
+    )
+  vi.stubGlobal('fetch', fetch)
+  const result = await searchRegistry({ source: 'smithery', query: 'docs' })
+  expect(result).toMatchObject({
+    entries: [{ provider: 'smithery', uses: 240, verified: true }],
+    cursor: '2',
+  })
+  expect(fetch.mock.calls[0][0]).toContain('q=docs')
+  const detail = await searchRegistry({ source: 'smithery', server: 'team/docs' })
+  expect(detail.entries[0].variants[0].server).toBeUndefined()
+  expect(detail.entries[0].variants[1].server?.url).toBe('https://example.com/public')
+  expect(detail.entries[0].variants[2].server).toBeUndefined()
+})
+it('requires a Glama key, keeps it on the runtime and preserves attribution, quality and promotion', async () => {
+  vi.stubEnv('GLAMA_API_KEY', '')
+  await expect(searchRegistry({ source: 'glama' })).rejects.toThrow('GLAMA_API_KEY')
+  vi.stubEnv('GLAMA_API_KEY', 'fixture-glama-token')
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+    Response.json({
+      servers: [
+        {
+          namespace: 'team',
+          slug: 'docs',
+          name: 'Docs',
+          description: 'Documentation',
+          url: 'https://glama.ai/mcp/servers/team/docs',
+          qualityScore: 4.5,
+          isBoosted: true,
+        },
+      ],
+      pageInfo: { hasNextPage: true, endCursor: 'opaque-next' },
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const result = await searchRegistry({ source: 'glama', query: 'docs', cursor: 'opaque-prior' })
+  expect(result).toMatchObject({
+    entries: [
+      {
+        provider: 'glama',
+        qualityScore: 4.5,
+        promoted: true,
+        variants: [],
+        url: 'https://glama.ai/mcp/servers/team/docs',
+      },
+    ],
+    cursor: 'opaque-next',
+  })
+  expect(fetch.mock.calls[0][0]).toContain('after=opaque-prior')
+  expect(new Headers(fetch.mock.calls[0][1]?.headers).get('Authorization')).toBe(
+    'Bearer fixture-glama-token',
+  )
+  expect(JSON.stringify(result)).not.toContain('fixture-glama-token')
+})
+it.each(['all-time', 'trending', 'hot'])(
+  'browses skills.sh %s with a period-specific install count',
+  async (view) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      Response.json({
+        skills: [
+          { source: 'team/skills', skillId: 'review', name: 'Review', installs: 20 },
+          { source: 'team/skills', skillId: 'ship', name: 'Ship' },
+        ],
+        hasMore: true,
+      }),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const result = await searchSkills({ view, cursor: '2' })
+    expect(fetch.mock.calls[0][0]).toBe(`https://skills.sh/api/skills/${view}/2`)
+    expect(result.cursor).toBe('3')
+    expect(result.entries[0].installsPeriod).toBe(view === 'all-time' ? 'all-time' : '24h')
+    expect(result.entries[1].installs).toBeUndefined()
+  },
+)
+it('rejects invalid source/cursor input and keeps catalog errors visible', async () => {
+  await expect(searchRegistry({ source: 'unknown' })).rejects.toThrow()
+  await expect(searchRegistry({ source: 'smithery', cursor: '../oops' })).rejects.toThrow(
+    'Invalid registry cursor',
+  )
+  await expect(searchSkills({ view: 'hot', cursor: '../oops' })).rejects.toThrow(
+    'Invalid skill catalog cursor',
+  )
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockResolvedValue(new Response('upstream error', { status: 500 })),
+  )
+  await expect(searchRegistry({ source: 'smithery', query: 'docs' })).rejects.toThrow(
+    'Catalog request failed (500)',
+  )
+})

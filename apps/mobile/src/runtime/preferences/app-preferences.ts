@@ -1,4 +1,4 @@
-import { botLayoutSchema } from '@dovo/protocol'
+import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
 import {
   pullProjectVisibilitySchema,
   defaultTaskSnoozeMinutes,
@@ -46,6 +46,7 @@ const schema = mutableStruct({
   taskSort: Schema.Literals(['priority', 'activity', 'newest', 'oldest', 'title', 'project']),
   botLayout: botLayoutSchema,
   botsInThreads: Schema.Boolean,
+  mcpRegistrySource: mcpRegistrySourceSchema,
   botsOverviewEnabled: Schema.Boolean,
   taskGrouping: Schema.Literals(['none', 'status', 'project']),
   hideFinishedSubagents: Schema.Boolean,
@@ -108,6 +109,7 @@ const defaults: MobilePreferences = {
   threadDensity: 'compact',
   botLayout: 'horizontal',
   botsInThreads: true,
+  mcpRegistrySource: 'official',
   botsOverviewEnabled: false,
   taskSort: 'priority',
   taskGrouping: 'none',

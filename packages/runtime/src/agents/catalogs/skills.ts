@@ -3,52 +3,48 @@ import { decode, decodeResult } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
-import { Schema, Effect } from 'effect'
+import { Schema } from 'effect'
 import {
   catalogSearchSchema,
   skillCatalogSchema,
+  skillCatalogEntrySchema,
   skillCatalogImportSchema,
   skillPackageImportSchema,
 } from '@dovo/protocol'
 import { catalogBytes, catalogJson } from './fetch.js'
 import { importSkill, parseSkillDocument } from '../configuration/resources.js'
 export async function searchSkills(input: unknown) {
-  const { query } = decode(catalogSearchSchema, input)
-  if (query.length < 2)
-    return {
-      entries: [],
-    }
+  const { query, view = 'search', cursor } = decode(catalogSearchSchema, input)
+  if (view === 'search' && query.length < 2) return { entries: [] }
+  if (cursor && !/^(0|[1-9]\d{0,3})$/.test(cursor)) throw new Error('Invalid skill catalog cursor')
+  const skill = mutableStruct({
+    id: Schema.optional(Schema.String),
+    skillId: Schema.optional(Schema.String),
+    name: Schema.String,
+    source: Schema.String,
+    installs: skillCatalogEntrySchema.fields.installs,
+  })
   const result = decode(
-    mutableStruct({
-      skills: mutableArray(
-        mutableStruct({
-          id: Schema.String,
-          skillId: Schema.optional(Schema.String),
-          name: Schema.String,
-          source: Schema.String,
-          installs: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-            Schema.withDecodingDefaultType(Effect.sync(() => 0)),
-          ),
-        }),
-      ),
-    }),
+    mutableStruct({ skills: mutableArray(skill), hasMore: Schema.optional(Schema.Boolean) }),
     await catalogJson(
-      `https://skills.sh/api/search?${new URLSearchParams({
-        q: query,
-        limit: '20',
-      })}`,
+      view === 'search'
+        ? `https://skills.sh/api/search?${new URLSearchParams({ q: query, limit: '100' })}`
+        : `https://skills.sh/api/skills/${view}/${cursor ?? '0'}`,
     ),
   )
   return decode(skillCatalogSchema, {
-    entries: result.skills.map((skill) => ({
-      ...skill,
-      id: skill.skillId ?? skill.id.split('/').at(-1),
-      url: `https://skills.sh/${skill.id.split('/').map(encodeURIComponent).join('/')}`,
-      supported: decodeResult(skillCatalogImportSchema, {
-        source: skill.source,
-        skill: skill.skillId ?? skill.id.split('/').at(-1),
-      }).success,
-    })),
+    entries: result.skills.map((entry) => {
+      const id = entry.skillId ?? entry.id?.split('/').at(-1) ?? entry.name
+      return {
+        ...entry,
+        id,
+        url: `https://skills.sh/${[...entry.source.split('/'), id].map(encodeURIComponent).join('/')}`,
+        installsPeriod: view === 'trending' || view === 'hot' ? '24h' : 'all-time',
+        supported: decodeResult(skillCatalogImportSchema, { source: entry.source, skill: id })
+          .success,
+      }
+    }),
+    cursor: view !== 'search' && result.hasMore ? String(Number(cursor ?? 0) + 1) : undefined,
   })
 }
 const fileSchema = mutableStruct({

@@ -490,3 +490,43 @@ Older clients that edit individual thread fields cannot remove a Bot's identity.
 - Dovo enforces no Bot-specific budget or run limit. Thread budgets and harness limits still apply.
 - After a restart, an interrupted turn of a paused Bot does not continue automatically. Resume the
   Bot, then retry the turn.
+
+### Memory editing and resource catalogs
+
+Memory shows note previews, source messages and an editor with a larger text area. Search covers
+loaded notes only. Load more notes to search the rest. Mobile keeps an unfinished note when you
+close its editor. A failed save keeps the draft. Saves and deletes use the saved revision, so a
+concurrent edit must be resolved before replacing it.
+
+In MCP servers, open **Browse MCP Registry** and choose **Official MCP Registry**, **Glama** or
+**Smithery**. This device remembers the source. This choice also applies to other resource editors
+on the device. Imports still open the configuration editor before saving.
+
+The official registry provides installation metadata. Smithery provides usage counts and a
+verification flag when available. Glama provides a tool-quality score and marks promoted listings.
+These signals do not establish security. Dovo does not assign a safety score. Provider links open
+the source record for review. The skills.sh browser shows install counts and links to published
+security audits. It supports Search, All time, Trending (24h) and Hot. Counts in the last two views
+cover 24 hours. Sort controls apply to loaded entries, not the entire catalog. Missing counts stay
+unknown.
+
+Glama requires a key from <https://glama.ai/settings/api-keys>. Set `GLAMA_API_KEY` in the host
+runtime's environment and restart that runtime. Dovo sends the key only to Glama's fixed API
+endpoint. It does not include the key in catalog responses or saved MCP configurations. Without a
+key, the Glama source shows a setup message. Each Glama result links to its Glama listing and
+credits Glama. Its API does not provide portable installation commands. Use its listing's setup
+instructions to add a configuration manually. Smithery connections that need provider-specific
+configuration also require manual setup. Dovo does not guess those credentials or commands.
+
+Verify these flows with:
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-mobile-text-browser.mjs
+node scripts/check-resource-catalog-browser.mjs
+node scripts/check-mobile-bots-browser.mjs
+pnpm exec vp test --maxWorkers=2 packages/runtime/src/agents/catalogs/resources.test.ts
+```
+
+Browser checks cover client state and mocked catalog responses. An authenticated Glama request,
+provider-specific authentication and physical iPhone appearance need separate verification.

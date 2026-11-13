@@ -2,22 +2,39 @@ import { mutableStruct, mutableArray } from './schema.js'
 import { maxValue, minValue, urlSchema } from './schema.js'
 import { Schema, Effect } from 'effect'
 import { mcpServerSchema, managedSkillSchema } from './resources.js'
+export const mcpRegistrySources = [
+  { id: 'official', name: 'Official MCP Registry' },
+  { id: 'glama', name: 'Glama' },
+  { id: 'smithery', name: 'Smithery' },
+] as const
+export const mcpRegistrySourceSchema = Schema.Literals(['official', 'glama', 'smithery'])
+export type McpRegistrySource = typeof mcpRegistrySourceSchema.Type
 export const catalogSearchSchema = mutableStruct({
   query: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 200).pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => '')),
   ),
   cursor: Schema.optional(maxValue(Schema.String, 1000)),
+  source: Schema.optional(mcpRegistrySourceSchema),
+  server: Schema.optional(maxValue(Schema.String, 300)),
+  view: Schema.optional(Schema.Literals(['search', 'all-time', 'trending', 'hot'])),
 })
 export const skillCatalogEntrySchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
   source: Schema.String,
-  installs: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  installs: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  installsPeriod: Schema.optional(Schema.Literals(['all-time', '24h'])),
   url: urlSchema(),
   supported: Schema.Boolean,
 })
 export const skillCatalogSchema = mutableStruct({
   entries: mutableArray(skillCatalogEntrySchema),
+  cursor: Schema.optional(Schema.String),
 })
 export const registryVariantSchema = mutableStruct({
   id: Schema.String,
@@ -31,6 +48,23 @@ export const registryEntrySchema = mutableStruct({
   version: Schema.String,
   url: urlSchema(),
   variants: mutableArray(registryVariantSchema),
+  updatedAt: Schema.optional(Schema.String),
+  provider: Schema.optional(Schema.Literals(['official', 'glama', 'smithery'])),
+  providerId: Schema.optional(Schema.String),
+  uses: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  verified: Schema.optional(Schema.Boolean),
+  qualityScore: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      Schema.check(Schema.isLessThanOrEqualTo(5)),
+    ),
+  ),
+  promoted: Schema.optional(Schema.Boolean),
 })
 export const registryCatalogSchema = mutableStruct({
   entries: mutableArray(registryEntrySchema),
@@ -81,4 +115,65 @@ export function catalogSkillSource(skill: {
   } catch {
     return undefined
   }
+}
+
+/** These controls sort only the entries already loaded from the provider. */
+export const catalogSortOptions = {
+  mcp: [
+    { id: 'provider', name: 'Registry order' },
+    { id: 'name', name: 'Name A–Z' },
+    { id: 'updated', name: 'Recently updated' },
+    { id: 'uses', name: 'Most uses' },
+    { id: 'quality', name: 'Tool quality' },
+  ],
+  skill: [
+    { id: 'provider', name: 'Provider order' },
+    { id: 'installs', name: 'Most installs' },
+    { id: 'name', name: 'Name A–Z' },
+  ],
+}
+export function sortCatalogEntries<
+  T extends {
+    name: string
+    installs?: number
+    updatedAt?: string
+    uses?: number
+    qualityScore?: number
+  },
+>(entries: readonly T[], sort: string): T[] {
+  return [...entries].sort((a, b) =>
+    sort === 'name'
+      ? a.name.localeCompare(b.name)
+      : sort === 'uses'
+        ? (b.uses ?? -1) - (a.uses ?? -1)
+        : sort === 'quality'
+          ? (b.qualityScore ?? -1) - (a.qualityScore ?? -1)
+          : sort === 'installs'
+            ? (b.installs ?? -1) - (a.installs ?? -1)
+            : sort === 'updated'
+              ? (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0)
+              : 0,
+  )
+}
+export function skillInstallLabel(entry: SkillCatalogEntry) {
+  return entry.installs === undefined
+    ? 'Install count unavailable'
+    : `${entry.installs.toLocaleString()} installs${entry.installsPeriod === '24h' ? ' in 24h' : ''}`
+}
+
+export function registrySignals(entry: RegistryEntry): string[] {
+  return [
+    entry.uses === undefined
+      ? 'Usage count unavailable'
+      : `${entry.uses.toLocaleString()} uses on Smithery`,
+    entry.verified === undefined
+      ? 'Safety not assessed'
+      : entry.verified
+        ? 'Verified by Smithery · Not a security audit'
+        : 'Not verified by Smithery',
+    ...(entry.qualityScore === undefined
+      ? []
+      : [`Glama tool quality: ${entry.qualityScore}/5 · Not a safety score`]),
+    ...(entry.promoted ? ['Promoted on Glama'] : []),
+  ]
 }

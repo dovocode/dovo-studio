@@ -35,6 +35,9 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
   const { styles } = useTheme()
   const [entries, setEntries] = useState<MemoryEntry[]>([])
   const [total, setTotal] = useState(0)
+  const [query, setQuery] = useState('')
+  const [learning, setLearning] = useState(false)
+  const [sources, setSources] = useState<string[]>([])
   const [reload, setReload] = useState(0)
   const [selected, setSelected] = useState<MemoryEntry | null | undefined>()
   const { act, busy, error } = useAction()
@@ -74,46 +77,99 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
           <Action label="Retry memory" onPress={() => setReload((value) => value + 1)} />
         </>
       )}
-      <BotMemoryLearning taskId={taskId} onChanged={() => setReload((value) => value + 1)} />
+      <Action
+        secondary
+        label={learning ? 'Hide background learning' : 'Background learning'}
+        onPress={() => setLearning(!learning)}
+      />
+      {learning && (
+        <BotMemoryLearning taskId={taskId} onChanged={() => setReload((value) => value + 1)} />
+      )}
+      <Text style={styles.muted}>
+        {total} {total === 1 ? 'saved note' : 'saved notes'}
+      </Text>
+      <Field
+        label="Search loaded notes"
+        placeholder="Find a name or phrase…"
+        value={query}
+        onChangeText={setQuery}
+      />
+      {query.trim() && entries.length < total ? (
+        <Text style={styles.muted}>
+          Search covers {entries.length} loaded notes. Load more to search the rest.
+        </Text>
+      ) : null}
       <Action
         label="Add memory note"
         disabled={!connected || busy}
         onPress={() => setSelected(null)}
       />
       {!entries.length && !busy && !error && <Text style={styles.muted}>No memory notes yet.</Text>}
-      {entries.map((entry) => (
-        <View key={entry.key} style={{ gap: 6, paddingVertical: 8 }}>
-          <Text style={styles.title}>{entry.key}</Text>
-          <Text>{entry.content}</Text>
-          {entry.evidence && (
-            <View style={{ gap: 4 }}>
-              <Text style={styles.muted}>Learned from your messages</Text>
-              {entry.evidence.sources.map((source) => (
-                <View key={source.messageId}>
-                  <Text>{source.quote}</Text>
-                  <Action
-                    label="View source message"
-                    secondary
-                    disabled={!profile?.connection}
-                    onPress={() => {
-                      if (profile?.connection) {
-                        requestMessageReveal(profile.connection, taskId, source.messageId)
-                        onClose()
-                      }
-                    }}
-                  />
-                </View>
-              ))}
-            </View>
-          )}
-          <Action
-            label={`Edit ${entry.key}`}
-            secondary
-            disabled={!connected || busy}
-            onPress={() => setSelected(entry)}
-          />
-        </View>
-      ))}
+      {!!query.trim() &&
+        !entries.some((entry) =>
+          `${entry.key} ${entry.content}`
+            .toLocaleLowerCase()
+            .includes(query.trim().toLocaleLowerCase()),
+        ) && <Text style={styles.muted}>No matching loaded notes.</Text>}
+      {entries
+        .filter((entry) =>
+          `${entry.key} ${entry.content}`
+            .toLocaleLowerCase()
+            .includes(query.trim().toLocaleLowerCase()),
+        )
+        .map((entry) => (
+          <View key={entry.key} style={styles.card}>
+            <Text style={styles.title}>{entry.key}</Text>
+            <Text style={styles.text} numberOfLines={3}>
+              {entry.content}
+            </Text>
+            <Text style={styles.muted}>
+              Updated {new Date(entry.updatedAt).toLocaleDateString()}
+            </Text>
+            {entry.evidence && (
+              <View style={{ gap: 4 }}>
+                <Action
+                  secondary
+                  label={`${sources.includes(entry.key) ? 'Hide' : 'Show'} sources for ${entry.key}`}
+                  onPress={() =>
+                    setSources((current) =>
+                      current.includes(entry.key)
+                        ? current.filter((key) => key !== entry.key)
+                        : [...current, entry.key],
+                    )
+                  }
+                />
+                <Text style={styles.muted}>
+                  {entry.evidence.sources.length} source{' '}
+                  {entry.evidence.sources.length === 1 ? 'message' : 'messages'}
+                </Text>
+                {sources.includes(entry.key) &&
+                  entry.evidence.sources.map((source) => (
+                    <View key={source.messageId}>
+                      <Text>{source.quote}</Text>
+                      <Action
+                        label="View source message"
+                        secondary
+                        disabled={!profile?.connection}
+                        onPress={() => {
+                          if (profile?.connection) {
+                            requestMessageReveal(profile.connection, taskId, source.messageId)
+                            onClose()
+                          }
+                        }}
+                      />
+                    </View>
+                  ))}
+              </View>
+            )}
+            <Action
+              label={`Edit ${entry.key}`}
+              secondary
+              disabled={!connected || busy}
+              onPress={() => setSelected(entry)}
+            />
+          </View>
+        ))}
       {entries.length < total && (
         <Action
           label="Load more notes"
@@ -179,14 +235,30 @@ function MemoryNote({
   const [confirmDelete, setConfirmDelete] = useState(false)
   return (
     <Sheet title={note ? 'Edit memory note' : 'New memory note'} busy={busy} onClose={onClose}>
+      <Text style={styles.muted}>
+        {draft.key !== (note?.key ?? '') || draft.content !== (note?.content ?? '')
+          ? 'Unsaved changes · Draft kept on this device'
+          : note
+            ? 'Saved note'
+            : 'Write a note for future replies'}
+      </Text>
       <Field
         label="Note name"
+        maxLength={120}
+        hint={
+          note
+            ? 'The name stays fixed. Edit the content below.'
+            : 'Use a short, clear name for this note.'
+        }
         value={draft.key}
         editable={!note && connected && !busy}
         onChangeText={(value) => setField('key', value)}
       />
       <Field
         label="Note content"
+        maxLength={16000}
+        style={{ minHeight: 260, lineHeight: 24 }}
+        hint={`${draft.content.length.toLocaleString()} / 16,000 characters`}
         value={draft.content}
         multiline
         editable={connected && !busy}
@@ -214,6 +286,16 @@ function MemoryNote({
           })
         }
       />
+      <Action secondary label="Close editor" disabled={busy} onPress={onClose} />
+      <Text style={styles.muted}>Closing keeps your draft. Save applies it to this Bot.</Text>
+      {confirmDelete && (
+        <Action
+          secondary
+          label="Cancel delete"
+          disabled={busy}
+          onPress={() => setConfirmDelete(false)}
+        />
+      )}
       {note && (
         <Action
           label={confirmDelete ? 'Confirm delete note' : 'Delete memory note'}

@@ -10,6 +10,7 @@ import {
   type RegistryEntry,
 } from '@dovo/protocol'
 import { catalogJson } from './fetch.js'
+import { searchGlama, searchSmithery } from './sources.js'
 const inputSchema = mutableStruct({
   name: Schema.optional(Schema.String),
   type: Schema.optional(Schema.String),
@@ -276,7 +277,11 @@ export function registryEntry(value: unknown): RegistryEntry {
   }
 }
 export async function searchRegistry(input: unknown) {
-  const { query, cursor } = decode(catalogSearchSchema, input)
+  const options = decode(catalogSearchSchema, input)
+  if (options.source === 'glama') return searchGlama(options)
+  if (options.source === 'smithery') return searchSmithery(options)
+  const { query, cursor } = options
+  if (query && query.length < 3) return { entries: [] }
   const params = new URLSearchParams({
     limit: '20',
     version: 'latest',
@@ -318,7 +323,16 @@ export async function searchRegistry(input: unknown) {
         )
         return !status.success || !status.data.status || status.data.status === 'active'
       })
-      .map((item) => registryEntry(item.server)),
+      .map((item) => {
+        const metadata = decodeResult(
+          mutableStruct({ updatedAt: Schema.optional(Schema.String) }),
+          item._meta?.['io.modelcontextprotocol.registry/official'],
+        )
+        return {
+          ...registryEntry(item.server),
+          updatedAt: metadata.success ? metadata.data.updatedAt : undefined,
+        }
+      }),
     cursor: result.metadata?.nextCursor,
   })
 }

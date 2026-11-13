@@ -7,9 +7,10 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 async function bundle(mobile) {
   const controls = `export const View=({children})=><div>{children}</div>;export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const SettingsField=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={!editable} onChange={e=>onChangeText(e.target.value)}/>;export const SettingsChoice=()=>null;`
   const mocks = {
-    '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.runtime;`,
+    '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.runtime;export const useAppPreferences=()=>({mcpRegistrySource:'official'});export const updateAppPreferences=()=>{};`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
     '@dovo/studio-ui/resource-editors': `export {CatalogPicker} from '${root}/packages/studio-ui/src/resources/catalog-picker.tsx';export {resourceError} from '${root}/packages/studio-ui/src/resources/error.ts';`,
+    '../runtime/preferences/app-preferences': `export const useMobilePreferences=()=>({mcpRegistrySource:'official'});export const updateMobilePreferences=()=>{};`,
     '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
     '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,

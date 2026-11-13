@@ -1,3 +1,7 @@
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../runtime/preferences/app-preferences'
 import { useOpenAppLink } from '../ui/content/open-link'
 import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -7,6 +11,11 @@ import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
+  catalogSortOptions,
+  sortCatalogEntries,
+  skillInstallLabel,
+  mcpRegistrySources,
+  registrySignals,
   managedSkillSchema,
   registryCatalogSchema,
   skillCatalogSchema,
@@ -42,6 +51,13 @@ export function CatalogPicker({
 
   const { call, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
+  const { mcpRegistrySource: source } = useMobilePreferences()
+  const setSource = (mcpRegistrySource: typeof source) =>
+    updateMobilePreferences({ mcpRegistrySource })
+  const [view, setView] = useApplicationState('search')
+  const [reload, setReload] = useApplicationState(0)
+  const [sort, setSort] = useApplicationState('provider')
+  const [detailsLoading, setDetailsLoading] = useApplicationState(false)
   const [query, setQuery] = useApplicationState(''),
     [servers, setServers] = useApplicationState<RegistryEntry[]>([]),
     [skills, setSkills] = useApplicationState<SkillCatalogEntry[]>([]),
@@ -69,7 +85,7 @@ export function CatalogPicker({
     setSkills([])
     setCursor(undefined)
     setLoadError('')
-    if (kind === 'skill' && query.trim().length < 2) {
+    if (kind === 'skill' && view === 'search' && query.trim().length < 2) {
       setLoading(false)
       return
     }
@@ -83,6 +99,7 @@ export function CatalogPicker({
                 '/api/agents/catalogs/mcp',
                 {
                   query,
+                  source,
                 },
                 registryCatalogSchema,
               )
@@ -94,16 +111,21 @@ export function CatalogPicker({
               const result = yield* callEffect(
                 '/api/agents/catalogs/skills',
                 {
-                  query,
+                  query: view === 'search' ? query : '',
+                  view,
                 },
                 skillCatalogSchema,
               )
-              if (id === generation.current) setSkills(result.entries)
+              if (id === generation.current) {
+                setSkills(result.entries)
+                setCursor(result.cursor)
+              }
             }
           }).pipe(
             Effect.catch((error) =>
               nativeEffect(() => {
-                if (id === generation.current) setLoadError(String(error))
+                if (id === generation.current)
+                  setLoadError(error instanceof Error ? error.message : String(error))
               }),
             ),
             Effect.ensuring(
@@ -119,10 +141,14 @@ export function CatalogPicker({
       clearTimeout(timer)
       ++generation.current
     }
-  }, [kind, query, call])
+  }, [kind, query, source, view, reload, call])
   const variant = selected?.variants.find((item) => item.id === variantId)
   return (
-    <Sheet title={kind === 'mcp' ? 'MCP Registry' : 'skills.sh'} busy={busy} onClose={onClose}>
+    <Sheet
+      title={kind === 'mcp' ? 'MCP Registry' : 'skills.sh'}
+      busy={busy || detailsLoading}
+      onClose={onClose}
+    >
       <Text style={styles.muted}>{scope} · Review before saving</Text>
       {bundle ? (
         <>
@@ -176,9 +202,37 @@ export function CatalogPicker({
         </>
       ) : selected ? (
         <>
-          <Action secondary label="Search results" onPress={() => setSelected(undefined)} />
+          <Action
+            secondary
+            label="Search results"
+            disabled={detailsLoading}
+            onPress={() => setSelected(undefined)}
+          />
           <Text style={styles.title}>{selected.name}</Text>
           <Text style={styles.muted}>{selected.description}</Text>
+          {registrySignals(selected).map((signal) => (
+            <Text key={signal} style={styles.muted}>
+              {signal}
+            </Text>
+          ))}
+          <Action
+            secondary
+            label={
+              selected.provider === 'glama'
+                ? 'View on Glama'
+                : selected.provider === 'smithery'
+                  ? 'View on Smithery'
+                  : 'View registry entry'
+            }
+            onPress={() => act(() => openLink(selected.url))}
+          />
+          {detailsLoading && <Text style={styles.muted}>Loading configuration…</Text>}
+          {!detailsLoading && !selected.variants.length && (
+            <Text style={styles.muted}>
+              Open the provider listing for setup instructions, then add the MCP configuration
+              manually.
+            </Text>
+          )}
           <Choice
             label="Installation variant"
             value={variantId}
@@ -208,29 +262,131 @@ export function CatalogPicker({
         </>
       ) : (
         <>
-          <Field label="Search catalog" value={query} editable={!busy} onChangeText={setQuery} />
-          {servers.map((entry) => (
-            <View key={entry.name} style={styles.card}>
+          {kind === 'mcp' ? (
+            <Choice
+              label="MCP registry source"
+              value={source}
+              items={mcpRegistrySources.map((item) => ({ ...item }))}
+              disabled={busy}
+              onChange={(value) => {
+                const option = mcpRegistrySources.find((item) => item.id === value)
+                if (option) {
+                  setSource(option.id)
+                  setSort('provider')
+                }
+              }}
+            />
+          ) : (
+            <Choice
+              label="Browse skills"
+              value={view}
+              disabled={busy}
+              items={[
+                { id: 'search', name: 'Search' },
+                { id: 'all-time', name: 'All time' },
+                { id: 'trending', name: 'Trending (24h)' },
+                { id: 'hot', name: 'Hot' },
+              ]}
+              onChange={(value) => {
+                setView(value)
+                setSort('provider')
+              }}
+            />
+          )}
+          <Choice
+            label="Sort loaded results"
+            value={sort}
+            items={catalogSortOptions[kind]
+              .filter((item) => item.id !== 'updated' || source === 'official')
+              .filter((item) => item.id !== 'uses' || source === 'smithery')
+              .filter((item) => item.id !== 'quality' || source === 'glama')}
+            onChange={setSort}
+          />
+          <Text style={styles.muted}>
+            Sorting applies to loaded results. Popularity does not establish safety.
+          </Text>
+          {kind === 'mcp' && source === 'glama' && (
+            <Action
+              secondary
+              label="MCP data from Glama"
+              onPress={() => act(() => openLink('https://glama.ai/mcp/servers'))}
+            />
+          )}
+          <Field
+            label="Search catalog"
+            value={query}
+            editable={!busy && (kind === 'mcp' || view === 'search')}
+            onChangeText={setQuery}
+          />
+          {sortCatalogEntries(servers, sort).map((entry) => (
+            <View key={entry.providerId ?? entry.name} style={styles.card}>
               <Text style={styles.text}>{entry.name}</Text>
               <Text style={styles.muted}>{entry.description}</Text>
+              {registrySignals(entry).map((signal) => (
+                <Text key={signal} style={styles.muted}>
+                  {signal}
+                </Text>
+              ))}
+              <Action
+                secondary
+                label={
+                  entry.provider === 'glama'
+                    ? 'View on Glama'
+                    : entry.provider === 'smithery'
+                      ? 'View on Smithery'
+                      : 'View registry entry'
+                }
+                disabled={busy}
+                onPress={() => act(() => openLink(entry.url))}
+              />
               <Action
                 label={`View ${entry.name}`}
                 secondary
+                disabled={busy}
                 onPress={() => {
                   setSelected(entry)
                   setVariantId(
                     (entry.variants.find((item) => item.server) ?? entry.variants[0])?.id ?? '',
                   )
+                  if (entry.provider !== 'smithery') return
+                  const id = generation.current
+                  setDetailsLoading(true)
+                  act(async () => {
+                    try {
+                      const result = await call(
+                        '/api/agents/catalogs/mcp',
+                        { query: '', source: 'smithery', server: entry.providerId },
+                        registryCatalogSchema,
+                      )
+                      if (id !== generation.current) return
+                      const detail = result.entries[0]
+                      if (!detail) throw new Error('The registry did not return this server.')
+                      setSelected({ ...entry, variants: detail.variants })
+                      setVariantId(
+                        (detail.variants.find((item) => item.server) ?? detail.variants[0])?.id ??
+                          '',
+                      )
+                    } finally {
+                      if (id === generation.current) setDetailsLoading(false)
+                    }
+                  })
                 }}
               />
             </View>
           ))}
-          {skills.map((entry) => (
+          {sortCatalogEntries(skills, sort).map((entry) => (
             <View key={`${entry.source}/${entry.id}`} style={styles.card}>
               <Text style={styles.text}>{entry.name}</Text>
               <Text style={styles.muted}>
-                {entry.source} · {entry.installs.toLocaleString()} installs
+                {entry.source} · {skillInstallLabel(entry)}
               </Text>
+              <Text style={styles.muted}>Safety not assessed by Dovo.</Text>
+              <Action
+                secondary
+                label="Review published security audits"
+                disabled={busy}
+                onPress={() => act(() => openLink(entry.url))}
+              />
               <Action
                 secondary
                 label="View source"
@@ -276,39 +432,71 @@ export function CatalogPicker({
               disabled={loading || busy}
               onPress={() => {
                 const id = generation.current
-                act(() =>
-                  mobileWorkflow(function* () {
-                    const result = yield* callEffect(
+                act(async () => {
+                  if (kind === 'mcp') {
+                    const result = await call(
                       '/api/agents/catalogs/mcp',
-                      {
-                        query,
-                        cursor,
-                      },
+                      { query, source, cursor },
                       registryCatalogSchema,
                     )
                     if (id === generation.current) {
                       setServers((entries) => [
                         ...new Map(
-                          [...entries, ...result.entries].map((entry) => [entry.name, entry]),
+                          [...entries, ...result.entries].map((entry) => [
+                            entry.providerId ?? entry.name,
+                            entry,
+                          ]),
                         ).values(),
                       ])
                       setCursor(result.cursor)
                     }
-                  }),
-                )
+                  } else {
+                    const result = await call(
+                      '/api/agents/catalogs/skills',
+                      { query: view === 'search' ? query : '', view, cursor },
+                      skillCatalogSchema,
+                    )
+                    if (id === generation.current) {
+                      setSkills((entries) => [
+                        ...new Map(
+                          [...entries, ...result.entries].map((entry) => [
+                            `${entry.source}/${entry.id}`,
+                            entry,
+                          ]),
+                        ).values(),
+                      ])
+                      setCursor(result.cursor)
+                    }
+                  }
+                })
               }}
             />
           )}
           {!loading && !servers.length && !skills.length && (
             <Text style={styles.muted}>
-              {kind === 'skill' && query.trim().length < 2
+              {kind === 'skill' && view === 'search' && query.trim().length < 2
                 ? 'Type at least two characters to search.'
-                : 'No matching entries.'}
+                : kind === 'mcp' &&
+                    source === 'official' &&
+                    query.trim().length > 0 &&
+                    query.trim().length < 3
+                  ? 'Type at least three characters to search the official registry.'
+                  : loadError
+                    ? 'The catalog could not be loaded.'
+                    : 'No matching entries.'}
             </Text>
           )}
         </>
       )}
       {(loading || busy) && <Text style={styles.muted}>{busy ? 'Working…' : 'Searching…'}</Text>}
+      {!!loadError && (
+        <Action
+          secondary
+          label="Retry catalog"
+          disabled={busy || loading}
+          onPress={() => setReload((value) => value + 1)}
+        />
+      )}
       {!!(error || loadError) && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error || loadError}

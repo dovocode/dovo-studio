@@ -454,7 +454,21 @@ try {
   assert.equal(writes.at(-1).input.scope, 'bot')
   assert.equal(writes.at(-1).input.botId, 'bot-a')
   assert.equal(writes.at(-1).owner, 'paired-owner')
+  await page.getByLabel('Search loaded notes', { exact: true }).fill('no such memory')
+  await page.getByText('No matching loaded notes.', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Edit Release policy', exact: true }).count(),
+    0,
+  )
+  await page.getByLabel('Search loaded notes', { exact: true }).fill('HTTP')
   await page.getByRole('button', { name: 'Edit Release policy', exact: true }).click()
+  await page.getByLabel('Note content', { exact: true }).fill('Edited note with a kept draft')
+  await page.getByRole('button', { name: 'Close editor', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit Release policy', exact: true }).click()
+  assert.equal(
+    await page.getByLabel('Note content', { exact: true }).inputValue(),
+    'Edited note with a kept draft',
+  )
   await page.getByRole('button', { name: 'Delete memory note', exact: true }).click()
   await page.getByRole('button', { name: 'Confirm delete note', exact: true }).click()
   await page.getByText('No memory notes yet.', { exact: true }).waitFor()
