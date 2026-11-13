@@ -164,7 +164,7 @@ try {
     await page.getByLabel('Message').waitFor()
   }
   await load()
-  for (const layout of ['grid-2', 'grid-3', 'rows', 'horizontal']) {
+  for (const layout of ['grid-2', 'grid-3', 'grid-4', 'rows', 'horizontal']) {
     await page.getByLabel('Bot layout').selectOption(layout)
     await page.waitForFunction(
       (layout) =>

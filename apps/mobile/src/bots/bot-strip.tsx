@@ -29,7 +29,9 @@ export function BotStrip({
       ? '50%'
       : botLayout === 'grid-3'
         ? '33.333333%'
-        : '100%'
+        : botLayout === 'grid-4'
+          ? '25%'
+          : '100%'
   if (botsInThreads === false || (!entries.length && !onCreate)) return null
   const tiles = (
     <>

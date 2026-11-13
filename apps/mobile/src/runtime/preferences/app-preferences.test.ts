@@ -727,7 +727,7 @@ it('keeps Bot layout across restarts and defaults invalid saved values', async (
   let preferences = await loadPreferences()
   await preferences.preferencesReady
   expect(preferences.readMobilePreferences().botLayout).toBe('horizontal')
-  for (const botLayout of ['grid-2', 'grid-3', 'rows', 'horizontal'] as const) {
+  for (const botLayout of ['grid-2', 'grid-3', 'grid-4', 'rows', 'horizontal'] as const) {
     preferences.updateMobilePreferences({ botLayout })
     await vi.waitFor(() => expect(JSON.parse(saved).botLayout).toBe(botLayout))
     preferences = await loadPreferences()

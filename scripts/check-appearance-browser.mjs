@@ -203,7 +203,7 @@ try {
   }
   await page.goto(origin)
   await ready()
-  for (const name of ['2 columns', '3 columns', 'Rows', 'Horizontal row']) {
+  for (const name of ['2 columns', '3 columns', '4 columns', 'Rows', 'Horizontal row']) {
     await page.getByRole('combobox', { name: 'Bot layout', exact: true }).click()
     await page.getByRole('option', { name, exact: true }).click()
     await page.reload()

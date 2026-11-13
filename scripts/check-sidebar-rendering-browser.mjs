@@ -1249,7 +1249,7 @@ try {
       'New Bot',
     ],
   )
-  for (const layout of ['horizontal', 'grid-2', 'grid-3', 'rows']) {
+  for (const layout of ['horizontal', 'grid-2', 'grid-3', 'grid-4', 'rows']) {
     await page.evaluate((botLayout) => window.setListPreferences({ botLayout }), layout)
     await bots.locator(`[data-bot-layout="${layout}"]`).waitFor()
     assert.equal(await bots.getByRole('button').count(), 4)

@@ -12,7 +12,7 @@ const controls = `
 import {createContext,useContext,forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
 const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
-export const View=({children,accessibilityLabel,style,testID,ref,onLayout})=>{const node=useRef(null);useImperativeHandle(ref,()=>({nativeElement:node.current,measureLayout:(parent,done)=>{const bounds=node.current.getBoundingClientRect(),origin=parent.nativeElement.getBoundingClientRect();done(bounds.x-origin.x,bounds.y-origin.y,bounds.width,bounds.height)}}));useLayoutEffect(()=>{if(!onLayout)return;const measure=()=>onLayout({nativeEvent:{layout:{height:node.current.getBoundingClientRect().height}}});measure();const observer=new ResizeObserver(measure);observer.observe(node.current);return ()=>observer.disconnect()},[onLayout]);return <div ref={node} data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity,display:flat(style).display}}>{children}</div>};
+export const View=({children,accessibilityLabel,style,testID,ref,onLayout})=>{const node=useRef(null);useImperativeHandle(ref,()=>({nativeElement:node.current,measureLayout:(parent,done)=>{const bounds=node.current.getBoundingClientRect(),origin=parent.nativeElement.getBoundingClientRect();done(bounds.x-origin.x,bounds.y-origin.y,bounds.width,bounds.height)}}));useLayoutEffect(()=>{if(!onLayout)return;const measure=()=>onLayout({nativeEvent:{layout:{height:node.current.getBoundingClientRect().height}}});measure();const observer=new ResizeObserver(measure);observer.observe(node.current);return ()=>observer.disconnect()},[onLayout]);return <div ref={node} data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity,display:flat(style).display}}>{children}</div>};
 export const Text=({children,accessibilityRole,numberOfLines,style})=>{const value=flat(style),scale=window.rowFontScale??1;return <span role={accessibilityRole} style={window.rowLayout?{display:'block',minWidth:0,...nativeStyle({...value,fontSize:(value.fontSize??13)*scale,...(value.lineHeight?{lineHeight:value.lineHeight*scale}:{})}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}:value}>{children}</span>};
 export const Image=({source})=><span data-project-image={source?.uri}/>;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
@@ -2004,12 +2004,40 @@ try {
   await newBot.waitFor()
   assert.equal(await newBot.isEnabled(), true)
   assert.equal(await newBot.evaluate((node) => node.parentElement.lastElementChild === node), true)
-  for (const layout of ['grid-2', 'grid-3', 'rows', 'horizontal']) {
+  for (const layout of ['grid-2', 'grid-3', 'grid-4', 'rows', 'horizontal']) {
     await page.evaluate((botLayout) => window.setListPreferences({ botLayout }), layout)
     await page.getByTestId(`Bot layout ${layout}`).waitFor()
     assert.equal(await botTile.isVisible(), true)
     assert.equal(await newBot.isEnabled(), true)
   }
+  await page.evaluate(() => {
+    window.rowLayout = true
+    window.setListPreferences({ botLayout: 'grid-4' })
+    const owner = structuredClone(window.startupSources.owner)
+    owner.connected = true
+    owner.snapshot.botsSupported = true
+    const bot = { ...owner.snapshot.workspace.tasks[0], bot: { role: 'Helper', state: 'active' } }
+    owner.snapshot.workspace.tasks = [0, 1, 2].map((index) => ({
+      ...bot,
+      id: `four-column-${index}`,
+      title: `Column ${index}`,
+    }))
+    window.setListSources([owner])
+  })
+  const fourColumnTiles = page.getByTestId('Bot layout grid-4').getByRole('button')
+  await fourColumnTiles.first().waitFor()
+  assert.equal(await fourColumnTiles.count(), 4)
+  const positions = await fourColumnTiles.evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      top: node.getBoundingClientRect().top,
+      left: node.getBoundingClientRect().left,
+    })),
+  )
+  assert.ok(
+    positions.every(({ top }) => Math.abs(top - positions[0].top) < 1),
+    JSON.stringify(positions),
+  )
+  assert.ok(positions.every(({ left }, index) => index === 0 || left > positions[index - 1].left))
   await newBot.click()
   await page.getByRole('dialog', { name: 'Create Bot' }).waitFor()
   await page.getByRole('button', { name: 'Cancel Bot creation' }).click()

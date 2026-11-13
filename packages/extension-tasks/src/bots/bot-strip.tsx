@@ -28,7 +28,7 @@ export function BotStrip({
     <section aria-label="Bots" className="mb-2 shrink-0 border-b border-border/50 pb-2">
       <div
         data-bot-layout={botLayout}
-        className={`px-1 py-1.5 ${botLayout === 'horizontal' ? 'flex gap-1 overflow-x-auto' : botLayout === 'rows' ? 'flex flex-col gap-1' : `grid gap-1 ${botLayout === 'grid-2' ? 'grid-cols-2' : 'grid-cols-3'}`}`}
+        className={`px-1 py-1.5 ${botLayout === 'horizontal' ? 'flex gap-1 overflow-x-auto' : botLayout === 'rows' ? 'flex flex-col gap-1' : `grid gap-1 ${botLayout === 'grid-2' ? 'grid-cols-2' : botLayout === 'grid-4' ? 'grid-cols-4' : 'grid-cols-3'}`}`}
       >
         {[...entries]
           .sort((a, b) => compareBotActivity(a.task, b.task) || a.key.localeCompare(b.key))

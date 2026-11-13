@@ -4,6 +4,7 @@ export const botLayouts = [
   { id: 'horizontal', name: 'Horizontal row' },
   { id: 'grid-2', name: '2 columns' },
   { id: 'grid-3', name: '3 columns' },
+  { id: 'grid-4', name: '4 columns' },
   { id: 'rows', name: 'Rows' },
 ] as const
 export const botLayoutSchema = Schema.Literals(botLayouts.map(({ id }) => id))
