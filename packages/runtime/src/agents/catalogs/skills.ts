@@ -15,7 +15,7 @@ import { catalogBytes, catalogJson } from './fetch.js'
 import { importSkill, parseSkillDocument } from '../configuration/resources.js'
 export async function searchSkills(input: unknown) {
   const { query, view = 'search', cursor } = decode(catalogSearchSchema, input)
-  if (view === 'search' && query.length < 2) return { entries: [] }
+  if (view === 'search' && query.length < 2) return { entries: [], view }
   if (cursor && !/^(0|[1-9]\d{0,3})$/.test(cursor)) throw new Error('Invalid skill catalog cursor')
   const skill = mutableStruct({
     id: Schema.optional(Schema.String),
@@ -33,6 +33,7 @@ export async function searchSkills(input: unknown) {
     ),
   )
   return decode(skillCatalogSchema, {
+    view,
     entries: result.skills.map((entry) => {
       const id = entry.skillId ?? entry.id?.split('/').at(-1) ?? entry.name
       return {

@@ -33,6 +33,7 @@ export const skillCatalogEntrySchema = mutableStruct({
   supported: Schema.Boolean,
 })
 export const skillCatalogSchema = mutableStruct({
+  view: Schema.optional(Schema.Literals(['search', 'all-time', 'trending', 'hot'])),
   entries: mutableArray(skillCatalogEntrySchema),
   cursor: Schema.optional(Schema.String),
 })
@@ -67,6 +68,7 @@ export const registryEntrySchema = mutableStruct({
   promoted: Schema.optional(Schema.Boolean),
 })
 export const registryCatalogSchema = mutableStruct({
+  source: Schema.optional(mcpRegistrySourceSchema),
   entries: mutableArray(registryEntrySchema),
   cursor: Schema.optional(Schema.String),
 })

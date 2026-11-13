@@ -42,7 +42,7 @@ async function bundle(mobile) {
         else if(input.source==='smithery') result=input.server?{entries:[entry('Hosted docs',{provider:'smithery',providerId:'team/docs',variants:[{id:'http',label:'HTTP',notes:['Review authentication'],server:{name:'docs',enabled:true,transport:'http',url:'https://example.com/mcp',command:'',args:[],env:{},headerEnv:{},bearerTokenEnv:''}}]})]}:{entries:[entry('Hosted docs',{provider:'smithery',providerId:'team/docs',uses:240,verified:true})]};
         else if(window.delayOfficial) result=await new Promise(resolve=>window.resolveOfficial=()=>resolve({entries:[entry('Stale official result')]}));
         else result={entries:[entry('Zulu',{updatedAt:'2026-11-12T00:00:00Z'}),entry('Alpha',{updatedAt:'2026-11-13T00:00:00Z'})]};
-        return decode(schema,result)
+        return decode(schema,window.legacyRuntime ? result : {...result, ...(path.endsWith('/skills') ? {view:input.view??'search'} : {source:input.source??'official'})})
       };
       window.runtime={request,call:request,callEffect:(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error})};
       function App(){const [kind,setKind]=useState('mcp');window.setKind=setKind;return <CatalogPicker key={kind} kind={kind} scope="This Bot" onClose={()=>{}} onServer={server=>window.imported=server} onSkill={()=>{}} onSelect={entry=>window.imported=entry.value} onSkills={async()=>{}}/>}
@@ -163,6 +163,13 @@ try {
       .getByText(mobile ? 'owner/repo · Install count unavailable' : 'Install count unavailable', {
         exact: true,
       })
+      .waitFor()
+    await page.evaluate(() => {
+      window.legacyRuntime = true
+      window.setKind('mcp')
+    })
+    await page
+      .getByText('Update this computer’s runtime to use this MCP registry.', { exact: true })
       .waitFor()
     assert.deepEqual(errors, [])
     await page.close()

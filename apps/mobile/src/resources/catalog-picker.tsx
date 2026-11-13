@@ -103,6 +103,8 @@ export function CatalogPicker({
                 },
                 registryCatalogSchema,
               )
+              if (source !== 'official' && result.source !== source)
+                throw new Error('Update this computer’s runtime to use this MCP registry.')
               if (id === generation.current) {
                 setServers(result.entries)
                 setCursor(result.cursor)
@@ -116,6 +118,8 @@ export function CatalogPicker({
                 },
                 skillCatalogSchema,
               )
+              if (view !== 'search' && result.view !== view)
+                throw new Error('Update this computer’s runtime to browse skill leaderboards.')
               if (id === generation.current) {
                 setSkills(result.entries)
                 setCursor(result.cursor)
@@ -358,6 +362,8 @@ export function CatalogPicker({
                         { query: '', source: 'smithery', server: entry.providerId },
                         registryCatalogSchema,
                       )
+                      if (result.source !== 'smithery')
+                        throw new Error('Update this computer’s runtime to use Smithery.')
                       if (id !== generation.current) return
                       const detail = result.entries[0]
                       if (!detail) throw new Error('The registry did not return this server.')
@@ -439,6 +445,8 @@ export function CatalogPicker({
                       { query, source, cursor },
                       registryCatalogSchema,
                     )
+                    if (source !== 'official' && result.source !== source)
+                      throw new Error('Update this computer’s runtime to use this MCP registry.')
                     if (id === generation.current) {
                       setServers((entries) => [
                         ...new Map(
@@ -456,6 +464,10 @@ export function CatalogPicker({
                       { query: view === 'search' ? query : '', view, cursor },
                       skillCatalogSchema,
                     )
+                    if (view !== 'search' && result.view !== view)
+                      throw new Error(
+                        'Update this computer’s runtime to browse skill leaderboards.',
+                      )
                     if (id === generation.current) {
                       setSkills((entries) => [
                         ...new Map(

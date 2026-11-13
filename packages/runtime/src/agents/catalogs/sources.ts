@@ -86,7 +86,7 @@ export async function searchSmithery({ query, cursor, server }: Search) {
             : ['Open the Smithery listing for installation instructions.'],
       }
     })
-    return decode(registryCatalogSchema, { entries: [entry] })
+    return decode(registryCatalogSchema, { entries: [entry], source: 'smithery' })
   }
   const current = page(cursor)
   const params = new URLSearchParams({
@@ -111,6 +111,7 @@ export async function searchSmithery({ query, cursor, server }: Search) {
     await catalogJson(`https://registry.smithery.ai/servers?${params}`),
   )
   return decode(registryCatalogSchema, {
+    source: 'smithery',
     entries: result.servers
       .filter((entry) => !entry.inactive)
       .map((entry) => ({
@@ -174,6 +175,7 @@ export async function searchGlama({ query, cursor }: Search) {
     }),
   )
   return decode(registryCatalogSchema, {
+    source: 'glama',
     entries: result.servers.map((entry) => ({
       name: entry.name,
       description: entry.description,

@@ -281,7 +281,7 @@ export async function searchRegistry(input: unknown) {
   if (options.source === 'glama') return searchGlama(options)
   if (options.source === 'smithery') return searchSmithery(options)
   const { query, cursor } = options
-  if (query && query.length < 3) return { entries: [] }
+  if (query && query.length < 3) return { entries: [], source: 'official' as const }
   const params = new URLSearchParams({
     limit: '20',
     version: 'latest',
@@ -313,6 +313,7 @@ export async function searchRegistry(input: unknown) {
     await catalogJson(`https://registry.modelcontextprotocol.io/v0.1/servers?${params}`),
   )
   return decode(registryCatalogSchema, {
+    source: 'official',
     entries: result.servers
       .filter((item) => {
         const status = decodeResult(

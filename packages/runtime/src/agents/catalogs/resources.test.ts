@@ -437,6 +437,7 @@ it('uses Smithery usage and verification without inventing installation commands
   vi.stubGlobal('fetch', fetch)
   const result = await searchRegistry({ source: 'smithery', query: 'docs' })
   expect(result).toMatchObject({
+    source: 'smithery',
     entries: [{ provider: 'smithery', uses: 240, verified: true }],
     cursor: '2',
   })
@@ -501,6 +502,7 @@ it.each(['all-time', 'trending', 'hot'])(
     vi.stubGlobal('fetch', fetch)
     const result = await searchSkills({ view, cursor: '2' })
     expect(fetch.mock.calls[0][0]).toBe(`https://skills.sh/api/skills/${view}/2`)
+    expect(result.view).toBe(view)
     expect(result.cursor).toBe('3')
     expect(result.entries[0].installsPeriod).toBe(view === 'all-time' ? 'all-time' : '24h')
     expect(result.entries[1].installs).toBeUndefined()
