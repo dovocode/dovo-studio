@@ -171,6 +171,13 @@ try {
     await page.evaluate(() => document.activeElement?.blur())
     const count = await page.evaluate(() => window.answers.length)
     await page.keyboard.press(key)
+    assert.equal(
+      await page.evaluate(() => window.answers.length),
+      count,
+      'Unfocused approval ignores shortcuts',
+    )
+    await page.locator('[data-approval-id]').focus()
+    await page.keyboard.press(key)
     await page.waitForFunction((count) => window.answers.length === count + 1, count)
     assert.equal(await page.evaluate(() => window.answers.at(-1).answer), allow)
     await page.waitForFunction(() => !document.querySelector('button[disabled]'))
@@ -215,9 +222,10 @@ try {
       { ctrlKey: true },
       { altKey: true },
     ]) {
-      document.body.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'y', bubbles: true, ...options }),
-      )
+      document.querySelector('[data-approval-id]').focus()
+      document
+        .querySelector('[data-approval-id]')
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'y', bubbles: true, ...options }))
     }
   })
   assert.equal(
@@ -256,6 +264,15 @@ try {
   await page.getByRole('form', { name: 'Agent questions' }).waitFor()
   await page.locator('main').evaluate((element) => element.setAttribute('role', 'dialog'))
   await page.evaluate(() => document.activeElement?.blur())
+  await page.keyboard.press('1')
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    6,
+    'Unfocused question ignores shortcuts',
+  )
+  assert.equal(await page.getByRole('alert').count(), 0)
+  await page.getByRole('region', { name: 'Questions', exact: true }).focus()
   await page.keyboard.press('Enter')
   await page.getByRole('alert').waitFor()
   assert.equal(

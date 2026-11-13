@@ -4,6 +4,8 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './bot-create-dialog': 'export const BotCreateDialog=()=>null;',
+
   './task-empty-state': 'export const TaskEmptyState=()=>null;',
   './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
@@ -20,12 +22,12 @@ const mocks = {
   `,
   '@dovo/studio-ui': `
 export {ConversationHistory,useConversationHistory,Conversation,ConversationContent,ConversationScrollButton} from '../studio-ui/src/components/ai-elements/conversation';
-export const SidebarHeader=()=>null;
+export const SidebarHeader=()=>null;export const BotAvatar=()=>null;
 
     export const Button=({children,onClick,disabled})=><button disabled={disabled} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
-    export const ContextMenu={};
+    export * as ContextMenu from '@radix-ui/react-context-menu';
   `,
   '../chat/composer/composer': `
     import {useWorkspace} from '@dovo/studio-core';

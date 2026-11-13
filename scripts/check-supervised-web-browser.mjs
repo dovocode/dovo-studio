@@ -228,6 +228,13 @@ try {
     await page.evaluate(() => document.activeElement?.blur())
     const count = await page.evaluate(() => window.writes.length)
     await page.keyboard.press(key)
+    assert.equal(
+      await page.evaluate(() => window.writes.length),
+      count,
+      'Unfocused permissions ignore keys',
+    )
+    await desktop.locator('[data-approval-id="approval"]').focus()
+    await page.keyboard.press(key)
     await page.waitForFunction((count) => window.writes.length === count + 1, count)
     assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
       id: 'approval',

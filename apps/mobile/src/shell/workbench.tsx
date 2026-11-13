@@ -69,8 +69,7 @@ const SceneContext = createContext<{
 export function WorkbenchTabs() {
   const context = useContext(SceneContext)
   const { colors } = useTheme()
-  const preferences = useMobilePreferences()
-  const unified = preferences.unifiedWorkspaceEnabled && preferences.unifiedWorkspaceActive
+  const { browserWorkspaceEnabled, terminalWorkspaceEnabled } = useMobilePreferences()
   if (!context) return null
   const { hidden, active, car, hasProfiles, hasOnlineComputer, newThread } = context.tabBar
   return (
@@ -91,7 +90,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.tasks} renderingMode="template" />
-        <NativeTabs.Trigger.Label>{unified ? 'Workspace' : 'Tasks'}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="pulls"
@@ -107,12 +106,36 @@ export function WorkbenchTabs() {
         <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
+        name="browser"
+        hidden={car || !browserWorkspaceEnabled}
+        disableAutomaticContentInsets={Platform.OS === 'ios'}
+        testID="Tab Browser"
+        listeners={{
+          tabPress: () => active === 'browser' && router.dismissTo('/browser'),
+        }}
+      >
+        <NativeTabs.Trigger.Icon src={iconAssets.web} renderingMode="template" />
+        <NativeTabs.Trigger.Label>Browser</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger
+        name="terminal"
+        hidden={car || !terminalWorkspaceEnabled}
+        disableAutomaticContentInsets={Platform.OS === 'ios'}
+        testID="Tab Terminal"
+        listeners={{
+          tabPress: () => active === 'terminal' && router.dismissTo('/terminal'),
+        }}
+      >
+        <NativeTabs.Trigger.Icon src={iconAssets.terminal} renderingMode="template" />
+        <NativeTabs.Trigger.Label>Terminal</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger
         name="compose"
         role="search"
         hidden={Platform.OS !== 'ios'}
-        accessibilityLabel={unified ? 'Start something' : 'New thread'}
+        accessibilityLabel="New thread"
         testID="New thread"
-        disabled={!hasOnlineComputer && !unified}
+        disabled={!hasOnlineComputer}
         // This is an action: preserve the current tab and its navigation history.
         unstable_nativeProps={{
           preventNativeSelection: true,
@@ -125,9 +148,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.add} renderingMode="template" />
-        <NativeTabs.Trigger.Label hidden>
-          {unified ? 'Start something' : 'New thread'}
-        </NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>New thread</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   )
@@ -290,8 +311,6 @@ export function Workbench() {
   const {
     browserWorkspaceEnabled,
     terminalWorkspaceEnabled,
-    unifiedWorkspaceEnabled,
-    unifiedWorkspaceActive,
     ready: workspacePreferencesReady,
   } = useMobilePreferences()
   const artifactsEnabled = runtime.overviews.some((entry) => entry.snapshot?.artifactsEnabled)
@@ -301,20 +320,13 @@ export function Workbench() {
   useEffect(() => {
     if (!workspacePreferencesReady) return
     if (
-      (active === 'browser' && !browserWorkspaceEnabled && !unifiedWorkspaceEnabled) ||
-      (active === 'terminal' && !terminalWorkspaceEnabled && !unifiedWorkspaceEnabled) ||
-      (active === 'workspace' && !unifiedWorkspaceEnabled) ||
-      (car && ['browser', 'terminal', 'workspace'].includes(active))
+      active === 'workspace' ||
+      (active === 'browser' && !browserWorkspaceEnabled) ||
+      (active === 'terminal' && !terminalWorkspaceEnabled) ||
+      (car && ['browser', 'terminal'].includes(active))
     )
       router.replace('/')
-  }, [
-    active,
-    browserWorkspaceEnabled,
-    terminalWorkspaceEnabled,
-    unifiedWorkspaceEnabled,
-    workspacePreferencesReady,
-    car,
-  ])
+  }, [active, car, browserWorkspaceEnabled, terminalWorkspaceEnabled, workspacePreferencesReady])
   const [screens, setScreens] = useApplicationState<Record<string, ComponentType>>({}),
     [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
@@ -349,14 +361,9 @@ export function Workbench() {
   const routedShortcut = useRef('')
   const hasOnlineComputer = runtime.overviews.some((entry) => entry.connected)
   const newThread = useCallback(() => {
-    if (
-      active === 'workspace' ||
-      active === 'terminal' ||
-      (active === 'tasks' && unifiedWorkspaceEnabled && unifiedWorkspaceActive)
-    )
-      router.push(active === 'terminal' ? '/terminal/new' : '/workspace/new')
+    if (active === 'terminal') router.push('/terminal/new')
     else if (hasOnlineComputer) router.push('/new', { withAnchor: true })
-  }, [hasOnlineComputer, active, unifiedWorkspaceEnabled, unifiedWorkspaceActive])
+  }, [hasOnlineComputer, active])
   const searchAvailable = useKeyboardSearchAvailable()
   const keyboardCommands = useMemo<KeyboardCommand[]>(() => {
     const commands: KeyboardCommand[] = []
@@ -430,15 +437,18 @@ export function Workbench() {
     )
   }
   // Without a computer only Tasks (first-run welcome) and Settings have anything to show.
-  const selected = ['browser', 'terminal', 'workspace'].includes(active)
-    ? active
-    : !runtime.profiles.length
-      ? active === 'tasks' && pathname !== '/projects'
-        ? 'tasks'
-        : 'settings'
-      : active === 'tasks' && pathname === '/projects'
-        ? 'scm'
-        : active
+  const selected =
+    active === 'workspace'
+      ? 'tasks'
+      : ['browser', 'terminal'].includes(active)
+        ? active
+        : !runtime.profiles.length
+          ? active === 'tasks' && pathname !== '/projects'
+            ? 'tasks'
+            : 'settings'
+          : active === 'tasks' && pathname === '/projects'
+            ? 'scm'
+            : active
   useEffect(() => {
     let stopped = false
     setLoadError('')
@@ -511,7 +521,7 @@ export function Workbench() {
           ? 'issues'
           : view === 'pulls'
             ? 'pulls'
-            : view === 'browser' || view === 'terminal' || view === 'workspace'
+            : view === 'browser' || view === 'terminal'
               ? view
               : view === 'artifacts'
                 ? 'artifacts'

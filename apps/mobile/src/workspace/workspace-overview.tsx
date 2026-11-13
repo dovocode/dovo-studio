@@ -22,7 +22,6 @@ import { SearchField } from '../ui/controls/field'
 import { Icon } from '../ui/controls/icon'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
-import { WorkspaceModes } from './workspace-modes'
 import { WorkspaceStarter } from './workspace-starter'
 import { ResourceActions } from './resource-actions'
 import { StandaloneRow } from './standalone-row'
@@ -257,7 +256,6 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           ...more,
         ]}
       />
-      <WorkspaceModes mode={unified ? 'workspace' : 'terminal'} />
       <View style={{ ...contentColumn.collection, paddingHorizontal: 16, paddingBottom: 8 }}>
         <SearchField
           label="Search workspace"

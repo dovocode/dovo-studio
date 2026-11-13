@@ -4,6 +4,7 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './bot-create-dialog': 'export const BotCreateDialog=()=>null;',
   // Bot settings have their own integrated browser test; this fixture tests ordinary side chats.
   './bots/bot-settings': 'export const BotSettings=()=>null;',
   '@dovo/extension-scm/pull-detail': `export const PullDetail=({number,initialTab,linkedThread})=>{window.askInThread=linkedThread?.onAsk;return <aside aria-label="Pull request details" data-pull-preview={number} data-tab={initialTab}>PR {number} {linkedThread?.task.title}</aside>};`,
@@ -61,7 +62,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit})=><form onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}</form>;
     export const ComposerSubmit=props=><button {...props}/>;
     export const ComposerTextarea=props=><textarea {...props}/>;
-    export const ContextMenu={Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
+    export const ContextMenu={Root:Box,Trigger:Box,Content:Box,Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
   `,
   './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
   './task-row': `export const TaskRow=({task,selected,onSelect})=><button data-row-id={task.id} aria-current={selected?'true':undefined} onClick={onSelect}>{task.title} · {task.status}</button>;`,

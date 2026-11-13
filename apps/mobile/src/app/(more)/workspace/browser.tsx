@@ -1,9 +1,4 @@
-import { WorkbenchDetailRoute } from '../../../shell/workbench'
-import { BrowserScreen } from '../../../browser/browser-screen'
-export default function Route() {
-  return (
-    <WorkbenchDetailRoute tab="workspace" bottomInset>
-      <BrowserScreen unified />
-    </WorkbenchDetailRoute>
-  )
+import { Redirect } from 'expo-router'
+export default function LegacyWorkspaceRoute() {
+  return <Redirect href="/browser" />
 }

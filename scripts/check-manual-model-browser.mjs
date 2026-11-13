@@ -5,6 +5,7 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './bot-create-dialog': 'export const BotCreateDialog=()=>null;',
   // Bot settings are covered by check-bots-browser; retain normal-thread model coverage here.
   './bots/bot-settings': 'export const BotSettings=()=>null;',
   './detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
@@ -61,7 +62,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
     export {ComposerSurface,ComposerSubmit,ComposerTextarea} from '../studio-ui/src/composer-surface';
-    export const ContextMenu={Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
+    export const ContextMenu={Root:Box,Trigger:Box,Content:Box,Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
     export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
     export * as Popover from '@radix-ui/react-popover';
   `,

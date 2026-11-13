@@ -1,6 +1,4 @@
-import { Pin } from 'lucide-react'
-import { BotAvatar, ContextMenu } from '@dovo/studio-ui'
-import { compareBotActivity, hasUnreadTaskActivity } from '@dovo/protocol'
+import { BotStrip } from '../bots/bot-strip'
 import {
   Activity,
   memo,
@@ -1194,103 +1192,39 @@ function WorkspaceContent() {
                 )}
               </div>
               <div className="studio-sidebar-list min-h-0 flex-1 overflow-y-auto p-2">
-                {threadEntries.some((entry) => entry.task.bot && !entry.task.archivedAt) && (
-                  <section aria-label="Bots" className="mb-3 border-b pb-3">
-                    <h2 className="px-2 py-1 text-xs font-medium text-muted-foreground">Bots</h2>
-                    <div className="flex gap-2 overflow-x-auto px-1 py-2">
-                      {threadEntries
-                        .filter(
-                          (entry) =>
-                            entry.task.bot &&
-                            !entry.task.archivedAt &&
-                            !entry.task.delegation &&
-                            !entry.task.replica &&
-                            (!computer || entry.source.runtimeId === computer) &&
-                            `${entry.task.title} ${entry.task.bot.role} ${entry.source.name}`
-                              .toLowerCase()
-                              .includes(search.toLowerCase()),
-                        )
-                        .sort(
-                          (a, b) =>
-                            compareBotActivity(a.task, b.task) || a.key.localeCompare(b.key),
-                        )
-                        .map((entry) => {
-                          const unread = hasUnreadTaskActivity(entry.task)
-                          return (
-                            <ContextMenu.Root key={entry.key}>
-                              <ContextMenu.Trigger asChild>
-                                <button
-                                  aria-label={`Open Bot ${entry.task.title} on ${entry.source.name}${unread ? ', new messages' : ''}${entry.source.online ? '' : ', offline'}`}
-                                  title={`${entry.task.title} · ${entry.source.name}`}
-                                  onClick={() =>
-                                    open({
-                                      kind: 'thread',
-                                      runtimeId: entry.source.runtimeId ?? '',
-                                      id: entry.task.id,
-                                    })
-                                  }
-                                  className="flex w-20 shrink-0 flex-col items-center gap-1.5 rounded-lg p-1 text-xs hover:bg-accent focus-visible:outline focus-visible:outline-ring"
-                                >
-                                  <span className="relative">
-                                    {entry.task.pinned && (
-                                      <span
-                                        aria-label="Pinned Bot"
-                                        className="absolute -bottom-1 -left-1 z-10 rounded-full bg-background p-0.5"
-                                      >
-                                        <Pin size={10} />
-                                      </span>
-                                    )}
-                                    <BotAvatar
-                                      avatar={entry.task.bot?.avatar}
-                                      name={entry.task.title}
-                                    />
-                                    {unread && (
-                                      <span
-                                        aria-hidden="true"
-                                        className="absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-background bg-primary"
-                                      />
-                                    )}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      'line-clamp-2 w-full text-center',
-                                      unread && 'font-semibold',
-                                    )}
-                                  >
-                                    {entry.task.title}
-                                  </span>
-                                </button>
-                              </ContextMenu.Trigger>
-                              <ContextMenu.Portal>
-                                <ContextMenu.Content className="z-50 min-w-40 rounded-lg border bg-popover p-1 shadow-lg">
-                                  <ContextMenu.Item
-                                    disabled={!entry.source.online || switching}
-                                    onSelect={() =>
-                                      runLifecycle(
-                                        {
-                                          kind: 'thread',
-                                          runtimeId: entry.source.runtimeId ?? '',
-                                          id: entry.task.id,
-                                        },
-                                        () =>
-                                          taskActionClient(taskStore, entry.source).patch(
-                                            entry.task,
-                                            { pinned: !entry.task.pinned },
-                                          ),
-                                      )
-                                    }
-                                    className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50"
-                                  >
-                                    {entry.task.pinned ? 'Unpin Bot' : 'Pin Bot'}
-                                  </ContextMenu.Item>
-                                </ContextMenu.Content>
-                              </ContextMenu.Portal>
-                            </ContextMenu.Root>
-                          )
-                        })}
-                    </div>
-                  </section>
-                )}
+                <BotStrip
+                  entries={threadEntries.filter(
+                    (entry) =>
+                      entry.task.bot &&
+                      !entry.task.archivedAt &&
+                      !entry.task.delegation &&
+                      !entry.task.replica &&
+                      (!computer || entry.source.runtimeId === computer) &&
+                      `${entry.task.title} ${entry.task.bot.role} ${entry.source.name}`
+                        .toLowerCase()
+                        .includes(search.toLowerCase()),
+                  )}
+                  onOpen={(entry) =>
+                    open({
+                      kind: 'thread',
+                      runtimeId: entry.source.runtimeId ?? '',
+                      id: entry.task.id,
+                    })
+                  }
+                  onPin={(entry) =>
+                    runLifecycle(
+                      {
+                        kind: 'thread',
+                        runtimeId: entry.source.runtimeId ?? '',
+                        id: entry.task.id,
+                      },
+                      () =>
+                        taskActionClient(taskStore, entry.source).patch(entry.task, {
+                          pinned: !entry.task.pinned,
+                        }),
+                    )
+                  }
+                />
                 {sidebarSections.map((section) => {
                   const expanded = searching || openSections[section.id]
                   return (

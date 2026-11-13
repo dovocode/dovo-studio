@@ -278,7 +278,7 @@ export function TaskContextMenu({
             </Menu.Label>
             {toolsMenu}
             <Menu.Label className="px-2.5 py-1.5 text-[0.625rem] font-medium text-muted-foreground">
-              Thread
+              {task.bot ? 'Bot' : 'Thread'}
             </Menu.Label>
             <Menu.Item
               className={itemClass}
@@ -315,21 +315,23 @@ export function TaskContextMenu({
               {task.pinned ? <PinOff /> : <Pin />}
               {task.pinned ? 'Unpin' : 'Pin'}
             </Menu.Item>
-            <Menu.Item
-              className={itemClass}
-              disabled={!canEdit || !!task.archivedAt || task.status === 'running'}
-              onSelect={() =>
-                void run(() =>
-                  patch({
-                    archived: !task.archived,
-                    snoozedUntil: null,
-                  }),
-                )
-              }
-            >
-              {task.archived ? <Undo2 /> : <Check />}
-              {task.archived ? 'Reopen' : 'Settle'}
-            </Menu.Item>
+            {!task.bot && (
+              <Menu.Item
+                className={itemClass}
+                disabled={!canEdit || !!task.archivedAt || task.status === 'running'}
+                onSelect={() =>
+                  void run(() =>
+                    patch({
+                      archived: !task.archived,
+                      snoozedUntil: null,
+                    }),
+                  )
+                }
+              >
+                {task.archived ? <Undo2 /> : <Check />}
+                {task.archived ? 'Reopen' : 'Settle'}
+              </Menu.Item>
+            )}
             <Menu.Item
               className={itemClass}
               disabled={!canEdit || !turn || task.archived}
@@ -354,7 +356,7 @@ export function TaskContextMenu({
               {unread ? <MailOpen /> : <Mail />}
               {unread ? 'Mark as read' : 'Mark as unread'}
             </Menu.Item>
-            {!task.archived && (
+            {!task.bot && !task.archived && (
               <Menu.Sub>
                 <Menu.SubTrigger className={itemClass} disabled={!canEdit}>
                   <AlarmClock />
@@ -779,75 +781,85 @@ export function TaskContextMenu({
                 </Menu.SubContent>
               </Menu.Portal>
             </Menu.Sub>
-            <Menu.Separator className={separatorClass} />
-            <Menu.Item
-              className={itemClass}
-              disabled={
-                !canEdit ||
-                task.status === 'running' ||
-                // A moved thread is kept for recovery; the destination owns it now.
-                (!!task.archivedAt && task.machineHandoff?.state === 'moved')
-              }
-              onSelect={() => {
-                void run(async () => {
-                  if (
-                    !task.archivedAt &&
-                    readAppPreferences().confirmArchive &&
-                    !(await confirm({
-                      title: `Archive “${task.title}”?`,
-                      description: 'You can restore it from Settings → Archived threads.',
-                      confirmLabel: 'Archive thread',
-                    }))
-                  )
-                    return
-                  if (!isCurrent()) return
-                  await client.request(
-                    '/api/tasks/lifecycle',
-                    {
-                      id: task.id,
-                      action: task.archivedAt ? 'restore' : 'archive',
-                    },
-                    responses.ok,
-                  )
-                  if (!isCurrent()) return
-                  if (selected && !task.archivedAt) onDeselect()
-                  await client.refresh()
-                })
-              }}
-            >
-              <Archive />
-              {task.archivedAt ? 'Restore thread' : 'Archive thread'}
-            </Menu.Item>
-            <Menu.Item
-              className={`${itemClass} text-destructive`}
-              disabled={
-                !canEdit || task.status === 'running' || task.machineHandoff?.state === 'preparing'
-              }
-              onSelect={() => {
-                setError('')
-                if (readAppPreferences().confirmDelete)
-                  void run(() =>
-                    client.request('/api/runtime/preferences/read', {}, runtimePreferencesSchema),
-                  ).then((preferences) => {
-                    if (!preferences) return
-                    setRemoveWorktrees(preferences.removeWorktreesOnThreadDelete)
-                    setDialog('delete')
-                  })
-                else
-                  void run(async () => {
-                    await client.request(
-                      '/api/tasks/lifecycle',
-                      { id: task.id, action: 'delete' },
-                      responses.ok,
-                    )
-                    if (selected) onDeselect()
-                    await client.refresh()
-                  })
-              }}
-            >
-              <Trash2 />
-              Delete thread…
-            </Menu.Item>
+            {!task.bot && (
+              <>
+                <Menu.Separator className={separatorClass} />
+                <Menu.Item
+                  className={itemClass}
+                  disabled={
+                    !canEdit ||
+                    task.status === 'running' ||
+                    // A moved thread is kept for recovery; the destination owns it now.
+                    (!!task.archivedAt && task.machineHandoff?.state === 'moved')
+                  }
+                  onSelect={() => {
+                    void run(async () => {
+                      if (
+                        !task.archivedAt &&
+                        readAppPreferences().confirmArchive &&
+                        !(await confirm({
+                          title: `Archive “${task.title}”?`,
+                          description: 'You can restore it from Settings → Archived threads.',
+                          confirmLabel: 'Archive thread',
+                        }))
+                      )
+                        return
+                      if (!isCurrent()) return
+                      await client.request(
+                        '/api/tasks/lifecycle',
+                        {
+                          id: task.id,
+                          action: task.archivedAt ? 'restore' : 'archive',
+                        },
+                        responses.ok,
+                      )
+                      if (!isCurrent()) return
+                      if (selected && !task.archivedAt) onDeselect()
+                      await client.refresh()
+                    })
+                  }}
+                >
+                  <Archive />
+                  {task.archivedAt ? 'Restore thread' : 'Archive thread'}
+                </Menu.Item>
+                <Menu.Item
+                  className={`${itemClass} text-destructive`}
+                  disabled={
+                    !canEdit ||
+                    task.status === 'running' ||
+                    task.machineHandoff?.state === 'preparing'
+                  }
+                  onSelect={() => {
+                    setError('')
+                    if (readAppPreferences().confirmDelete)
+                      void run(() =>
+                        client.request(
+                          '/api/runtime/preferences/read',
+                          {},
+                          runtimePreferencesSchema,
+                        ),
+                      ).then((preferences) => {
+                        if (!preferences) return
+                        setRemoveWorktrees(preferences.removeWorktreesOnThreadDelete)
+                        setDialog('delete')
+                      })
+                    else
+                      void run(async () => {
+                        await client.request(
+                          '/api/tasks/lifecycle',
+                          { id: task.id, action: 'delete' },
+                          responses.ok,
+                        )
+                        if (selected) onDeselect()
+                        await client.refresh()
+                      })
+                  }}
+                >
+                  <Trash2 />
+                  Delete thread…
+                </Menu.Item>
+              </>
+            )}
           </Menu.Content>
         </Menu.Portal>
       </Menu.Root>

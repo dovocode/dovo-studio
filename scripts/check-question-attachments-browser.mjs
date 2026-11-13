@@ -232,6 +232,13 @@ function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(val
       const composer = page.getByRole('textbox', { name: 'Normal message', exact: true })
       const before = await page.evaluate(() => window.answers.length)
       await composer.focus()
+      await page.evaluate(() => window.setQuestion('empty-composer-enter-new'))
+      await page.getByRole('button', { name: 'Dismiss', exact: true }).waitFor()
+      assert.equal(
+        await composer.evaluate((element) => document.activeElement === element),
+        true,
+        'A new question preserves composer focus',
+      )
       await composer.press('Enter')
       assert.equal(
         await page.evaluate(() => window.answers.length),
@@ -240,8 +247,19 @@ function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(val
       )
       await composer.fill('')
       await composer.press('Enter')
-      await page.waitForFunction(() => window.answers.at(-1)?.id === 'empty-composer-enter')
-      assert.equal(await composer.inputValue(), '')
+      assert.equal(
+        await page.evaluate(() => window.answers.length),
+        before,
+        'Empty composer does not answer a question',
+      )
+      assert.equal(
+        await composer.inputValue(),
+        '\n',
+        'The composer keeps its normal Enter behavior',
+      )
+      await page.getByRole('region', { name: 'Questions', exact: true }).focus()
+      await page.keyboard.press('Enter')
+      await page.waitForFunction(() => window.answers.at(-1)?.id === 'empty-composer-enter-new')
     }
     assert.deepEqual(errors, [])
     await page.close()

@@ -21,7 +21,7 @@ export const MessageResponse=({children})=><div>{children}</div>;
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=Tooltip;export const TooltipContent=()=>null;
 export const SettingsPage=({title,description,children})=><section><h1>{title}</h1><p>{description}</p>{children}</section>;
 export const PageHeader=({title})=><h1>{title}</h1>;
-export const ContextMenu={Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
+export const BotAvatar=()=>null;export const ContextMenu={Root:Tooltip,Trigger:Tooltip,Content:Tooltip,Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
 export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;
 export const View=({children,accessibilityLabel,ref,onLayout})=>{useImperativeHandle(ref,()=>({measureLayout:(_parent,done)=>done(0,0)}));useLayoutEffect(()=>{onLayout?.({nativeEvent:{layout:{height:44}}})},[onLayout]);return <div aria-label={accessibilityLabel}>{children}</div>};
 export const ScrollView=View;export const Glass=View;export const Image=()=>null;export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:3});
@@ -60,6 +60,8 @@ window.updatePreferences=changes=>{window.preferences={...window.preferences,...
 
 async function bundle(contents) {
   const mocks = {
+    './bot-create-dialog': 'export const BotCreateDialog=()=>null;',
+    '../bots/bot-create': 'export const CreateBot=()=>null;',
     './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
     '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
     '@dovo/studio-core/state': state,

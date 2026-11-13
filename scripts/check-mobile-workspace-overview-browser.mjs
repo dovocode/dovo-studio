@@ -90,7 +90,6 @@ for (const path of [
   '../ui/controls/choice',
   '../ui/controls/action',
   '../ui/layout/sheet',
-  '../ui/layout/glass',
   '../ui/layout/screen-header',
   '../ui/theme',
 ])
@@ -105,7 +104,6 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {decode,snapshotSchema,runtimeProfile,taskSchema} from '@dovo/protocol';
 import {WorkspaceOverview} from './apps/mobile/src/workspace/workspace-overview';
-import {WorkspaceModes} from './apps/mobile/src/workspace/workspace-modes';
 import {WorkspaceViewProvider} from './apps/mobile/src/workspace/workspace-view';
 import {BrowserWorkspaceProvider,useBrowserWorkspace} from './apps/mobile/src/browser/browser-workspace';
 window.version=0;const listeners=new Set();window.subscribe=fn=>{listeners.add(fn);return()=>listeners.delete(fn)};window.publish=()=>{window.version++;listeners.forEach(fn=>fn())};
@@ -115,7 +113,7 @@ const task=decode(taskSchema,{id:'same',title:'Thread A',repositoryId:'repo',age
 const profile=runtimeProfile({address:'http://mac.lan',token:'device-token-private-at-least-32-characters'},'Mac');
 const snapshot=decode(snapshotSchema,{revision:1,owner:false,botsSupported:true,workspace:{version:1,runtimeAddress:'',repositories:[{id:'repo',name:'Project',path:'/project',branch:'main'}],agents:[],automations:[],tasks:[task]},questions:[],approvals:[],terminals:[{id:'same',taskId:'studio:terminals',title:'Shell A',exited:false,repositoryId:'repo',pinned:true},{id:'thread-pty',taskId:'same',title:'Thread PTY',exited:false}],runs:[],devices:[],pendingDevices:[]});
 window.runtime={profiles:[profile],overviews:[{profile,snapshot,connected:true,lastSeen:null,error:null,pulls:null,pullError:null}],refreshAll:async()=>{},refreshRuntime:async()=>window.publish(),readRuntime:async(_profile,path,input)=>{window.updates.push({owner:_profile.id,path,input});if(path==='/api/terminals/update'){const index=snapshot.terminals.findIndex(item=>item.id===input.id);snapshot.terminals[index]={...snapshot.terminals[index],...(input.pinned!==undefined?{pinned:input.pinned}:{}),...(input.settled!==undefined?{settledAt:input.settled?new Date().toISOString():undefined}:{})};window.runtime.overviews=[{...window.runtime.overviews[0],snapshot:{...snapshot}}];window.publish();return snapshot.terminals[index]}throw Error(path)}};
-function App(){const[mode,setMode]=useState(null);window.showModes=value=>{window.previewModes=true;setMode(value)};const[show,setShow]=useState(true);window.mountOverview=value=>setShow(value);const browser=useBrowserWorkspace();window.setPages=tabs=>browser.change(state=>({...state,tabs,active:tabs[0]?.id??state.active}));window.pages=browser.state.tabs;return mode?<WorkspaceModes mode={mode}/>:show?<WorkspaceOverview unified/>:null};
+function App(){const[show,setShow]=useState(true);window.mountOverview=value=>setShow(value);const browser=useBrowserWorkspace();window.setPages=tabs=>browser.change(state=>({...state,tabs,active:tabs[0]?.id??state.active}));window.pages=browser.state.tabs;return show?<WorkspaceOverview unified/>:null};
 createRoot(document.getElementById('app')).render(<WorkspaceViewProvider><BrowserWorkspaceProvider><App/></BrowserWorkspaceProvider></WorkspaceViewProvider>);
 `,
     },
@@ -307,130 +305,10 @@ try {
   await parentRow.waitFor()
   assert.equal(await parentRow.getAttribute('data-children'), 'Delegated worker,Remote worker')
   assert.equal(await page.getByTestId('Workspace thread Remote worker').count(), 0)
-  // The shared mode pill must retain navigation and a way out when normal modes are hidden.
-  await page.evaluate(() => window.showModes('workspace'))
-  const unifiedButton = page.getByRole('button', { name: 'Unified workspace', exact: true })
-  await page
-    .getByRole('button', { name: 'Unified workspace', exact: true, pressed: true })
-    .waitFor()
-  for (const [label, mode, path] of [
-    ['Threads', 'tasks', '/'],
-    ['Browser', 'browser', '/browser'],
-    ['Terminal', 'terminal', '/terminal'],
-  ]) {
-    await page.getByRole('button', { name: label + ' workspace', exact: true }).click()
-    assert.equal(await page.evaluate(() => window.preferences.unifiedWorkspaceActive), false)
-    assert.equal(await page.evaluate(() => window.routes.at(-1)), path)
-    await page.evaluate((value) => window.showModes(value), mode)
-    await page
-      .getByRole('button', { name: label + ' workspace', exact: true, pressed: true })
-      .waitFor()
-  }
-  await unifiedButton.click()
-  assert.equal(await page.evaluate(() => window.preferences.unifiedWorkspaceActive), true)
-  assert.equal(await page.evaluate(() => window.routes.at(-1)), '/')
-  await page.evaluate(() => {
-    window.preferences.hideNormalWorkspaceModes = true
-    window.showModes('workspace')
-    window.publish()
-  })
-  await page
-    .getByRole('button', { name: 'Threads workspace', exact: true })
-    .waitFor({ state: 'detached' })
-  assert.equal(await page.getByRole('button').count(), 2)
-  await page.getByRole('button', { name: 'Bots workspace', exact: true }).click()
-  assert.equal(await page.evaluate(() => window.routes.at(-1)), '/bots')
-  await unifiedButton.click()
-  assert.equal(await page.evaluate(() => window.preferences.unifiedWorkspaceActive), false)
-  await page.evaluate(() => window.showModes('tasks'))
-  await page.getByRole('button', { name: 'Threads workspace', exact: true }).waitFor()
-  assert.equal(await page.getByRole('button').count(), 5)
-  await page.evaluate(() => {
-    window.preferences.browserWorkspaceEnabled = false
-    window.preferences.terminalWorkspaceEnabled = false
-    window.publish()
-  })
-  await page
-    .getByRole('button', { name: 'Browser workspace', exact: true })
-    .waitFor({ state: 'detached' })
-  await page
-    .getByRole('button', { name: 'Terminal workspace', exact: true })
-    .waitFor({ state: 'detached' })
-  assert.equal(await page.getByRole('button').count(), 3)
-  await page.evaluate(() => {
-    window.preferences.unifiedWorkspaceEnabled = false
-    window.publish()
-  })
-  await unifiedButton.waitFor({ state: 'detached' })
-  assert.equal(await unifiedButton.count(), 0)
-  await page.evaluate(() => {
-    Object.assign(window.preferences, {
-      unifiedWorkspaceEnabled: true,
-      browserWorkspaceEnabled: true,
-      terminalWorkspaceEnabled: true,
-      hideNormalWorkspaceModes: false,
-    })
-    window.publish()
-  })
-  await page.getByRole('button', { name: 'Terminal workspace', exact: true }).waitFor()
-  await page.addStyleTag({
-    content:
-      'body{margin:0;background:#101014;font-family:system-ui} [data-testid="Workspace modes glass"]{background:#24242b;border:1px solid #ffffff30}',
-  })
-  for (const width of [320, 390, 768]) {
-    await page.setViewportSize({ width, height: 480 })
-    for (const fontScale of [1, 2]) {
-      await page.evaluate((scale) => {
-        window.fontScale = scale
-        window.publish()
-      }, fontScale)
-      await page.waitForFunction(
-        (scale) =>
-          parseFloat(
-            getComputedStyle(document.querySelector('[aria-label="Unified workspace"] span'))
-              .fontSize,
-          ) ===
-          12 * scale,
-        fontScale,
-      )
-      const geometry = await page.getByTestId('Workspace modes glass').evaluate((element) => {
-        const rail = element.getBoundingClientRect()
-        return {
-          rail: {
-            left: rail.left,
-            right: rail.right,
-            radius: parseFloat(getComputedStyle(element).borderRadius),
-            height: rail.height,
-          },
-          buttons: [...element.querySelectorAll('button')].map((button) => {
-            const bounds = button.getBoundingClientRect()
-            const label = button.querySelector('span').getBoundingClientRect()
-            return {
-              left: bounds.left,
-              right: bounds.right,
-              width: bounds.width,
-              height: bounds.height,
-              labelLeft: label.left,
-              labelRight: label.right,
-            }
-          }),
-        }
-      })
-      assert.ok(geometry.rail.left >= 0 && geometry.rail.right <= width)
-      assert.ok(geometry.rail.radius >= geometry.rail.height / 2)
-      for (const button of geometry.buttons) {
-        assert.ok(button.width >= 44 && button.height >= 44)
-        assert.ok(button.left >= geometry.rail.left && button.right <= geometry.rail.right)
-        assert.ok(button.labelLeft >= button.left && button.labelRight <= button.right)
-      }
-      for (let index = 1; index < geometry.buttons.length; index++)
-        assert.ok(geometry.buttons[index - 1].right <= geometry.buttons[index].left)
-    }
-  }
   assert.deepEqual(errors, [])
   assert.deepEqual(await page.evaluate(() => window.alerts), [])
   console.log(
-    'Mobile mixed overview: thread row integration, pinned page order, scope separation, retained filters, computer scope, lifecycle actions and responsive glass mode-pill navigation pass.',
+    'Mobile mixed overview: thread row integration, pinned page order, scope separation, retained filters, computer scope, lifecycle actions pass.',
   )
 } finally {
   await browser.close()

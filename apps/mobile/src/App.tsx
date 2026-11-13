@@ -29,7 +29,7 @@ export default function App() {
 }
 function ThemedApp() {
   const { colors, mode } = useTheme()
-  const { browserWorkspaceEnabled, unifiedWorkspaceEnabled } = useMobilePreferences()
+  const { browserWorkspaceEnabled } = useMobilePreferences()
   const base = mode === 'dark' ? DarkTheme : DefaultTheme
   const theme = {
     ...base,
@@ -55,9 +55,7 @@ function ThemedApp() {
                   <PushNotificationProvider>
                     <LiveActivityProvider>
                       <TaskWidgetProvider>
-                        <NativeBrowserProvider
-                          enabled={browserWorkspaceEnabled || unifiedWorkspaceEnabled}
-                        >
+                        <NativeBrowserProvider enabled={browserWorkspaceEnabled}>
                           <BrowserWorkspaceProvider>
                             <WorkspaceViewProvider>
                               <Workbench />

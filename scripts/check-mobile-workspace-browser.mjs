@@ -123,13 +123,10 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button
 
 const runtimeStub = stubs.find((stub) => stub.path === '../runtime/connection/provider')
 const navigationStub = stubs.find((stub) => stub.path === '../shell/navigation')
-const preferencesStub = stubs.find((stub) => stub.path === '../runtime/preferences/app-preferences')
-for (const stub of [runtimeStub, navigationStub, preferencesStub])
-  stubs.push({ ...stub, importer: terminal })
+for (const stub of [runtimeStub, navigationStub]) stubs.push({ ...stub, importer: terminal })
 for (const [path, contents] of [
   ['../runtime/state/app-active', 'export const useForegroundInterval=()=>{};'],
   ['../shell/more-actions', 'export const useMoreActions=()=>[];'],
-  ['./workspace-modes', 'export const WorkspaceModes=()=>null;'],
   ['./standalone-row', 'export const StandaloneRow=({item})=><p>{item.title}</p>;'],
   ['./resource-actions', 'export const ResourceActions=()=>null;'],
   ['../ui/controls/icon', 'export const Icon=()=>null;'],

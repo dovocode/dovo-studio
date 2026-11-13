@@ -139,8 +139,9 @@ execution, the runtime scheduler, native browser isolation or a packaged desktop
 
 Bot tools have separate Settings, MCP servers, Skills, Memory and Routines entries. Settings
 includes reviewed avatar upload and generation. The Bots activity tab restores the last Bot on this
-computer during the app session. Unified shows pinned Bots first, then other Bots by conversation
-activity, above pinned threads. Use the avatar menu to pin or unpin a Bot.
+computer during the app session. Threads and Unified show pinned Bots first, then other Bots by
+conversation activity, above thread groups. Both rows end with **+** to create a Bot. An empty row
+still shows **+**. Use the avatar menu to pin or unpin a Bot.
 
 Bot replies offer **Reset context to here** instead of Fork. Reset keeps files, actions and the full
 transcript. Bots favor child agents for longer work so the conversation can stay available. See

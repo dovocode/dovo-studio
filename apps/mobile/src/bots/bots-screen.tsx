@@ -5,7 +5,6 @@ import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useNavigation } from '../shell/navigation'
 import { useMoreActions } from '../shell/more-actions'
-import { WorkspaceModes } from '../workspace/workspace-modes'
 import { taskListProjection } from '../tasks/list/task-list-projection'
 import { TaskListRow } from '../tasks/list/task-list-row'
 import { ScreenHeader } from '../ui/layout/screen-header'
@@ -66,7 +65,6 @@ export default function BotsScreen() {
           ...more,
         ]}
       />
-      <WorkspaceModes mode="bots" />
       <View style={{ paddingHorizontal: 16, gap: 8 }}>
         <SearchField label="Search Bots" value={query} onChangeText={setQuery} />
         {!supported && (

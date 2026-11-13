@@ -70,32 +70,36 @@ function ThreadActions({
           lifecycle.togglePinned()
         }}
       />
-      <Action
-        secondary
-        label={task.archived ? 'Restore' : 'Settle'}
-        disabled={!lifecycle.enabled || lifecycle.busy || task.status === 'running'}
-        onPress={() => {
-          lifecycle.toggleSettled()
-        }}
-      />
-      <Action
-        secondary
-        label="Snooze"
-        disabled={!lifecycle.enabled || lifecycle.busy}
-        onPress={() =>
-          chooseSnoozeDuration('Snooze thread', (until) => {
-            lifecycle.snooze(until)
-          })
-        }
-      />
-      {!!task.snoozedUntil && (
-        <Action
-          secondary
-          label="Wake now"
-          onPress={() => {
-            lifecycle.snooze(null)
-          }}
-        />
+      {!task.bot && (
+        <>
+          <Action
+            secondary
+            label={task.archived ? 'Restore' : 'Settle'}
+            disabled={!lifecycle.enabled || lifecycle.busy || task.status === 'running'}
+            onPress={() => {
+              lifecycle.toggleSettled()
+            }}
+          />
+          <Action
+            secondary
+            label="Snooze"
+            disabled={!lifecycle.enabled || lifecycle.busy}
+            onPress={() =>
+              chooseSnoozeDuration('Snooze thread', (until) => {
+                lifecycle.snooze(until)
+              })
+            }
+          />
+          {!!task.snoozedUntil && (
+            <Action
+              secondary
+              label="Wake now"
+              onPress={() => {
+                lifecycle.snooze(null)
+              }}
+            />
+          )}
+        </>
       )}
       {!!lifecycle.error && <Text accessibilityRole="alert">{lifecycle.error}</Text>}
     </Sheet>

@@ -208,11 +208,11 @@ pinned account and destination. PR rows prefetch only the overview after 150 ms 
 or keyboard focus. Clicks proceed immediately. The detail screen joins the same account-scoped read.
 Leaving a row removes its waiter; shared HTTP work can still complete into the bounded cache.
 
-Plain Enter in an empty focused desktop composer answers its single visible permission or question
-request. The request must belong to the same thread and pane. Draft text, rich non-text content,
-modifiers, composition, repeated keys and ambiguous requests do not use this shortcut. Question
-validation still applies. Browser checks cover textarea and rich-editor markers; native mobile
-hardware-keyboard behavior was not measured.
+Permission and question requests never take keyboard focus when they appear. Their shortcuts work
+only when the user focuses a control in that request. Typing in the composer, including Enter in an
+empty composer, does not answer a request. Text fields, modifiers, composition and repeated keys do
+not trigger request shortcuts. The desktop popup opens without activating its window. Browser checks
+cover focused and unfocused requests; native mobile hardware-keyboard behavior was not measured.
 
 See [the next performance work](performance-research-2026-11-11.md) for measured Git and file-sync
 costs, the recommended order and the remaining phone measurements.

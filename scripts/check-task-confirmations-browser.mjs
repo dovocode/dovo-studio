@@ -25,7 +25,7 @@ const task={id:'thread',title:'Thread',repositoryId:'repo',status:'completed',pi
 const repo={id:'repo',name:'Project',prompts:[{id:'prompt',name:'first',text:'Original prompt'}],templates:[{id:'template',name:'Template',objective:'Original goal'}]};
 window.calls=[];window.closes=0;window.preferences={confirmUnpin:true,confirmArchive:true,threadInfoSections:{}};window.downloads=[];
 const request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/mcp-apps/read'){await new Promise(resolve=>requestAnimationFrame(resolve));window.finishedAppReads=(window.finishedAppReads??0)+1;return {app:{id:input.id,taskId:input.taskId,connected:true,format:'apps'}}};if(path==='/api/mcp-apps/rpc'&&input.method==='resources/read'&&window.holdRead)return new Promise(resolve=>window.resolveRead=()=>resolve({result:{contents:[{uri:'file:///report.txt',text:'export content'}]}}));if(path==='/api/scm/instructions/read')return {text:'Original instructions',version:'v1'};return {ok:true,result:{ok:true}}};
-function App(){const [runtime,setRuntime]=useState(0),[view,setView]=useState('row'),[visible,setVisible]=useState(true),[currentTask,setTask]=useState(task),[referenceId,setReferenceId]=useState('app'),[appTitle,setAppTitle]=useState('Fixture app');const [workspace,setWorkspace]=useState({tasks:[task],repositories:[repo],agents:[]});window.showView=next=>{setView(next);setVisible(true)};window.switchRuntime=()=>setRuntime(r=>1-r);window.showCaller=setVisible;window.changeRun=()=>setTask(t=>({...t,status:'running',activeRunId:'new-run'}));window.changeApp=()=>setReferenceId('other-app');window.changeAppTitle=()=>setAppTitle('Renamed app');
+function App(){const [runtime,setRuntime]=useState(0),[view,setView]=useState('row'),[visible,setVisible]=useState(true),[currentTask,setTask]=useState(task),[referenceId,setReferenceId]=useState('app'),[appTitle,setAppTitle]=useState('Fixture app');const [workspace,setWorkspace]=useState({tasks:[task],repositories:[repo],agents:[]});window.showView=next=>{setView(next);setVisible(true)};window.switchRuntime=()=>setRuntime(r=>1-r);window.showCaller=setVisible;window.makeBot=()=>{setView("row");setVisible(true);setTask(task=>({...task,bot:{role:"Assistant",state:"active"}}))};window.changeRun=()=>setTask(t=>({...t,status:'running',activeRunId:'new-run'}));window.changeApp=()=>setReferenceId('other-app');window.changeAppTitle=()=>setAppTitle('Renamed app');
 const value={workspace,setWorkspace,request,connected:true,connection:connections[runtime],activeRuntimeId:['a','b'][runtime],runtimeRegistry:{profiles:[]},refreshRuntimes:async()=>{},previewTask:(_connection,_id,_updates,apply)=>apply()};
 const close=()=>{window.closes++;setVisible(false)};
 return <WorkspaceContext.Provider value={value}><TooltipProvider><StudioConfirmationProvider>{visible&&(view==='row'?<TaskContextMenu dropdown task={currentTask} owner={{runtimeId:value.activeRuntimeId,address:value.connection.address,name:'Computer',online:true,repositories:[],agents:[],worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Thread actions</button></TaskContextMenu>:view==='prompts'?<SavedPromptsDialog repositoryId="repo" onClose={close}/>:view==='templates'?<TaskTemplatesDialog repositoryId="repo" onClose={close}/>:view==='instructions'?<ProjectInstructionsDialog repositoryId="repo" onClose={close}/>:view==='actions'?<TaskProjectActions task={task} onTerminal={()=>{}}/>:<McpAppView reference={{taskId:'thread',id:referenceId,title:appTitle}}/>)}</StudioConfirmationProvider></TooltipProvider></WorkspaceContext.Provider>}
@@ -295,6 +295,27 @@ try {
     await page.evaluate(() => window.calls.filter((c) => c.path === '/api/mcp-apps/rpc').length),
     0,
   )
+  await page.evaluate(() => window.makeBot())
+  await page.getByRole('button', { name: 'Thread actions', exact: true }).click()
+  await page.getByRole('menu').waitFor()
+  for (const label of [
+    'Settle',
+    'Reopen',
+    'Snooze',
+    'Archive thread',
+    'Restore thread',
+    'Delete thread…',
+    'Auto-settle behavior',
+    'Auto-archive after settled',
+    'Regenerate title',
+  ])
+    assert.equal(
+      await page.getByRole('menuitem', { name: label, exact: true }).count(),
+      0,
+      `Hide ${label} for Bots`,
+    )
+  assert.equal(await page.getByRole('menuitem', { name: 'Unpin', exact: true }).count(), 1)
+  await page.keyboard.press('Escape')
   assert.deepEqual(errors, [])
   console.log(
     'Task confirmations: unpin/archive accept/cancel/runtime guards, four draft dialogs, full safe MCP consent, visibility/title refresh completion, app replacement and unmount cancellation pass.',

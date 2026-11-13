@@ -1006,7 +1006,7 @@ function TaskDetailContent({
                       },
                     },
                     {
-                      label: 'Rename thread',
+                      label: task.bot ? 'Rename Bot' : 'Rename thread',
                       group: 'Thread',
                       icon: 'edit',
                       overflow: true,
@@ -1014,7 +1014,13 @@ function TaskDetailContent({
                       onPress: () => setRenaming(true),
                     },
                     {
-                      label: task.pinned ? 'Unpin thread' : 'Pin thread',
+                      label: task.bot
+                        ? task.pinned
+                          ? 'Unpin Bot'
+                          : 'Pin Bot'
+                        : task.pinned
+                          ? 'Unpin thread'
+                          : 'Pin thread',
                       group: 'Thread',
                       icon: task.pinned ? 'unpin' : 'pin',
                       overflow: true,
@@ -1153,6 +1159,14 @@ function TaskDetailContent({
                         'Edit project instructions',
                         'Project approval rules',
                         'Regenerate title',
+                        'Settle thread',
+                        'Reopen thread',
+                        'Snooze thread',
+                        'Unsnooze thread',
+                        'Auto-settle & auto-archive',
+                        'Archive thread',
+                        'Restore thread',
+                        'Delete thread…',
                       ].includes(action.label)),
                 )
                 .sort((a, b) => {
@@ -1609,7 +1623,7 @@ function TaskDetailContent({
           }}
         />
       )}
-      {threadBehavior && (
+      {threadBehavior && !task.bot && (
         <TaskThreadBehavior
           key={`${activeId}:${task.id}`}
           task={task}

@@ -689,7 +689,7 @@ function TaskListRowView({
       )}
     </View>
   )
-  if (car || task.archivedAt) return content
+  if (car || task.archivedAt || task.bot) return content
   return (
     <TaskSwipeActions
       enabled={!disabled && !selectionActive && actions.enabled && !actions.busy}

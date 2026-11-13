@@ -43,11 +43,19 @@ export function LifecycleActions({
       <View style={styles.row}>
         <Action
           secondary
-          label={task.pinned ? 'Unpin task' : 'Pin task'}
+          label={
+            task.bot
+              ? task.pinned
+                ? 'Unpin Bot'
+                : 'Pin Bot'
+              : task.pinned
+                ? 'Unpin task'
+                : 'Pin task'
+          }
           disabled={!enabled || busy}
           onPress={togglePinned}
         />
-        {!task.archivedAt && (
+        {!task.bot && !task.archivedAt && (
           <Action
             secondary
             label={task.archived ? 'Reopen task' : 'Settle task'}
@@ -56,7 +64,7 @@ export function LifecycleActions({
           />
         )}
       </View>
-      {!task.archived && (
+      {!task.bot && !task.archived && (
         <View style={styles.row}>
           {isSnoozed(task, Date.now()) ? (
             <Action
@@ -77,31 +85,33 @@ export function LifecycleActions({
           )}
         </View>
       )}
-      <View style={styles.row}>
-        <Action
-          secondary
-          label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
-          disabled={
-            !enabled ||
-            busy ||
-            task.status === 'running' ||
-            // A moved thread is kept for recovery; the destination owns it now.
-            (!!task.archivedAt && task.machineHandoff?.state === 'moved')
-          }
-          onPress={toggleArchived}
-        />
-        <Action
-          secondary
-          label="Delete thread…"
-          disabled={
-            !enabled ||
-            busy ||
-            task.status === 'running' ||
-            task.machineHandoff?.state === 'preparing'
-          }
-          onPress={deleteThread}
-        />
-      </View>
+      {!task.bot && (
+        <View style={styles.row}>
+          <Action
+            secondary
+            label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
+            disabled={
+              !enabled ||
+              busy ||
+              task.status === 'running' ||
+              // A moved thread is kept for recovery; the destination owns it now.
+              (!!task.archivedAt && task.machineHandoff?.state === 'moved')
+            }
+            onPress={toggleArchived}
+          />
+          <Action
+            secondary
+            label="Delete thread…"
+            disabled={
+              !enabled ||
+              busy ||
+              task.status === 'running' ||
+              task.machineHandoff?.state === 'preparing'
+            }
+            onPress={deleteThread}
+          />
+        </View>
+      )}
       {!!error && <Text style={styles.error}>{error}</Text>}
     </View>
   )

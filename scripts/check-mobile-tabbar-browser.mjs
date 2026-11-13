@@ -86,7 +86,7 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   {
     path: '../runtime/preferences/app-preferences',
     importer: workbench,
-    contents: `export const preferencesReady=Promise.resolve();export const readMobilePreferences=()=>{window.launchReads=(window.launchReads??0)+1;return {launchTab:window.fixture.launchTab??'tasks',carMode:window.fixture.car}};export const useCarMode=()=>window.fixture.car;export const useMobilePreferences=()=>({browserWorkspaceEnabled:false});`,
+    contents: `export const preferencesReady=Promise.resolve();export const readMobilePreferences=()=>{window.launchReads=(window.launchReads??0)+1;return {launchTab:window.fixture.launchTab??'tasks',carMode:window.fixture.car}};export const useCarMode=()=>window.fixture.car;export const useMobilePreferences=()=>({ready:true,browserWorkspaceEnabled:!!window.fixture.browser,terminalWorkspaceEnabled:!!window.fixture.terminal,unifiedWorkspaceEnabled:true,unifiedWorkspaceActive:true});`,
   },
   {
     path: '../runtime/connection/provider',
@@ -232,6 +232,23 @@ try {
     'The plus uses the detached native action rather than a regular collection tab',
   )
   assert.equal(await page.locator('nav button').count(), 3)
+  assert.equal(await page.getByTestId('Tab Browser').count(), 0)
+  assert.equal(await page.getByTestId('Tab Terminal').count(), 0)
+  await page.evaluate(() => window.updateFixture({ browser: true, terminal: true }))
+  await page.getByTestId('Tab Browser').waitFor()
+  await page.getByTestId('Tab Terminal').waitFor()
+  assert.equal(await page.locator('nav button').count(), 5)
+  await page.getByTestId('Tab Browser').click()
+  await page.getByTestId('Tab Terminal').click()
+  assert.deepEqual(await page.evaluate(() => window.nativeSelections), ['browser', 'terminal'])
+  await page.evaluate(() => {
+    window.nativeSelections = []
+    window.updateFixture({ car: true })
+  })
+  await page.getByTestId('Tab Browser').waitFor({ state: 'detached' })
+  await page.getByTestId('Tab Terminal').waitFor({ state: 'detached' })
+  await page.evaluate(() => window.updateFixture({ car: false, browser: false, terminal: false }))
+
   assert.equal(await page.locator('nav button[data-testid="Tab More"]').count(), 0)
   await plus.click()
   assert.deepEqual(await page.evaluate(() => window.routes), [

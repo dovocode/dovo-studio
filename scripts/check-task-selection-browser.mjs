@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url))
 const mocks = {
+  './bot-create-dialog': 'export const BotCreateDialog=()=>null;',
   './task-list-view-state': `export const readTaskListViewState=()=>({environment:JSON.stringify('removed-computer')});export const saveTaskListViewState=()=>{};`,
   './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react'; export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref];}`,
@@ -28,7 +29,7 @@ window.store=store;export const useWorkspace = () => store;
 export const useWorkspaceSelector = select => select(store);
 export const sameWorkspaceFields = () => false;`,
   '@dovo/studio-ui': `
-export const SidebarHeader=()=>null;
+export const SidebarHeader=()=>null;export const BotAvatar=()=>null;
 
 import React from 'react';
 export * as ContextMenu from '@radix-ui/react-context-menu';

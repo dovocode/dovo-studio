@@ -439,6 +439,51 @@ it('keeps generic client paths from creating Bots or starting a paused Bot', asy
   expect(s.store.taskSummary(created.id).queue?.map((item) => item.id)).toEqual([queued])
 })
 
+it('rejects settling, snoozing and archiving Bots while allowing pinning', async () => {
+  const f = await setup()
+  const created = decode(botResultSchema, await (await f.create()).response.json())
+  const task = f.runtime.services.store.taskSummary(created.id)
+  for (const [key, after] of [
+    ['archived', true],
+    ['archivedAt', '2026-11-13T12:00:00Z'],
+    ['snoozedUntil', '2026-11-14T12:00:00Z'],
+    ['settleBehavior', { settleInactive: true, inactiveDays: 3 }],
+    ['archiveAfterSettledDays', 1],
+  ] as const) {
+    expect(
+      (
+        await f.request(
+          '/api/workspace',
+          {
+            collection: 'tasks',
+            id: created.id,
+            changes: { [key]: { before: null, after } },
+          },
+          'PATCH',
+        )
+      ).status,
+    ).toBe(400)
+  }
+  expect(
+    (await f.request('/api/tasks/lifecycle', { id: created.id, action: 'archive' })).status,
+  ).toBe(400)
+  expect(f.runtime.services.store.taskSummary(created.id).archivedAt).toBeUndefined()
+  expect(
+    (
+      await f.request(
+        '/api/workspace',
+        {
+          collection: 'tasks',
+          id: created.id,
+          changes: { pinned: { before: task.pinned ?? null, after: true } },
+        },
+        'PATCH',
+      )
+    ).status,
+  ).toBe(200)
+  expect(f.runtime.services.store.taskSummary(created.id).pinned).toBe(true)
+})
+
 it('keeps Bots standalone and named by people only', async () => {
   const f = await setup()
   const s = f.runtime.services

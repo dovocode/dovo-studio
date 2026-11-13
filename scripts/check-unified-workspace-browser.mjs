@@ -39,6 +39,12 @@ window.root=createRoot(document.getElementById('app'));window.render=()=>window.
   },
   [
     {
+      path: './bot-create',
+      importer: root + '/packages/extension-tasks/src/bots/',
+      contents:
+        'export const BotCreateForm=({onCancel,onCreated})=><div data-create-bot-form><button onClick={onCancel}>Cancel Bot creation</button><button onClick={()=>onCreated("new-bot",window.createBotProfile??window.computers[0].profile)}>Complete Bot creation</button></div>;',
+    },
+    {
       path: '@dovo/studio-ui/runtime-icon',
       importer: root + '/packages/extension-tasks/src/list/task-row.tsx',
       contents: `import {RuntimeIcon as Actual} from '${root}/packages/studio-ui/src/runtime-icon';export const RuntimeIcon=props=>{window.threadRowRenders=(window.threadRowRenders??0)+1;return <Actual {...props}/>};`,
@@ -85,7 +91,7 @@ const read=useCallback(async(profile,path,input)=>{
  return {ok:true};
 },[]);
 const request=(path,input)=>read(active.profile,path,input);
-const store={activeRuntimeId:window.activeRuntimeId,runtimes:window.computers,runtimeRegistry:{profiles:window.computers.map(entry=>entry.profile)},snapshot:active.snapshot,workspace:active.snapshot.workspace,connected:active.connected,request,readRuntime:read,previewTask:async(_connection,_id,_updates,apply)=>apply(),refreshRuntime:async()=>{},refreshRuntimes:async()=>{},switchRuntime:async(id)=>{window.activeRuntimeId=id;window.refresh()},flush:async()=>{},setWorkspace:update=>{active.snapshot.workspace=update(active.snapshot.workspace);window.refresh()}};
+const store={activeRuntimeId:window.activeRuntimeId,runtimes:window.computers,runtimeRegistry:{profiles:window.computers.map(entry=>entry.profile)},snapshot:active.snapshot,workspace:active.snapshot.workspace,connected:active.connected,request,readRuntime:read,previewTask:async(_connection,_id,_updates,apply)=>apply(),refreshRuntime:async()=>{},refreshRuntimes:async()=>{},switchRuntime:async(id)=>{if(window.delayBotOwnerCommit){window.commitBotOwner=()=>{window.activeRuntimeId=id;window.refresh()};return}window.activeRuntimeId=id;window.refresh()},flush:async()=>{},setWorkspace:update=>{active.snapshot.workspace=update(active.snapshot.workspace);window.refresh()}};
 return <Host.Provider value={fixtureHost}><Store.Provider value={store}>{children}</Store.Provider></Host.Provider>}
 `,
     },
@@ -465,6 +471,9 @@ try {
   const returnHome = async () => {
     await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
     await workspaceInput.waitFor({ state: 'visible' })
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('aria-label') === 'Workspace request',
+    )
   }
   const assertComposerHidden = async (kind) => {
     await workspaceInput.waitFor({ state: 'hidden' })
@@ -2880,6 +2889,54 @@ try {
     ),
     false,
   )
+  await page.evaluate(() => {
+    window.root.render(null)
+  })
+  await page.getByRole('region', { name: 'Terminals workspace' }).waitFor({ state: 'detached' })
+  await page.evaluate(() => {
+    window.terminalOnly = false
+    window.render()
+  })
+  const botRow = page.getByRole('complementary').getByRole('region', { name: 'Bots', exact: true })
+  const newBot = botRow.getByRole('button', { name: 'New Bot', exact: true })
+  await newBot.waitFor()
+  assert.equal(
+    await botRow.getByRole('button').count(),
+    1,
+    'An empty Bot row keeps the create button',
+  )
+  await newBot.click()
+  await page.getByRole('dialog', { name: 'New Bot', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Cancel Bot creation' }).click()
+  await page.getByRole('dialog', { name: 'New Bot', exact: true }).waitFor({ state: 'detached' })
+  await newBot.click()
+  await page.getByRole('button', { name: 'Complete Bot creation' }).click()
+  await page.getByRole('dialog', { name: 'New Bot', exact: true }).waitFor({ state: 'detached' })
+  assert.deepEqual(await page.evaluate(() => window.navigation.at(-1)), {
+    viewId: 'bots',
+    entityId: 'new-bot',
+  })
+  await page.evaluate(() => {
+    window.createBotProfile = window.computers.find(
+      (owner) => owner.profile.id !== window.activeRuntimeId,
+    ).profile
+    window.delayBotOwnerCommit = true
+    window.navigation = []
+  })
+  await newBot.click()
+  await page.getByRole('button', { name: 'Complete Bot creation' }).click()
+  await page.waitForFunction(() => !!window.commitBotOwner)
+  assert.deepEqual(
+    await page.evaluate(() => window.navigation),
+    [],
+    'Wait for the selected computer context before opening the Bot',
+  )
+  await page.evaluate(() => window.commitBotOwner())
+  await page.getByRole('dialog', { name: 'New Bot', exact: true }).waitFor({ state: 'detached' })
+  assert.deepEqual(await page.evaluate(() => window.navigation), [
+    { viewId: 'bots', entityId: 'new-bot' },
+  ])
+
   assert.deepEqual(errors, [])
   console.log(
     'Unified workspace: sidebar navigation without horizontal tabs, pinned browser grid, retained drafts, lifecycle, remote ownership, HTTP, routing and terminal launcher passed.',

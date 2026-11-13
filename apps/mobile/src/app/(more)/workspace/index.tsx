@@ -1,4 +1,4 @@
-import { WorkbenchScene } from '../../../shell/workbench'
-export default function Route() {
-  return <WorkbenchScene tab="workspace" />
+import { Redirect } from 'expo-router'
+export default function LegacyWorkspaceRoute() {
+  return <Redirect href="/" />
 }

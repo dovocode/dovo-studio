@@ -52,6 +52,7 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
         // Keep UnifiedWorkspace, BrowserPane and Effect state real. Isolate unrelated thread,
         // terminal and composer surfaces so this checks the actual controlled-tab integration.
         const unifiedBoundaries = {
+          '../bots/bot-strip': 'export const BotStrip=()=>null;',
           '../view': 'export default function Thread(){return <div>Thread surface</div>}',
           '../list/task-row-actions':
             'export const useTaskActionStore=()=>({});export const taskActionClient=()=>({patch:async()=>{}})',

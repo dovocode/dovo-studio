@@ -19,7 +19,6 @@ import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { ResourceActions, useTerminalActions } from '../workspace/resource-actions'
 import { workspaceItems } from '../workspace/workspace-items'
-import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { TerminalSession } from './terminal-session'
 
 export function WorkspaceTerminalScreen({
@@ -31,7 +30,6 @@ export function WorkspaceTerminalScreen({
 }) {
   const runtime = useRuntime()
   const { focused } = useNavigation()
-  const { unifiedWorkspaceEnabled } = useMobilePreferences()
   const { styles } = useTheme()
   const owner = runtime.overviews.find((entry) => entry.profile.id === runtimeId)
   const loading =
@@ -51,10 +49,7 @@ export function WorkspaceTerminalScreen({
   const item = workspaceItems(owner ? [owner] : [], [], Date.now()).find(
     (entry) => entry.kind === 'terminal' && entry.terminal.id === terminalId,
   )
-  const back = () =>
-    router.canGoBack()
-      ? router.back()
-      : router.replace(unifiedWorkspaceEnabled ? '/workspace' : '/terminal')
+  const back = () => (router.canGoBack() ? router.back() : router.replace('/terminal'))
   const close = () =>
     Alert.alert(
       'Close terminal?',

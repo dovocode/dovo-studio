@@ -1,3 +1,4 @@
+import { BotStrip } from '../bots/bot-strip'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
   taskSnoozeMenuChoices,
@@ -985,6 +986,30 @@ export function TaskList({
           className="studio-sidebar-list flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5"
           aria-busy={busy || search.loading}
         >
+          <BotStrip
+            entries={allEntries.filter(
+              (entry) =>
+                entry.task.bot &&
+                !entry.task.archivedAt &&
+                !entry.task.delegation &&
+                !entry.task.replica &&
+                (!environment || JSON.stringify(entry.source.runtimeId) === environment) &&
+                `${entry.task.title} ${entry.task.bot.role} ${entry.source.name}`
+                  .toLowerCase()
+                  .includes(query.toLowerCase()),
+            )}
+            onOpen={onSelect}
+            busy={busy || bulkBusy}
+            onPin={(entry) => {
+              setActionError('')
+              void taskActionClient(store, entry.source)
+                .patch(entry.task, { pinned: !entry.task.pinned })
+                .catch((error: unknown) => {
+                  if (mounted.current)
+                    setActionError(error instanceof Error ? error.message : String(error))
+                })
+            }}
+          />
           {search.loading && (
             <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
               Searching conversation history…

@@ -102,11 +102,6 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       contents: 'export const useMoreActions=()=>[];',
     },
     {
-      path: '../workspace/workspace-modes',
-      importer: mobile + 'bots/',
-      contents: 'export const WorkspaceModes=()=>null;',
-    },
-    {
       path: '../ui/controls/icon',
       importer: mobile + 'bots/',
       contents: 'export const Icon=()=>null;',
@@ -720,11 +715,6 @@ export function RuntimeScope({runtimeId,children}){useSyncExternalStore(window.s
       path: '../shell/more-actions',
       importer: mobile + 'bots/',
       contents: 'export const useMoreActions=()=>[];',
-    },
-    {
-      path: '../workspace/workspace-modes',
-      importer: mobile + 'bots/',
-      contents: 'export const WorkspaceModes=()=>null;',
     },
     {
       path: '../tasks/list/task-list-row',

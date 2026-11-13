@@ -1,5 +1,4 @@
 import { useBrowserWorkspace } from './browser-workspace'
-import { WorkspaceModes } from '../workspace/workspace-modes'
 import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -852,7 +851,6 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         title={active.previewOf ? 'Link preview' : unified ? active.title || 'Page' : 'Browser'}
         onBack={() => (active.previewOf ? void act(() => close(active)) : navigate('tasks'))}
       />
-      {!active.previewOf && !unified && <WorkspaceModes mode="browser" />}
       {active.previewOf && (
         <View
           style={{

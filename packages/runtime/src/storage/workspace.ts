@@ -1613,6 +1613,19 @@ export class WorkspaceStore {
     if (patch.collection === 'tasks' && current.bot) {
       const after = (key: string) => patch.changes[key]?.after
       if (
+        [
+          'archived',
+          'archivedAt',
+          'snoozedUntil',
+          'settleBehavior',
+          'archiveAfterSettledDays',
+        ].some((key) => !!after(key))
+      )
+        throw new HttpError(
+          400,
+          'Bots cannot be settled, snoozed or archived. Pause the Bot in its settings.',
+        )
+      if (
         (patch.changes.repositoryId && after('repositoryId') !== SCRATCH_PROJECT_ID) ||
         (patch.changes.execution && after('execution') === 'worktree') ||
         [

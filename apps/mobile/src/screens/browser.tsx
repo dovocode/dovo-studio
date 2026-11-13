@@ -10,11 +10,7 @@ import { useTheme } from '../ui/theme'
 
 export default function ExperimentalBrowserScreen() {
   const preferences = useMobilePreferences()
-  return (
-    <BrowserRoute
-      enabled={preferences.browserWorkspaceEnabled || preferences.unifiedWorkspaceEnabled}
-    />
-  )
+  return <BrowserRoute enabled={preferences.browserWorkspaceEnabled} />
 }
 
 function BrowserRoute({ enabled }: { enabled: boolean }) {

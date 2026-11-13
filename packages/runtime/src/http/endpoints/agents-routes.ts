@@ -1667,6 +1667,8 @@ export function taskLifecycle(
           )
       }
       requireIdle()
+      if (action === 'archive' && [...ids].some((taskId) => s.store.taskSummary(taskId)?.bot))
+        throw new HttpError(400, 'Bots cannot be archived. Pause the Bot in its settings.')
       if (action !== 'restore') {
         for (const taskId of ids) {
           const cleanup = yield* serviceResult(

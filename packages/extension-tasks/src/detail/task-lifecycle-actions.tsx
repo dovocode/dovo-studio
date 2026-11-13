@@ -34,6 +34,7 @@ export function TaskLifecycleActions({
     }
   }
   const snooze = (until: string | null) => void change({ snoozedUntil: until })
+  if (task.bot) return null
   return (
     <>
       {!task.archived && (

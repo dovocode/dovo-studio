@@ -10,12 +10,16 @@ import { useTaskLifecycle } from '../tasks/detail/use-task-lifecycle'
 export function BotStrip({
   entries,
   onOpen,
+  onCreate,
+  createDisabled = false,
 }: {
+  onCreate?: () => void
+  createDisabled?: boolean
   entries: readonly TaskListRowData[]
   onOpen: (id: string, runtimeId: string) => void
 }) {
-  const { styles } = useTheme()
-  if (!entries.length) return null
+  const { colors, styles } = useTheme()
+  if (!entries.length && !onCreate) return null
   return (
     <View accessibilityLabel="Bots" style={{ gap: 8, paddingVertical: 12 }}>
       <Text style={[styles.muted, { fontWeight: '600' }]}>Bots</Text>
@@ -32,6 +36,34 @@ export function BotStrip({
           .map((entry) => (
             <BotTile key={entry.row.key} entry={entry} onOpen={onOpen} />
           ))}
+        {onCreate && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="New Bot"
+            accessibilityHint="Choose a computer and create a Bot."
+            disabled={createDisabled}
+            onPress={onCreate}
+            style={{ width: 76, gap: 6, alignItems: 'center', opacity: createDisabled ? 0.5 : 1 }}
+          >
+            <View
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surface,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="add" size={24} color={colors.accent} />
+            </View>
+            {!!entries.length && (
+              <Text style={[styles.text, { fontSize: 12, textAlign: 'center' }]}>New Bot</Text>
+            )}
+          </Pressable>
+        )}
       </ScrollView>
     </View>
   )

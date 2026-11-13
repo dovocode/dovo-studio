@@ -252,17 +252,41 @@ try {
       'Recovered server',
       'Agent reload also recovers a failed navigation',
     )
-    await browsers.agentCommand(
-      'recovery',
-      { action: 'navigate', url: origin + '/profile-state' },
-      () => {},
-      'agent-unavailable',
-    )
-    assert.equal(
-      agentSession.state.url,
-      origin + '/profile-state',
-      'Successful agent navigation clears the failed address',
-    )
+    // Viewer state arrives on its own timer. Hold its CDP read to model a slow host,
+    // while the agent command can still return its own navigation result.
+    await wait(() => !agentSession.statePending)
+    const send = agentSession.cdp.send.bind(agentSession.cdp)
+    let releaseState
+    const stateGate = new Promise((resolve) => {
+      releaseState = resolve
+    })
+    agentSession.cdp.send = async (method, params) => {
+      const result = await send(method, params)
+      if (method === 'Page.getNavigationHistory') await stateGate
+      return result
+    }
+    try {
+      const navigated = await browsers.agentCommand(
+        'recovery',
+        { action: 'navigate', url: origin + '/profile-state' },
+        () => {},
+        'agent-unavailable',
+      )
+      assert.equal(navigated.url, origin + '/profile-state')
+      assert.equal(
+        agentSession.state.url,
+        unavailableUrl,
+        'Viewer state can lag a successful command',
+      )
+      releaseState()
+      await wait(
+        () => agentSession.state.url === origin + '/profile-state',
+        'Successful agent navigation must publish the recovered address',
+      )
+    } finally {
+      releaseState()
+      agentSession.cdp.send = send
+    }
     await browsers.close('agent-unavailable')
     const session = await browsers.sessions.get('unavailable')
     console.log('Remote browsers: checking crash cleanup')

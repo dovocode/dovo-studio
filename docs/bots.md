@@ -26,10 +26,11 @@ its reply so you can keep talking. The existing subagent inbox returns results a
 This is model guidance, not a guarantee that every harness will delegate. User and repository
 restrictions still apply. Children keep their own resources and cannot use private Bot memory.
 
-Bots appear above pinned threads in Unified and at the top of the mobile thread overview. Pinned
-Bots come first. Each group sorts by the latest prompt or turn activity. A bubble shows unread
-activity. Use the avatar menu or touch and hold on mobile to pin a Bot. The Bots activity tab
-reopens the last selected Bot on the active computer during this app session.
+Bots appear in a row above desktop Threads and Unified, and at the top of mobile Tasks. Use **+** at
+the end of the row to create a Bot. An empty row still shows **+**. Pinned Bots come first. Each
+group sorts by the latest prompt or turn activity. A bubble shows unread activity. Use the avatar
+menu or touch and hold on mobile to pin a Bot. The Bots activity tab reopens the last selected Bot
+on the active computer during this app session.
 
 In a normal thread, type `@` and choose a Bot to insert its name and computer-specific Studio
 reference. This does not send a request, read its private memory or start a Bot turn.
@@ -54,6 +55,9 @@ before generating another preview.
 Select **Use avatar** to apply a preview, **Discard preview** to keep the current avatar, or
 **Remove avatar** to return to the default icon. Uploads accept PNG, JPEG, WebP and GIF up to 5 MB.
 The runtime stores a 128-pixel square WebP thumbnail without image metadata.
+
+Bots do not have Settle, Snooze, Archive or Delete thread controls. Use Pause/Resume and Delete Bot
+in Bot settings. The runtime also rejects settling, snoozing and archiving a Bot.
 
 ## Reset context
 

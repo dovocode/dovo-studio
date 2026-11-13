@@ -1,3 +1,4 @@
+import { CreateBot } from '../bots/bot-create'
 import { BotStrip } from '../bots/bot-strip'
 import { requestMessageReveal } from '../tasks/conversation/message-reveal'
 import {
@@ -8,7 +9,6 @@ import {
   supportsSettledSummaryPaging,
 } from '@dovo/protocol'
 import { useTaskSearch } from '../tasks/list/use-task-search'
-import { WorkspaceModes } from '../workspace/workspace-modes'
 import { EmptyState } from '../ui/content/empty-state'
 import { useTaskPanes } from '../shell/task-panes'
 import { contentColumn } from '../ui/layout/content-column'
@@ -94,7 +94,19 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   const { view, setView, scrollOffset } = useTaskListView()
   const car = useCarMode() && !archived
   const searchInput = useRef<ComponentRef<typeof TextInput>>(null)
-  const focusSearch = useCallback(() => searchInput.current?.focus(), [])
+  const [searchRevealed, setSearchRevealed] = useApplicationState(false)
+  const [searchFocused, setSearchFocused] = useApplicationState(false)
+  const [searchFocusRequested, setSearchFocusRequested] = useApplicationState(false)
+  const searchDrag = useRef<{ last: number; distance: number } | null>(null)
+  const focusSearch = useCallback(() => {
+    setSearchRevealed(true)
+    setSearchFocusRequested(true)
+  }, [setSearchRevealed, setSearchFocusRequested])
+  useEffect(() => {
+    if (!searchFocusRequested) return
+    searchInput.current?.focus()
+    setSearchFocusRequested(false)
+  }, [searchFocusRequested, setSearchFocusRequested])
   useKeyboardSearch(focusSearch, focused && !archived && !car && ready && profiles.length > 0)
   const moreActions = useMoreActions(navigate)
   // List ordering and grouping follow Settings → General.
@@ -106,6 +118,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     : car
       ? { ...view, search: '', sort: 'priority', project: '' }
       : { ...view, sort: preferences.taskSort }
+  const [creatingBot, setCreatingBot] = useApplicationState(false)
   const [organizing, setOrganizing] = useApplicationState(false)
   const [filtering, setFiltering] = useApplicationState(false)
   const filterSheet = useRef<SheetHandle>(null)
@@ -745,9 +758,15 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               ]
         }
       />
-      {!car && !archived && <WorkspaceModes mode="tasks" />}
       {!car && (
-        <View style={{ ...contentColumn.collection, paddingHorizontal: 16, paddingBottom: 8 }}>
+        <View
+          style={{
+            ...contentColumn.collection,
+            paddingHorizontal: 16,
+            paddingBottom: 8,
+            display: searchRevealed || searchFocused || search.length > 0 ? 'flex' : 'none',
+          }}
+        >
           <SearchField
             inputRef={searchInput}
             label={archived ? 'Search archived tasks' : 'Search tasks'}
@@ -756,6 +775,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             clearButtonMode="while-editing"
             returnKeyType="search"
             value={search}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             onChangeText={(search) => {
               scrollOffset.current = 0
               setView((current) => ({ ...current, search }))
@@ -873,9 +894,42 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           )}
         </Sheet>
       )}
+      {creatingBot && (
+        <CreateBot
+          onClose={() => setCreatingBot(false)}
+          onCreated={(id, runtimeId) => {
+            setCreatingBot(false)
+            navigate('tasks', id, runtimeId)
+          }}
+        />
+      )}
       {organizing && <SectionOrderSheet onClose={() => setOrganizing(false)} />}
       <FlatList
         {...listScroll}
+        onScrollBeginDrag={(event) => {
+          listScroll.onScrollBeginDrag()
+          searchDrag.current = { last: event.nativeEvent.contentOffset.y, distance: 0 }
+        }}
+        onScroll={(event) => {
+          listScroll.onScroll(event)
+          const drag = searchDrag.current
+          if (!drag) return
+          const y = event.nativeEvent.contentOffset.y
+          const delta = y - drag.last
+          drag.last = y
+          drag.distance =
+            Math.sign(delta) === Math.sign(drag.distance) ? drag.distance + delta : delta
+          if (Math.abs(drag.distance) < 12) return
+          setSearchRevealed(drag.distance < 0)
+          drag.distance = 0
+        }}
+        onScrollEndDrag={() => {
+          searchDrag.current = null
+        }}
+        onScrollToTop={(event) => {
+          listScroll.onScrollToTop(event)
+          setSearchRevealed(true)
+        }}
         contentInsetAdjustmentBehavior="automatic"
         data={expandedItems}
         testID="Task list"
@@ -920,6 +974,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           <View style={{ gap: 4 }}>
             {!archived && !car && (
               <BotStrip
+                onCreate={() => setCreatingBot(true)}
+                createDisabled={
+                  !overviews.some((owner) => owner.connected && owner.snapshot?.botsSupported)
+                }
                 entries={[...rowData.values()].filter(
                   ({ row }) =>
                     row.task.bot &&

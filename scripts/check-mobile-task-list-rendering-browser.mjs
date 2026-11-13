@@ -12,13 +12,14 @@ const controls = `
 import {createContext,useContext,forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
 const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
-export const View=({children,accessibilityLabel,style,testID,ref,onLayout})=>{const node=useRef(null);useImperativeHandle(ref,()=>({nativeElement:node.current,measureLayout:(parent,done)=>{const bounds=node.current.getBoundingClientRect(),origin=parent.nativeElement.getBoundingClientRect();done(bounds.x-origin.x,bounds.y-origin.y,bounds.width,bounds.height)}}));useLayoutEffect(()=>{if(!onLayout)return;const measure=()=>onLayout({nativeEvent:{layout:{height:node.current.getBoundingClientRect().height}}});measure();const observer=new ResizeObserver(measure);observer.observe(node.current);return ()=>observer.disconnect()},[onLayout]);return <div ref={node} data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>};
+export const View=({children,accessibilityLabel,style,testID,ref,onLayout})=>{const node=useRef(null);useImperativeHandle(ref,()=>({nativeElement:node.current,measureLayout:(parent,done)=>{const bounds=node.current.getBoundingClientRect(),origin=parent.nativeElement.getBoundingClientRect();done(bounds.x-origin.x,bounds.y-origin.y,bounds.width,bounds.height)}}));useLayoutEffect(()=>{if(!onLayout)return;const measure=()=>onLayout({nativeEvent:{layout:{height:node.current.getBoundingClientRect().height}}});measure();const observer=new ResizeObserver(measure);observer.observe(node.current);return ()=>observer.disconnect()},[onLayout]);return <div ref={node} data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity,display:flat(style).display}}>{children}</div>};
 export const Text=({children,accessibilityRole,numberOfLines,style})=>{const value=flat(style),scale=window.rowFontScale??1;return <span role={accessibilityRole} style={window.rowLayout?{display:'block',minWidth:0,...nativeStyle({...value,fontSize:(value.fontSize??13)*scale,...(value.lineHeight?{lineHeight:value.lineHeight*scale}:{})}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}:value}>{children}</span>};
 export const Image=({source})=><span data-project-image={source?.uri}/>;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
-export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentContainerStyle},ref){
+export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentContainerStyle,onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop},ref){
+  window.listScrollHandlers={onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop};
   useImperativeHandle(ref,()=>({scrollToOffset:()=>{}}),[]);
   return <div data-testid={testID} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',...nativeStyle(contentContainerStyle)}:undefined}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}<div data-list-footer style={{display:'flex',flexDirection:'column',...nativeStyle(ListFooterComponentStyle)}}>{ListFooterComponent}</div></div>
 });
@@ -30,7 +31,7 @@ export const Icon=({name})=><i data-icon={name}/>;
 export const IconButton=({label,onPress,disabled})=><button aria-label={label} onClick={onPress} disabled={disabled}>{label}</button>;
 export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;
 export const SettingsAction=Action;
-export const SettingsSearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
+export const SettingsSearchField=({label,value,onChangeText,inputRef,onFocus,onBlur})=><input ref={inputRef} aria-label={label} value={value} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>;
 const SheetNavigation=window.fixtureSheetNavigation??=createContext(callback=>callback());
 export const useSheetNavigation=()=>useContext(SheetNavigation);
 export const Sheet=forwardRef(function Sheet({title,children,onClose},ref){const parent=useSheetNavigation();const dismiss=after=>{onClose();after?.()};useImperativeHandle(ref,()=>({dismiss}));return <div role="dialog" aria-label={title}><SheetNavigation.Provider value={callback=>dismiss(()=>parent(callback))}>{children}</SheetNavigation.Provider><button onClick={onClose}>Close details</button></div>});
@@ -40,6 +41,12 @@ export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
 const preferenceModule = `export * from '${mobile}runtime/preferences/app-preferences.ts';`
 const stubs = [
+  {
+    path: '../bots/bot-create',
+    importer: mobile + 'screens/',
+    contents:
+      'export const CreateBot=({onClose,onCreated})=><section role="dialog" aria-label="Create Bot"><button onClick={onClose}>Cancel Bot creation</button><button onClick={()=>onCreated("created-bot","r")}>Complete Bot creation</button></section>;',
+  },
   {
     path: 'expo-crypto',
     contents: `let id=0;export const randomUUID=()=>'00000000-0000-4000-8000-'+String(++id).padStart(12,'0');`,
@@ -109,11 +116,6 @@ export const startRuntimeSync=(connection,options)=>{
     path: '../shell/navigation',
     importer: mobile + 'screens/tasks.tsx',
     contents: `export const useNavigation=()=>window.navigation;`,
-  },
-  {
-    path: '../workspace/workspace-modes',
-    importer: mobile + 'screens/tasks.tsx',
-    contents: 'export const WorkspaceModes=()=>null;',
   },
   {
     path: '../tasks/list/section-order-sheet',
@@ -193,6 +195,9 @@ for (const [path, importer] of [
   ['../../ui/content/text', 'tasks/list/'],
   ['../../ui/controls/icon', 'tasks/list/'],
   ['../../ui/theme', 'tasks/list/'],
+  ['../../ui/content/text', 'tasks/detail/lifecycle-actions.tsx'],
+  ['../../ui/controls/action', 'tasks/detail/lifecycle-actions.tsx'],
+  ['../../ui/theme', 'tasks/detail/lifecycle-actions.tsx'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
   ['../theme', 'ui/content/empty-state.tsx'],
   ['./text', 'ui/content/empty-state.tsx'],
@@ -228,7 +233,6 @@ for (const path of [
   stubs.push({ path, importer: mobile + 'workspace/', contents: workspaceControls })
 for (const [path, contents] of [
   ['../shell/more-actions', 'export const useMoreActions=()=>[];'],
-  ['./workspace-modes', 'export const WorkspaceModes=()=>null;'],
   ['./workspace-starter', 'export const WorkspaceStarter=()=>null;'],
   ['./standalone-row', 'export const StandaloneRow=()=>null;'],
   ['./resource-actions', 'export const ResourceActions=()=>null;'],
@@ -242,6 +246,8 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';
 import {Effect} from 'effect';
+import {LifecycleActions} from './apps/mobile/src/tasks/detail/lifecycle-actions';
+import {dispatchKeyboardSearch} from './apps/mobile/src/shell/keyboard-search';window.focusTaskSearch=dispatchKeyboardSearch;
 import {TaskPanesContext} from './apps/mobile/src/shell/task-panes';
 import {runtimeProfile,runtimeSnapshotPath} from '@dovo/protocol';
 import {studioThemes} from './packages/studio-core/src/themes.ts';
@@ -280,7 +286,7 @@ window.publish=changes=>flushSync(()=>{
 });
 function Probe(){window.runtime=useRuntime();window.messageReveal=useMessageReveal();return null}
 function PaneProbe({children}){const runtime=useRuntime();const {setView}=useTaskListView();window.resetThreadList=()=>setView({project:'',search:'',filter:'active',source:'all',sort:'newest'});const[sources,setSources]=useState(null);window.setListSources=value=>flushSync(()=>setSources(value));const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={sources?{...runtime,activeId:'shared-peer',overviews:sources,profiles:sources.map(source=>source.profile),selectRuntimeEffect:id=>window.holdSelection?Effect.promise(()=>new Promise(resolve=>window.releaseSelection=resolve)):runtime.selectRuntimeEffect(id)}:showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
-function Screen(){const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);window.showThreads=()=>setOverview(false);return overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
+function Screen(){const[lifecycle,setLifecycle]=useState(null);window.showBotLifecycle=setLifecycle;const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);window.showThreads=()=>setOverview(false);return lifecycle?<LifecycleActions task={lifecycle}/>:overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><Screen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
 `,
     },
@@ -765,6 +771,36 @@ try {
     'Compact gives the title its own line',
   )
   const historyInput = page.getByRole('textbox', { name: 'Search tasks', exact: true })
+  assert.equal(await historyInput.isVisible(), false, 'Search starts hidden')
+  const scrollSearch = async (from, to) => {
+    await page.evaluate(
+      ({ from, to }) => {
+        const event = (y) => ({ nativeEvent: { contentOffset: { y } } })
+        window.listScrollHandlers.onScrollBeginDrag(event(from))
+        window.listScrollHandlers.onScroll(event(to))
+        window.listScrollHandlers.onScrollEndDrag()
+      },
+      { from, to },
+    )
+  }
+  await scrollSearch(0, 40)
+  assert.equal(await historyInput.isVisible(), false)
+  await scrollSearch(40, 20)
+  await historyInput.waitFor({ state: 'visible' })
+  await scrollSearch(20, 40)
+  await historyInput.waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.focusTaskSearch())
+  await historyInput.waitFor({ state: 'visible' })
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'Search tasks',
+  )
+  await historyInput.fill('active query')
+  await scrollSearch(0, 40)
+  assert.equal(await historyInput.isVisible(), true, 'Keep a focused query visible')
+  await historyInput.blur()
+  assert.equal(await historyInput.isVisible(), true, 'Keep a nonempty query visible')
+  await scrollSearch(40, 20)
+
   await historyInput.fill('old history')
   await page.waitForFunction(() => !!window.finishOldSearch)
   await page.getByText('Searching conversation history…', { exact: true }).waitFor()
@@ -1867,6 +1903,7 @@ try {
       window.holdSelection = true
       window.navigations = []
     })
+    await scrollSearch(40, 20)
     await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('history needle')
     const message = page.getByRole('button', {
       name: 'Open assistant message in Startup real thread on Owner',
@@ -1940,7 +1977,56 @@ try {
   await botTile.waitFor()
   await botTile.click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'lasting-bot')
-  await page.evaluate(() => window.showOverview())
+  const newBot = page.getByRole('button', { name: 'New Bot', exact: true })
+  await newBot.waitFor()
+  assert.equal(await newBot.isEnabled(), true)
+  assert.equal(await newBot.evaluate((node) => node.parentElement.lastElementChild === node), true)
+  await newBot.click()
+  await page.getByRole('dialog', { name: 'Create Bot' }).waitFor()
+  await page.getByRole('button', { name: 'Cancel Bot creation' }).click()
+  await page.getByRole('dialog', { name: 'Create Bot' }).waitFor({ state: 'detached' })
+  await page.evaluate(() => {
+    const owner = structuredClone(window.startupSources.owner)
+    owner.connected = true
+    owner.snapshot.botsSupported = true
+    owner.snapshot.workspace.tasks = []
+    window.setListSources([owner])
+  })
+  await botTile.waitFor({ state: 'detached' })
+  await newBot.waitFor()
+  await newBot.click()
+  await page.getByRole('dialog', { name: 'Create Bot' }).waitFor()
+  await page.getByRole('button', { name: 'Cancel Bot creation' }).click()
+  await page.evaluate(() => {
+    const owner = structuredClone(window.startupSources.owner)
+    owner.connected = false
+    owner.snapshot.botsSupported = true
+    window.setListSources([owner])
+  })
+  await page.waitForFunction(() => document.querySelector('[aria-label="New Bot"]')?.disabled)
+  // Restore the Bot used by the mixed-list engine checks below.
+  await page.evaluate(() => {
+    const owner = structuredClone(window.startupSources.owner)
+    owner.connected = true
+    owner.snapshot.workspace.tasks = [
+      {
+        ...owner.snapshot.workspace.tasks[0],
+        id: 'lasting-bot',
+        title: 'Lasting release Bot',
+        status: 'done',
+        bot: {
+          role: 'Release lead',
+          responsibilities: 'Check releases',
+          state: 'paused',
+          revision: '11111111-1111-4111-8111-111111111111',
+          createdAt: '2026-11-12T00:00:00Z',
+          updatedAt: '2026-11-12T00:00:00Z',
+        },
+      },
+    ]
+    window.setListSources([owner])
+    window.showOverview()
+  })
   const botRow = page.getByTestId('Workspace thread Lasting release Bot')
   await botRow.waitFor()
   assert.equal(await botRow.count(), 1)
@@ -1950,6 +2036,28 @@ try {
   assert.equal(await botRow.getByTestId('Bot identity').count(), 1)
   await botRow.click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'lasting-bot')
+  await page.evaluate(() =>
+    window.showBotLifecycle(
+      window.startupSources.owner.snapshot.workspace.tasks.find((task) => task.bot) ?? {
+        ...window.startupSources.owner.snapshot.workspace.tasks[0],
+        bot: { role: 'Assistant', state: 'active' },
+      },
+    ),
+  )
+  await page.getByRole('button', { name: 'Pin Bot', exact: true }).waitFor()
+  for (const name of [
+    'Settle task',
+    'Reopen task',
+    'Snooze',
+    'Archive thread',
+    'Restore thread',
+    'Delete thread…',
+  ])
+    assert.equal(
+      await page.getByRole('button', { name, exact: true }).count(),
+      0,
+      `Hide ${name} for Bots`,
+    )
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )

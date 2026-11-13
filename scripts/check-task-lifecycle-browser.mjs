@@ -16,7 +16,7 @@ const built = await build({
       const initial=createTask({title:'Remote task',objective:'',agentId:'',repositoryId:'repo'});
       window.writes=[];window.fail=false;window.localWrites=0;
       function App(){
-        const [task,setTask]=useState(initial);const [snoozeMinutes,setSnoozeMinutes]=useState(undefined);window.snoozeMinutes=snoozeMinutes;window.changeSnoozeMinutes=setSnoozeMinutes;
+        const [task,setTask]=useState(initial);window.makeBot=()=>setTask(task=>({...task,bot:{role:"Assistant",state:"active"}}));const [snoozeMinutes,setSnoozeMinutes]=useState(undefined);window.snoozeMinutes=snoozeMinutes;window.changeSnoozeMinutes=setSnoozeMinutes;
         const owner={runtimeId:'remote',name:'Remote',online:true};
         window.store={activeRuntimeId:'local',runtimeRegistry:{profiles:[profile]},
           request:async()=>{window.localWrites++;throw new Error('Wrong server')},
@@ -111,6 +111,9 @@ try {
   })
   await page.getByRole('button', { name: 'Settle thread' }).click()
   await page.getByRole('button', { name: 'Reopen thread' }).waitFor()
+  await page.evaluate(() => window.makeBot())
+  await page.getByRole('button', { name: 'Reopen thread' }).waitFor({ state: 'detached' })
+  assert.equal(await page.getByRole('button').count(), 0, 'Bots have no thread lifecycle buttons')
   assert.deepEqual(errors, [])
   console.log(
     'Sidebar lifecycle actions snooze, settle and reopen on the owning server; failed writes remain visible and retryable.',

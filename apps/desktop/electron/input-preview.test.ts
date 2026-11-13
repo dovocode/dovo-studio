@@ -198,6 +198,7 @@ it('answers in a non-activating macOS panel without opening the main window', as
   )
   const { invoke } = await fixture()
   expect(f.windows[1].options?.type).toBe(process.platform === 'darwin' ? 'panel' : undefined)
+  expect(f.windows[1].focused).toBe(false)
   await invoke('answer', { key: inputPreviewKey(item), answer: { choice: ['yes'] } })
   expect(f.windows[1].visible).toBe(false)
   expect(f.windows[0].visible).toBe(false)

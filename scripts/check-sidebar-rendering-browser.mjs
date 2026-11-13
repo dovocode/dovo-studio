@@ -1201,6 +1201,53 @@ try {
     await page.mouse.move(800, 650)
     await page.screenshot({ path: process.env.DOVO_UI_SCREENSHOT })
   }
+  // Bots use their own row above thread groups, including an empty creation tile.
+  await page.evaluate(() => {
+    window.setMounted(true)
+    window.setProject('')
+    const base = window.initialTasks[0]
+    const bot = (id, pinned, updatedAt) => ({
+      ...base,
+      id,
+      title: id,
+      repositoryId: '',
+      status: 'done',
+      pinned,
+      createdAt: updatedAt,
+      lastPromptAt: updatedAt,
+      updatedAt,
+      bot: { role: 'Assistant', state: 'active' },
+      messages: [],
+      turns: [],
+    })
+    window.publish([
+      bot('Old pinned Bot', true, '2026-11-01T00:00:00Z'),
+      bot('Recent Bot', false, '2026-11-13T00:00:00Z'),
+      bot('Earlier Bot', false, '2026-11-02T00:00:00Z'),
+      ...window.initialTasks,
+    ])
+  })
+  const bots = page.getByRole('region', { name: 'Bots', exact: true })
+  await bots.waitFor()
+  const botButtons = bots.getByRole('button')
+  await page.getByRole('button', { name: /^Open Bot Recent Bot on / }).waitFor()
+  assert.deepEqual(
+    await botButtons.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
+    [
+      'Open Bot Old pinned Bot on Local',
+      'Open Bot Recent Bot on Local',
+      'Open Bot Earlier Bot on Local',
+      'New Bot',
+    ],
+  )
+  await page.getByRole('button', { name: /^Open Bot Recent Bot on / }).click()
+  assert.equal(await page.evaluate(() => window.selected.task.id), 'Recent Bot')
+  await page.evaluate(() => window.publish(window.initialTasks))
+  await page
+    .getByRole('button', { name: /^Open Bot Recent Bot on / })
+    .waitFor({ state: 'detached' })
+  assert.equal(await bots.getByRole('button').count(), 1)
+  assert.equal(await bots.getByRole('button', { name: 'New Bot', exact: true }).isVisible(), true)
   assert.deepEqual(errors, [])
   console.log(
     `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree renders for 30 large Studio/native child-payload updates and one tree render per visible activity/name change; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,

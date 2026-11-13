@@ -1124,8 +1124,7 @@ try {
     allow: false,
     decision: 'deny',
   })
-  // Empty-composer Enter approves its single request, before the editor consumes it.
-  // Nonempty input, other threads, modifiers and ambiguous requests keep their own keys.
+  // Requests never take focus or consume keys from an empty composer.
   const savedDraft = await input.inputValue()
   await input.fill('')
   await input.press('Enter')
@@ -1153,6 +1152,14 @@ try {
     approvalsBefore + 2,
   )
   await input.press('Enter')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path === '/api/approvals').length,
+    ),
+    approvalsBefore + 2,
+  )
+  await page.locator('[data-approval-id="empty-enter"]').focus()
+  await page.keyboard.press('Enter')
   await page.waitForFunction(
     (count) =>
       window.requests.filter((item) => item.path === '/api/approvals').length === count + 3,
@@ -1163,7 +1170,7 @@ try {
     allow: true,
     decision: 'approve',
   })
-  // Rich empty documents use the editor's content marker, including non-text content.
+  // Rich editors keep their keys, with or without content.
   await page.evaluate(() => {
     const editor = document.createElement('div')
     editor.contentEditable = 'true'
@@ -1176,10 +1183,11 @@ try {
   const richEmpty = page.locator('#rich-empty-shortcut')
   await richEmpty.focus()
   await richEmpty.press('Enter')
-  await page.waitForFunction(
-    (count) =>
-      window.requests.filter((item) => item.path === '/api/approvals').length === count + 4,
-    approvalsBefore,
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path === '/api/approvals').length,
+    ),
+    approvalsBefore + 3,
   )
   await richEmpty.evaluate((editor) => {
     delete editor.dataset.empty
@@ -1190,7 +1198,7 @@ try {
     await page.evaluate(
       () => window.requests.filter((item) => item.path === '/api/approvals').length,
     ),
-    approvalsBefore + 4,
+    approvalsBefore + 3,
   )
   await richEmpty.evaluate((editor) => {
     editor.dataset.empty = ''
@@ -1201,7 +1209,7 @@ try {
     await page.evaluate(
       () => window.requests.filter((item) => item.path === '/api/approvals').length,
     ),
-    approvalsBefore + 4,
+    approvalsBefore + 3,
   )
   await richEmpty.evaluate((editor) => editor.remove())
   await input.fill(savedDraft)
