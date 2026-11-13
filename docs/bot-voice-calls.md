@@ -53,8 +53,8 @@ Unit tests use scripted microphone and speech drivers. The runtime test uses HTT
 message queue, and a scripted agent. Browser checks mount both real call components with fixture
 native controls and audio. A separate Chromium check uses real microphone capture and AudioWorklet
 processing with a generated speech/silence recording and a scripted transcription bridge. These
-checks do not establish microphone quality, native audio routing,
-spoken language quality, or live model performance on physical devices.
+checks do not establish microphone quality, native audio routing, spoken language quality, or live
+model performance on physical devices.
 
 This call mode uses transcription and system speech. It does not use a Codex/OpenAI realtime voice
 relay, telephone numbers, incoming calls, or background microphone capture.
