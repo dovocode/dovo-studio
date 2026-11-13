@@ -111,7 +111,7 @@ try {
     'dovo-stored-secret:opaque',
   )
   assert.equal(await page.evaluate(() => window.resources.disabledMcpServers.length), 0)
-  await page.getByRole('button', { name: 'Add Bot skill', exact: true }).click()
+  await page.getByRole('button', { name: 'Add skill', exact: true }).click()
   await page.getByLabel('Skill name', { exact: true }).fill('release-check')
   await page.getByLabel('When to use', { exact: true }).fill('Check a release')
   await page.getByLabel('Skill instructions', { exact: true }).fill('Use the release checklist')
@@ -121,7 +121,7 @@ try {
   await page.getByRole('button', { name: 'Enable skill release-check', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.resources.mcpServers[0].command), 'new-command')
   assert.equal(await page.evaluate(() => window.resources.disabledMcpServers.length), 0)
-  await page.getByRole('button', { name: 'Add Bot skill', exact: true }).click()
+  await page.getByRole('button', { name: 'Add skill', exact: true }).click()
   await page.getByLabel('Skill name', { exact: true }).fill('shared-skill')
   await page.getByLabel('When to use', { exact: true }).fill('Bot override')
   await page.getByLabel('Skill instructions', { exact: true }).fill('Bot-only instructions')

@@ -78,7 +78,7 @@ export function BotAvatarEditor({
       retain({ ...draft, preview: undefined, request: undefined })
     })
   return (
-    <section aria-label="Bot avatar" className="grid gap-3">
+    <section aria-label="Avatar" className="grid gap-3">
       <h2 className="font-semibold">Avatar</h2>
       <BotAvatar avatar={draft.preview ?? task.bot?.avatar} name={task.title} className="size-20" />
       {!snapshot?.botAvatarsSupported && (

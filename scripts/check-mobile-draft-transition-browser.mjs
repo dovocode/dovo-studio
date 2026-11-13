@@ -1150,25 +1150,27 @@ try {
     await page.evaluate(() =>
       Object.fromEntries(
         window.headerActions
-          .filter((action) => action.label.startsWith('Bot '))
+          .filter((action) =>
+            ['Settings', 'MCP servers', 'Skills', 'Memory', 'Routines'].includes(action.label),
+          )
           .map((action) => [action.label, action.icon]),
       ),
     ),
     {
-      'Bot settings': 'settings',
-      'Bot MCP servers': 'mcp',
-      'Bot skills': 'skill',
-      'Bot memory': 'memory',
-      'Bot routines': 'routines',
+      Settings: 'settings',
+      'MCP servers': 'mcp',
+      Skills: 'skill',
+      Memory: 'memory',
+      Routines: 'routines',
     },
   )
   await page.locator('header').getByRole('button', { name: 'Thread tools', exact: true }).click()
   for (const label of [
-    'Bot settings',
-    'Bot MCP servers',
-    'Bot skills',
-    'Bot memory',
-    'Bot routines',
+    'Settings',
+    'MCP servers',
+    'Skills',
+    'Memory',
+    'Routines',
     'Files',
     'Terminal',
     'Browser',

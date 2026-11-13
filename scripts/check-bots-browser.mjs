@@ -74,7 +74,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className,resizable=true,side})=><div style={resizable?{width:side==="right"?360:260,maxWidth:side==="right"?"45%":"30%",flexShrink:0}:undefined} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-tools': `export const TaskTools=({task,surface,onSelect})=>task.bot?<nav>{[['bot-settings','Bot settings'],['bot-mcp','Bot MCP servers'],['bot-skills','Bot skills'],['bot-memory','Bot memory'],['bot-routines','Bot routines']].map(([id,label])=><button key={id} onClick={()=>onSelect(surface===id?'chat':id)}>{label}</button>)}</nav>:null;`,
+  './detail/task-tools': `export const TaskTools=({task,surface,onSelect})=>task.bot?<nav>{[['bot-settings','Settings'],['bot-mcp','MCP servers'],['bot-skills','Skills'],['bot-memory','Memory'],['bot-routines','Routines']].map(([id,label])=><button key={id} onClick={()=>onSelect(surface===id?'chat':id)}>{label}</button>)}</nav>:null;`,
   './detail/task-header': `export const TaskHeader=({task,onSurface})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('side-chats')}>Open side chats</button></header>;`,
   './detail/task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../chat/thread/chat-thread': `import {TaskEmptyState} from '../extension-tasks/src/task-creation/task-empty-state';export const ChatThread=({task,emptyState})=>task.status==='draft'&&!task.messages.length?(emptyState??<TaskEmptyState task={task}/>):<div className="min-h-0 flex-1 overflow-auto p-4" data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
@@ -355,13 +355,13 @@ try {
     return document.activeElement === input && input.selectionStart === input.value.length
   })
   await composer().fill('Unsent Bot message')
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   assert.equal(await page.getByLabel('Bot project', { exact: true }).count(), 0)
   if (process.env.DOVO_BOT_STYLES) {
     for (const width of [1440, 960]) {
       await page.setViewportSize({ width, height: 900 })
       const composerBox = await composer().boundingBox()
-      const settingsBox = await page.getByLabel('Bot settings panel', { exact: true }).boundingBox()
+      const settingsBox = await page.getByLabel('Settings panel', { exact: true }).boundingBox()
       await page.screenshot({ path: '/tmp/dovo-bots-desktop-' + width + '.png' })
       assert.ok(
         composerBox && settingsBox && composerBox.x + composerBox.width <= settingsBox.x + 1,
@@ -397,25 +397,25 @@ try {
     .getByRole('button', { name: 'Remove avatar', exact: true })
     .waitFor({ state: 'hidden' })
   await page.getByLabel('Bot role', { exact: true }).fill('Unsaved role')
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   assert.equal(await composer().inputValue(), 'Unsent Bot message')
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   assert.equal(await page.getByLabel('Bot role', { exact: true }).inputValue(), 'Unsaved role')
-  await page.getByRole('button', { name: 'Bot skills', exact: true }).click()
-  await page.getByRole('button', { name: 'Add Bot skill', exact: true }).click()
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await page.getByRole('button', { name: 'Add skill', exact: true }).click()
   await page.getByRole('button', { name: 'Save fixture Bot skill', exact: true }).click()
   await page.waitForFunction(() =>
     window.all.one.tasks
       .find((t) => t.id === 'bot')
       .bot.resources?.skills.some((s) => s.name === 'bot-skill'),
   )
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.evaluate(() => (window.failUpdate = true))
-  await page.getByRole('button', { name: 'Save Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click()
   await page.getByText('Settings conflict. Draft kept.', { exact: true }).waitFor()
   assert.equal(await page.getByLabel('Bot role', { exact: true }).inputValue(), 'Unsaved role')
-  await page.getByRole('button', { name: 'Save Bot settings', exact: true }).click()
-  await page.getByText('Bot settings saved.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click()
+  await page.getByText('Settings saved.', { exact: true }).waitFor()
   assert.equal(
     await page.evaluate(() => window.all.one.tasks.find((t) => t.id === 'bot').bot.role),
     'Unsaved role',
@@ -424,16 +424,16 @@ try {
   await page.getByLabel('Bot role', { exact: true }).fill('Stale role draft')
   await page.evaluate(() => window.externalRole())
   await page.evaluate(() => window.remount())
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.evaluate(() => (window.noopResource = true))
-  await page.getByRole('button', { name: 'Bot skills', exact: true }).click()
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
   await page.getByRole('button', { name: 'Edit skill bot-skill', exact: true }).click()
   await page.getByRole('button', { name: 'Save fixture Bot skill', exact: true }).click()
   await page
     .getByRole('button', { name: 'Save fixture Bot skill', exact: true })
     .waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Save Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click()
   await page.getByText('Bot revision changed. Draft kept.', { exact: true }).waitFor()
   assert.equal(
     await page.evaluate(() => window.all.one.tasks.find((t) => t.id === 'bot').bot.role),
@@ -446,14 +446,14 @@ try {
   assert.equal(await composer().inputValue(), 'Unsent Bot message')
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Pause Bot', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Bot memory', exact: true }).click()
-  await page.getByLabel('Bot memory key', { exact: true }).fill('release')
-  await page.getByLabel('Bot memory note', { exact: true }).fill('Ship after checks pass')
+  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  await page.getByLabel('Memory key', { exact: true }).fill('release')
+  await page.getByLabel('Memory note', { exact: true }).fill('Ship after checks pass')
   await page.getByRole('button', { name: 'Save memory note', exact: true }).click()
   await page.getByRole('button', { name: 'release', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page
-    .getByLabel('Bot settings panel', { exact: true })
+    .getByLabel('Settings panel', { exact: true })
     .getByRole('button', { name: 'Change Bot model', exact: true })
     .click()
   await page.waitForFunction(
@@ -492,9 +492,9 @@ try {
     .getByRole('button')
     .first()
     .click()
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByLabel('Bot role', { exact: true }).fill('Owner two role')
-  await page.getByRole('button', { name: 'Save Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click()
   await page.waitForFunction(
     () => window.all.two.tasks.find((t) => t.id === 'bot').bot.role === 'Owner two role',
   )
@@ -505,7 +505,7 @@ try {
     .getByRole('button')
     .first()
     .click()
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.waitForFunction(
     () => document.querySelector('input[aria-label="Bot role"]')?.value === 'Owner one draft',
   )
@@ -513,11 +513,11 @@ try {
   await page.evaluate(() => window.setOffline(true))
   await page.waitForFunction(() =>
     [...document.querySelectorAll('button')].some(
-      (button) => button.textContent.trim() === 'Save Bot settings' && button.matches(':disabled'),
+      (button) => button.textContent.trim() === 'Save settings' && button.matches(':disabled'),
     ),
   )
   assert.equal(
-    await page.getByRole('button', { name: 'Save Bot settings', exact: true }).isDisabled(),
+    await page.getByRole('button', { name: 'Save settings', exact: true }).isDisabled(),
     true,
   )
   await page.evaluate(() => {
@@ -526,11 +526,11 @@ try {
   })
   await page.waitForFunction(() =>
     [...document.querySelectorAll('button')].some(
-      (button) => button.textContent.trim() === 'Save Bot settings' && button.matches(':disabled'),
+      (button) => button.textContent.trim() === 'Save settings' && button.matches(':disabled'),
     ),
   )
   assert.equal(
-    await page.getByRole('button', { name: 'Save Bot settings', exact: true }).isDisabled(),
+    await page.getByRole('button', { name: 'Save settings', exact: true }).isDisabled(),
     true,
   )
   await page.evaluate(() => {
@@ -539,7 +539,7 @@ try {
   })
   await page.locator('textarea[data-task-id="chat"]').waitFor()
   assert.equal(
-    await page.getByRole('button', { name: 'Bot settings', exact: true }).count(),
+    await page.getByRole('button', { name: 'Settings', exact: true }).count(),
     0,
     'Normal chats have no Bot controls',
   )
@@ -551,7 +551,7 @@ try {
   await page.getByRole('button', { name: 'Create Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Retry creation', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Retry creation', exact: true }).click()
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('heading', { name: 'Assistant', exact: true }).waitFor()
   const creates = await page.evaluate(() =>
     window.calls.filter((call) => call.path === '/api/bots/create'),
@@ -598,7 +598,7 @@ try {
   assert.equal(
     await page.getByLabel('Harness', { exact: true }).count(),
     0,
-    'Routine uses Bot settings',
+    'Routine uses Settings',
   )
   await page.evaluate(() => window.fresh(false))
   await page.getByRole('button', { name: 'New Bot', exact: true }).click()
@@ -617,7 +617,7 @@ try {
   await page.getByLabel('Bot name', { exact: true }).fill('First run Bot')
   await page.getByLabel('Bot role', { exact: true }).fill('First assistant')
   await page.getByRole('button', { name: 'Create Bot', exact: true }).click()
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('heading', { name: 'Assistant', exact: true }).waitFor()
   const firstRun = await page.evaluate(
     () => window.calls.filter((call) => call.path === '/api/bots/create').at(-1).input.createTask,
@@ -1389,7 +1389,7 @@ try {
       return false
     }
   })
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
   assert.equal(
     await page.evaluate(() => window.calls.filter((c) => c.path === '/api/tasks/lifecycle').length),
@@ -1436,7 +1436,7 @@ try {
     window.deferBotDelete = true
   })
   await page.locator('textarea[data-task-id="late-delete"]').waitFor()
-  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
   await page.waitForFunction(() => typeof window.releaseBotDelete === 'function')
   await page.evaluate(() => window.route({ viewId: 'runtime' }))

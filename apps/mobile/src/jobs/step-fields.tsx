@@ -179,7 +179,7 @@ export function StepFields({
                 />
               )}
               {!workspace.repositories.length && (
-                <Text style={styles.muted}>Add a project in Tasks → Projects first.</Text>
+                <Text style={styles.muted}>Add a project in Threads → Projects first.</Text>
               )}
               <Choice
                 label="Checkout"

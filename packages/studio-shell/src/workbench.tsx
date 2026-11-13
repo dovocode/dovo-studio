@@ -226,6 +226,7 @@ function WorkbenchContent({
   windowColors,
 }: WorkbenchProps) {
   const {
+    botsOverviewEnabled,
     showIssues,
     showJira,
     browserWorkspaceEnabled,
@@ -954,6 +955,7 @@ function WorkbenchContent({
         view.navigationGroup !== 'hidden' &&
         (view.id !== 'browser' || browserWorkspaceEnabled) &&
         (view.id !== 'workspace' || unifiedWorkspaceEnabled) &&
+        (view.id !== 'bots' || botsOverviewEnabled) &&
         workspaceModeVisible(view.id, workspaceModes) &&
         (view.id !== 'artifacts' || artifactsEnabled) &&
         (view.id !== 'issues' || showIssues) &&
@@ -1044,7 +1046,8 @@ function WorkbenchContent({
                 onUpdate={updates ? () => void updates.install() : undefined}
                 onCheckUpdates={updates ? () => void updates.check() : undefined}
                 views={catalog.views.filter((view) =>
-                  !workspaceModeVisible(view.id, workspaceModes)
+                  !workspaceModeVisible(view.id, workspaceModes) ||
+                  (view.id === 'bots' && !botsOverviewEnabled)
                     ? false
                     : view.id === 'workspace'
                       ? unifiedWorkspaceEnabled

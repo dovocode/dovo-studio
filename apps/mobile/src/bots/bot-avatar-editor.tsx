@@ -88,7 +88,7 @@ export function BotAvatarEditor({
       retain({ ...draft, preview: undefined, request: undefined })
     })
   return (
-    <Sheet title="Bot avatar" onClose={onClose}>
+    <Sheet title="Avatar" onClose={onClose}>
       <View style={{ gap: 12 }}>
         <BotAvatar name={task.title} avatar={draft.preview ?? task.bot?.avatar} size={96} />
         {!snapshot?.botAvatarsSupported && <Text>Update this runtime to set a Bot avatar.</Text>}

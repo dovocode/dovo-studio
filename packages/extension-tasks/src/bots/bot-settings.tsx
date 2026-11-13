@@ -211,7 +211,7 @@ export function BotSettings({
               }
               if (drafts.get(scope) === acknowledged) drafts.delete(scope)
               setDraft(undefined)
-              setNotice('Bot settings saved.')
+              setNotice('Settings saved.')
               await refresh()
             })
           }}
@@ -248,7 +248,7 @@ export function BotSettings({
               size="sm"
               disabled={!dirty || !value.name.trim() || !value.role.trim()}
             >
-              {busy ? 'Saving…' : 'Save Bot settings'}
+              {busy ? 'Saving…' : 'Save settings'}
             </Button>
           </fieldset>
           {dirty && (

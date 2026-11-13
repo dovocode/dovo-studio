@@ -90,7 +90,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.tasks} renderingMode="template" />
-        <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Threads</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="pulls"
@@ -436,7 +436,7 @@ export function Workbench() {
       }),
     )
   }
-  // Without a computer only Tasks (first-run welcome) and Settings have anything to show.
+  // Without a computer only Threads (first-run welcome) and Settings have anything to show.
   const selected =
     active === 'workspace'
       ? 'tasks'
@@ -642,7 +642,7 @@ export function Workbench() {
               title={
                 shortcuts.input.source === 'share'
                   ? 'New thread from share'
-                  : 'New task from Shortcut'
+                  : 'New thread from Shortcut'
               }
               onClose={() => {
                 void finishShortcut()

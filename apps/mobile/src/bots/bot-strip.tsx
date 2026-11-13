@@ -20,7 +20,7 @@ export function BotStrip({
   onOpen: (id: string, runtimeId: string) => void
 }) {
   const { colors, styles } = useTheme()
-  const { botLayout } = useMobilePreferences()
+  const { botLayout, botsInThreads } = useMobilePreferences()
   const rows = botLayout === 'rows'
   const horizontal = botLayout === 'horizontal'
   const width: DimensionValue = horizontal
@@ -30,7 +30,7 @@ export function BotStrip({
       : botLayout === 'grid-3'
         ? '33.333333%'
         : '100%'
-  if (!entries.length && !onCreate) return null
+  if (botsInThreads === false || (!entries.length && !onCreate)) return null
   const tiles = (
     <>
       {[...entries]
@@ -89,19 +89,6 @@ export function BotStrip({
       accessibilityLabel="Bots"
       style={{ gap: 6, paddingTop: 8, paddingBottom: 10 }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={[styles.muted, { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 }]}>
-          Bots
-        </Text>
-        {!!entries.length && (
-          <Text
-            accessibilityLabel={`${entries.length} Bots`}
-            style={[styles.muted, { fontSize: 10 }]}
-          >
-            {entries.length}
-          </Text>
-        )}
-      </View>
       {horizontal ? (
         <ScrollView
           horizontal

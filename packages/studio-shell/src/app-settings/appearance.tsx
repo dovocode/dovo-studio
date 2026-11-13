@@ -20,6 +20,8 @@ import { CodeThemeSettings } from './code-theme'
 export default function AppearanceSettings() {
   const {
     botLayout,
+    botsInThreads,
+    botsOverviewEnabled,
     theme,
     themePalette,
     themeGlow,
@@ -49,6 +51,26 @@ export default function AppearanceSettings() {
   return (
     <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
       <SettingsGroup title="Layout">
+        <SettingRow
+          label="Bots in thread overview"
+          description="Show Bots above thread groups in Threads and Unified."
+        >
+          <Toggle
+            label="Bots in thread overview"
+            checked={botsInThreads}
+            onChange={(botsInThreads) => updateAppPreferences({ botsInThreads })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Separate Bots overview"
+          description="Show Bots as a separate item in the navigation sidebar."
+        >
+          <Toggle
+            label="Separate Bots overview"
+            checked={botsOverviewEnabled}
+            onChange={(botsOverviewEnabled) => updateAppPreferences({ botsOverviewEnabled })}
+          />
+        </SettingRow>
         <SettingRow
           label="Bot layout"
           description="Show Bots as a horizontal row, a grid, or a list."

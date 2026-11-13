@@ -19,7 +19,7 @@ export default function Screen() {
         { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
       ]}
     >
-      <ScreenHeader title="Tasks" hidden />
+      <ScreenHeader title="Threads" hidden />
       <Text style={styles.title}>Select a thread</Text>
       <Text style={[styles.muted, { textAlign: 'center' }]}>
         Open a thread from the list, or start something new.

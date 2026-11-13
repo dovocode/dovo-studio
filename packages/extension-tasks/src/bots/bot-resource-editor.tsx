@@ -80,7 +80,7 @@ export function BotResourceEditor({
                   </small>
                 </span>
                 <Switch
-                  aria-label={`Enable Bot MCP ${server.name}`}
+                  aria-label={`Enable MCP server ${server.name}`}
                   disabled={disabled}
                   checked={server.enabled}
                   onCheckedChange={(enabled) =>
@@ -144,7 +144,7 @@ export function BotResourceEditor({
             disabled={disabled}
             onClick={() => setEditing({ kind: 'mcp' })}
           >
-            Add Bot MCP server
+            Add MCP server
           </Button>
         </>
       )}
@@ -172,7 +172,7 @@ export function BotResourceEditor({
                 </span>
                 <p className="text-xs text-muted-foreground">{skill.description}</p>
                 <Switch
-                  aria-label={`Enable Bot skill ${skill.name}`}
+                  aria-label={`Enable skill ${skill.name}`}
                   disabled={disabled}
                   checked={skill.enabled}
                   onCheckedChange={(enabled) =>
@@ -234,7 +234,7 @@ export function BotResourceEditor({
             disabled={disabled}
             onClick={() => setEditing({ kind: 'skill' })}
           >
-            Add Bot skill
+            Add skill
           </Button>
         </>
       )}

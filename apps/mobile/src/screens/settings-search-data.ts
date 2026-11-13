@@ -15,6 +15,8 @@ export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> =
     'Animations',
     'Thread density',
     'Bot layout',
+    'Bots in thread overview',
+    'Separate Bots overview',
     'Color scheme',
     'Terminal font',
     'Terminal font size',

@@ -198,7 +198,7 @@ function BotSettingsEditor({
             <Text>
               Pause holds new work. The current turn can finish. Use Stop in the chat to cancel it.
             </Text>
-            <Action label="Bot avatar" secondary onPress={() => setAvatar(true)} />
+            <Action label="Avatar" secondary onPress={() => setAvatar(true)} />
             <Action
               label="Harness, model and tool permissions"
               secondary
@@ -206,12 +206,12 @@ function BotSettingsEditor({
             />
             {snapshot?.botResourcesSupported && (
               <>
-                <Action label="Bot MCP servers" secondary onPress={() => setResources('mcp')} />
-                <Action label="Bot skills" secondary onPress={() => setResources('skill')} />
+                <Action label="MCP servers" secondary onPress={() => setResources('mcp')} />
+                <Action label="Skills" secondary onPress={() => setResources('skill')} />
               </>
             )}
-            <Action label="Bot routines" secondary onPress={() => setRoutines(true)} />
-            <Action label="Bot memory" secondary onPress={() => setMemory(true)} />
+            <Action label="Routines" secondary onPress={() => setRoutines(true)} />
+            <Action label="Memory" secondary onPress={() => setMemory(true)} />
             <Action
               label="Delete Bot…"
               secondary
@@ -285,7 +285,7 @@ function BotSettingsEditor({
           {harness && <HarnessSettings task={task} onClose={() => setHarness(false)} />}
           {memory && <BotMemory taskId={task.id} onClose={() => setMemory(false)} />}
           {routines && (
-            <Sheet title="Bot routines" onClose={() => setRoutines(false)}>
+            <Sheet title="Routines" onClose={() => setRoutines(false)}>
               <BotRoutines taskId={task.id} />
             </Sheet>
           )}

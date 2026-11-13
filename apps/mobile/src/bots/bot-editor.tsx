@@ -53,7 +53,7 @@ export function BotEditor({
   const { busy, error, act } = useAction()
   return (
     <Sheet
-      title="Bot settings"
+      title="Settings"
       busy={busy}
       onClose={onClose}
       footer={

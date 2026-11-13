@@ -1229,6 +1229,15 @@ try {
   })
   const bots = page.getByRole('region', { name: 'Bots', exact: true })
   await bots.waitFor()
+  assert.equal(await bots.getByRole('heading').count(), 0, 'The Bot strip has no visible title')
+  await page.evaluate(() =>
+    window.setListPreferences({ botsInThreads: false, botsOverviewEnabled: true }),
+  )
+  await bots.waitFor({ state: 'detached' })
+  await page.evaluate(() =>
+    window.setListPreferences({ botsInThreads: true, botsOverviewEnabled: false }),
+  )
+  await bots.waitFor()
   const botButtons = bots.getByRole('button')
   await page.getByRole('button', { name: /^Open Bot Recent Bot on / }).waitFor()
   assert.deepEqual(

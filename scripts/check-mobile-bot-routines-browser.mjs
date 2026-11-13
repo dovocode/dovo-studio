@@ -107,7 +107,7 @@ try {
   await page.getByLabel('Project', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile Bot routines: existing-thread destination, inherited settings, preserved ordinary-step settings, paused/missing/archived targets and older runtime behavior pass.',
+    'Mobile Routines: existing-thread destination, inherited settings, preserved ordinary-step settings, paused/missing/archived targets and older runtime behavior pass.',
   )
 } finally {
   await browser.close()

@@ -96,7 +96,7 @@ export function BotMemory({ taskId }: { taskId: string }) {
     }
   }
   return (
-    <section className="grid gap-3" aria-label="Bot memory">
+    <section className="grid gap-3" aria-label="Memory">
       <h2 className="font-semibold">Memory</h2>
       <p className="text-xs text-muted-foreground">
         Dovo memory tools keep these notes separate from other threads and delegated agents. An
@@ -197,7 +197,7 @@ export function BotMemory({ taskId }: { taskId: string }) {
         <fieldset disabled={disabled} className="grid min-w-0 gap-2">
           <FormField label="Note key">
             <Input
-              aria-label="Bot memory key"
+              aria-label="Memory key"
               required
               maxLength={120}
               disabled={!!draft.revision}
@@ -207,7 +207,7 @@ export function BotMemory({ taskId }: { taskId: string }) {
           </FormField>
           <FormField label="Note">
             <Textarea
-              aria-label="Bot memory note"
+              aria-label="Memory note"
               required
               maxLength={16000}
               value={draft.content}

@@ -170,11 +170,11 @@ export function TaskHeader({
     ['files', 'Files', Files, 0],
     ...(task.bot
       ? [
-          ['bot-settings', 'Bot settings', Bot, 0] as const,
-          ['bot-mcp', 'Bot MCP servers', Plug, 0] as const,
-          ['bot-skills', 'Bot skills', BookOpen, 0] as const,
-          ['bot-memory', 'Bot memory', Brain, 0] as const,
-          ['bot-routines', 'Bot routines', Workflow, 0] as const,
+          ['bot-settings', 'Settings', Bot, 0] as const,
+          ['bot-mcp', 'MCP servers', Plug, 0] as const,
+          ['bot-skills', 'Skills', BookOpen, 0] as const,
+          ['bot-memory', 'Memory', Brain, 0] as const,
+          ['bot-routines', 'Routines', Workflow, 0] as const,
         ]
       : [
           [

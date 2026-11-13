@@ -141,11 +141,11 @@ export function TaskTools({
                 {
                   label: 'Bot',
                   tools: [
-                    ['bot-settings', 'Bot settings', Bot, 0],
-                    ['bot-mcp', 'Bot MCP servers', Plug, 0],
-                    ['bot-skills', 'Bot skills', BookOpen, 0],
-                    ['bot-memory', 'Bot memory', Brain, 0],
-                    ['bot-routines', 'Bot routines', Workflow, 0],
+                    ['bot-settings', 'Settings', Bot, 0],
+                    ['bot-mcp', 'MCP servers', Plug, 0],
+                    ['bot-skills', 'Skills', BookOpen, 0],
+                    ['bot-memory', 'Memory', Brain, 0],
+                    ['bot-routines', 'Routines', Workflow, 0],
                   ],
                 },
               ] as const)

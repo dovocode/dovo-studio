@@ -114,6 +114,26 @@ try {
   await page.goto('http://workspace.lan')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await view(page.getByRole('textbox', { name: 'Message thread', exact: true }))
+  const botOverview = page.getByRole('button', { name: 'Bots', exact: true })
+  assert.equal(await botOverview.count(), 0, 'Separate Bot overview starts hidden')
+  for (const [botsInThreads, botsOverviewEnabled] of [
+    [false, true],
+    [true, true],
+    [false, false],
+    [true, false],
+  ]) {
+    await page.evaluate(
+      ([botsInThreads, botsOverviewEnabled]) =>
+        window.setPreferences({ botsInThreads, botsOverviewEnabled }),
+      [botsInThreads, botsOverviewEnabled],
+    )
+    await page.waitForFunction(
+      ({ botsInThreads, botsOverviewEnabled }) =>
+        !!document.querySelector('section[aria-label="Bots"]') === botsInThreads &&
+        !!document.querySelector('button[aria-label="Bots"]') === botsOverviewEnabled,
+      { botsInThreads, botsOverviewEnabled },
+    )
+  }
   const creations = await page.evaluate(() => window.extensionCreations)
   const mode = (name) => page.getByRole('button', { name, exact: true })
   for (let i = 0; i < 12; i++) {

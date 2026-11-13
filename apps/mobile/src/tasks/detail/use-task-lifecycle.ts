@@ -181,7 +181,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
       if (task.archivedAt || !readMobilePreferences().confirmArchive) return run()
       Alert.alert(
         `Archive “${task.title}”?`,
-        'You can restore it from Settings → Archived tasks.',
+        'You can restore it from Settings → Archived threads.',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Archive', onPress: run },

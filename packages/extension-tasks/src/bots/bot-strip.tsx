@@ -17,25 +17,15 @@ export function BotStrip({
   onPin: (entry: TaskEntry) => void
   busy?: boolean
 }) {
-  const { botLayout } = useAppPreferences()
+  const { botLayout, botsInThreads } = useAppPreferences()
   const rows = botLayout === 'rows'
   const tileClass = rows
     ? 'group flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-2 text-xs transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
     : `group flex ${botLayout === 'horizontal' ? 'w-[72px] shrink-0' : 'w-full min-w-0'} flex-col items-center gap-2 rounded-xl px-1 py-2 text-xs transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring`
   const [creating, setCreating] = useState(false)
+  if (botsInThreads === false) return null
   return (
     <section aria-label="Bots" className="mb-2 shrink-0 border-b border-border/50 pb-2">
-      <div className="flex items-center gap-2 px-2 pb-1 pt-2">
-        <h2 className="text-[11px] font-medium tracking-wide text-muted-foreground">Bots</h2>
-        {!!entries.length && (
-          <span
-            aria-label={`${entries.length} Bots`}
-            className="text-[10px] tabular-nums text-muted-foreground"
-          >
-            {entries.length}
-          </span>
-        )}
-      </div>
       <div
         data-bot-layout={botLayout}
         className={`px-1 py-1.5 ${botLayout === 'horizontal' ? 'flex gap-1 overflow-x-auto' : botLayout === 'rows' ? 'flex flex-col gap-1' : `grid gap-1 ${botLayout === 'grid-2' ? 'grid-cols-2' : 'grid-cols-3'}`}`}

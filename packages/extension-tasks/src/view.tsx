@@ -1385,7 +1385,7 @@ export default function TasksView({
                   <div
                     hidden={!surface.startsWith('bot-')}
                     className="min-h-0 flex-1 overflow-y-auto"
-                    aria-label={`${surface === 'bot-mcp' ? 'Bot MCP servers' : surface === 'bot-skills' ? 'Bot skills' : surface === 'bot-memory' ? 'Bot memory' : surface === 'bot-routines' ? 'Bot routines' : 'Bot settings'} panel`}
+                    aria-label={`${surface === 'bot-mcp' ? 'MCP servers' : surface === 'bot-skills' ? 'Skills' : surface === 'bot-memory' ? 'Memory' : surface === 'bot-routines' ? 'Routines' : 'Settings'} panel`}
                     ref={(node) => {
                       panes.current['bot-settings'] = node
                       panes.current['bot-mcp'] = node
@@ -1404,7 +1404,7 @@ export default function TasksView({
                               ? 'Memory'
                               : surface === 'bot-routines'
                                 ? 'Routines'
-                                : 'Bot settings'}
+                                : 'Settings'}
                       </h2>
                       <IconButton
                         label="Close Bot panel"

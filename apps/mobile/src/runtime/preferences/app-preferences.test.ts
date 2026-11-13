@@ -735,3 +735,34 @@ it('keeps Bot layout across restarts and defaults invalid saved values', async (
     expect(preferences.readMobilePreferences()).toMatchObject({ botLayout, taskSort: 'title' })
   }
 })
+
+it('keeps inline Bots and the separate overview independent across restarts', async () => {
+  let saved = '{}'
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  let preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    botsInThreads: true,
+    botsOverviewEnabled: false,
+  })
+  for (const [botsInThreads, botsOverviewEnabled] of [
+    [false, true],
+    [true, true],
+    [false, false],
+    [true, false],
+  ]) {
+    preferences.updateMobilePreferences({ botsInThreads, botsOverviewEnabled })
+    await vi.waitFor(() =>
+      expect(JSON.parse(saved)).toMatchObject({ botsInThreads, botsOverviewEnabled }),
+    )
+    preferences = await loadPreferences()
+    await preferences.preferencesReady
+    expect(preferences.readMobilePreferences()).toMatchObject({
+      botsInThreads,
+      botsOverviewEnabled,
+    })
+  }
+})

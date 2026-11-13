@@ -1,14 +1,15 @@
 import { useRuntime } from '../runtime/connection/provider'
-import { useCarMode } from '../runtime/preferences/app-preferences'
+import { useCarMode, useMobilePreferences } from '../runtime/preferences/app-preferences'
 import type { HeaderAction } from '../ui/layout/screen-header'
 import type { StudioNavigation } from './navigation'
 
 export function useMoreActions(navigate: StudioNavigation['navigate']): HeaderAction[] {
   const { overviews } = useRuntime()
   const car = useCarMode()
+  const { botsOverviewEnabled } = useMobilePreferences()
   const destinations: HeaderAction[] = [
-    { label: 'Tasks', icon: 'tasks', onPress: () => navigate('tasks') },
-    ...(!car && overviews.some((entry) => entry.snapshot?.botsSupported)
+    { label: 'Threads', icon: 'tasks', onPress: () => navigate('tasks') },
+    ...(!car && botsOverviewEnabled && overviews.some((entry) => entry.snapshot?.botsSupported)
       ? [{ label: 'Bots', icon: 'bot' as const, onPress: () => navigate('bots') }]
       : []),
     ...(!car

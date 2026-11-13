@@ -90,11 +90,11 @@ try {
     await page.evaluate(() => window.resources.mcpServers[0].envValues.API_TOKEN),
     'dovo-stored-secret:opaque',
   )
-  await page.getByLabel('Enable Bot MCP shared', { exact: true }).uncheck()
+  await page.getByLabel('Enable MCP server shared', { exact: true }).uncheck()
   await page.waitForFunction(() => window.resources.disabledMcpServers.includes('shared'))
-  await page.getByLabel('Enable Bot MCP shared', { exact: true }).check()
+  await page.getByLabel('Enable MCP server shared', { exact: true }).check()
   await page.waitForFunction(() => !window.resources.disabledMcpServers.includes('shared'))
-  await page.getByRole('button', { name: 'Add Bot skill', exact: true }).click()
+  await page.getByRole('button', { name: 'Add skill', exact: true }).click()
   await page.getByLabel('Name', { exact: true }).fill('release')
   await page.getByLabel('When to use', { exact: true }).fill('Release instructions')
   await page.getByLabel('Instructions', { exact: true }).fill('Run release checks')
@@ -110,7 +110,7 @@ try {
   await page.waitForFunction(() =>
     window.resources.skills.some((skill) => skill.name === 'release'),
   )
-  await page.getByLabel('Enable Bot skill shared-skill', { exact: true }).uncheck()
+  await page.getByLabel('Enable skill shared-skill', { exact: true }).uncheck()
   await page.waitForFunction(() => window.resources.disabledSkills.includes('shared-skill'))
   assert.equal(await page.evaluate(() => Object.hasOwn(window.resources, 'hooks')), false)
   await page.evaluate(() => window.editAction(true))
@@ -187,7 +187,7 @@ try {
   assert.equal(
     Object.hasOwn(dispatch[0].input.createTask, 'bot'),
     false,
-    'Ordinary worker does not inherit Bot memory/resources',
+    'Ordinary worker does not inherit Memory/resources',
   )
   assert.equal(Object.hasOwn(dispatch[0].input.createTask, 'threadActions'), false)
   await page.getByRole('button', { name: 'Open sent thread', exact: true }).click()

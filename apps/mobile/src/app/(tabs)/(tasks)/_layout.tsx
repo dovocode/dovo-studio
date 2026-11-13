@@ -7,7 +7,7 @@ export const unstable_settings = { anchor: 'index' }
 export default function Layout() {
   return (
     <TaskPaneLayout>
-      <NavigationStack title="Tasks" />
+      <NavigationStack title="Threads" />
     </TaskPaneLayout>
   )
 }

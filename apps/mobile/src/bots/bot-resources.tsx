@@ -47,11 +47,7 @@ export function BotResources({
   return (
     <Sheet
       title={
-        kind === 'mcp'
-          ? 'Bot MCP servers'
-          : kind === 'skill'
-            ? 'Bot skills'
-            : 'Bot MCP servers and skills'
+        kind === 'mcp' ? 'MCP servers' : kind === 'skill' ? 'Skills' : 'MCP servers and skills'
       }
       busy={busy}
       onClose={onClose}
@@ -123,11 +119,11 @@ export function BotResources({
             onPress={() => setCatalog('mcp')}
           />
           <Action
-            label="Add Bot MCP server"
+            label="Add MCP server"
             disabled={blocked}
             onPress={() => setEditing({ kind: 'mcp' })}
           />
-          {!value.mcpServers.length && <Text style={styles.muted}>No Bot MCP servers.</Text>}
+          {!value.mcpServers.length && <Text style={styles.muted}>No MCP servers.</Text>}
           {value.mcpServers.map((server) => (
             <View key={server.name} style={{ gap: 8, paddingVertical: 8 }}>
               <Text>
@@ -185,11 +181,11 @@ export function BotResources({
             onPress={() => setCatalog('skill')}
           />
           <Action
-            label="Add Bot skill"
+            label="Add skill"
             disabled={blocked}
             onPress={() => setEditing({ kind: 'skill' })}
           />
-          {!value.skills.length && <Text style={styles.muted}>No Bot skills.</Text>}
+          {!value.skills.length && <Text style={styles.muted}>No skills.</Text>}
           {value.skills.map((skill) => (
             <View key={skill.name} style={{ gap: 8, paddingVertical: 8 }}>
               <Text>

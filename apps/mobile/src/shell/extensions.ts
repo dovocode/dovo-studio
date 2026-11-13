@@ -20,7 +20,7 @@ const contributions: NativeContribution[] = [
   },
   {
     id: 'tasks',
-    title: 'Tasks',
+    title: 'Threads',
     load: () => import('../screens/workbench-tasks'),
   },
   {

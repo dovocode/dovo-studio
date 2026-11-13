@@ -16,7 +16,7 @@ export function BotRoutines({ taskId }: { taskId: string }) {
         : {}),
     })
   return (
-    <section className="grid gap-3" aria-label="Bot routines">
+    <section className="grid gap-3" aria-label="Routines">
       <h2 className="font-semibold">Routines</h2>
       {routines.map(({ flow: routine, runs, triggers, steps }) => {
         return (

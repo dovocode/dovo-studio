@@ -601,7 +601,7 @@ export function useConversationActions(task: Task) {
         sendAttempts.setTitle(
           scope,
           attempt.id,
-          attempt.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task'),
+          attempt.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New thread'),
         )
       }
       submittedId = attempt.id

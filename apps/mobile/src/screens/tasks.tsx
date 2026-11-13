@@ -697,7 +697,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title={archived ? 'Archived tasks' : 'Tasks'}
+        title={archived ? 'Archived threads' : 'Threads'}
         buttons={
           archived
             ? [
@@ -769,7 +769,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         >
           <SearchField
             inputRef={searchInput}
-            label={archived ? 'Search archived tasks' : 'Search tasks'}
+            label={archived ? 'Search archived threads' : 'Search threads'}
             placeholder="Search threads"
             style={{ fontSize: 15 }}
             clearButtonMode="while-editing"
@@ -1228,7 +1228,7 @@ function Welcome() {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="Tasks" buttons={moreActions} />
+      <ScreenHeader title="Threads" buttons={moreActions} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, gap: 24 }}

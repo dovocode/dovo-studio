@@ -944,11 +944,11 @@ function TaskDetailContent({
                       ? [
                           ...(
                             [
-                              ['settings', 'Bot settings', 'settings'],
-                              ['mcp', 'Bot MCP servers', 'mcp'],
-                              ['skill', 'Bot skills', 'skill'],
-                              ['memory', 'Bot memory', 'memory'],
-                              ['routines', 'Bot routines', 'routines'],
+                              ['settings', 'Settings', 'settings'],
+                              ['mcp', 'MCP servers', 'mcp'],
+                              ['skill', 'Skills', 'skill'],
+                              ['memory', 'Memory', 'memory'],
+                              ['routines', 'Routines', 'routines'],
                             ] as const
                           ).map(([section, label, icon]) => ({
                             label,

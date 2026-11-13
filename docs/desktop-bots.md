@@ -19,9 +19,9 @@ Each Bot has one permanent thread. The Bots list uses the normal thread row. The
 includes that same thread once, with a Bot icon. Delegated work remains below its parent. The normal
 Threads list excludes Bots.
 
-Open **Bot settings** beside the conversation. The sidebar leaves the composer available. Close it
-to give the chat more space. The harness, model and access controls edit the real thread settings.
-They keep the existing provider session and permission rules. They do not create a separate browser
+Open **Settings** beside the conversation. The sidebar leaves the composer available. Close it to
+give the chat more space. The harness, model and access controls edit the real thread settings. They
+keep the existing provider session and permission rules. They do not create a separate browser
 session or establish browser isolation.
 
 **Pause Bot** holds new turns. You can still queue messages. Current work may finish; use the normal
@@ -37,14 +37,14 @@ target**. Its instructions go to the existing Bot thread. The Bot's current harn
 permissions apply. A routine that targets a paused Bot fails; resume the Bot before retrying that
 run.
 
-Open **Bot MCP servers** or **Bot skills** in the Bot tools sidebar. Use MCP Registry or skills.sh
-to import resources for this Bot. The runtime must advertise `botResourcesSupported`. Add, edit or
-remove this Bot's definitions. Turn inherited resources off for this Bot, or override them. Reset an
-override to use the inherited definition. These changes stay with the Bot when its harness changes.
-They do not change shared settings or other Bots. Dovo stores MCP credential values and returns
-hidden references. The existing credential editor keeps those references when you edit another
-field. These controls manage Dovo resources. Installed harnesses can still use their own native or
-global configuration.
+Open **MCP servers** or **Skills** in the Bot tools sidebar. Use MCP Registry or skills.sh to import
+resources for this Bot. The runtime must advertise `botResourcesSupported`. Add, edit or remove this
+Bot's definitions. Turn inherited resources off for this Bot, or override them. Reset an override to
+use the inherited definition. These changes stay with the Bot when its harness changes. They do not
+change shared settings or other Bots. Dovo stores MCP credential values and returns hidden
+references. The existing credential editor keeps those references when you edit another field. These
+controls manage Dovo resources. Installed harnesses can still use their own native or global
+configuration.
 
 An agent can call `thread_prepare` to add a **New agent thread** card to its conversation. This is a
 native first-party card, not an arbitrary HTML button. Open **Review and Send**. Change the prompt,

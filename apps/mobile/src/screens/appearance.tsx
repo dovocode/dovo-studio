@@ -23,6 +23,8 @@ export default function AppearanceScreen() {
     themePalette,
     threadDensity,
     botLayout,
+    botsInThreads,
+    botsOverviewEnabled,
     terminalFontFamily,
     terminalFontSize,
     highContrast,
@@ -89,6 +91,18 @@ export default function AppearanceScreen() {
           title="Layout"
           footer="Compact uses uniform rows with smaller text and single-line details. Comfortable keeps the original layout with more room for context."
         >
+          <SettingsSwitchRow
+            label="Bots in thread overview"
+            value={botsInThreads}
+            onValueChange={(botsInThreads) => updateMobilePreferences({ botsInThreads })}
+          />
+          <SettingsSwitchRow
+            label="Separate Bots overview"
+            value={botsOverviewEnabled}
+            onValueChange={(botsOverviewEnabled) =>
+              updateMobilePreferences({ botsOverviewEnabled })
+            }
+          />
           <Choice
             label="Bot layout"
             value={botLayout}

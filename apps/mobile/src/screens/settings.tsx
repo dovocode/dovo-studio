@@ -144,7 +144,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           keywords: 'version build testflight google play release install upgrade',
         },
         {
-          title: 'Task & PR preferences',
+          title: 'Thread & PR preferences',
           subtitle: 'Task list, confirmations and merge preferences',
           icon: 'tasks',
           path: '/settings/task-preferences',
@@ -156,7 +156,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'New task defaults',
+      title: 'New thread defaults',
       path: '/settings/new-task-defaults',
       items: [
         {
@@ -245,7 +245,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'Tasks & projects',
+      title: 'Threads & projects',
       path: '/settings/task-settings',
       items: [
         {
@@ -339,7 +339,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           keywords: 'history retention diagnostics events logs requests activity keep forever days',
         },
         {
-          title: 'Archived tasks',
+          title: 'Archived threads',
           subtitle: archived
             ? `${archived} archived · Restore from the task menu`
             : 'Nothing archived',

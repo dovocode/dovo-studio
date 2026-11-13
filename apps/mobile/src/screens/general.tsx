@@ -110,7 +110,7 @@ function BrowserCleanupMinutes({
 }
 
 const tabs = [
-  { id: 'tasks', name: 'Tasks' },
+  { id: 'tasks', name: 'Threads' },
   { id: 'issues', name: 'Issues' },
   { id: 'pulls', name: 'PRs' },
   { id: 'jobs', name: 'Automations' },
@@ -221,7 +221,7 @@ export default function GeneralScreen() {
           onPress={() => router.push('/settings/battery')}
         />
         <SettingsRow
-          title="Task & PR preferences"
+          title="Thread & PR preferences"
           subtitle="This device · task list, confirmations and merge preferences"
           icon="tasks"
           onPress={() => router.push('/settings/task-preferences')}
@@ -273,7 +273,7 @@ export function TaskPreferencesScreen() {
   const preferences = useMobilePreferences()
   const { setView } = useTaskListView()
   return (
-    <LocalSettingsPage title="Task & PR preferences">
+    <LocalSettingsPage title="Thread & PR preferences">
       <SettingsGroup
         title="Task list"
         footer="Working groups running tasks in a collapsed section. They return to the main list when they need input or finish. Pinned tasks stay visible."
@@ -314,7 +314,7 @@ export function TaskPreferencesScreen() {
       </SettingsGroup>
       <SettingsGroup
         title="Confirmations"
-        footer="Archived tasks can always be restored from Settings → Archived tasks. Stopping pauses queued messages."
+        footer="Archived threads can always be restored from Settings → Archived threads. Stopping pauses queued messages."
       >
         <SettingsSwitchRow
           first
@@ -529,7 +529,7 @@ export function SpeechSettingsScreen() {
       </SettingsGroup>
       <SettingsGroup
         title="Driving"
-        footer="Bigger text, only Tasks and Settings, and chats without tool details. The screen stays on while a task runs. Also on the car button in Tasks. Use dictation and keep your eyes on the road."
+        footer="Bigger text, only Threads and Settings, and chats without tool details. The screen stays on while a task runs. Also on the car button in Threads. Use dictation and keep your eyes on the road."
       >
         <SettingsSwitchRow
           first

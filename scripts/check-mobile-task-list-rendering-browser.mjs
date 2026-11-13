@@ -770,7 +770,7 @@ try {
     1,
     'Compact gives the title its own line',
   )
-  const historyInput = page.getByRole('textbox', { name: 'Search tasks', exact: true })
+  const historyInput = page.getByRole('textbox', { name: 'Search threads', exact: true })
   assert.equal(await historyInput.isVisible(), false, 'Search starts hidden')
   const scrollSearch = async (from, to) => {
     await page.evaluate(
@@ -792,7 +792,7 @@ try {
   await page.evaluate(() => window.focusTaskSearch())
   await historyInput.waitFor({ state: 'visible' })
   await page.waitForFunction(
-    () => document.activeElement?.getAttribute('aria-label') === 'Search tasks',
+    () => document.activeElement?.getAttribute('aria-label') === 'Search threads',
   )
   await historyInput.fill('active query')
   await scrollSearch(0, 40)
@@ -849,19 +849,19 @@ try {
   await historyInput.fill('')
   await page.getByTestId('Task task-0').waitFor()
   const filters = page.getByRole('button', { name: 'Filters', exact: true })
-  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 1)
+  assert.equal(await page.getByRole('textbox', { name: 'Search threads' }).count(), 1)
   assert.equal(await filters.getAttribute('aria-pressed'), 'false')
   await filters.click()
   const filterSheet = page.getByRole('dialog', { name: 'Filter threads', exact: true })
-  assert.equal(await filterSheet.getByRole('textbox', { name: 'Search tasks' }).count(), 0)
-  await page.getByRole('textbox', { name: 'Search tasks' }).fill('Task 99')
+  assert.equal(await filterSheet.getByRole('textbox', { name: 'Search threads' }).count(), 0)
+  await page.getByRole('textbox', { name: 'Search threads' }).fill('Task 99')
   await page.getByTestId('Task task-0').waitFor({ state: 'detached' })
   await filterSheet.getByRole('button', { name: 'Close details' }).click()
   assert.equal(await filters.getAttribute('aria-pressed'), 'true')
   await page.getByTestId('Task task-99').waitFor()
-  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 1)
+  assert.equal(await page.getByRole('textbox', { name: 'Search threads' }).count(), 1)
   await filters.click()
-  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).inputValue(), 'Task 99')
+  assert.equal(await page.getByRole('textbox', { name: 'Search threads' }).inputValue(), 'Task 99')
   await filterSheet.getByRole('button', { name: 'Clear filters', exact: true }).click()
   await page.getByTestId('Task task-0').waitFor()
   assert.equal(await filters.getAttribute('aria-pressed'), 'false')
@@ -956,7 +956,7 @@ try {
     0,
   )
   await page.getByRole('button', { name: 'Filters', exact: true }).click()
-  const search = page.getByRole('textbox', { name: 'Search tasks', exact: true })
+  const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
   await search.fill('Child task')
   await page.waitForFunction(
     () =>
@@ -1269,11 +1269,11 @@ try {
   await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).click()
   await page.waitForFunction(() => window.settledPath().includes('settled=25'))
   await filters.click()
-  await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('Task 11')
+  await page.getByRole('textbox', { name: 'Search threads', exact: true }).fill('Task 11')
   await page.waitForFunction(() => !window.settledPath().includes('settled='))
   await page.getByTestId('Task task-11').waitFor()
   assert.equal(await page.getByRole('button', { name: /Show all \d+ settled threads/ }).count(), 0)
-  await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('')
+  await page.getByRole('textbox', { name: 'Search threads', exact: true }).fill('')
   await allHistory.waitFor()
   await filterSheet.getByRole('button', { name: 'Close details' }).click()
   await page.evaluate(() =>
@@ -1844,7 +1844,7 @@ try {
         'Cached thread navigation must complete while secure selection storage is blocked',
       )
       console.log(
-        `${overview ? 'Workspace' : 'Tasks'} cached thread tap: ${navigation.elapsed.toFixed(1)} ms with selection storage blocked.`,
+        `${overview ? 'Workspace' : 'Threads'} cached thread tap: ${navigation.elapsed.toFixed(1)} ms with selection storage blocked.`,
       )
       await page.evaluate(() => {
         window.holdSelection = false
@@ -1904,7 +1904,7 @@ try {
       window.navigations = []
     })
     await scrollSearch(40, 20)
-    await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('history needle')
+    await page.getByRole('textbox', { name: 'Search threads', exact: true }).fill('history needle')
     const message = page.getByRole('button', {
       name: 'Open assistant message in Startup real thread on Owner',
       exact: true,
@@ -1975,6 +1975,29 @@ try {
   assert.equal(await page.getByTestId('Task lasting-bot').count(), 0)
   const botTile = page.getByRole('button', { name: /^Open Bot Lasting release Bot on / })
   await botTile.waitFor()
+  const overviewLink = page.getByRole('button', { name: 'Bots', exact: true })
+  assert.equal(await overviewLink.count(), 0)
+  for (const [botsInThreads, botsOverviewEnabled] of [
+    [false, true],
+    [true, true],
+    [false, false],
+    [true, false],
+  ]) {
+    await page.evaluate(
+      ([botsInThreads, botsOverviewEnabled]) =>
+        window.setListPreferences({ botsInThreads, botsOverviewEnabled }),
+      [botsInThreads, botsOverviewEnabled],
+    )
+    await page.waitForFunction(
+      ({ botsInThreads, botsOverviewEnabled }) =>
+        !!document.querySelector('[aria-label^="Open Bot Lasting release Bot on "]') ===
+          botsInThreads &&
+        [...document.querySelectorAll('button')].some((button) => button.textContent === 'Bots') ===
+          botsOverviewEnabled,
+      { botsInThreads, botsOverviewEnabled },
+    )
+    assert.equal(await page.getByTestId('Task ordinary-neighbor').isVisible(), true)
+  }
   await botTile.click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'lasting-bot')
   const newBot = page.getByRole('button', { name: 'New Bot', exact: true })

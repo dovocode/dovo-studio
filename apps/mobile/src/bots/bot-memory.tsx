@@ -54,7 +54,7 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
     }
   }, [taskId, profile?.connection, connected, reload])
   return (
-    <Sheet title="Bot memory" onClose={onClose} busy={busy}>
+    <Sheet title="Memory" onClose={onClose} busy={busy}>
       <Text style={styles.muted}>
         Dovo memory tools keep these notes separate from other threads and child agents. A
         full-access agent on this computer can read files.

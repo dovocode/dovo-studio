@@ -227,7 +227,7 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
             <Text style={styles.title}>{snapshot ? 'Task unavailable' : 'Loading task…'}</Text>
             <Text style={styles.muted}>
               {snapshot
-                ? 'It may have been removed. Return to Tasks or refresh this computer.'
+                ? 'It may have been removed. Return to Threads or refresh this computer.'
                 : 'Waiting for this computer’s workspace. Cached tasks remain available offline.'}
             </Text>
             <Action

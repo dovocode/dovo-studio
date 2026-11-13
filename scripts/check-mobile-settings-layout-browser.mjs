@@ -516,7 +516,7 @@ try {
     for (const category of [
       'App preferences',
       'Agents & tools',
-      'Tasks & projects',
+      'Threads & projects',
       'Computers',
       'History',
     ])
@@ -527,7 +527,7 @@ try {
     const categories = [
       ['App preferences', 'app-preferences'],
       ['Agents & tools', 'agent-settings'],
-      ['Tasks & projects', 'task-settings'],
+      ['Threads & projects', 'task-settings'],
       ['Computers', 'computer-settings'],
       ['History', 'history-settings'],
     ]
@@ -537,7 +537,7 @@ try {
       'Agents',
       'Task defaults',
       'Manage computers',
-      'Archived tasks',
+      'Archived threads',
     ])
       assert.equal(await row(name).isVisible(), true, `${name} is available on the settings index`)
     for (const [name, route] of categories) {
@@ -640,7 +640,7 @@ try {
     await search.fill('general memory')
     await row('Memory').waitFor()
     await page.getByText('Agents & tools', { exact: true }).waitFor()
-    assert.equal(await row('Tasks & projects').count(), 0, 'Memory lives with agent tools')
+    assert.equal(await row('Threads & projects').count(), 0, 'Memory lives with agent tools')
     await page.getByRole('button', { name: 'Clear search', exact: true }).click()
     assert.equal(await row('Memory').count(), 1, 'Clearing search keeps every submenu expanded')
     for (const [query, destination, section] of [
@@ -651,9 +651,9 @@ try {
       ['tool details', 'Conversation', 'conversation'],
       ['expanded inputs', 'Conversation', 'conversation'],
       ['keep screen awake', 'Conversation', 'conversation'],
-      ['merge squash', 'Task & PR preferences', 'task-preferences'],
-      ['confirm archive', 'Task & PR preferences', 'task-preferences'],
-      ['snooze durations', 'Task & PR preferences', 'task-preferences'],
+      ['merge squash', 'Thread & PR preferences', 'task-preferences'],
+      ['confirm archive', 'Thread & PR preferences', 'task-preferences'],
+      ['snooze durations', 'Thread & PR preferences', 'task-preferences'],
       ['push alerts', 'Notifications', 'notifications'],
       ['standalone relay', 'Notifications', 'notifications'],
       ['live activities', 'Notifications', 'notifications'],
@@ -701,7 +701,7 @@ try {
     for (const title of [
       'Conversation',
       'Speech & driving',
-      'Task & PR preferences',
+      'Thread & PR preferences',
       'Notifications',
       'Battery & background',
     ])
@@ -717,7 +717,7 @@ try {
     await page.getByRole('heading', { name: 'General', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await search.fill('merge squash')
-    await page.getByRole('button', { name: 'Task & PR preferences', exact: true }).click()
+    await page.getByRole('button', { name: 'Thread & PR preferences', exact: true }).click()
     await choose('Merge method', 'Squash')
     await page.waitForFunction(() => window.savedPreferences?.mergeMethod === 'squash')
     await page.getByRole('switch', { name: 'Confirm before archiving a task', exact: true }).click()
@@ -1096,7 +1096,7 @@ try {
         false,
         name + ' works without a computer',
       )
-    assert.equal(await row('Task & PR preferences').isDisabled(), false)
+    assert.equal(await row('Thread & PR preferences').isDisabled(), false)
     assert.equal(await row('Task defaults').isDisabled(), true)
     assert.equal(await row('Agents').isDisabled(), true)
     await page.screenshot({ path: '/tmp/dovo-settings-organized-mobile-' + platform + '.png' })

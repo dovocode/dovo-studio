@@ -213,6 +213,37 @@ try {
       name,
     )
   }
+  assert.equal(
+    await page.getByRole('switch', { name: 'Bots in thread overview', exact: true }).isChecked(),
+    true,
+  )
+  assert.equal(
+    await page.getByRole('switch', { name: 'Separate Bots overview', exact: true }).isChecked(),
+    false,
+  )
+  for (const [inline, overview] of [
+    [false, true],
+    [true, true],
+    [false, false],
+    [true, false],
+  ]) {
+    await page
+      .getByRole('switch', { name: 'Bots in thread overview', exact: true })
+      .setChecked(inline)
+    await page
+      .getByRole('switch', { name: 'Separate Bots overview', exact: true })
+      .setChecked(overview)
+    await page.reload()
+    await ready()
+    assert.equal(
+      await page.getByRole('switch', { name: 'Bots in thread overview', exact: true }).isChecked(),
+      inline,
+    )
+    assert.equal(
+      await page.getByRole('switch', { name: 'Separate Bots overview', exact: true }).isChecked(),
+      overview,
+    )
+  }
   const preserved = page.locator('[data-preserved-lines] p')
   await preserved.waitFor()
   const lineTops = await preserved.evaluate((el) => {
