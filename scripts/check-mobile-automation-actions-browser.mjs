@@ -88,6 +88,11 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
     },
     { path: '../../../ui/theme', importer: mobile + 'tasks/conversation/', contents: controls },
     {
+      path: '../../../ui/controls/choice',
+      importer: mobile + 'tasks/conversation/',
+      contents: controls,
+    },
+    {
       path: '../../../ui/layout/sheet',
       importer: mobile + 'tasks/conversation/',
       contents: controls,

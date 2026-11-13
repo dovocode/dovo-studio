@@ -27,6 +27,7 @@ export {
 export { secureInputCommandSchema } from './conversation/workflow/secure-input.js'
 export {
   threadPrepareCommandSchema,
+  responsePrepareCommandSchema,
   automationPrepareCommandSchema,
   automationListCommandSchema,
 } from './tasks/thread-actions.js'

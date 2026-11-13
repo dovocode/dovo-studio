@@ -27,6 +27,7 @@ import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { useAction } from '../../../ui/controls/use-action'
 import { McpThreadEditor } from '../../../ui/content/mcp-thread-editor'
+import { ResponseActionCard } from './response-action-card'
 import { AutomationActionCard } from './automation-action-card'
 
 const attempts = createDetailDrafts<ThreadActionSend>()
@@ -38,14 +39,29 @@ export function mobileThreadActions(task: Task, messageId?: string) {
     return anchor === messageId && action.state !== 'dismissed'
   })
 }
-export function ThreadActionCards({ task, messageId }: { task: Task; messageId?: string }) {
+export function ThreadActionCards({
+  task,
+  messageId,
+  onTerminal,
+}: {
+  task: Task
+  messageId?: string
+  onTerminal?: (id: string) => void
+}) {
   const { snapshot, profile } = useRuntime()
   if (!snapshot?.threadActionsSupported) return null
   return (
     <>
       {mobileThreadActions(task, messageId).map((action) =>
-        // Cards without `automation` are new-thread cards, including all older runtimes' cards.
-        action.automation ? (
+        // Keep older runtimes’ new-thread cards working.
+        action.response ? (
+          <ResponseActionCard
+            key={detailDraftKey(profile?.connection ?? null, task.id, action.id)}
+            task={task}
+            action={action}
+            onTerminal={onTerminal}
+          />
+        ) : action.automation ? (
           <AutomationActionCard
             key={detailDraftKey(profile?.connection ?? null, task.id, action.id)}
             task={task}

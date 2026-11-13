@@ -177,6 +177,129 @@ the normal automation run controls to stop it. Run links keep the exact run ID. 
 in the computer's recent history, the view shows an unavailable notice. It does not select a
 different run.
 
+### Buttons in a reply
+
+Use `response_prepare` with `{ key, title, action }` to put a button below the preparing reply. It
+works in a normal thread, a Bot, or an automation thread. The runtime must advertise
+`responseActionsSupported`. Preparation never sends a prompt or runs a command or tool.
+
+Supported actions:
+
+```json
+{
+  "key": "continue",
+  "title": "Continue",
+  "action": { "kind": "prompt", "prompt": "Continue with the next step." }
+}
+```
+
+```json
+{
+  "key": "build",
+  "title": "Build the app",
+  "action": { "kind": "command", "command": "pnpm build" }
+}
+```
+
+```json
+{
+  "key": "publish",
+  "title": "Publish beta",
+  "action": {
+    "kind": "mcp",
+    "server": "releases",
+    "tool": "publish",
+    "arguments": { "channel": "beta" }
+  }
+}
+```
+
+**Review prompt** opens an editable prompt. **Send to thread** adds it to this thread's queue with
+the current agent settings. It keeps the composer draft. A paused queue stays paused. Retry starts
+only that accepted message; it cannot consume another queued message.
+
+**Review action** shows the exact command or MCP arguments and working directory. **Run action**
+records a receipt before the external action starts. Commands open a separate thread terminal; use
+**Open terminal** for output and Stop. MCP output stays on the card and is bounded and redacted. A
+command receipt means the command started. It does not mean the command succeeded.
+
+Review can connect a configured MCP server to check its tool definition and input schema. It does
+not call the selected tool.
+
+Direct actions require an idle, open thread on its home computer. MCP calls require write access and
+an enabled server from that thread's current resources, including Bot-specific servers. Commands
+also require unrestricted terminal access. The runtime applies the preparing turn's access limit.
+Use a prompt button when the harness must apply a sandbox or handle approvals. Changes to the
+action, agent settings, working directory, MCP configuration or tool declaration require another
+review. Internal `dovo_task` tools cannot run through a direct MCP button.
+
+A lost response or repeated tap returns the same receipt. It never runs a direct action twice. After
+a restart, an unfinished receipt shows an unknown result when refreshed. Check the terminal or
+external service before asking for a new button. Dismiss cannot cancel accepted work. These buttons
+do not change the thread's saved permissions.
+
+### Custom native dialogs
+
+Set `action.kind` to `form` to open a native dialog with fields and action buttons. Dovo renders
+text, multiline and choice fields. It does not run agent-provided HTML or scripts.
+
+```json
+{
+  "key": "release-options",
+  "title": "Release options",
+  "action": {
+    "kind": "form",
+    "description": "Choose the release name and channel.",
+    "fields": [
+      { "id": "name", "label": "Release name", "type": "text", "required": true },
+      {
+        "id": "channel",
+        "label": "Channel",
+        "type": "choice",
+        "value": "beta",
+        "options": [
+          { "value": "beta", "label": "Beta" },
+          { "value": "stable", "label": "Stable" }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "plan",
+        "title": "Plan release",
+        "action": { "kind": "prompt", "prompt": "Plan {{name}} for {{channel}}." }
+      },
+      {
+        "id": "publish",
+        "title": "Publish",
+        "action": {
+          "kind": "mcp",
+          "server": "releases",
+          "tool": "publish",
+          "arguments": { "name": "{{name}}", "channel": "{{channel}}" }
+        }
+      }
+    ]
+  }
+}
+```
+
+Select **Open form**, fill the fields, then select an action's **Review** button. The dispatcher
+validates required fields and choices. It substitutes `{{fieldId}}` in prompt and command strings,
+and in MCP argument string values. It preserves other JSON values. Server names and tool names stay
+fixed. Substitution is plain text; command values are not shell-escaped. Always review the resolved
+command before Run. Field values cannot add another tool or change the action type.
+
+The resolved action appears in the same dialog. Review it, then select **Send to thread** or **Run
+action**. Editing a field invalidates that review. One form card accepts one action. A new key
+creates a new proposal. Do not request passwords or other secrets in these forms.
+
+A form supports up to 20 fields, 8 action choices and 20 options per choice field. Each field value
+is at most 4,000 characters. A response proposal, submitted form values and the resolved action each
+stay below 20 KB of UTF-8 JSON. Edited form drafts stay in this app session, scoped to the computer,
+pairing and card. They do not survive an app restart. Saved reviews and final receipts stay in the
+runtime database.
+
 ### Drafts and limits
 
 - Each card uses a stable key within its source thread. Reusing a key replaces an unsent proposal.
@@ -184,8 +307,9 @@ different run.
 - Sent and dismissed decisions survive removal from the card list. Deleting the source thread
   deletes its retained decisions.
 - Each prompt is at most 20,000 characters. A thread keeps at most 20 visible cards and 64 KB of
-  prompts and automation reviews in UTF-8. Finished cards leave first, oldest first. Unsent cards
-  stay. Preparation returns an error when unsent cards alone exceed a limit.
+  prompts and proposal data in UTF-8. Reviews and result text have separate bounded fields. Finished
+  cards leave first, oldest first. Unsent cards stay. Preparation returns an error when unsent cards
+  alone exceed a limit.
 - Desktop and mobile keep edited drafts by computer, pairing, source thread and card. After an
   uncertain response, Retry sends the same input. A confirmed rejection unlocks editing. A late
   result does not replace a newer draft or a different computer's state.
@@ -197,7 +321,7 @@ Run from the repository root:
 
 ```sh
 pnpm --filter @dovo/runtime... -r build
-pnpm exec vp test packages/runtime/src/http/endpoints/thread-actions.test.ts packages/runtime/src/http/endpoints/normal-thread-actions.test.ts packages/runtime/src/http/endpoints/automation-actions.test.ts --maxWorkers=1
+pnpm exec vp test packages/runtime/src/http/endpoints/thread-actions.test.ts packages/runtime/src/http/endpoints/normal-thread-actions.test.ts packages/runtime/src/http/endpoints/automation-actions.test.ts packages/runtime/src/http/endpoints/response-actions.test.ts packages/protocol/src/tasks/response-actions.test.ts --maxWorkers=1
 pnpm exec playwright install chromium
 pnpm test:thread-actions:browser
 ```
@@ -212,7 +336,7 @@ All endpoints are `POST` and only accept paired human clients. Create, update, l
 Dismiss accept `x-dovo-mutation-id` for durable retry. Review refresh does not use a mutation
 receipt. Schemas are in `@dovo/protocol` (`packages/protocol/src/tasks/bots.ts`, `bot-requests.ts`,
 `thread-actions.ts` and `thread-action-requests.ts`). Snapshot capabilities: `botsSupported`,
-`botResourcesSupported` and `threadActionsSupported`.
+`botResourcesSupported`, `threadActionsSupported` and `responseActionsSupported`.
 
 | Endpoint                      | Body                                                                     |
 | ----------------------------- | ------------------------------------------------------------------------ |

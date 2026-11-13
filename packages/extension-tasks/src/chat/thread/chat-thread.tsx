@@ -681,6 +681,7 @@ export function ChatThread({
                                     })
                                     .map((action) => (
                                       <ThreadActionCard
+                                        onTerminal={onTerminal}
                                         key={`${botScope(activeRuntimeId, connection)}:${action.id}`}
                                         task={fullTask}
                                         action={action}
@@ -716,6 +717,7 @@ export function ChatThread({
                 )
                 .map((action) => (
                   <ThreadActionCard
+                    onTerminal={onTerminal}
                     key={`${botScope(activeRuntimeId, connection)}:${action.id}`}
                     task={fullTask}
                     action={action}

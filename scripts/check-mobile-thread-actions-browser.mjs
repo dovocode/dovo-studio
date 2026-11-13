@@ -75,6 +75,11 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       contents: 'export const useNavigation=()=>({navigate:(...args)=>window.routes.push(args)});',
     },
     { path: '../../../ui/theme', importer: mobile + 'tasks/conversation/', contents: controls },
+    {
+      path: '../../../ui/controls/choice',
+      importer: mobile + 'tasks/conversation/',
+      contents: controls,
+    },
     // Automation cards share this module; this fixture covers new-thread cards only.
     {
       path: '../../../ui/layout/sheet',

@@ -937,9 +937,16 @@ export function route(
         if (agentDeviceAccess)
           throw new HttpError(403, 'Thread actions are sent from a paired human client.')
         const input = yield* serviceResult(body(request, 256 * 1024))
-        if (path === '/api/thread-actions/send') return yield* sendThreadActionEffect(s, input)
+        if (path === '/api/thread-actions/send')
+          return yield* sendThreadActionEffect(s, input, () => {
+            s.devices.authenticate(token)
+          })
         if (path === '/api/thread-actions/review')
-          return yield* runtimeOperation(() => reviewThreadAction(s, input))
+          return yield* runtimeOperation(() =>
+            reviewThreadAction(s, input, () => {
+              s.devices.authenticate(token)
+            }),
+          )
         if (path === '/api/thread-actions/dismiss')
           return yield* runtimeOperation(() => dismissThreadAction(s, input))
         throw new HttpError(404, 'Unknown thread action')

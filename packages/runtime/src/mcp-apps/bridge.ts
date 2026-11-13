@@ -442,6 +442,102 @@ export class McpApps {
       this.release(session)
     }
   }
+  /** A native response button reviews one model-visible tool from this thread's resources. */
+  private async responseTool(
+    taskId: string,
+    server: string,
+    name: string,
+    args: Record<string, unknown>,
+    directory: string,
+    authorize: () => void,
+  ) {
+    if (server === 'dovo_task') throw new HttpError(403, 'Use a follow-up prompt for Dovo tools')
+    const scope = { ...this.current(taskId, server), cwd: directory }
+    if (scope.permission === 'read-only')
+      throw new HttpError(403, 'Direct MCP actions require write access')
+    authorize()
+    const session = await this.lease(scope)
+    try {
+      session.toolsDirty = true
+      await this.performRpc(
+        session,
+        scope,
+        'tools/list',
+        {},
+        false,
+        this.controller.signal,
+        authorize,
+      )
+      const tool = session.tools.find((entry) => entry.name === name && visibleTo(entry, 'model'))
+      if (!tool) throw new HttpError(403, 'Tool is not available in this thread')
+      if (!new AjvJsonSchemaValidator().getValidator(tool.inputSchema)(args).valid)
+        throw new HttpError(400, 'Arguments do not match the MCP tool input schema')
+      const key = (current: Scope) =>
+        createHash('sha256')
+          .update(
+            JSON.stringify([
+              current.server,
+              current.cwd,
+              current.permission,
+              current.approvalPolicy,
+              current.sandboxMode,
+              tool,
+            ]),
+          )
+          .digest('hex')
+      const revision = key(scope)
+      authorize()
+      if (revision !== key({ ...this.current(taskId, server), cwd: directory }))
+        throw new HttpError(409, 'MCP configuration changed. Refresh the action review.')
+      return { scope, session, tool, revision }
+    } catch (error) {
+      this.release(session)
+      throw error
+    }
+  }
+  async reviewResponseTool(
+    taskId: string,
+    server: string,
+    name: string,
+    args: Record<string, unknown>,
+    directory: string,
+    authorize: () => void,
+  ) {
+    const { scope, session, tool, revision } = await this.responseTool(
+      taskId,
+      server,
+      name,
+      args,
+      directory,
+      authorize,
+    )
+    this.release(session)
+    return { revision, directory: scope.cwd, description: (tool.description ?? '').slice(0, 4000) }
+  }
+  async callResponseTool(
+    taskId: string,
+    server: string,
+    name: string,
+    args: Record<string, unknown>,
+    directory: string,
+    revision: string,
+    authorize: () => void,
+  ) {
+    const reviewed = await this.responseTool(taskId, server, name, args, directory, authorize)
+    try {
+      if (reviewed.revision !== revision)
+        throw new HttpError(409, 'MCP tool changed. Refresh the action review.')
+      authorize()
+      return CallToolResultSchema.parse(
+        await reviewed.session.client.callTool({ name, arguments: args }, undefined, {
+          signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(60_000)]),
+          timeout: 60_000,
+        }),
+      )
+    } finally {
+      this.release(reviewed.session)
+    }
+  }
   /** The returned session stays leased; callers must release it. */
   private async feedTool(
     taskId: string,

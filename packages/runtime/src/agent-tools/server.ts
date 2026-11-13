@@ -20,6 +20,7 @@ import {
   linkedProjectsCommandSchema,
   agentQuestionCommandSchema,
   threadPrepareCommandSchema,
+  responsePrepareCommandSchema,
   automationPrepareCommandSchema,
   automationListCommandSchema,
   agentTodosCommandSchema,
@@ -219,6 +220,15 @@ const tools: Array<
       'Prepare a "start new agent thread" card in this conversation for the user. Runs nothing: the user reviews it, may change prompt, harness and model, and taps Send. Same computer; choose any project or no project. Access cannot exceed this thread. Stable key; reusing a key replaces an unsent card, never revives a dismissed/sent one. Available read-only.',
     inputSchema: (() => {
       const document = Schema.toJsonSchemaDocument(threadPrepareCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
+  {
+    name: 'response_prepare',
+    description:
+      'Prepare a reply button: prompt sends to this thread; command opens a new terminal; mcp calls an enabled tool; form opens a native dialog with fields and action buttons. Form strings use {{fieldId}} values. A paired human reviews the resolved action before Send/Run. Preparation runs nothing and works read-only. Commands require unrestricted terminal access; MCP requires write access. No secrets. Stable key replaces only unsent buttons. Use ask_question for ordinary questions.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(responsePrepareCommandSchema)
       return { ...document.schema, type: 'object' as const, $defs: document.definitions }
     })(),
   },
@@ -907,6 +917,14 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             taskId: task,
             parentRunId,
             command: { ...input, kind: 'automation' },
+          }),
+        )
+      case 'response_prepare':
+        return text(
+          await post('/api/agent/thread-prepare', {
+            taskId: task,
+            parentRunId,
+            command: { ...input, kind: 'response' },
           }),
         )
       case 'thread_prepare':

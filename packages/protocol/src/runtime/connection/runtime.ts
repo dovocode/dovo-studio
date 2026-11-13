@@ -275,6 +275,8 @@ export const snapshotSchema = mutableStruct({
   botResourcesSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.threadActions`, the `thread_prepare` agent tool and `/api/thread-actions/*`. */
   threadActionsSupported: Schema.optional(Schema.Literal(true)),
+  /** Same-thread prompt buttons and reviewed command/MCP buttons. */
+  responseActionsSupported: Schema.optional(Schema.Literal(true)),
   /** Queued model/reasoning choices become thread defaults when their turn starts. */
   persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),

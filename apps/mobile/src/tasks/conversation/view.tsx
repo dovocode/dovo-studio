@@ -94,7 +94,8 @@ const checkpointSchema = mutableStruct({
 })
 function ConversationThreadActions({ messageId }: { messageId?: string }) {
   const task = useConversationSelector((value) => value.task)
-  return <ThreadActionCards task={task} messageId={messageId} />
+  const openTerminal = useConversationSelector((value) => value.openTerminal)
+  return <ThreadActionCards task={task} messageId={messageId} onTerminal={openTerminal} />
 }
 function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
   const taskId = useConversationSelector((value) => value.task.id)

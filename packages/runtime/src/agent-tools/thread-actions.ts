@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Effect, Schema } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
 import {
   applyTurnSettings,
   automationActionSchema,
@@ -13,6 +14,15 @@ import {
   botPaused,
   taskResources,
   threadActionReviewSchema,
+  responseActionSendSchema,
+  responseActionText,
+  responseOperationSchema,
+  resolveResponseAction,
+  type ResponseOperation,
+  type ResponseDispatch,
+  permissionPolicyReadOnly,
+  effectivePermissionPolicy,
+  redactCredentialText,
   type AutomationAction,
   type ThreadActionSuggestion,
   type PermissionPolicy,
@@ -116,9 +126,19 @@ function result(s: Services, sourceTaskId: string, actionId: string): ThreadActi
   })
 }
 
+function hasTerminalControls(text: string) {
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index)
+    if ((code < 32 && code !== 9 && code !== 10) || code === 127) return true
+  }
+  return false
+}
+
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8')
 const cardBytes = (action: ThreadAction) =>
-  bytes(action.prompt) + (action.automation ? bytes(JSON.stringify(action.automation)) : 0)
+  bytes(action.prompt) +
+  (action.automation ? bytes(JSON.stringify(action.automation)) : 0) +
+  (action.response ? bytes(JSON.stringify(action.response)) : 0)
 
 /** `thread_prepare`: store or replace one unsent card. Starts no work. A dismissed or sent
  * action is a human decision; preparing the same key again returns it unchanged. */
@@ -180,7 +200,28 @@ export function prepareThreadAction(
     const decided = finalAction(s, taskId, id)
     if (decided) return decided
     const existing = task.threadActions?.find((item) => item.id === id)
-    const automation = 'kind' in command ? automationReview(s, command.automationId) : undefined
+    const automation =
+      'kind' in command && command.kind === 'automation'
+        ? automationReview(s, command.automationId)
+        : undefined
+    const response = 'kind' in command && command.kind === 'response' ? command.action : undefined
+    if (
+      response?.kind === 'form' &&
+      (new Set(response.fields.map((field) => field.id)).size !== response.fields.length ||
+        new Set(response.actions.map((item) => item.id)).size !== response.actions.length ||
+        response.fields.some(
+          (field) =>
+            field.type === 'choice' &&
+            (!field.options?.length ||
+              new Set(field.options.map((option) => option.value)).size !== field.options.length ||
+              (field.value && !field.options.some((option) => option.value === field.value))),
+        ))
+    )
+      throw rejected(400, 'Use unique field and action IDs and valid choice options.')
+    if (response?.kind === 'command' && hasTerminalControls(response.command))
+      throw rejected(400, 'Commands cannot contain terminal control characters.')
+    if (response && bytes(JSON.stringify(response)) > 20000)
+      throw rejected(400, 'Keep the response action below 20 KB.')
     const suggestionCommand: ThreadActionSuggestion = 'kind' in command ? {} : command
     if (
       suggestionCommand.agentId &&
@@ -198,9 +239,10 @@ export function prepareThreadAction(
       id,
       key: command.key,
       title: command.title,
-      prompt: command.prompt,
+      prompt: 'prompt' in command ? command.prompt : responseActionText(command.action),
       ...(Object.keys(suggestion).length ? { suggestion } : {}),
       ...(automation ? { automation } : {}),
+      ...(response ? { response } : {}),
       runId,
       state: 'prepared',
       createdAt: existing?.createdAt ?? now,
@@ -245,9 +287,11 @@ export function prepareThreadAction(
     ...(action.automationSent ? { automationSent: action.automationSent } : {}),
     note:
       action.state === 'prepared'
-        ? action.automation
-          ? 'Prepared an automation review card. Nothing runs until a paired user reviews it and taps Start. Do not wait for it.'
-          : 'Prepared a card in this thread. Nothing runs until the user reviews it and taps Send; they may change the prompt, harness and model. Do not wait for it.'
+        ? action.response
+          ? 'Prepared a response button. Nothing runs until the user selects it. Direct commands and MCP calls require review. Do not wait for it.'
+          : action.automation
+            ? 'Prepared an automation review card. Nothing runs until a paired user reviews it and taps Start. Do not wait for it.'
+            : 'Prepared a card in this thread. Nothing runs until the user reviews it and taps Send; they may change the prompt, harness and model. Do not wait for it.'
         : action.state === 'sent'
           ? 'The user already sent this action. Use a new key for a new proposal.'
           : 'The user dismissed this action. Use a new key only for a materially new proposal.',
@@ -310,8 +354,14 @@ class AlreadyDecided extends Error {}
 
 /** Human Send. The new thread, its queued first message and the sent state commit in one
  * transaction; the turn then starts. Every later request returns the sent action. */
-export function sendThreadActionEffect(s: Services, value: unknown) {
+export function sendThreadActionEffect(
+  s: Services,
+  value: unknown,
+  authorize: () => void = () => {},
+) {
   return Effect.gen(function* () {
+    if (typeof value === 'object' && value !== null && 'response' in value)
+      return yield* sendResponseActionEffect(s, value, authorize)
     if (typeof value === 'object' && value !== null && 'revision' in value)
       return yield* runtimeOperation(() => sendAutomationAction(s, value))
     const input = decode(threadActionSendSchema, value)
@@ -320,8 +370,8 @@ export function sendThreadActionEffect(s: Services, value: unknown) {
     )
     if (action.state === 'dismissed')
       return yield* Effect.fail(rejected(409, 'This action was dismissed.'))
-    if (action.automation)
-      return yield* Effect.fail(rejected(409, 'Review this automation before starting it.'))
+    if (action.automation || action.response)
+      return yield* Effect.fail(rejected(409, 'Review this action before sending it.'))
     if (action.state === 'prepared') {
       yield* runtimeOperation(() => admit(s, source, input))
       const outcome = yield* Effect.exit(
@@ -396,6 +446,325 @@ export function dismissThreadAction(s: Services, value: unknown) {
     })
   })
   return result(s, input.sourceTaskId, input.actionId)
+}
+
+const runningResponses = new WeakMap<Services, Map<string, string>>()
+function admitResponse(
+  s: Services,
+  source: TaskSummary,
+  action: ThreadAction,
+  operation?: ResponseOperation,
+) {
+  const response =
+    operation ??
+    (action.response?.kind === 'form' ? action.responseReview?.resolved : action.response)
+  if (source.archived || source.archivedAt || source.status === 'done' || source.machineHandoff)
+    throw rejected(409, 'Reopen this thread on its home computer before using the action.')
+  s.tasks.requireExecutionOwner(source.id)
+  if (response && response.kind !== 'prompt') s.tasks.requireIdle(source.id)
+  if (botPaused(source)) throw rejected(409, 'Resume this Bot before using the action.')
+  const current = resolveTaskAgent(source, s.store.get().agents)
+  const original = originalCeiling(s, source.id, action.id)
+  if (!current || !original || !permissionPolicyWithinCeiling(original, current))
+    throw rejected(403, 'The thread access changed. Ask the agent to prepare a new action.')
+  if (response && response.kind !== 'prompt' && permissionPolicyReadOnly(current))
+    throw rejected(403, 'Direct actions require write access. Use a follow-up prompt instead.')
+  if (
+    response?.kind === 'command' &&
+    (effectivePermissionPolicy(current).sandboxMode !== 'danger-full-access' ||
+      effectivePermissionPolicy(original).sandboxMode !== 'danger-full-access')
+  )
+    throw rejected(
+      403,
+      'Direct commands require unrestricted terminal access. Use a follow-up prompt instead.',
+    )
+  return current
+}
+
+function responseContext(
+  s: Services,
+  source: TaskSummary,
+  action: ThreadAction,
+  operation: ResponseOperation,
+) {
+  const agent = admitResponse(s, source, action, operation)
+  return JSON.stringify([
+    action.response,
+    operation,
+    action.runId,
+    agent,
+    source.repositoryId,
+    source.execution,
+    source.existingWorktreePath,
+    source.delegation,
+    source.linkedCheckouts,
+    source.checkoutBranch,
+  ])
+}
+
+async function uncheckedResponseReview(
+  s: Services,
+  source: TaskSummary,
+  action: ThreadAction,
+  authorize: () => void,
+  dispatch?: ResponseDispatch,
+) {
+  if (!action.response) throw rejected(409, 'This is not a response action.')
+  if (dispatch && bytes(JSON.stringify(dispatch)) > 20000)
+    throw rejected(400, 'Keep form values below 20 KB.')
+  let response: ResponseOperation
+  try {
+    response = decode(responseOperationSchema, resolveResponseAction(action.response, dispatch))
+  } catch (error) {
+    throw rejected(400, error instanceof Error ? error.message : 'Invalid form input.')
+  }
+  if (
+    bytes(JSON.stringify(response)) > 20000 ||
+    (response.kind === 'command' && hasTerminalControls(response.command))
+  )
+    throw rejected(400, 'The resolved action is too large or contains terminal control characters.')
+  const context = responseContext(s, source, action, response)
+  const directory = response.kind === 'prompt' ? '' : await s.checkouts.fileDirectory(source.id)
+  const tool =
+    response.kind === 'mcp'
+      ? await s.mcpApps.reviewResponseTool(
+          source.id,
+          response.server,
+          response.tool,
+          response.arguments,
+          directory,
+          authorize,
+        )
+      : undefined
+  authorize()
+  if (responseContext(s, s.store.taskSummary(source.id), action, response) !== context)
+    throw rejected(409, 'The thread settings changed. Refresh the action review.')
+  const review = {
+    revision: createHash('sha256')
+      .update(JSON.stringify([context, directory, tool?.revision]))
+      .digest('hex'),
+    directory,
+    resolved: response,
+    ...(dispatch ? { dispatch } : {}),
+    description:
+      tool?.description ??
+      (response.kind === 'prompt'
+        ? 'Send this prompt to the same thread. The current agent and tool permissions apply.'
+        : 'Run this command in a new terminal on this thread’s computer. Output stays in the terminal.'),
+  }
+  return { review, toolRevision: tool?.revision, context }
+}
+
+async function responseReview(...args: Parameters<typeof uncheckedResponseReview>) {
+  try {
+    return await uncheckedResponseReview(...args)
+  } catch (error) {
+    if (error instanceof HttpError) throw rejected(error.status, error.message)
+    throw error
+  }
+}
+
+async function reviewResponseAction(
+  s: Services,
+  input: { sourceTaskId: string; actionId: string; dispatch?: ResponseDispatch },
+  authorize: () => void,
+) {
+  const { source, action } = findAction(s, input.sourceTaskId, input.actionId)
+  if (action.state === 'prepared') {
+    const { review, context } = await responseReview(s, source, action, authorize, input.dispatch)
+    s.store.transaction(() => {
+      const latest = findAction(s, source.id, action.id).action
+      if (
+        latest.state !== 'prepared' ||
+        JSON.stringify(latest.response) !== JSON.stringify(action.response) ||
+        latest.runId !== action.runId
+      )
+        throw rejected(409, 'The action changed. Open its review again.')
+      if (responseContext(s, s.store.taskSummary(source.id), latest, review.resolved) !== context)
+        throw rejected(409, 'The thread settings changed. Open the review again.')
+      setAction(s, source.id, {
+        ...latest,
+        responseReview: review,
+        updatedAt: new Date().toISOString(),
+      })
+    })
+  } else if (
+    action.responseResult?.status === 'running' &&
+    !runningResponses.get(s)?.has(action.id)
+  ) {
+    setAction(s, source.id, {
+      ...action,
+      responseResult: {
+        status: 'uncertain',
+        output:
+          'Execution started before the runtime restarted. Check the result before preparing a new action. This button will not run it again.',
+      },
+    })
+  }
+  return result(s, source.id, action.id)
+}
+
+function sendResponseActionEffect(s: Services, value: unknown, authorize: () => void) {
+  return runtimeOperation(async () => {
+    const input = decode(responseActionSendSchema, value)
+    const { source, action } = findAction(s, input.sourceTaskId, input.actionId)
+    if (!action.response) throw rejected(409, 'This is not a response action.')
+    if (action.state === 'dismissed') throw rejected(409, 'This action was dismissed.')
+    if (action.state === 'sent') {
+      const queued = source.queue?.find((item) => item.id === action.sent?.messageId)
+      if (queued && !queued.paused && !source.queuePaused && source.status !== 'running') {
+        authorize()
+        admitResponse(s, source, action)
+        await runClientEffect(startDeliveryEffect(s, action))
+      }
+      return result(s, source.id, action.id)
+    }
+    const { review, toolRevision, context } = await responseReview(
+      s,
+      source,
+      action,
+      authorize,
+      action.responseReview?.dispatch,
+    )
+    const response = review.resolved
+    if (response.kind !== 'prompt' && input.text !== undefined)
+      throw rejected(400, 'Direct actions cannot replace their reviewed payload.')
+    if (input.revision !== review.revision || action.responseReview?.revision !== review.revision)
+      throw rejected(
+        409,
+        'The action or its settings changed. Refresh the review before running it.',
+      )
+    const active = runningResponses.get(s) ?? new Map<string, string>()
+    runningResponses.set(s, active)
+    let admitted = false
+    s.store.transaction(() => {
+      const latest = findAction(s, source.id, action.id).action
+      if (latest.state === 'sent') return
+      if (
+        latest.state !== 'prepared' ||
+        latest.responseReview?.revision !== input.revision ||
+        JSON.stringify(latest.response) !== JSON.stringify(action.response) ||
+        latest.runId !== action.runId
+      )
+        throw rejected(409, 'The action changed. Open its review again.')
+      if (responseContext(s, s.store.taskSummary(source.id), latest, response) !== context)
+        throw rejected(409, 'The thread settings changed. Refresh the action review.')
+      authorize()
+      const now = new Date().toISOString()
+      if (response.kind === 'prompt') {
+        s.tasks.queue.add(
+          source.id,
+          input.messageId,
+          input.text ?? response.prompt,
+          [],
+          undefined,
+          false,
+          false,
+          undefined,
+          {
+            source: { kind: 'system', label: 'Response button' },
+            unsnooze: true,
+          },
+        )
+        setAction(s, source.id, {
+          ...latest,
+          state: 'sent',
+          updatedAt: now,
+          sent: { taskId: source.id, messageId: input.messageId, sentAt: now },
+        })
+      } else {
+        if ([...active.values()].includes(source.id))
+          throw rejected(409, 'Wait for the other direct action in this thread to finish.')
+        setAction(s, source.id, {
+          ...latest,
+          state: 'sent',
+          updatedAt: now,
+          responseResult: {
+            status: 'running',
+            output: 'Execution started. Completion has not been confirmed.',
+          },
+        })
+      }
+      admitted = true
+    })
+    if (!admitted) return result(s, source.id, action.id)
+    if (response.kind === 'prompt') {
+      await runClientEffect(startDeliveryEffect(s, findAction(s, source.id, action.id).action))
+      return result(s, source.id, action.id)
+    }
+    active.set(action.id, source.id)
+    let execution: NonNullable<ThreadAction['responseResult']>
+    let terminalId: string | undefined
+    try {
+      authorize()
+      if (response.kind === 'command') {
+        const directory = await s.checkouts.fileDirectory(source.id)
+        if (responseContext(s, s.store.taskSummary(source.id), action, response) !== context)
+          throw rejected(409, 'The thread settings changed.')
+        authorize()
+        if (directory !== review.directory) throw rejected(409, 'The working directory changed.')
+        const terminal = s.terminals.create(source.id, directory)
+        terminalId = terminal.id
+        s.terminals.input(terminal.id, `${response.command.replace(/\r?\n/g, '\r')}\r`)
+        execution = {
+          status: 'started',
+          output: 'Started in a new terminal. Open it to see output or stop the command.',
+          terminalId: terminal.id,
+        }
+      } else {
+        const output = await s.mcpApps.callResponseTool(
+          source.id,
+          response.server,
+          response.tool,
+          response.arguments,
+          review.directory,
+          toolRevision ?? '',
+          () => {
+            if (responseContext(s, s.store.taskSummary(source.id), action, response) !== context)
+              throw rejected(409, 'The thread settings changed.')
+            authorize()
+          },
+        )
+        execution = {
+          status: output.isError ? 'failed' : 'completed',
+          output: redactCredentialText(
+            output.content
+              .filter((item) => item.type === 'text')
+              .map((item) => item.text)
+              .join('\n') ||
+              (output.structuredContent
+                ? JSON.stringify(output.structuredContent)
+                : 'The MCP tool returned no text.'),
+          ).slice(0, 12000),
+        }
+      }
+    } catch (error) {
+      execution = {
+        status: 'uncertain',
+        ...(terminalId ? { terminalId } : {}),
+        output: redactCredentialText(
+          `The action failed or its result is unknown. Check before trying again. ${error instanceof Error ? error.message : 'Execution failed.'}`,
+        ).slice(0, 12000),
+      }
+    } finally {
+      active.delete(action.id)
+    }
+    s.store.transaction(() => {
+      if (s.store.wasTaskDeleted(source.id)) return
+      const latest = findAction(s, source.id, action.id).action
+      setAction(s, source.id, {
+        ...latest,
+        responseResult: execution,
+        updatedAt: new Date().toISOString(),
+      })
+      s.activity.add('task', source.id, `Response action · ${action.title}`, {
+        actionId: action.id,
+        status: execution.status,
+      })
+    })
+    authorize()
+    return result(s, source.id, action.id)
+  })
 }
 
 /** Maximum public review bytes per card, including the complete saved workflow. */
@@ -561,8 +930,10 @@ function admitAutomation(s: Services, source: TaskSummary, action: ThreadAction,
   return review
 }
 
-export function reviewThreadAction(s: Services, value: unknown) {
+export function reviewThreadAction(s: Services, value: unknown, authorize: () => void = () => {}) {
   const input = decode(threadActionReviewSchema, value)
+  if (findAction(s, input.sourceTaskId, input.actionId).action.response)
+    return reviewResponseAction(s, input, authorize)
   s.store.transaction(() => {
     const { source, action } = findAction(s, input.sourceTaskId, input.actionId)
     if (action.state !== 'prepared') return

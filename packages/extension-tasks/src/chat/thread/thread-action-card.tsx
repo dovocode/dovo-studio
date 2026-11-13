@@ -23,13 +23,24 @@ import { Button } from '@dovo/studio-ui'
 import { botScope } from '../../bots/bot-scope'
 import { taskActionClient } from '../../list/task-row-actions'
 import { ThreadActionEditor, type ThreadActionSelection } from './thread-action-editor'
+import { ResponseActionCard } from './response-action-card'
 import { AutomationActionCard } from './automation-action-card'
 
 const attempts = new Map<string, ThreadActionSend>()
 
-/** Cards without `automation` are new-thread cards, including all cards from older runtimes. */
-export function ThreadActionCard({ task, action }: { task: Task; action: ThreadAction }) {
-  return action.automation ? (
+/** Older runtimes keep their new-thread card behavior. */
+export function ThreadActionCard({
+  task,
+  action,
+  onTerminal,
+}: {
+  task: Task
+  action: ThreadAction
+  onTerminal?: (id: string) => void
+}) {
+  return action.response ? (
+    <ResponseActionCard task={task} action={action} onTerminal={onTerminal} />
+  ) : action.automation ? (
     <AutomationActionCard task={task} action={action} />
   ) : (
     <NewThreadActionCard task={task} action={action} />

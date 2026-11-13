@@ -7,6 +7,8 @@ import {
   automationListCommandFields,
   threadActionSchema,
   threadPrepareCommandSchema,
+  responsePrepareCommandFields,
+  responseDispatchSchema,
 } from './thread-actions.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
@@ -15,6 +17,7 @@ export const threadPrepareRequestSchema = strictStruct({
   taskId: id,
   parentRunId: id,
   command: Schema.Union([
+    strictStruct({ ...responsePrepareCommandFields, kind: Schema.Literal('response') }),
     strictStruct({ ...automationListCommandFields, kind: Schema.Literal('list-automations') }),
     strictStruct({
       ...automationPrepareCommandFields,
@@ -65,5 +68,22 @@ export const automationActionSendSchema = strictStruct({
   text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
 })
 export type AutomationActionSend = Schema.Schema.Type<typeof automationActionSendSchema>
-export const threadActionReviewSchema = strictStruct({ sourceTaskId: id, actionId: id })
+export const threadActionReviewSchema = strictStruct({
+  sourceTaskId: id,
+  actionId: id,
+  dispatch: Schema.optional(responseDispatchSchema),
+})
 export type ThreadActionReview = Schema.Schema.Type<typeof threadActionReviewSchema>
+
+/** Exact reviewed action; no arbitrary target thread, command or tool can be injected at Run. */
+export const responseActionSendSchema = strictStruct({
+  sourceTaskId: id,
+  actionId: id,
+  response: Schema.Literal(true),
+  revision: id,
+  messageId: id,
+  text: Schema.optional(
+    maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
+  ),
+})
+export type ResponseActionSend = typeof responseActionSendSchema.Type

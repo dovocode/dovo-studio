@@ -320,6 +320,7 @@ export function runtimeSnapshot(
       botsSupported: true,
       botResourcesSupported: true,
       threadActionsSupported: true,
+      responseActionsSupported: true,
       fullTurnSettingsSupported: true,
       promptSuggestionsEnabled: s.preferences.get().suggestNextPrompt,
       runtimeDictationSupported: true,

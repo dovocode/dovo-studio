@@ -11,6 +11,148 @@ import {
 import { githubTriggerSchema } from '../automation/triggers.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
+const actionText = maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000)
+
+/** Native response buttons carry plain data. They never contain executable UI code. */
+export const responseOperationSchema = Schema.Union([
+  strictStruct({ kind: Schema.Literal('prompt'), prompt: actionText }),
+  strictStruct({ kind: Schema.Literal('command'), command: actionText }),
+  strictStruct({
+    kind: Schema.Literal('mcp'),
+    server: id,
+    tool: id,
+    arguments: Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
+  }),
+])
+export type ResponseOperation = typeof responseOperationSchema.Type
+export const responseDispatchSchema = strictStruct({
+  actionId: id,
+  values: Schema.Record(Schema.String, Schema.mutableKey(maxValue(Schema.String, 4000))),
+})
+export type ResponseDispatch = typeof responseDispatchSchema.Type
+export const responseFormFieldSchema = mutableStruct({
+  id,
+  label: maxValue(minValue(Schema.String, 1), 120),
+  type: Schema.Literals(['text', 'multiline', 'choice']),
+  required: Schema.optional(Schema.Boolean),
+  value: Schema.optional(maxValue(Schema.String, 4000)),
+  options: Schema.optional(
+    maxValue(
+      mutableArray(
+        mutableStruct({
+          value: maxValue(minValue(Schema.String, 1), 200),
+          label: maxValue(minValue(Schema.String, 1), 120),
+        }),
+      ),
+      20,
+    ),
+  ),
+})
+export const responseActionSchema = Schema.Union([
+  responseOperationSchema,
+  strictStruct({
+    kind: Schema.Literal('form'),
+    description: maxValue(Schema.String, 2000),
+    fields: maxValue(mutableArray(responseFormFieldSchema), 20),
+    actions: maxValue(
+      minValue(
+        mutableArray(
+          mutableStruct({
+            id,
+            title: maxValue(minValue(Schema.String, 1), 120),
+            action: responseOperationSchema,
+          }),
+        ),
+        1,
+      ),
+      8,
+    ),
+  }),
+])
+export type ResponseAction = typeof responseActionSchema.Type
+export function responseFormDefaults(action: ResponseAction): Record<string, string> {
+  return action.kind === 'form'
+    ? Object.fromEntries(action.fields.map((field) => [field.id, field.value ?? '']))
+    : {}
+}
+/** Substitute only declared values into plain strings. The resolved action still needs review. */
+export function resolveResponseAction(
+  action: ResponseAction,
+  dispatch?: ResponseDispatch,
+): ResponseOperation {
+  if (action.kind !== 'form') {
+    if (dispatch) throw Error('This action has no form.')
+    return action
+  }
+  if (!dispatch) throw Error('Complete the action form first.')
+  if (
+    new Set(action.fields.map((field) => field.id)).size !== action.fields.length ||
+    new Set(action.actions.map((item) => item.id)).size !== action.actions.length
+  )
+    throw Error('Form field and action IDs must be unique.')
+  const selected = action.actions.find((item) => item.id === dispatch.actionId)
+  if (!selected) throw Error('Choose an available form action.')
+  if (Object.keys(dispatch.values).some((key) => !action.fields.some((field) => field.id === key)))
+    throw Error('The form contains an unknown field.')
+  const values = Object.fromEntries(
+    action.fields.map((field) => {
+      const value = dispatch.values[field.id] ?? field.value ?? ''
+      if (value.length > 4000 || (field.required && !value.trim()))
+        throw Error(`Complete ${field.label}.`)
+      if (
+        field.type === 'choice' &&
+        value &&
+        !field.options?.some((option) => option.value === value)
+      )
+        throw Error(`Choose a valid option for ${field.label}.`)
+      return [field.id, value]
+    }),
+  )
+  const replace = (text: string) =>
+    text.replace(/\{\{([^{}]+)\}\}/g, (_, key: string) => {
+      if (!Object.hasOwn(values, key)) throw Error(`Unknown form field: ${key}`)
+      return values[key]
+    })
+  const map = (value: unknown): unknown => {
+    if (typeof value === 'string') return replace(value)
+    if (Array.isArray(value)) return value.map(map)
+    if (value && typeof value === 'object')
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, map(item)]))
+    return value
+  }
+  const operation = selected.action
+  if (operation.kind === 'prompt') return { ...operation, prompt: replace(operation.prompt) }
+  if (operation.kind === 'command') return { ...operation, command: replace(operation.command) }
+  return {
+    ...operation,
+    arguments: Object.fromEntries(
+      Object.entries(operation.arguments).map(([key, value]) => [key, map(value)]),
+    ),
+  }
+}
+
+export const responseActionReviewSchema = mutableStruct({
+  revision: id,
+  dispatch: Schema.optional(responseDispatchSchema),
+  resolved: responseOperationSchema,
+  directory: Schema.String,
+  description: maxValue(Schema.String, 4000),
+})
+export const responsePrepareCommandFields = {
+  key: maxValue(minValue(Schema.String, 1), 120),
+  title: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120),
+  action: responseActionSchema,
+}
+export const responsePrepareCommandSchema = strictStruct(responsePrepareCommandFields)
+export function responseActionText(action: ResponseAction) {
+  return action.kind === 'prompt'
+    ? action.prompt
+    : action.kind === 'command'
+      ? action.command
+      : action.kind === 'form'
+        ? action.description.trim() || 'Open action form'
+        : `${action.server} · ${action.tool}\n${JSON.stringify(action.arguments)}`
+}
 const provider = Schema.Literals([
   'codex',
   'opencode',
@@ -117,9 +259,9 @@ export const threadActionSuggestionSchema = mutableStruct({
 })
 export type ThreadActionSuggestion = Schema.Schema.Type<typeof threadActionSuggestionSchema>
 
-/** A prepared "start a new agent thread" action. An agent creates it with the dovo_task
- * `thread_prepare` tool; nothing runs until a person reviews it and taps Send from a paired
- * client. Runtime-owned: workspace create/PATCH cannot add or change it. */
+/** A native card prepared by an agent. A paired human reviews it before Send/Run.
+ * Runtime-owned: workspace create/PATCH cannot add or change it. Cards without
+ * `automation` or `response` start a new thread, including older runtimes’ cards. */
 export const threadActionSchema = mutableStruct({
   /** Stable across retries of the same `key` in the same thread. */
   id,
@@ -129,6 +271,15 @@ export const threadActionSchema = mutableStruct({
   prompt: maxValue(minValue(Schema.String, 1), 20000),
   suggestion: Schema.optional(threadActionSuggestionSchema),
   automation: Schema.optional(automationActionSchema),
+  response: Schema.optional(responseActionSchema),
+  responseReview: Schema.optional(responseActionReviewSchema),
+  responseResult: Schema.optional(
+    mutableStruct({
+      status: Schema.Literals(['running', 'completed', 'failed', 'started', 'uncertain']),
+      output: maxValue(Schema.String, 12000),
+      terminalId: Schema.optional(id),
+    }),
+  ),
   /** The run that prepared it. Clients show the card after the last message with this
    * `turnId`, or at the end of the thread when no such message exists. */
   runId: id,
@@ -137,7 +288,7 @@ export const threadActionSchema = mutableStruct({
   updatedAt: isoDateTime(Schema.String),
   /** Set once, in the same transaction that creates the automation run. */
   automationSent: Schema.optional(mutableStruct({ runId: id, sentAt: isoDateTime(Schema.String) })),
-  /** Set once, in the same transaction that creates the new thread. */
+  /** Set with the accepted prompt, for a new thread or this same thread. */
   sent: Schema.optional(
     mutableStruct({
       taskId: id,
