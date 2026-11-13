@@ -187,10 +187,10 @@ it.each(['saved', 'acp'] as const)(
       expect(run.agent.provider).toBe(kind === 'saved' ? 'claude' : 'acp')
       expect(run.agent.acpInstallationId).toBe(kind === 'acp' ? 'image-acp' : undefined)
       expect(run.agent.resources?.skills.map((skill) => skill.name)).toContain('bot-image')
-      if (kind === 'saved') {
-        expect(run.agent.model).toBe('image-model')
-        expect(run.agent.resources?.skills.map((skill) => skill.name)).toContain('avatar-image')
-      }
+      expect(run.agent.model).toBe(kind === 'saved' ? 'image-model' : '')
+      expect(run.agent.resources?.skills.some((skill) => skill.name === 'avatar-image')).toBe(
+        kind === 'saved',
+      )
       await writeFile(join(run.cwd, 'avatar.png'), await pixels())
     })
     const result = await f.request('/api/bots/avatar/generate', {
