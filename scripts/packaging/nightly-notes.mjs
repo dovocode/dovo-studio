@@ -76,5 +76,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       { encoding: 'utf8' },
     ),
   )
+  // Publication can create a tag after checkout or the earlier changes check.
+  // Refresh after reading releases so every published candidate can be resolved.
+  execFileSync('git', ['fetch', 'origin', '--tags'], { stdio: 'inherit' })
   process.stdout.write(nightlyNotes({ target, releases, repository }))
 }

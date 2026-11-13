@@ -58,6 +58,24 @@ await test(
       )
       assert.equal(output, 'true')
       assert.equal(git(checkout, 'rev-parse', 'refs/tags/v1.0.0-nightly.1'), published)
+      git(checkout, 'tag', '-d', 'v1.0.0-nightly.1')
+      const notes = execFileSync(
+        process.execPath,
+        [new URL('./nightly-notes.mjs', import.meta.url).pathname, 'HEAD'],
+        {
+          cwd: checkout,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH}`,
+            GH_REPO: 'dovocode/dovo-studio',
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      )
+      assert.ok(notes.includes('new source'))
+      assert.ok(!notes.includes('- published source'))
+      assert.equal(git(checkout, 'rev-parse', 'refs/tags/v1.0.0-nightly.1'), published)
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
