@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { FlatList, View } from 'react-native'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
-import { CreationTarget } from '../runtime/connection/creation-target'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useNavigation } from '../shell/navigation'
 import { useMoreActions } from '../shell/more-actions'
@@ -108,17 +107,13 @@ export default function BotsScreen() {
         )}
       />
       {creating && (
-        <CreationTarget title="New Bot" onClose={() => setCreating(false)}>
-          {(runtimeId) => (
-            <CreateBot
-              onClose={() => setCreating(false)}
-              onCreated={(id) => {
-                setCreating(false)
-                navigate('tasks', id, runtimeId)
-              }}
-            />
-          )}
-        </CreationTarget>
+        <CreateBot
+          onClose={() => setCreating(false)}
+          onCreated={(id, runtimeId) => {
+            setCreating(false)
+            navigate('tasks', id, runtimeId)
+          }}
+        />
       )}
       {settings && task && (
         <RuntimeScope runtimeId={settings.runtimeId}>

@@ -1,8 +1,19 @@
 # Desktop Bots
 
-Open **Bots** in the activity bar. Select **New Bot**, set its name, role, responsibilities, project
-and harness, then create it. A paired runtime with `botsSupported: true` is required. Existing HTTP
-LAN and VPN runtime addresses remain supported.
+Open **Bots** in the activity bar. Select **New Bot**. Set its role, name and optional
+responsibilities. Choose its paired computer in **Runs on**. Each computer shows its name and
+connection status. The local computer has a **Local** label when Dovo knows its identity. You can
+open creation when any paired computer is online and supports Bots, even if the active computer is
+offline or needs an update. Changing the computer keeps your text and starts no work.
+
+Open **Agent settings** to change the harness, model or permissions. These settings start with the
+selected computer's defaults. Choices stay separate for each pairing. The computer picker does not
+change the active computer. Select **Create Bot** to create the Bot and open its conversation on its
+home computer. There is no project picker. Bots use that computer's internal scratch folder and
+require no project setup. Creation stops if the scratch folder is unavailable.
+
+A paired runtime with `botsSupported: true` is required. Existing HTTP LAN and VPN runtime addresses
+remain supported. No account or external login is required.
 
 Each Bot has one permanent thread. The Bots list uses the normal thread row. The unified workspace
 includes that same thread once, with a Bot icon. Delegated work remains below its parent. The normal
@@ -45,11 +56,42 @@ Bots stay on their home computer. **Continue elsewhere** can change the harness 
 but cannot move the Bot to another computer.
 
 Role, creation and memory drafts stay in this desktop session when you close the settings or leave
-the view. Drafts are separate for each runtime and Bot. These settings drafts do not survive an
-application restart. Normal message drafts keep the existing composer persistence. Failed edits keep
-the settings draft. A failed creation keeps its exact request and thread ID for retry, which avoids
-creating another Bot after a lost reply. The runtime snapshot owns Bot metadata; the client never
-writes it through a workspace patch.
+the view. Settings and memory drafts stay separate for each runtime and Bot. Creation text follows
+the selected computer. These drafts do not survive an application restart. Normal message drafts
+keep the existing composer persistence. Failed edits keep the settings draft.
+
+An uncertain creation keeps its exact request, thread ID and computer pairing for retry. Its text,
+agent settings and computer stay locked until the result is known. Retry reuses the same request and
+cannot create another Bot after a lost reply. Leaving and reopening the form does not send a second
+request while the first is in progress. A failed snapshot refresh keeps the successful result and
+does not repeat creation. A late reply keeps a newer Bot selection and cannot replace or clear a
+newer draft. Select **Open Bot** to open a retained successful result.
+
+**New Bot** clears the previous Bot from the route. A notification, routine or command that opens
+another Bot closes creation and selects that conversation. A late create reply keeps that selection.
+Reopen **New Bot** to recover the retained request. Changing only the active computer keeps the
+creation form open. While Dovo switches to the created Bot's computer, Bot rows, **New Bot** and
+**Back to Bots** stay disabled. Back remains available during the create request before that switch
+starts.
+
+A removed computer or replaced credential cannot receive the original request. A new pairing has new
+credentials. It cannot restore the old request's access. Select **Discard creation request** when
+its pairing is unavailable. Check Bots on the original computer first: the Bot may already exist.
+Confirm the discard to keep your text and choose an available computer. If creation already
+succeeded, the confirmation states that it removes only the local request to open the Bot. It does
+not delete the Bot. Discard does not undo remote work or discard saved actions.
+
+A confirmed rejection makes the text editable but can leave a blocked action in the runtime's
+saved-action journal. Editing the draft alone does not unblock later creation. For a rejection or
+**A saved action needs review**, select **Open computers**. Find the original computer and select
+**Review saved actions**. Check its Bots and review each action before you retry or discard it.
+Discarding an action cannot undo work already applied on that computer. Return to Bots and reopen
+**New Bot** to continue with the retained text or exact pending request.
+
+The journal currently labels Bot creation as **Saved action**. It does not expose a path or request
+ID through `mutationStatus`. The form cannot identify and discard just its own journal action. It
+never discards actions automatically. Review other saved work with care. The runtime snapshot owns
+Bot metadata; the client never writes it through a workspace patch.
 
 Offline computers retain cached Bot rows. Editing requires an online computer. Older runtimes show
 an update message and disable Bot mutations. If creation succeeds before the thread arrives, the
@@ -70,10 +112,27 @@ pnpm exec vp test packages/studio-shell/src/activity-bar.test.ts packages/extens
 ```
 
 The browser test mounts the real desktop views, thread rows, composer, Bot forms and harness save
-controls. It uses fixture transport and lightweight visual shells. It covers runtime ownership,
-draft recovery, conflicts, pause and resume, private memory routing, normal chats, creation retries
-and routine targeting. The resource/action fixture checks the actual MCP, credential and skill
-editors, inherited disabling/reset, revision conflict recovery, reviewed action dispatch, exact
-request replay and sent-thread links. It uses fixture transport and UI primitives. It does not
-verify native harness execution, the runtime scheduler, native browser isolation or a packaged
-desktop build.
+controls. Creation uses the real computer `ChoicePicker`, native CSS and theme tokens. The form has
+no hero image or image asset dependency. It saves actual light, dark and narrow form screenshots to
+`/tmp/dovo-bot-create-desktop-*.png`. Themes use `data-theme`; motion is reduced. The fixture checks
+horizontal overflow.
+
+Desktop creation checks cover selection without create or global-switch side effects, separate host
+defaults and harness choices, explicit owner transport, refresh failure, exact retry after a lost
+reply, removed/offline/unsupported hosts, missing scratch folders and credential replacement before
+or during I/O. It also covers deferred switch and React context commits, navigation locks, external
+Bot routes, and retained selection after late replies, leave/remount during deferred creation, one
+in-flight call per request, explicit discard, and stale replies after a newer successful creation
+and draft. It uses the real exported `WorkspaceRuntimeScope` and `WorkspaceScope`. Address or token
+replacement blocks retained requests; learned route metadata keeps the pairing valid.
+
+The rejection check models a blocked journal action with fixture transport. It mounts the real
+`SavedActions` panel, follows **Open computers**, discards one reviewed action, keeps unrelated
+saved work and retries the exact pending request. This does not verify the durable journal or an
+HTTP server. The transport checks `resolveRuntimeTarget` before and after each explicit-owner
+request. Harness discovery and some visual shells remain fixtures.
+
+The resource/action fixture checks the actual MCP, credential and skill editors, inherited settings,
+conflict recovery, reviewed action dispatch, exact request replay and sent-thread links. It uses
+fixture transport and UI primitives. These local browser checks do not verify native harness
+execution, the runtime scheduler, native browser isolation or a packaged desktop build.

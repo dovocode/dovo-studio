@@ -1,4 +1,4 @@
-import { botScope } from './bot-scope'
+import { botCreateHosts, botPairing } from './bot-create-host'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, Plus } from 'lucide-react'
 import { useStudioHost, useWorkspace, type StudioViewProps } from '@dovo/studio-core'
@@ -17,6 +17,8 @@ import { BotCreateForm } from './bot-create'
 
 export default function BotsView({ entityId }: StudioViewProps) {
   const store = useWorkspace()
+  const latest = useRef(store)
+  latest.current = store
   const host = useStudioHost()
   const sidebar = useNavigationSidebar()
   const [creating, setCreating] = useState(false)
@@ -27,6 +29,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
     entityId ? taskCollectionKey(store.activeRuntimeId, entityId) : '',
   )
   const selection = useRef(0)
+  const routeEntity = useRef(entityId)
   const sources = useMemo(
     () => taskSources(store),
     [
@@ -47,9 +50,17 @@ export default function BotsView({ entityId }: StudioViewProps) {
     [sources],
   )
   useEffect(() => {
-    if (entityId) {
-      setSelected(taskCollectionKey(store.activeRuntimeId, entityId))
+    // Workbench keeps this view mounted for notification and command navigation.
+    // Our own navigation is already selected; an external entity change cancels creation.
+    if (entityId !== routeEntity.current) {
+      routeEntity.current = entityId
+      selection.current++
+      setBusy(false)
+      setError('')
       setCreating(false)
+      setSelected(entityId ? taskCollectionKey(store.activeRuntimeId, entityId) : '')
+    } else if (entityId && !creating) {
+      setSelected(taskCollectionKey(store.activeRuntimeId, entityId))
     }
   }, [entityId, store.activeRuntimeId])
   useEffect(
@@ -60,6 +71,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
   )
   const current = bots.find((entry) => entry.key === selected)
   const supported = store.snapshot?.botsSupported === true
+  const canCreate = botCreateHosts(store).some((item) => item.online && item.supported)
   const select = async (entry: TaskEntry) => {
     const attempt = ++selection.current
     setBusy(true)
@@ -70,6 +82,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
       if (attempt !== selection.current) return
       setSelected(entry.key)
       setCreating(false)
+      routeEntity.current = entry.task.id
       host.navigate({ viewId: 'bots', entityId: entry.task.id })
     } catch (cause) {
       if (attempt === selection.current)
@@ -77,6 +90,14 @@ export default function BotsView({ entityId }: StudioViewProps) {
     } finally {
       if (attempt === selection.current) setBusy(false)
     }
+  }
+  const beginCreate = () => {
+    selection.current++
+    routeEntity.current = undefined
+    setSelected('')
+    setCreating(true)
+    setError('')
+    host.navigate({ viewId: 'bots' })
   }
   const matches = bots.filter((entry) =>
     `${entry.task.title} ${entry.task.bot?.role} ${entry.source.name}`
@@ -98,15 +119,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
           <div className="grid shrink-0 gap-2 border-b p-3">
             <div className="flex items-center justify-between gap-2">
               <h1 className="text-sm font-semibold">Bots</h1>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!supported || !store.connected || busy}
-                onClick={() => {
-                  setCreating(true)
-                  setError('')
-                }}
-              >
+              <Button size="sm" variant="ghost" disabled={!canCreate || busy} onClick={beginCreate}>
                 <Plus className="size-4" />
                 New Bot
               </Button>
@@ -155,13 +168,34 @@ export default function BotsView({ entityId }: StudioViewProps) {
         )}
         {creating ? (
           <BotCreateForm
-            key={botScope(store.snapshot?.runtimeId ?? store.activeRuntimeId, store.connection)}
-            onCancel={() => setCreating(false)}
-            onCreated={(id, refreshError) => {
-              setError(refreshError ?? '')
+            navigating={busy}
+            onCancel={() => {
+              selection.current++
               setCreating(false)
-              setSelected(taskCollectionKey(store.activeRuntimeId, id))
-              host.navigate({ viewId: 'bots', entityId: id })
+            }}
+            onCreated={async (id, profile, refreshError) => {
+              const attempt = ++selection.current
+              setBusy(true)
+              try {
+                const pairing = botPairing(profile)
+                const paired = () =>
+                  botCreateHosts(latest.current).some((item) => item.pairing === pairing)
+                if (!paired())
+                  throw Error('This computer’s pairing changed. Reopen its Bots to continue.')
+                if (profile.id !== latest.current.activeRuntimeId)
+                  await latest.current.switchRuntime(profile.id)
+                if (attempt !== selection.current) return false
+                if (!paired())
+                  throw Error('The active computer changed. Select Open Bot to continue.')
+                setError(refreshError ?? '')
+                setCreating(false)
+                setSelected(taskCollectionKey(profile.id, id))
+                routeEntity.current = id
+                host.navigate({ viewId: 'bots', entityId: id })
+                return true
+              } finally {
+                if (attempt === selection.current) setBusy(false)
+              }
             }}
           />
         ) : current && current.source.runtimeId === store.activeRuntimeId ? (
@@ -192,7 +226,11 @@ export default function BotsView({ entityId }: StudioViewProps) {
               Each Bot has one lasting thread, a clear role, private memory and tool permissions.
               Give it work here or send it work from routines.
             </p>
-            {!supported ? (
+            {canCreate ? (
+              <Button disabled={busy} onClick={beginCreate}>
+                {bots.length ? 'Create a Bot' : 'Create your first Bot'}
+              </Button>
+            ) : !supported ? (
               <p role="status" className="text-sm text-muted-foreground">
                 Update this runtime to use Bots. Bots on other saved computers remain in the list.
               </p>
@@ -200,11 +238,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
               <p role="status" className="text-sm text-muted-foreground">
                 This computer is offline. Connect to create a Bot.
               </p>
-            ) : (
-              <Button onClick={() => setCreating(true)}>
-                {bots.length ? 'Create a Bot' : 'Create your first Bot'}
-              </Button>
-            )}
+            ) : null}
           </div>
         )}
       </div>

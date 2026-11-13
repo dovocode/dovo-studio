@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import type { BotCreate, BotResources } from '@dovo/protocol'
+import type { BotResources } from '@dovo/protocol'
 import { View } from 'react-native'
 import { createDetailDrafts, useDetailDraft } from '../runtime/state/detail-drafts'
 import { Sheet } from '../ui/layout/sheet'
@@ -7,16 +7,12 @@ import { Action } from '../ui/controls/action'
 import { Text } from '../ui/content/text'
 import { useAction } from '../ui/controls/use-action'
 import { useTheme } from '../ui/theme'
-import { Choice } from '../ui/controls/choice'
 import { BotFields } from './bot-fields'
 
 export type BotText = {
   name: string
   role: string
   responsibilities: string
-  repositoryId?: string
-  creation?: { id: string; requestId: string; createdAt: string }
-  attempt?: BotCreate
   resources?: BotResources
   expectedRevision?: string
   originalName?: string
@@ -28,19 +24,15 @@ const drafts = createDetailDrafts<BotText>()
 export function BotEditor({
   draftKey,
   initial,
-  creating = false,
   unavailable,
   children,
-  projects,
   onSave,
   onClose,
 }: {
   draftKey: string
   initial: BotText
-  creating?: boolean
   unavailable?: string
   children?: ReactNode | ((draft: BotText, retain: (value: Partial<BotText>) => void) => ReactNode)
-  projects?: { id: string; name: string }[]
   onSave: (value: BotText, retain: (value: Partial<BotText>) => void) => Promise<unknown>
   onClose: () => void
 }) {
@@ -61,12 +53,12 @@ export function BotEditor({
   const { busy, error, act } = useAction()
   return (
     <Sheet
-      title={creating ? 'New Bot' : 'Bot settings'}
+      title="Bot settings"
       busy={busy}
       onClose={onClose}
       footer={
         <Action
-          label={creating ? 'Create Bot' : 'Save Bot'}
+          label="Save Bot"
           wide
           disabled={busy || !!unavailable || !draft.name.trim() || !draft.role.trim()}
           onPress={() =>
@@ -107,25 +99,11 @@ export function BotEditor({
         )}
         <BotFields
           {...draft}
-          disabled={busy || !!unavailable || !!draft.attempt}
+          disabled={busy || !!unavailable}
           onName={(value) => setField('name', value)}
           onRole={(value) => setField('role', value)}
           onResponsibilities={(value) => setField('responsibilities', value)}
         />
-        {projects && (
-          <Choice
-            label="Project"
-            value={draft.repositoryId ?? ''}
-            disabled={busy || !!unavailable || !!draft.attempt}
-            items={projects}
-            onChange={(value) => setField('repositoryId', value)}
-          />
-        )}
-        {draft.attempt && (
-          <Text style={styles.muted}>
-            Retry sends the original request to prevent duplicate Bots.
-          </Text>
-        )}
         {typeof children === 'function' ? children(draft, retain) : children}
         <Text style={styles.muted}>Closing this sheet keeps your unsaved edits.</Text>
       </View>

@@ -8,9 +8,39 @@ addresses remain supported.
 Create a Bot with a name, role and responsibilities. Bots are standalone assistants. They do not
 belong to a project. Creation uses an advertised scratch backing entry inside the existing thread
 engine. The app does not create or guess an unsafe scratch entry. This backing entry is not a
-project choice in the Bot interface. Creation uses global defaults, main execution and no project
-setup, worktree or linked checkouts. Existing uncertain creation requests keep their exact payload
-until the runtime confirms or rejects them.
+project choice in the Bot interface. Creation uses the selected computer's global defaults, main
+execution and no project setup, worktree or linked checkouts. After creation, open **Bot settings**
+to choose the harness, model and tool permissions.
+
+The **Runs on** card shows the computer that will host the Bot. It is always visible, also with one
+computer. Select the card to see each paired computer with its status: **Online**, **Offline**,
+**Connecting**, **Update required** or **Not ready** (no safe scratch entry). You can select only an
+online computer that is ready. When you open the sheet, the default is the active computer when it
+is ready, otherwise the first ready computer. The default is then fixed: if that computer goes
+offline or is removed, the sheet shows this and does not move the Bot to another computer. A change
+of computer keeps the name, role and responsibilities and keeps the sheet open. Each request gets
+new IDs and the selected computer's defaults. Nothing carries over from another computer.
+
+The optional starter roles (**Release**, **Research** and **Daily brief**) fill only empty fields.
+They never replace text that you typed, and they send nothing. The create sheet has no model or tool
+controls, because creation has no such settings.
+
+After an uncertain failure, the request keeps its exact body, computer and pairing. The fields and
+the computer stay locked, and **Retry Create Bot** sends the same request again. The runtime replays
+a request ID without a second Bot. If the computer is offline or needs an update, the retry waits. A
+retry uses only the exact pairing (address and token) of the first attempt. If the computer was
+paired again, also with the same runtime ID, or was removed, the retry is blocked. Dovo does not
+send the earlier request with new credentials. **Discard earlier request** then asks for
+confirmation: the earlier request may already have created the Bot, so check that computer's Bots
+first, and a new request can make a second Bot. **Keep earlier request** keeps the frozen request. A
+confirmed rejection releases the request and keeps the text. After success, the app opens the new
+Bot on the computer that received the request. The app opens it only while the sheet is open and the
+exact pairing that sent the request is still saved. If that computer was paired again or removed,
+the app keeps your text and the frozen request and says to open the Bot from that computer's Bots.
+If the reply arrives after the sheet closed, the request also stays frozen: a retry on the same
+pairing replays the same request ID and returns the same Bot. A late reply to an earlier request
+cannot close or redirect a newer draft. The creation draft stays in memory only and does not survive
+an app restart.
 
 Open a Bot row to use its conversation. Rows show Bot identity and role. The Bot ID is the thread
 ID. Runs do not add Bot rows. The unified workspace includes Bots and has a Bots filter. Bot
@@ -81,4 +111,6 @@ node scripts/check-mobile-task-list-rendering-browser.mjs
 
 Browser checks use real mobile components with native controls and runtime transport adapted for the
 browser. They do not establish native sheet behavior or a live device-to-runtime connection. No
-native build, install or deployment is part of these checks.
+native build, install or deployment is part of these checks. `check-mobile-bots-browser.mjs` also
+renders the real create sheet with the real theme at 390x844. It writes screenshots to
+`/tmp/dovo-bot-create-mobile*.png`.
