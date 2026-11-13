@@ -1,3 +1,4 @@
+import { MemoryProtection, MemoryPressureStop } from '../execution/memory-protection.js'
 import { isAbsolute, relative, sep } from 'node:path'
 import { taskInputOwner, planModeAgent, planModeRequested, goalCommand } from '@dovo/protocol'
 import { botPaused, botPausedMessage } from '@dovo/protocol'
@@ -144,6 +145,7 @@ export class Tasks {
   private nativeDirectories = new Map<string, string[]>()
   private nativeConfirmations = new Map<string, Promise<void>>()
   readonly queue: TaskQueue
+  readonly memoryProtection = new MemoryProtection()
   private runner: TaskTurnRunner
   private readonly unsubscribePolicy: () => void
   constructor(
@@ -191,6 +193,47 @@ export class Tasks {
       linkedProjectsEnabled,
       pullRequestBabysittingEnabled,
     )
+    this.runner.setMemoryProtection((taskId, turnId, controller) => {
+      const current = () => {
+        if (this.stopping || controller.signal.aborted) return false
+        const run = this.running.get(taskId)
+        const task = this.store.taskSummary(taskId)
+        if (run)
+          return (
+            run.id === turnId &&
+            run.controller === controller &&
+            (task.runPhase !== 'finalizing' || !!task.subagents?.some(nativeAgentWorking))
+          )
+        return this.nativeSessions.has(taskId) && !!task.subagents?.some(nativeAgentWorking)
+      }
+      return this.memoryProtection.begin({
+        taskId,
+        runId: turnId,
+        current,
+        stop: (reason) => {
+          if (!current()) return
+          const run = this.running.get(taskId)
+          if (run) this.cancel(taskId, turnId, reason)
+          else {
+            // Native children can remain active after the parent turn ends.
+            this.store.updateTaskHistory(taskId, (task) => ({
+              ...task,
+              status: 'cancelled',
+              queuePaused: true,
+              error: reason.message,
+              restartRecovery: undefined,
+              quotaContinuation: undefined,
+              startAfter: undefined,
+            }))
+            controller.abort(reason)
+            void this.stopNativeFamily(taskId).catch((error: unknown) =>
+              console.error('Could not stop native agents after memory pressure:', error),
+            )
+            this.stopChildren(taskId, undefined, reason)
+          }
+        },
+      })
+    })
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.runner.setNativeSessions(
       (taskId, sessionId, control, directories) => {
@@ -2375,7 +2418,10 @@ export class Tasks {
                         status: run.controller.signal.aborted ? 'cancelled' : 'failed',
                         activity: undefined,
                         queuePaused: true,
-                        error: run.shutdownUnconfirmed?.message,
+                        error:
+                          run.controller.signal.reason instanceof MemoryPressureStop
+                            ? `${run.controller.signal.reason.message} ${run.shutdownUnconfirmed?.message ?? ''}`.trim()
+                            : run.shutdownUnconfirmed?.message,
                       })),
                     ).pipe(
                       Effect.catch((error) =>
@@ -2600,7 +2646,7 @@ export class Tasks {
       error,
     }))
   }
-  cancel(id: string, expectedRunId?: string) {
+  cancel(id: string, expectedRunId?: string, reason = new Error('Cancelled by user')) {
     const run = this.running.get(id)
     if (!run) throw new HttpError(409, 'Task is not running')
     if (expectedRunId !== undefined && run.id !== expectedRunId)
@@ -2619,7 +2665,7 @@ export class Tasks {
     const runs = [...this.running].filter(([taskId]) => family.has(taskId))
     attempt(() => runCredentials(this.store).revokeTask(id))
     attempt(() => this.disposeDelegation(id))
-    attempt(() => this.stopChildren(id))
+    attempt(() => this.stopChildren(id, undefined, reason))
     void this.stopNativeFamily(id).catch((error: unknown) =>
       console.error('Could not stop native agents:', error),
     )
@@ -2630,6 +2676,9 @@ export class Tasks {
         (t) => ({
           ...t,
           status: run.shutdownUnconfirmed ? 'cancelled' : t.status,
+          ...(reason instanceof MemoryPressureStop
+            ? { error: reason.message, quotaContinuation: undefined, startAfter: undefined }
+            : {}),
           queue: t.queue?.map((message) => ({ ...message, steering: undefined })),
           queuePaused: true,
           subagentInbox: [],
@@ -2648,8 +2697,7 @@ export class Tasks {
     )
     attempt(() => this.questions.cancelTask(id))
     attempt(() => this.mcpApps?.cancelTask(id))
-    for (const [, owner] of runs)
-      attempt(() => owner.controller.abort(new Error('Cancelled by user')))
+    for (const [, owner] of runs) attempt(() => owner.controller.abort(reason))
     if (errors.length)
       throw new AggregateError(
         errors,
@@ -2989,7 +3037,7 @@ export class Tasks {
       throw failure
     }
   }
-  private stopChildren(parentTaskId: string, parentRunId?: string) {
+  private stopChildren(parentTaskId: string, parentRunId?: string, reason?: Error) {
     if (parentRunId === undefined) this.secureInputs?.cancelTask(parentTaskId)
     if (!this.stopping && parentRunId === undefined) this.onStopChildren?.(parentTaskId)
     const fibers: Fiber.Fiber<void, RuntimeFailure>[] = []
@@ -3003,7 +3051,7 @@ export class Tasks {
       if (this.stopping && child.delegation.completion) {
         const run = this.running.get(child.id)
         if (run?.fiber) fibers.push(run.fiber)
-        fibers.push(...this.stopChildren(child.id))
+        fibers.push(...this.stopChildren(child.id, undefined, reason))
         continue
       }
       if (child.delegation.completion) {
@@ -3022,14 +3070,14 @@ export class Tasks {
       const run = this.running.get(child.id)
       if (run) {
         if (run.fiber) fibers.push(run.fiber)
-        if (!run.controller.signal.aborted) this.cancel(child.id)
+        if (!run.controller.signal.aborted) this.cancel(child.id, undefined, reason)
       } else if (child.status === 'draft' || child.activeRunId || child.restartRecovery)
-        this.cancelOrphan(child.id, 'Delegation stopped by parent')
+        this.cancelOrphan(child.id, reason?.message ?? 'Delegation stopped by parent')
       if (!run) {
         void this.stopNativeFamily(child.id).catch((error: unknown) =>
           console.error('Could not stop native descendants:', error),
         )
-        fibers.push(...this.stopChildren(child.id, parentRunId))
+        fibers.push(...this.stopChildren(child.id, parentRunId, reason))
       }
     }
     return fibers
@@ -3895,6 +3943,7 @@ export class Tasks {
       }
       attempt(() => this.unsubscribePolicy())
       this.stopping = true
+      yield* runtimeOperation(() => this.memoryProtection.dispose())
       if (this.scheduleTimer) clearInterval(this.scheduleTimer)
       this.scheduleTimer = undefined
       this.steering.clear()

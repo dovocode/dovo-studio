@@ -45,6 +45,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Native agent providers](agent-providers.md): Hermes, Copilot, Grok Build, and Muse setup and
   integration boundaries.
 - [Orchestration](orchestration.md): task turn ownership and recovery behavior.
+- [Automatic memory protection](automatic-memory-protection.md): agent process ownership, memory
+  stops, recovery and platform limits.
 - [Browser and device previews](design/browser-and-devices.md): setup and current preview
   capabilities.
 

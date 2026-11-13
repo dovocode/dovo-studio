@@ -10,7 +10,7 @@ type RecordValue = Schema.Schema.Type<typeof recordSchema>
 
 /** Pi speaks newline-delimited JSON rather than JSON-RPC. */
 export class PiRpc {
-  private child: ChildProcessWithoutNullStreams
+  readonly child: ChildProcessWithoutNullStreams
   private pending = new Map<
     string,
     { resolve: (value: RecordValue) => void; reject: (error: Error) => void }

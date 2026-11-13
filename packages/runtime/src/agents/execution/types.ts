@@ -20,6 +20,8 @@ export interface AcpLaunch {
   env: Record<string, string>
 }
 export interface AgentRun {
+  /** Register only a dedicated, detached launcher owned by this run. Rebind on warm reuse. */
+  onOwnedProcess?: (child: import('node:child_process').ChildProcess) => void
   /** Stable task identity for a warm provider transport. Utility runs omit it. */
   taskId?: string
   /** Do not retain this one-off conversation in the provider's session history. */

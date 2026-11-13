@@ -151,6 +151,7 @@ export function openAcpConnection(
   }
   signal?.addEventListener('abort', abort, { once: true })
   return {
+    child,
     rpc,
     mcp,
     signal: active.signal,

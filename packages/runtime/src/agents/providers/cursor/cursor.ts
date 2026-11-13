@@ -42,6 +42,7 @@ export function openCursorWorker(agent: AgentDiscovery, cwd: string, entry?: URL
   rpc.onClose(() => fail(new Error('Cursor SDK worker connection closed')))
   rpc.listen()
   return {
+    child,
     rpc,
     signal: lifetime.signal,
     fail,
@@ -130,6 +131,7 @@ export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter
           ),
         })
         worker = openWorker(run.agent, run.cwd)
+        if (worker.child) run.onOwnedProcess?.(worker.child)
         const host = worker
         const signal = AbortSignal.any([run.signal, host.signal])
         host.rpc.onNotification('event', (raw: unknown) => {

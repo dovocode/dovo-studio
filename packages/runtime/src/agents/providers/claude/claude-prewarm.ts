@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process'
 import {
   prewarm,
   type Options,
@@ -9,6 +10,7 @@ import type { AgentRun } from '../../execution/types.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 
 export type ClaudeBinding = {
+  child?: ChildProcess
   activeRun: (
     agentId?: string,
     signal?: AbortSignal,

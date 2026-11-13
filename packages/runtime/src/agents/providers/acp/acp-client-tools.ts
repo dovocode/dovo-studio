@@ -191,6 +191,7 @@ export async function acpClientTools(
             detached: process.platform !== 'win32',
             stdio: ['ignore', 'pipe', 'pipe'],
           })
+          run.onOwnedProcess?.(child)
           const id = randomUUID()
           const terminal: Terminal = {
             sessionId: params.sessionId,
@@ -265,6 +266,9 @@ export async function acpClientTools(
   return {
     client,
     capabilities,
+    rebindProcesses: () => {
+      for (const terminal of terminals.values()) run.onOwnedProcess?.(terminal.child)
+    },
     stopSession: async (id: string) => {
       stoppingSessions.add(id)
       try {

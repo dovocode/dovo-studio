@@ -163,6 +163,7 @@ export function createHermesAdapter(): AgentAdapter {
       }
       const owned = warm,
         connection = owned.connection
+      run.onOwnedProcess?.(connection.child)
       let settled = false,
         admitted = false,
         segment = ''

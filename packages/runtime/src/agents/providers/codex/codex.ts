@@ -178,6 +178,7 @@ export function createCodexAdapter(): AgentAdapter {
             stdio: ['pipe', 'pipe', 'pipe'],
           },
         )
+      run.onOwnedProcess?.(child)
       if (!child.stdout || !child.stdin || !child.stderr)
         throw new Error('Codex stdio pipes are unavailable')
       if (!reusable) child.on('error', (error) => console.error('Codex process failed:', error))

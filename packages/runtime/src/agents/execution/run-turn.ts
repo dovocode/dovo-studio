@@ -125,6 +125,14 @@ export class TaskTurnRunner {
   ownsToolBinding(taskId: string, bindingId: string) {
     return this.toolBindings.get(taskId)?.id === bindingId
   }
+  private protectRun?: (
+    taskId: string,
+    turnId: string,
+    controller: AbortController,
+  ) => AgentRun['onOwnedProcess']
+  setMemoryProtection(protect: NonNullable<TaskTurnRunner['protectRun']>) {
+    this.protectRun = protect
+  }
   private linkedCheckouts?: LinkedCheckouts
   setLinkedCheckouts(checkouts: LinkedCheckouts) {
     this.linkedCheckouts = checkouts
@@ -1177,6 +1185,7 @@ export class TaskTurnRunner {
               recoveringAdapter,
               {
                 taskId: id,
+                onOwnedProcess: this.protectRun?.(id, turnId, controller),
                 agent: {
                   ...agent,
                   env: { ...agent.env, ...githubEnvironment, ...this.serverEnvironment(id) },

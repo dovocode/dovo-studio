@@ -33,6 +33,7 @@ export async function runPiSession(run: AgentRun) {
     run.cwd,
     processEnvironment(run.agent.env),
   )
+  run.onOwnedProcess?.(rpc.child)
   let removeEvent = () => {},
     removeFailure = () => {},
     abort = () => {},

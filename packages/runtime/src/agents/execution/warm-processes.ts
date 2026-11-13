@@ -15,7 +15,7 @@ type Candidate = { idleAt: number; expiresAt: number; release: () => Promise<voi
 const pools = new Set<{ candidates: () => Candidate[] }>()
 let timer: ReturnType<typeof setInterval> | undefined
 
-async function pruneIdleProviders(pressure: boolean) {
+export async function pruneIdleProviders(pressure: boolean, requireConfirmed = false) {
   const candidates = [...pools]
     .flatMap((pool) => pool.candidates())
     .sort((a, b) => a.idleAt - b.idleAt)
@@ -31,6 +31,8 @@ async function pruneIdleProviders(pressure: boolean) {
   const failures = results.flatMap((result) =>
     result.status === 'rejected' ? [result.reason] : [],
   )
+  if (failures.length && requireConfirmed)
+    throw new AggregateError(failures, 'Could not confirm idle provider cleanup')
   // Budget cleanup is maintenance across all harnesses, not part of the current turn's result.
   if (failures.length)
     console.error(

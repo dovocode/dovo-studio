@@ -100,6 +100,7 @@ export async function runtimeDiagnostics(
   }
   if (backups.failure) warnings.push(`Backup: ${backups.failure.message}`)
   const memory = await memoryAttribution(s).report()
+  memory.protection = s.tasks.memoryProtection.report()
   const spike = memory.spikes[0]
   if (spike && now - Date.parse(spike.at) < 10 * 60_000)
     warnings.push(

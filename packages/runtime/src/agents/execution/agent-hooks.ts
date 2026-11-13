@@ -16,6 +16,7 @@ export async function executeHook(
   cwd: string,
   signal: AbortSignal,
   context?: HookContext,
+  onOwnedProcess?: AgentRun['onOwnedProcess'],
 ): Promise<HookResult> {
   signal.throwIfAborted()
   const child = spawn(hook.command, {
@@ -26,6 +27,7 @@ export async function executeHook(
     detached: process.platform !== 'win32',
     stdio: [context ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   })
+  onOwnedProcess?.(child)
   let output = ''
   const collect = (chunk: Buffer) => {
     output = (output + chunk.toString()).slice(-16000)
@@ -138,15 +140,21 @@ export async function runWithHooks(
     for (const hook of enabled.filter((hook) => hook.event === event)) {
       const matcher = matchers.get(hook.name)
       if (matcher && !target.some((value) => matcher.test(value))) continue
-      const result = await executeHook(hook, run.cwd, signal, {
-        version: 1,
-        event,
-        cwd: run.cwd,
-        taskId: run.taskId,
-        sessionId: eventSession,
-        harness: run.agent.provider,
-        ...data,
-      })
+      const result = await executeHook(
+        hook,
+        run.cwd,
+        signal,
+        {
+          version: 1,
+          event,
+          cwd: run.cwd,
+          taskId: run.taskId,
+          sessionId: eventSession,
+          harness: run.agent.provider,
+          ...data,
+        },
+        run.onOwnedProcess,
+      )
       report(result)
       if (!result.ok) failed.push(result)
     }

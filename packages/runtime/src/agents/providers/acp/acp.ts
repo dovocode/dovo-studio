@@ -293,6 +293,8 @@ export function createAcpAdapter(): AgentAdapter {
       const client = reusable?.client ?? handlers
       if (reusable) Object.assign(client, handlers)
       const connection = reusable?.connection ?? openAcpConnection(launch, client, run.cwd)
+      run.onOwnedProcess?.(connection.child)
+      tools.rebindProcesses()
       if (!reusable)
         void connection.exited
           .catch(async () => {

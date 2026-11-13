@@ -18,6 +18,36 @@ const memoryOperation = mutableStruct({
 })
 /** Approximate: heap growth includes concurrent work and garbage-collection timing. */
 export const runtimeMemoryDiagnosticsSchema = mutableStruct({
+  protection: Schema.optional(
+    mutableStruct({
+      mode: Schema.Literals(['sampled', 'unavailable']),
+      detail: Schema.String,
+      ownedRuns: Schema.Number,
+      uncoveredRuns: Schema.Number,
+      runs: Schema.optional(
+        mutableArray(
+          mutableStruct({
+            taskId: Schema.String,
+            runId: Schema.String,
+            mode: Schema.Literals(['sampled', 'unavailable']),
+          }),
+        ),
+      ),
+      budgetBytes: Schema.optional(Schema.Number),
+      headroomBytes: Schema.optional(Schema.Number),
+      availableBytes: Schema.optional(Schema.Number),
+      ownedRssBytes: Schema.optional(Schema.Number),
+      sampledAt: Schema.optional(Schema.String),
+      lastStop: Schema.optional(
+        mutableStruct({
+          taskId: Schema.String,
+          runId: Schema.String,
+          at: Schema.String,
+          reason: Schema.String,
+        }),
+      ),
+    }),
+  ),
   sampledAt: Schema.String,
   heapUsedBytes: Schema.Number,
   heapLimitBytes: Schema.Number,

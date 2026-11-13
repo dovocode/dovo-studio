@@ -121,6 +121,7 @@ export function openHermesConnection(
     })
   }
   return {
+    child,
     signal: controller.signal,
     events,
     requests,

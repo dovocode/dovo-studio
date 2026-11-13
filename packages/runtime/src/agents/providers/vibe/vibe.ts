@@ -111,6 +111,7 @@ export function createVibeAdapter(): AgentAdapter {
         env: processEnvironment(run.agent.env),
         stdio: ['pipe', 'pipe', 'pipe'],
       })
+      run.onOwnedProcess?.(child)
       const rpc = createMessageConnection(
         new JsonLineReader(child.stdout),
         new JsonLineWriter(child.stdin),

@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process'
+import { stopOwnedChild } from '../../execution/stop-owned-child.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { randomUUID } from 'node:crypto'
 import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
@@ -89,6 +91,27 @@ function claudeOptions(
   mcpConfigPath?: string,
 ): Options {
   return {
+    spawnClaudeCodeProcess: (options) => {
+      const child = spawn(options.command, options.args, {
+        cwd: options.cwd,
+        env: options.env,
+        detached: process.platform !== 'win32',
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+      child.stderr.resume()
+      binding.child = child
+      binding.activeRun()?.onOwnedProcess?.(child)
+      const stop = () => {
+        void stopOwnedChild(child).catch((error: unknown) =>
+          console.error('Could not stop Claude process tree:', error),
+        )
+      }
+      options.signal.addEventListener('abort', stop, { once: true })
+      child.once('close', () => options.signal.removeEventListener('abort', stop))
+      if (options.signal.aborted) stop()
+      return child
+    },
     cwd: run.cwd,
     ...(run.linkedDirectories?.length
       ? { additionalDirectories: run.linkedDirectories.map((item) => item.path) }
@@ -373,6 +396,7 @@ type WarmTurn = {
   reject: (error: Error) => void
 }
 type WarmClaude = {
+  process: ClaudeBinding
   stream: ReturnType<typeof query>
   input: MessageQueue
   controller: AbortController
@@ -432,6 +456,7 @@ export function createClaudeAdapter(): AgentAdapter {
         session.controller.abort()
       }
       await session.consumer.catch(() => {})
+      if (session.process.child) await stopOwnedChild(session.process.child)
       session.disposeMcpConfig()
       session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
       if (closeError) throw closeError
@@ -517,13 +542,13 @@ export function createClaudeAdapter(): AgentAdapter {
       const capabilities = { unanswered: false }
       const configFile = claudeMcpConfigFile(run.agent.resources?.mcpServers ?? [])
       let stream: ReturnType<typeof query> | undefined
+      const binding: ClaudeBinding = { activeRun: currentRun, capabilities }
       const abortStartup = () => {
         controller.abort()
         stream?.close()
       }
       run.signal.addEventListener('abort', abortStartup, { once: true })
       try {
-        const binding = { activeRun: currentRun, capabilities }
         const options = claudeOptions(run, controller, binding, command, configFile.path)
         // Only an empty input queue is claimed. No prompt runs before MCP ownership is rebound.
         const claimed =
@@ -555,6 +580,8 @@ export function createClaudeAdapter(): AgentAdapter {
             return {
               options: claudeOptions(run, new AbortController(), parked, command),
               bind: (next) => {
+                next.child = parked.child
+                if (next.child) next.activeRun()?.onOwnedProcess?.(next.child)
                 owner = next
                 parked.capabilities = next.capabilities
               },
@@ -566,12 +593,14 @@ export function createClaudeAdapter(): AgentAdapter {
         } finally {
           controller.abort()
           configFile.dispose()
+          if (binding.child) await stopOwnedChild(binding.child)
         }
         throw error
       } finally {
         run.signal.removeEventListener('abort', abortStartup)
       }
       session = {
+        process: binding,
         stream,
         input,
         controller,
@@ -678,10 +707,12 @@ export function createClaudeAdapter(): AgentAdapter {
           } catch (closeError) {
             console.error('Could not close Claude stream:', closeError)
           }
+          if (binding.child) await stopOwnedChild(binding.child)
         }
       })()
       void session.consumer.catch((error) => console.error('Claude stream failed:', error))
     }
+    if (session.process.child) run.onOwnedProcess?.(session.process.child)
     session.onSubagentEvent = run.onSubagentEvent
     session.owner = run
     publish(session, run)
@@ -809,17 +840,12 @@ export function createClaudeAdapter(): AgentAdapter {
       )
       let stream: ReturnType<typeof query> | undefined
       const capabilities = { unanswered: false }
+      const binding: ClaudeBinding = { activeRun: () => run, capabilities }
       try {
         const goalInput = run.goal ? new MessageQueue() : undefined
         stream = query({
           prompt: goalInput ?? (run.attachments?.length ? claudeInput(run) : run.prompt),
-          options: claudeOptions(
-            run,
-            controller,
-            { activeRun: () => run, capabilities },
-            command,
-            configFile.path,
-          ),
+          options: claudeOptions(run, controller, binding, command, configFile.path),
         })
         if (goalInput) {
           await requireClaudeGoal(stream, run)
@@ -841,6 +867,7 @@ export function createClaudeAdapter(): AgentAdapter {
           stream?.close()
         } finally {
           configFile.dispose()
+          if (binding.child) await stopOwnedChild(binding.child)
         }
       }
     },
