@@ -1,4 +1,5 @@
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
+import { BotAvatar } from '../../bots/bot-avatar'
 import { TaskPipelineProgress } from './task-pipeline-progress'
 import { ThreadSharing, InlineThreadSuggestions } from './thread-sharing'
 import { useTaskPanes } from '../../shell/task-panes'
@@ -129,7 +130,9 @@ function ThreadHeaderTitle({
   subtitle,
   status,
   width,
+  bot,
 }: {
+  bot?: Task['bot']
   title: string
   subtitle: string
   status: string
@@ -141,22 +144,27 @@ function ThreadHeaderTitle({
       accessibilityLabel={[title, subtitle, status].filter(Boolean).join('. ')}
       style={{
         minHeight: 44,
-        justifyContent: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
         width: Math.max(80, Math.min(420, width)),
         minWidth: 0,
       }}
     >
-      <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
-        {title}
-      </Text>
-      <Text
-        testID="Task device subtitle"
-        accessibilityLabel={subtitle}
-        numberOfLines={1}
-        style={{ color: colors.muted, fontSize: 11, lineHeight: 15 }}
-      >
-        {[subtitle, status].filter(Boolean).join(' · ')}
-      </Text>
+      {bot && <BotAvatar avatar={bot.avatar} name={title} size={32} />}
+      <View style={{ flex: 1, minWidth: 0, justifyContent: 'center' }}>
+        <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
+          {title}
+        </Text>
+        <Text
+          testID="Task device subtitle"
+          accessibilityLabel={subtitle}
+          numberOfLines={1}
+          style={{ color: colors.muted, fontSize: 11, lineHeight: 15 }}
+        >
+          {[subtitle, status].filter(Boolean).join(' · ')}
+        </Text>
+      </View>
     </View>
   )
 }
@@ -358,6 +366,7 @@ export function TaskDetail({
           ]}
           titleContent={
             <ThreadHeaderTitle
+              bot={task.bot}
               title={task.title}
               subtitle={subtitle}
               status={connected ? 'Loading conversation…' : 'Offline'}
@@ -849,6 +858,7 @@ function TaskDetailContent({
         titleContent={
           startup?.temporary ? undefined : (
             <ThreadHeaderTitle
+              bot={task.bot}
               title={task.title}
               subtitle={subtitle}
               status={status}
@@ -917,8 +927,8 @@ function TaskDetailContent({
                             : tab,
                   group: tab === 'agents' || tab === 'devices' ? 'Tools' : 'Navigate',
                   selected: pane === tab,
-                  // Keep changes and thread info beside the menu; car mode uses the menu.
-                  overflow: car || tab !== 'diff',
+                  // Bots keep the header for identity; all tools stay in More.
+                  overflow: !!task.bot || car || tab !== 'diff',
                   onPress: () => {
                     Keyboard.dismiss()
                     setCheckpoint('')
@@ -933,16 +943,17 @@ function TaskDetailContent({
                       ? [
                           ...(
                             [
-                              ['settings', 'Bot settings'],
-                              ['mcp', 'Bot MCP servers'],
-                              ['skill', 'Bot skills'],
-                              ['memory', 'Bot memory'],
-                              ['routines', 'Bot routines'],
+                              ['settings', 'Bot settings', 'settings'],
+                              ['mcp', 'Bot MCP servers', 'mcp'],
+                              ['skill', 'Bot skills', 'skill'],
+                              ['memory', 'Bot memory', 'memory'],
+                              ['routines', 'Bot routines', 'routines'],
                             ] as const
-                          ).map(([section, label]) => ({
+                          ).map(([section, label, icon]) => ({
                             label,
-                            icon: 'bot' as const,
+                            icon,
                             group: 'Tools',
+                            overflow: true,
                             onPress: () => setBotSettings(section),
                           })),
                         ]
@@ -1149,7 +1160,7 @@ function TaskDetailContent({
                 })
         }
       />
-      {!native && !expandedPreview && task.bot && (
+      {!native && !expandedPreview && task.bot?.state === 'paused' && (
         <View
           style={{
             paddingHorizontal: 16,
@@ -1159,17 +1170,9 @@ function TaskDetailContent({
             alignItems: 'center',
           }}
         >
-          <Action
-            label="Bot settings"
-            icon="bot"
-            secondary
-            onPress={() => setBotSettings('settings')}
-          />
           <Text style={{ flex: 1 }}>
             {task.bot.role}
-            {task.bot.state === 'paused'
-              ? ' · Paused. New messages stay queued until you resume.'
-              : ''}
+            {' · Paused. New messages stay queued until you resume.'}
           </Text>
         </View>
       )}

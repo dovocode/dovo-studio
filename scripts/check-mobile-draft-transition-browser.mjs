@@ -43,6 +43,9 @@ const mocks = {
   '../../ui/content/open-link':
     'export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;',
   '../../ui/controls/icon': 'export const Icon=()=>null;',
+  '../ui/controls/icon':
+    'export const Icon=({name})=><span aria-label={name==="bot"?"Bot avatar":name}>{name}</span>;',
+  '../ui/theme': 'export const useTheme=()=>({colors:{},styles:{}});',
   'react-native': `
     import {useImperativeHandle,useRef} from 'react';
     export function TextInput({ref,accessibilityLabel,secureTextEntry,editable,onChangeText,onEndEditing,onSubmitEditing}){
@@ -50,6 +53,7 @@ const mocks = {
       useImperativeHandle(ref,()=>({clear:()=>{if(field.current)field.current.value=''},isFocused:()=>document.activeElement===field.current,blur:()=>field.current.blur()}));
       return <input ref={field} aria-label={accessibilityLabel} type={secureTextEntry?'password':'text'} disabled={!editable} onChange={event=>onChangeText?.(event.target.value)} onBlur={event=>onEndEditing?.({nativeEvent:{text:event.target.value}})} onKeyDown={event=>{if(event.key==='Enter')onSubmitEditing?.({nativeEvent:{text:field.current.value}})}}/>;
     }
+    export const Image=({source,accessibilityLabel})=><img src={source.uri} alt={accessibilityLabel}/>;
     export const StyleSheet={hairlineWidth:1};
     export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{ListFooterComponent}</div>;
     export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityLabel})=><button role={accessibilityRole} aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;
@@ -1133,6 +1137,57 @@ try {
     window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: bot.id } })
   })
   await page.getByText('Bot saved conversation', { exact: true }).waitFor()
+  await page.locator('header').getByText('Lasting Bot', { exact: true }).waitFor()
+  await page.locator('header').getByLabel('Bot avatar', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.headerActions.every((action) => action.overflow)),
+    true,
+    'All Bot tools belong in More',
+  )
+  assert.deepEqual(
+    await page.evaluate(() =>
+      Object.fromEntries(
+        window.headerActions
+          .filter((action) => action.label.startsWith('Bot '))
+          .map((action) => [action.label, action.icon]),
+      ),
+    ),
+    {
+      'Bot settings': 'settings',
+      'Bot MCP servers': 'mcp',
+      'Bot skills': 'skill',
+      'Bot memory': 'memory',
+      'Bot routines': 'routines',
+    },
+  )
+  await page.locator('header').getByRole('button', { name: 'Thread tools', exact: true }).click()
+  for (const label of [
+    'Bot settings',
+    'Bot MCP servers',
+    'Bot skills',
+    'Bot memory',
+    'Bot routines',
+    'Files',
+    'Terminal',
+    'Browser',
+    'Devices',
+    'Agents',
+  ])
+    await page.locator('header').getByRole('button', { name: label, exact: true }).waitFor()
+  await page.evaluate(() => {
+    const task = window.task
+    window.publish('b', {
+      ...task,
+      title: 'Renamed Bot',
+      bot: { ...task.bot, avatar: 'data:image/webp;base64,UklGRg==' },
+    })
+  })
+  await page.locator('header').getByText('Renamed Bot', { exact: true }).waitFor()
+  await page
+    .locator('header')
+    .getByRole('img', { name: 'Renamed Bot avatar', exact: true })
+    .waitFor()
+
   await page
     .getByText('Release lead · Paused. New messages stay queued until you resume.', { exact: true })
     .waitFor()
