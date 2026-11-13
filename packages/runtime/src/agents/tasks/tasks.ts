@@ -897,6 +897,8 @@ export class Tasks {
    * after-snapshot) a worktree holding exactly that turn's files once it first runs. */
   fork(id: string, turnId: string) {
     const task = this.store.task(id)
+    if (task.bot)
+      throw new HttpError(409, 'Bots keep one conversation. Reset its context instead of forking.')
     const turn = task.turns?.find((item) => item.id === turnId)
     if (!turn) throw new HttpError(404, 'Turn not found')
     if (turn.status === 'running')
@@ -935,6 +937,8 @@ export class Tasks {
   /** Continue the conversation in an independent worktree at the source's committed HEAD. */
   async startFork(id: string, forkId: string, text: string, attachmentIds: string[]) {
     const source = this.store.task(id)
+    if (source.bot)
+      throw new HttpError(409, 'Bots keep one conversation. Reset its context instead of forking.')
     if (source.archived || source.archivedAt)
       throw new HttpError(409, 'Reopen this thread before forking.')
     if (!text.trim() && !attachmentIds.length)
@@ -1455,6 +1459,8 @@ export class Tasks {
   /** Empty conversation in this checkout, or an independent snapshot of its current files. */
   async newWorktreeThread(id: string, mode: 'reuse' | 'fork') {
     const source = this.store.taskSummary(id)
+    if (source.bot)
+      throw new HttpError(409, 'Bots keep one conversation. Reset its context instead of forking.')
     if (source.execution !== 'worktree' || (!source.checkoutBranch && !source.existingWorktreePath))
       throw new HttpError(409, 'Prepare a worktree before starting another thread in it.')
     if (source.status === 'running')

@@ -6,7 +6,12 @@ import { Switch } from '../ui/controls/switch'
 import { Text } from '../ui/content/text'
 import { randomUUID } from 'expo-crypto'
 import { Schema } from 'effect'
-import { automationIssues, responses, type Automation } from '@dovo/protocol'
+import {
+  automationBotJobSummary,
+  automationIssues,
+  responses,
+  type Automation,
+} from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { SettingsAction as Action } from '../screens/settings-controls'
 import { IconButton } from '../ui/controls/icon-button'
@@ -30,6 +35,7 @@ export function AutomationCard({
   const { colors, styles } = useTheme()
 
   const { snapshot, connected, activeId, callEffect } = useRuntime()
+  const botJob = automationBotJobSummary(flow, snapshot?.workspace.tasks ?? [])
   const { focused } = useNavigation()
   const { busy, error, act } = useAction()
   const [deletingOn, setDeletingOn] = useApplicationState<string | null>(null)
@@ -71,6 +77,11 @@ export function AutomationCard({
             gap: 3,
           }}
         >
+          {botJob && (
+            <Text numberOfLines={2} style={styles.muted}>
+              {botJob}
+            </Text>
+          )}
           <Text numberOfLines={2} style={styles.muted}>
             {triggerSummary(flow)} · {steps} {steps === 1 ? 'step' : 'steps'}
           </Text>

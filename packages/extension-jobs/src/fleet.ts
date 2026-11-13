@@ -8,6 +8,7 @@ import {
   type Workspace,
 } from '@dovo/studio-core'
 import { pendingTaskInput, runLabels, runSteps } from './run-progress'
+import { automationBotJobSummary } from '@dovo/protocol'
 
 export type FleetAutomation = {
   key: string
@@ -19,6 +20,7 @@ export type FleetAutomation = {
   status: string
   needsInput: boolean
   projects: string[]
+  botJob: string | null
 }
 
 /** Keep unsynced edits on the open connection visible while other hosts use saved snapshots.
@@ -71,6 +73,7 @@ export function aggregateAutomations(runtimes: readonly RuntimeOverview[]): Flee
         runtime,
         runtimeName,
         flow,
+        botJob: automationBotJobSummary(flow, snapshot.workspace.tasks),
         runs,
         latest,
         needsInput,
@@ -85,7 +88,9 @@ export function aggregateAutomations(runtimes: readonly RuntimeOverview[]): Flee
           ...new Set(
             flow.nodes.flatMap((node) => {
               const name =
-                node.data.kind === 'task' ? projects.get(node.data.repositoryId) : undefined
+                node.data.kind === 'task' && !node.data.botId
+                  ? projects.get(node.data.repositoryId)
+                  : undefined
               return name ? [name] : []
             }),
           ),

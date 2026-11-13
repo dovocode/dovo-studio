@@ -1,4 +1,4 @@
-import { githubEventChoices } from '@dovo/protocol'
+import { automationBotJobSummary, githubEventChoices } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Ellipsis, Monitor, Plus, Settings2, Workflow, X } from 'lucide-react'
@@ -37,6 +37,7 @@ export function AutomationDetail({
   const { workspace, flow, selectedNode, selectNode, messages, setMessages, update, drafts } =
     useAutomation(automationId)
   const { snapshot, connected } = useWorkspace()
+  const botJob = flow && automationBotJobSummary(flow, workspace.tasks)
   const compact = useCompactLayout()
   const actions = useJobActions()
   const [runId, setRunId] = useApplicationState<string | null>(initialRunId ?? null)
@@ -110,6 +111,7 @@ export function AutomationDetail({
             <Monitor className="size-3" />
             Runs on {snapshot?.runtimeHost ?? 'the selected computer'}
             {!connected && ' · offline'}
+            {botJob && <span className="truncate"> · {botJob}</span>}
           </>
         }
         leading={

@@ -108,3 +108,5 @@ export { Disclosure } from './disclosure'
 export { StudioConfirmationProvider } from './confirmation-provider'
 
 export * from './secret-reference-fields'
+
+export { BotAvatar } from './bot-avatar'

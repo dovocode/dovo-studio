@@ -47,7 +47,7 @@ const definitions = [
     part: 'automations',
     schema: studioAutomationsCommandSchema,
     description:
-      'Create, update, validate, list/read and enable/disable Studio automations; configure manual, cron/timezone, webhook or GitHub triggers and task/review graph steps. Run requires a stable requestId; cancel/retry/wait take a run ID, runs takes an automation ID. Human review gates cannot be approved with this tool. Create/update use the complete automation object. Use studio_discover to find project and agent IDs.',
+      'Manage Studio automations: list/read/create/update/validate, enable/disable, run/cancel/retry/wait. Create/update take the complete automation. Bot job: task node data.botId = existing Bot ID (studio_threads list/read); data.objective runs with Bot settings. Discover project/agent IDs with studio_discover. Run needs stable requestId; cancel/retry/wait use run ID; runs uses automation ID. Human review gates cannot be approved here. Inspect the schema for full options.',
   },
   {
     part: 'browsers',

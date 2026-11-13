@@ -7,7 +7,7 @@ import { chromium } from './browser/harness.mjs'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
-  '@dovo/studio-ui/resource-editors': `export const McpEditor=()=>null;export const SkillEditor=({onSave})=><button onClick={()=>onSave({name:'bot-skill',description:'Test',content:'Test body',enabled:true})}>Save fixture Bot skill</button>;`,
+  '@dovo/studio-ui/resource-editors': `export const CatalogPicker=()=>null;export const McpEditor=()=>null;export const SkillEditor=({onSave})=><button onClick={()=>onSave({name:'bot-skill',description:'Test',content:'Test body',enabled:true})}>Save fixture Bot skill</button>;`,
   '@dovo/extension-scm/pull-detail': `export const PullDetail=({number,initialTab,linkedThread})=>{window.askInThread=linkedThread?.onAsk;return <aside aria-label="Pull request details" data-pull-preview={number} data-tab={initialTab}>PR {number} {linkedThread?.task.title}</aside>};`,
   './detail/side-thread-changes': `export const ReviewSideThreadChangesButton=({task})=><button data-review-side-changes={task.id}>Review changes</button>;`,
   '../../detail/side-thread-changes': `export const ReviewSideThreadChangesButton=({task})=><button data-review-side-changes={task.id}>Review changes</button>;`,
@@ -37,6 +37,7 @@ const mocks = {
     export const formatDateTime=value=>value;
   `,
   '@dovo/studio-ui': `
+export {BotAvatar} from '../studio-ui/src/bot-avatar';
 export {Card} from '@dovo/web-ui/card';
 export {ConversationHistory,useConversationHistory} from '../studio-ui/src/components/ai-elements/conversation';
 export {SearchField} from './src/search-field';
@@ -61,7 +62,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export const IconButton=({children,label,className,...props})=><button aria-label={label} title={label} {...props}>{children}</button>;
     export {Input} from '@dovo/web-ui/input';
     import {ChoicePicker as NativeChoicePicker} from './src/choice-picker';export const ChoicePicker=props=>props['aria-label']==='Bot computer'?<NativeChoicePicker {...props}/>:<select {...props} onChange={event=>props.onValueChange(event.target.value)}>{props.children}</select>;
-    export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit})=><form onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}</form>;
+    export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit})=><form className="relative z-10" onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}</form>;
     export const ComposerSubmit=props=><button {...props}/>;
     export const ComposerTextarea=props=><textarea {...props}/>;
     export const ContextMenu={Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
@@ -73,7 +74,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className,resizable=true,side})=><div style={resizable?{width:side==="right"?360:260,maxWidth:side==="right"?"45%":"30%",flexShrink:0}:undefined} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-tools': `export const TaskTools=({task,surface,onSelect})=>task.bot?<button onClick={()=>onSelect(surface==='bot-settings'?'chat':'bot-settings')}>Bot settings</button>:null;`,
+  './detail/task-tools': `export const TaskTools=({task,surface,onSelect})=>task.bot?<nav>{[['bot-settings','Bot settings'],['bot-mcp','Bot MCP servers'],['bot-skills','Bot skills'],['bot-memory','Bot memory'],['bot-routines','Bot routines']].map(([id,label])=><button key={id} onClick={()=>onSelect(surface===id?'chat':id)}>{label}</button>)}</nav>:null;`,
   './detail/task-header': `export const TaskHeader=({task,onSurface})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('side-chats')}>Open side chats</button></header>;`,
   './detail/task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../chat/thread/chat-thread': `import {TaskEmptyState} from '../extension-tasks/src/task-creation/task-empty-state';export const ChatThread=({task,emptyState})=>task.status==='draft'&&!task.messages.length?(emptyState??<TaskEmptyState task={task}/>):<div className="min-h-0 flex-1 overflow-auto p-4" data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
@@ -192,6 +193,7 @@ function App(){
   window.calls.push({owner:target,path,input:JSON.parse(JSON.stringify(input??{}))});
   const current=all[target];const found=current.tasks.find(t=>t.id===input?.id);const bot=found?.bot;
   if(path==='/api/fixture/agent'){if(window.deferAgentRead)await new Promise(resolve=>window.releaseAgentRead=resolve);return {ok:true}};
+  if(path==='/api/tasks/files')return {files:[]};
   if(path==='/api/tasks/waiting')return {dependencies:[]};
   if(path==='/api/tasks/message'){setAll(before=>({...before,[target]:{...before[target],tasks:before[target].tasks.map(t=>t.id===input.id?{...t,status:'review',draft:'',messages:[...t.messages,{id:input.messageId,role:'user',text:input.text,createdAt:new Date().toISOString()}]}:t)}}));return {ok:true}};
   if(path==='/api/bots/create'){
@@ -203,12 +205,14 @@ function App(){
    if(!present)setAll(before=>({...before,[target]:{...before[target],tasks:[...before[target].tasks,created]}}));
    if(window.deferCreate)await new Promise(resolve=>{window.releaseCreate=resolve;window.createReplies??={};window.createReplies[input.requestId]=resolve});if(window.failCreate){window.failCreate=false;throw Error('Response lost. Retry creation.')}return {id:created.id,bot:created.bot,revision:1,runtimeInstanceId:target};
   }
+  if(path==='/api/bots/avatar/generate'){window.avatarCalls??=[];window.avatarCalls.push(input);if(window.failAvatar){window.failAvatar=false;throw Error('Avatar response lost')}return {avatar:'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA'}}
+  if(path==='/api/bots/avatar/cancel')return {ok:true};
   if(path==='/api/bots/update'||path==='/api/bots/lifecycle'){
    decode(path.endsWith('update')?botUpdateSchema:botLifecycleSchema,input);
    if(window.failUpdate){window.failUpdate=false;throw Error('Settings conflict. Draft kept.')}
    if(window.noopResource && input.resources){window.noopResource=false;return {id:found.id,bot,revision:1,runtimeInstanceId:target}}
    if(input.expectedRevision!==bot.revision)throw Error('Bot revision changed. Draft kept.');
-   const next={...bot,...(path.endsWith('update')?{...('role' in input?{role:input.role}:{}),...('responsibilities' in input?{responsibilities:input.responsibilities}:{}),...('resources' in input?{resources:input.resources}:{})}:{state:input.action==='pause'?'paused':'active'}),revision:randomUUID()};
+   const next={...bot,...(path.endsWith('update')?{...('avatar' in input?{avatar:input.avatar??undefined}:{}),...('role' in input?{role:input.role}:{}),...('responsibilities' in input?{responsibilities:input.responsibilities}:{}),...('resources' in input?{resources:input.resources}:{})}:{state:input.action==='pause'?'paused':'active'}),revision:randomUUID()};
    setAll(before=>({...before,[target]:{...before[target],tasks:before[target].tasks.map(t=>t.id===found.id?{...t,bot:next}:t)}}));return {id:found.id,bot:next,revision:1,runtimeInstanceId:target};
   }
   if(path==='/api/workspace'){
@@ -223,7 +227,7 @@ function App(){
  const request=useCallback((...args)=>rpc(owner,...args),[rpc,owner]);
  window.updateHost=(id,changes)=>{window.hostOptions??={};window.hostOptions[id]={...window.hostOptions[id],...changes};setAll(before=>({...before}))};
  const profiles=['one','two'].filter(id=>!window.hostOptions?.[id]?.removed).map(id=>({id,name:id,connection:{address:window.hostOptions?.[id]?.address??'http://'+id+'.lan',token:'paired'+(window.pairVersion??'')+(window.hostOptions?.[id]?.credential??''),runtimeId:id,...window.hostOptions?.[id]?.routes}}));
- const snapshot={runtimeId:owner,messageSetupSupported:window.messageSetupSupported,planModeSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,botsSupported:supported?true:undefined,botResourcesSupported:true,permissionPolicySupported:true,questions:[],approvals:[],defaults:{},workspace:current};
+ const snapshot={runtimeId:owner,messageSetupSupported:window.messageSetupSupported,planModeSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,botsSupported:supported?true:undefined,botResourcesSupported:true,botAvatarsSupported:true,permissionPolicySupported:true,questions:[],approvals:[],defaults:{},workspace:current};
  const runtimes=profiles.map(profile=>({profile,connected:!(window.hostOptions?.[profile.id]?.offline??offline),snapshot:{...snapshot,botsSupported:window.hostOptions?.[profile.id]?.unsupported?undefined:snapshot.botsSupported,runtimeId:profile.id,defaults:{fixtureModel:profile.id+'-model'},workspace:all[profile.id]}}));
  const readRuntime=async(profile,...args)=>{if(!resolveRuntimeTarget(window.latestProfiles,profile))throw Error('Runtime pairing changed');window.explicitOwners??=[];window.explicitOwners.push({id:profile.id,address:profile.connection.address,token:profile.connection.token});const result=await rpc(profile.id,...args);if(!resolveRuntimeTarget(window.latestProfiles,profile))throw Error('Runtime pairing changed');if(args[0]==='/api/bots/create'){window.createReturned??=[];window.createReturned.push(args[1].requestId)}return result};
  const store={workspace:current,setWorkspace,snapshot:{...snapshot,...runtimes.find(r=>r.profile.id===owner)?.snapshot},activeRuntimeId:owner,localRuntimeId:'one',connection:profiles.find(p=>p.id===owner)?.connection,connected:runtimes.find(r=>r.profile.id===owner)?.connected??false,runtimes,runtimeRegistry:{profiles},switchRuntime:async id=>{if(window.deferSwitch)await new Promise(resolve=>window.releaseSwitch=resolve);setOwner(id);window.switchBeforeRender=window.owner!==id},mutationStatus:profile=>({pending:window.savedActions?.[profile.id]?.length??0,error:null,actions:window.savedActions?.[profile.id]??[]}),discardMutations:async(profile,id)=>{if(!id)throw Error("Fixture requires review of a single action");window.discardedActions??=[];window.discardedActions.push(id);window.savedActions[profile.id]=window.savedActions[profile.id].filter(action=>action.id!==id);setAll(before=>({...before}))},retryMutations:async()=>{throw Error("Fixture saved actions require explicit review")},request,readRuntime,readRuntimeEffect:(profile,...args)=>Effect.tryPromise({try:()=>readRuntime(profile,...args),catch:cause=>cause}),runtimeReadCache:()=>({read:async()=>null}),flush:async()=>{window.calls.push({owner,path:'flush'})},readCache:{read:async()=>null},refreshRuntime:async()=>{if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}},refreshRuntimes:async()=>{},previewTask:(_connection,_id,_updates,action)=>action()};
@@ -323,6 +327,15 @@ try {
   assert.equal(await page.locator('[data-bot-row="child"]').count(), 0)
   await page.locator('[data-bot-row="bot"]').first().getByRole('button').first().click()
   await composer().waitFor()
+  await composer().pressSequentially('@Release')
+  const botMention = page.getByRole('option').filter({ hasText: 'Release Bot two' })
+  await botMention.waitFor()
+  await botMention.click()
+  assert.match(await composer().inputValue(), /@Release Bot two \(`studio:two:thread:bot`\)/)
+  await page.waitForFunction(() => {
+    const input = document.querySelector('textarea[data-task-id="bot"]')
+    return document.activeElement === input && input.selectionStart === input.value.length
+  })
   await composer().fill('Unsent Bot message')
   await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   assert.equal(await page.getByLabel('Bot project', { exact: true }).count(), 0)
@@ -340,11 +353,31 @@ try {
     }
     await page.setViewportSize({ width: 1440, height: 900 })
   }
+  await page.evaluate(() => (window.failAvatar = true))
+  await page.getByRole('button', { name: 'Generate avatar', exact: true }).click()
+  await page.getByText('Avatar response lost', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Retry generation', exact: true }).click()
+  await page.getByRole('button', { name: 'Use avatar', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.all.one.tasks.find((t) => t.id === 'bot').bot.avatar),
+    undefined,
+  )
+  assert.deepEqual(
+    await page.evaluate(() => window.avatarCalls[0]),
+    await page.evaluate(() => window.avatarCalls[1]),
+  )
+  await page.getByRole('button', { name: 'Use avatar', exact: true }).click()
+  await page.getByRole('button', { name: 'Remove avatar', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Remove avatar', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Remove avatar', exact: true })
+    .waitFor({ state: 'hidden' })
   await page.getByLabel('Bot role', { exact: true }).fill('Unsaved role')
   await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   assert.equal(await composer().inputValue(), 'Unsent Bot message')
   await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   assert.equal(await page.getByLabel('Bot role', { exact: true }).inputValue(), 'Unsaved role')
+  await page.getByRole('button', { name: 'Bot skills', exact: true }).click()
   await page.getByRole('button', { name: 'Add Bot skill', exact: true }).click()
   await page.getByRole('button', { name: 'Save fixture Bot skill', exact: true }).click()
   await page.waitForFunction(() =>
@@ -352,6 +385,7 @@ try {
       .find((t) => t.id === 'bot')
       .bot.resources?.skills.some((s) => s.name === 'bot-skill'),
   )
+  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   await page.evaluate(() => (window.failUpdate = true))
   await page.getByRole('button', { name: 'Save Bot settings', exact: true }).click()
   await page.getByText('Settings conflict. Draft kept.', { exact: true }).waitFor()
@@ -368,11 +402,13 @@ try {
   await page.evaluate(() => window.remount())
   await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   await page.evaluate(() => (window.noopResource = true))
+  await page.getByRole('button', { name: 'Bot skills', exact: true }).click()
   await page.getByRole('button', { name: 'Edit skill bot-skill', exact: true }).click()
   await page.getByRole('button', { name: 'Save fixture Bot skill', exact: true }).click()
   await page
     .getByRole('button', { name: 'Save fixture Bot skill', exact: true })
     .waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   await page.getByRole('button', { name: 'Save Bot settings', exact: true }).click()
   await page.getByText('Bot revision changed. Draft kept.', { exact: true }).waitFor()
   assert.equal(
@@ -386,10 +422,12 @@ try {
   assert.equal(await composer().inputValue(), 'Unsent Bot message')
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Pause Bot', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Bot memory', exact: true }).click()
   await page.getByLabel('Bot memory key', { exact: true }).fill('release')
   await page.getByLabel('Bot memory note', { exact: true }).fill('Ship after checks pass')
   await page.getByRole('button', { name: 'Save memory note', exact: true }).click()
   await page.getByRole('button', { name: 'release', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Bot settings', exact: true }).click()
   await page
     .getByLabel('Bot settings panel', { exact: true })
     .getByRole('button', { name: 'Change Bot model', exact: true })

@@ -33,6 +33,10 @@ import {
   ChevronDown,
   Info,
   GitBranch,
+  Plug,
+  BookOpen,
+  Brain,
+  Workflow,
 } from 'lucide-react'
 import { HeaderContent, Button, IconButton, ProjectIcon, DropdownMenu, cn } from '@dovo/studio-ui'
 import { taskPresentation } from '../list/task-presentation'
@@ -44,6 +48,10 @@ import { taskPullLinks } from './task-pull-links'
 import { useThreadInfoContext } from './thread-info-context'
 export type TaskSurface =
   | 'bot-settings'
+  | 'bot-mcp'
+  | 'bot-skills'
+  | 'bot-memory'
+  | 'bot-routines'
   | 'pull-preview'
   | 'linked-pulls'
   | 'chat'
@@ -161,7 +169,13 @@ export function TaskHeader({
     ['chat', 'Chat', MessageSquare, 0],
     ['files', 'Files', Files, 0],
     ...(task.bot
-      ? [['bot-settings', 'Bot settings', Bot, 0] as const]
+      ? [
+          ['bot-settings', 'Bot settings', Bot, 0] as const,
+          ['bot-mcp', 'Bot MCP servers', Plug, 0] as const,
+          ['bot-skills', 'Bot skills', BookOpen, 0] as const,
+          ['bot-memory', 'Bot memory', Brain, 0] as const,
+          ['bot-routines', 'Bot routines', Workflow, 0] as const,
+        ]
       : [
           [
             'projects',

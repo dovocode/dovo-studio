@@ -1,3 +1,4 @@
+import { BotAvatars } from './agents/tasks/bot-avatar.js'
 import { RuntimeDictation } from './speech/runtime-dictation.js'
 import { ManagedPolicy } from './policy/managed-policy.js'
 import { taskInputOwner, taskRemoteHumanInputs } from '@dovo/protocol'
@@ -274,6 +275,7 @@ export function createServices(
       () => preferences.get().enablePullRequestBabysitting,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy)
+  const botAvatars = new BotAvatars({ store, agents, defaults, approvals, mutations, tasks })
   const secureInputs = new SecureInputs(
     () => activity.add('integration', 'secure-input', 'Secure input state changed', {}),
     (taskId, runId, id, status) => tasks.reportSecureInput(taskId, runId, id, status),
@@ -570,6 +572,7 @@ export function createServices(
     threadArchive: new LegacyThreadArchive(new ThreadReplicationJournal(db, runtimeId)),
     db,
     titles,
+    botAvatars,
     activity,
     commands,
     pulls,
@@ -640,6 +643,7 @@ export interface Services {
   forges: ForgeConnections
   defaults: RuntimeDefaults
   titles: TitleGeneration
+  botAvatars: BotAvatars
   activity: Activity
   taskReviews: TaskReviews
   fileReviews: FileReviews

@@ -37,13 +37,14 @@ target**. Its instructions go to the existing Bot thread. The Bot's current harn
 permissions apply. A routine that targets a paused Bot fails; resume the Bot before retrying that
 run.
 
-Set **MCP servers and skills** in the Bot settings sidebar. The runtime must advertise
-`botResourcesSupported`. Add, edit or remove this Bot's definitions. Turn inherited resources off
-for this Bot, or override them. Reset an override to use the inherited definition. These changes
-stay with the Bot when its harness changes. They do not change shared settings or other Bots. Dovo
-stores MCP credential values and returns hidden references. The existing credential editor keeps
-those references when you edit another field. These controls manage Dovo resources. Installed
-harnesses can still use their own native or global configuration.
+Open **Bot MCP servers** or **Bot skills** in the Bot tools sidebar. Use MCP Registry or skills.sh
+to import resources for this Bot. The runtime must advertise `botResourcesSupported`. Add, edit or
+remove this Bot's definitions. Turn inherited resources off for this Bot, or override them. Reset an
+override to use the inherited definition. These changes stay with the Bot when its harness changes.
+They do not change shared settings or other Bots. Dovo stores MCP credential values and returns
+hidden references. The existing credential editor keeps those references when you edit another
+field. These controls manage Dovo resources. Installed harnesses can still use their own native or
+global configuration.
 
 An agent can call `thread_prepare` to add a **New agent thread** card to its conversation. This is a
 native first-party card, not an arbitrary HTML button. Open **Review and Send**. Change the prompt,
@@ -135,3 +136,12 @@ The resource/action fixture checks the actual MCP, credential and skill editors,
 conflict recovery, reviewed action dispatch, exact request replay and sent-thread links. It uses
 fixture transport and UI primitives. These local browser checks do not verify native harness
 execution, the runtime scheduler, native browser isolation or a packaged desktop build.
+
+Bot tools have separate Settings, MCP servers, Skills, Memory and Routines entries. Settings
+includes reviewed avatar upload and generation. The Bots activity tab restores the last Bot on this
+computer during the app session. Unified shows pinned Bots first, then other Bots by conversation
+activity, above pinned threads. Use the avatar menu to pin or unpin a Bot.
+
+Bot replies offer **Reset context to here** instead of Fork. Reset keeps files, actions and the full
+transcript. Bots favor child agents for longer work so the conversation can stay available. See
+[Bot behavior](bots.md) for details and limits.

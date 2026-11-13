@@ -319,6 +319,8 @@ export function runtimeSnapshot(
       threadStartSupported: true,
       botsSupported: true,
       botResourcesSupported: true,
+      botAvatarsSupported: true,
+      botContextResetSupported: true,
       threadActionsSupported: true,
       responseActionsSupported: true,
       fullTurnSettingsSupported: true,

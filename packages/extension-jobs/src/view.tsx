@@ -93,7 +93,7 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
   const notifiedRow = destination?.row
   const query = search.trim().toLowerCase()
   const visible = rows.filter((row) =>
-    [row.flow.name, row.runtimeName, ...row.projects, row.status].some((value) =>
+    [row.flow.name, row.runtimeName, ...row.projects, row.status, row.botJob ?? ''].some((value) =>
       value.toLowerCase().includes(query),
     ),
   )
@@ -270,7 +270,7 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
             <div className="shrink-0 border-b border-border/70 px-3 py-2">
               <SearchField
                 aria-label="Search automations"
-                placeholder="Search automations, projects or computers…"
+                placeholder="Search automations, Bots, projects or computers…"
                 value={search}
                 onValueChange={setSearch}
               />
@@ -316,6 +316,7 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
                     </span>
                     <span className="studio-collection-title truncate">{row.flow.name}</span>
                     <span className="studio-collection-context">
+                      {row.botJob && <span className="truncate">{row.botJob}</span>}
                       <span className="inline-flex min-w-0 items-center gap-1.5">
                         <Monitor className="size-3 shrink-0" />
                         <span className="truncate">{row.runtimeName}</span>
@@ -345,7 +346,7 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
                   title={query ? 'No matching automations' : 'Automate repeatable work'}
                   description={
                     query
-                      ? 'Search by automation, project or computer.'
+                      ? 'Search by automation, Bot, project or computer.'
                       : 'Create an automation on one of your computers. Its runs appear here alongside your other work.'
                   }
                 />

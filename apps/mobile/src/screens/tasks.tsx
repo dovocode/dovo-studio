@@ -1,3 +1,4 @@
+import { BotStrip } from '../bots/bot-strip'
 import { requestMessageReveal } from '../tasks/conversation/message-reveal'
 import {
   taskIsWorking,
@@ -917,6 +918,22 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ]}
         ListHeaderComponent={
           <View style={{ gap: 4 }}>
+            {!archived && !car && (
+              <BotStrip
+                entries={[...rowData.values()].filter(
+                  ({ row }) =>
+                    row.task.bot &&
+                    !row.task.archivedAt &&
+                    !row.task.delegation &&
+                    !row.task.replica &&
+                    (source === 'all' || row.runtimeId === source) &&
+                    `${row.task.title} ${row.task.bot.role} ${row.runtimeName}`
+                      .toLowerCase()
+                      .includes(query.trim().toLowerCase()),
+                )}
+                onOpen={(id, runtimeId) => navigate('tasks', id, runtimeId)}
+              />
+            )}
             {!!(refreshError || historySearch.error) && (
               <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 10 }]}>
                 {refreshError || historySearch.error}

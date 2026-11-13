@@ -23,6 +23,10 @@ import {
   PanelRightOpen,
   PanelRightClose,
   PanelBottom,
+  Plug,
+  BookOpen,
+  Brain,
+  Workflow,
 } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
@@ -105,7 +109,7 @@ export function TaskTools({
   return (
     <nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools">
       <span className="studio-navigation-heading" aria-hidden="true">
-        Thread
+        {task.bot ? 'Bot' : 'Thread'}
       </span>
       <div data-tools-pane-control className="mb-3 shrink-0">
         <Tooltip>
@@ -132,13 +136,25 @@ export function TaskTools({
       </div>
       {(
         [
+          ...(task.bot
+            ? ([
+                {
+                  label: 'Bot',
+                  tools: [
+                    ['bot-settings', 'Bot settings', Bot, 0],
+                    ['bot-mcp', 'Bot MCP servers', Plug, 0],
+                    ['bot-skills', 'Bot skills', BookOpen, 0],
+                    ['bot-memory', 'Bot memory', Brain, 0],
+                    ['bot-routines', 'Bot routines', Workflow, 0],
+                  ],
+                },
+              ] as const)
+            : []),
           {
             label: 'Thread workspace',
             tools: [
               ['files', 'Files', Files, 0],
-              ...(task.bot
-                ? [['bot-settings', 'Bot settings', Bot, 0] as const]
-                : [['projects', 'Linked projects', FolderSymlink, 0] as const]),
+              ...(task.bot ? [] : [['projects', 'Linked projects', FolderSymlink, 0] as const]),
               ...(hasArtifacts ? [['artifacts', 'Artifacts', Shapes, 0] as const] : []),
               ...(hasDiff
                 ? [['changes', 'Diff', FileCode2, task.files?.length ?? 0] as const]

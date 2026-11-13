@@ -36,13 +36,18 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   },
   [
     {
+      path: '../../../bots/bot-avatar',
+      importer: mobile,
+      contents: 'export const BotAvatar=()=>null;',
+    },
+    {
       path: 'react-native',
       contents: `import React from 'react';export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,accessibilityLabel,onPress})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;`,
     },
     {
       path: '../../../runtime/connection/provider',
       importer: mobile,
-      contents: 'export const useRuntime=()=>window.runtime;',
+      contents: 'export const useRuntime=()=>({overviews:[],...window.runtime});',
     },
     {
       path: '../../../ui/content/text',
@@ -164,6 +169,47 @@ try {
     .click()
   assert.equal(await page.evaluate(() => window.runtime.text), '`model:harness%3Acodex/gpt-exact` ')
   assert.equal(await page.evaluate(() => window.runtime.provider), 'acp')
+  await page.evaluate(() => {
+    const task = {
+      id: 'same',
+      title: 'Release helper',
+      repositoryId: '',
+      agentId: '',
+      createdAt: '2026-11-01T00:00:00Z',
+      status: 'review',
+      messages: [],
+      files: [],
+      bot: { role: 'Releases', state: 'active' },
+    }
+    window.update({
+      text: '@Release',
+      overviews: ['mac', 'linux'].map((id) => ({
+        profile: {
+          id,
+          name: id,
+          nameIsCustom: true,
+          connection: { address: 'http://' + id, token: 'paired' },
+        },
+        snapshot: { runtimeId: id, workspace: { tasks: [task] } },
+      })),
+    })
+  })
+  const bots = page.getByRole('button', { name: /^Mention Bot Release helper:/ })
+  await bots.first().waitFor()
+  assert.equal(await bots.count(), 2)
+  await page
+    .getByRole('button', { name: 'Mention Bot Release helper: Bot · mac', exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(() => window.runtime.text),
+    '@Release helper (`studio:mac:thread:same`) ',
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some((request) => request.path === '/api/tasks/message'),
+    ),
+    false,
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile file mention request races, resource details and native goal insertion passed',

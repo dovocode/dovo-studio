@@ -1,8 +1,9 @@
+import { BotAvatarEditor } from './bot-avatar-editor'
 import { useRef, useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
 import { automationHref } from '../shell/source-route'
-import { useSheetNavigation } from '../ui/layout/sheet'
+import { Sheet, useSheetNavigation } from '../ui/layout/sheet'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   botResultSchema,
@@ -21,21 +22,44 @@ import { BotResources } from './bot-resources'
 import { BotMemory } from './bot-memory'
 import { useAction } from '../ui/controls/use-action'
 
-export function BotSettings(props: { task: Task; onClose: () => void }) {
+export type BotSection = 'settings' | 'mcp' | 'skill' | 'memory' | 'routines'
+
+export function BotSettings(props: {
+  task: Task
+  onClose: () => void
+  initialSection?: BotSection
+}) {
   const { profile } = useRuntime()
   return (
     <BotSettingsEditor
-      key={detailDraftKey(profile?.connection ?? null, 'bot-settings', props.task.id)}
+      key={detailDraftKey(
+        profile?.connection ?? null,
+        'bot-settings',
+        props.task.id,
+        props.initialSection ?? 'settings',
+      )}
       {...props}
     />
   )
 }
-function BotSettingsEditor({ task, onClose }: { task: Task; onClose: () => void }) {
+function BotSettingsEditor({
+  task,
+  onClose,
+  initialSection = 'settings',
+}: {
+  task: Task
+  onClose: () => void
+  initialSection?: BotSection
+}) {
   const { profile, connected, snapshot, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const [harness, setHarness] = useState(false)
-  const [resources, setResources] = useState(false)
-  const [memory, setMemory] = useState(false)
+  const [avatar, setAvatar] = useState(false)
+  const [resources, setResources] = useState<'mcp' | 'skill' | undefined>(
+    initialSection === 'mcp' || initialSection === 'skill' ? initialSection : undefined,
+  )
+  const [memory, setMemory] = useState(initialSection === 'memory')
+  const [routines, setRoutines] = useState(initialSection === 'routines')
   const [revision] = useState(task.bot?.revision)
   const title = useRef(task.title)
   const currentRevision = useRef(revision)
@@ -159,25 +183,48 @@ function BotSettingsEditor({ task, onClose }: { task: Task; onClose: () => void 
             <Text>
               Pause holds new work. The current turn can finish. Use Stop in the chat to cancel it.
             </Text>
+            <Action label="Bot avatar" secondary onPress={() => setAvatar(true)} />
             <Action
               label="Harness, model and tool permissions"
               secondary
               onPress={() => setHarness(true)}
             />
             {snapshot?.botResourcesSupported && (
-              <Action
-                label="Bot MCP servers and skills"
-                secondary
-                onPress={() => setResources(true)}
-              />
+              <>
+                <Action label="Bot MCP servers" secondary onPress={() => setResources('mcp')} />
+                <Action label="Bot skills" secondary onPress={() => setResources('skill')} />
+              </>
             )}
-            <BotRoutines taskId={task.id} />
+            <Action label="Bot routines" secondary onPress={() => setRoutines(true)} />
             <Action label="Bot memory" secondary onPress={() => setMemory(true)} />
           </View>
+          {avatar && (
+            <BotAvatarEditor
+              task={task}
+              onClose={() => setAvatar(false)}
+              onSaved={(result) => {
+                if (
+                  draft.expectedRevision === bot.revision &&
+                  result.bot.role === bot.role &&
+                  result.bot.responsibilities === bot.responsibilities
+                ) {
+                  currentRevision.current = result.bot.revision
+                  baseline.current = result.bot
+                  retain({ expectedRevision: result.bot.revision })
+                }
+              }}
+            />
+          )}
           {harness && <HarnessSettings task={task} onClose={() => setHarness(false)} />}
           {memory && <BotMemory taskId={task.id} onClose={() => setMemory(false)} />}
+          {routines && (
+            <Sheet title="Bot routines" onClose={() => setRoutines(false)}>
+              <BotRoutines taskId={task.id} />
+            </Sheet>
+          )}
           {resources && snapshot?.botResourcesSupported && (
             <BotResources
+              kind={resources}
               value={draft.resources ?? emptyBotResources()}
               inherited={taskResources(
                 {
@@ -189,7 +236,7 @@ function BotSettingsEditor({ task, onClose }: { task: Task; onClose: () => void 
                 snapshot.defaults,
               )}
               disabled={!connected}
-              onClose={() => setResources(false)}
+              onClose={() => setResources(undefined)}
               save={async (update) => {
                 retain({ resources: update(draft.resources ?? emptyBotResources()) })
               }}

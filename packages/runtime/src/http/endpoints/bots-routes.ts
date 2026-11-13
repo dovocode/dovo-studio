@@ -3,6 +3,12 @@ import type { IncomingMessage } from 'node:http'
 import { Effect } from 'effect'
 import {
   botCreateSchema,
+  botAvatarGenerateSchema,
+  botAvatarUploadSchema,
+  botContextResetRequestSchema,
+  botContextMessages,
+  taskIsWorking,
+  taskSubagents,
   botLifecycleSchema,
   botUpdateSchema,
   decode,
@@ -18,6 +24,7 @@ import { HttpError, runtimeOperation } from '../../errors.js'
 import { body } from '../support/body.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { startThreadEffect, threadStartAcknowledgement } from './thread-start.js'
+import { botAvatarPreview } from '../../agents/tasks/bot-avatar.js'
 
 const isEmpty = (resources: BotResources) =>
   !resources.mcpServers.length &&
@@ -38,6 +45,7 @@ function result(s: Services, id: string): BotResult {
 }
 type BotFields = Pick<Bot, 'role' | 'responsibilities' | 'state'> & {
   resources?: BotResources | undefined
+  avatar?: string | undefined
 }
 
 /** Change one Bot under compare-and-set. A replay whose outcome already holds succeeds. */
@@ -55,6 +63,7 @@ function change(
       wanted.role === bot.role &&
       wanted.responsibilities === bot.responsibilities &&
       wanted.state === bot.state &&
+      wanted.avatar === bot.avatar &&
       isDeepStrictEqual(wanted.resources ?? null, bot.resources ?? null)
     )
       return
@@ -90,7 +99,88 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       if (agentAccess) throw new HttpError(403, 'Bots are managed from a paired human client.')
-      const value = yield* serviceResult(body(request, 256 * 1024))
+      const value = yield* serviceResult(
+        body(request, path === '/api/bots/avatar/upload' ? 8 * 1024 * 1024 : 256 * 1024),
+      )
+      if (path === '/api/bots/avatar/upload') {
+        const input = decode(botAvatarUploadSchema, value)
+        const task = s.store.taskSummary(input.id)
+        if (!task.bot || task.replica || task.archivedAt) throw new HttpError(404, 'Bot not found.')
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(input.data))
+          throw new HttpError(400, 'Invalid image data.')
+        return yield* serviceResult(botAvatarPreview(Buffer.from(input.data, 'base64')))
+      }
+      if (path === '/api/bots/avatar/generate')
+        return yield* serviceResult(s.botAvatars.generate(value))
+      if (path === '/api/bots/avatar/cancel') {
+        const input = decode(botAvatarGenerateSchema, value)
+        s.botAvatars.cancel(input.id, input.requestId)
+        return { ok: true }
+      }
+      if (path === '/api/bots/reset-context') {
+        const input = decode(botContextResetRequestSchema, value)
+        return yield* runtimeOperation(() => {
+          s.store.transaction(() => {
+            const task = s.store.task(input.id)
+            const bot = task.bot
+            if (!bot || task.replica || task.archivedAt) throw new HttpError(404, 'Bot not found.')
+            // An exact replay must not exclude messages sent after the first reset.
+            if (
+              bot.contextResets?.some(
+                (reset) =>
+                  reset.turnId === input.turnId && reset.requestRevision === input.expectedRevision,
+              )
+            )
+              return
+            if (bot.revision !== input.expectedRevision) throw stale()
+            if (
+              taskIsWorking(task) ||
+              task.queue?.length ||
+              taskSubagents(task, s.store.get().tasks, true).length > 0
+            )
+              throw new HttpError(
+                409,
+                'Finish or stop current work and clear the queue before resetting context.',
+              )
+            const turn = task.turns?.find((turn) => turn.id === input.turnId)
+            if (!turn || turn.status === 'running')
+              throw new HttpError(404, 'Finished reply not found.')
+            if (
+              !botContextMessages(task.messages, bot).some(
+                (message) => message.id === turn.assistantId,
+              )
+            )
+              throw new HttpError(409, 'Choose a reply in the current context.')
+            const through = task.messages.at(-1)?.id
+            if (!through || !turn.assistantId) throw new HttpError(409, 'No conversation to reset.')
+            s.store.updateTask(task.id, (current) => ({
+              ...current,
+              sessionId: undefined,
+              sessionAgentId: undefined,
+              consumedMessageIds: undefined,
+              contextUsage: undefined,
+              runAttempt: undefined,
+              bot: {
+                ...bot,
+                revision: randomUUID(),
+                updatedAt: new Date().toISOString(),
+                contextResets: [
+                  ...(bot.contextResets ?? []),
+                  {
+                    requestRevision: input.expectedRevision,
+                    turnId: turn.id,
+                    afterMessageId: turn.assistantId,
+                    throughMessageId: through,
+                    at: new Date().toISOString(),
+                  },
+                ],
+              },
+            }))
+            s.activity.add('task', task.id, 'Bot context reset', { turnId: turn.id })
+          })
+          return result(s, input.id)
+        })
+      }
       if (path === '/api/bots/create') {
         const input = decode(botCreateSchema, value)
         // Bots are standalone assistants. The runtime, not hidden controls, keeps them out
@@ -118,13 +208,22 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
         return yield* runtimeOperation(() => result(s, input.createTask.id))
       }
       if (path === '/api/bots/update') {
+        const input = decode(botUpdateSchema, s.store.restoreSecrets(value))
+        const avatar =
+          typeof input.avatar === 'string'
+            ? (yield* serviceResult(
+                botAvatarPreview(
+                  Buffer.from(input.avatar.slice(input.avatar.indexOf(',') + 1), 'base64'),
+                ),
+              )).avatar
+            : input.avatar
         return yield* runtimeOperation(() => {
           // Stored-secret references in resources become the saved values again.
-          const input = decode(botUpdateSchema, s.store.restoreSecrets(value))
           change(s, input.id, input.expectedRevision, (bot) => ({
             role: input.role ?? bot.role,
             responsibilities: input.responsibilities ?? bot.responsibilities,
             state: bot.state,
+            avatar: avatar === null ? undefined : (avatar ?? bot.avatar),
             resources: input.resources
               ? isEmpty(input.resources)
                 ? undefined
@@ -142,6 +241,7 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
             responsibilities: bot.responsibilities,
             state: input.action === 'pause' ? 'paused' : 'active',
             resources: bot.resources,
+            avatar: bot.avatar,
           }))
           if (input.action === 'resume') s.tasks.releaseBotHold(input.id)
           return result(s, input.id)

@@ -51,6 +51,11 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
   [
     { path: 'react-native', contents: native },
     {
+      path: '../resources/catalog-picker',
+      importer: mobile + 'bots/',
+      contents: 'export const CatalogPicker=()=>null;',
+    },
+    {
       path: '../runtime/connection/provider',
       importer: mobile + 'resources/',
       contents: 'export const useRuntime=()=>({connected:true});',

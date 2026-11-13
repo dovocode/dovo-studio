@@ -68,15 +68,15 @@ Routines are optional. Open **Manage routines**, then set a task step's **Destin
 That step uses the Bot's persistent harness and permissions. A paused Bot cannot run a routine step.
 Resume the Bot, then retry the routine run.
 
-Use **Bot MCP servers and skills** to add, edit or remove definitions for this Bot. The sheet shows
-inherited definitions and Bot overrides. Disable an inherited resource for this Bot, or restore it,
-without changing the shared definition. Use **Reset to inherited** to remove an override and restore
-inheritance. This can enable the shared resource again. Use the separate inherited disable control
-to keep it off for this Bot. These edits stay in the Bot draft. Select **Save Bot** to apply the
-role and resources with one revision check. Switching harness keeps these Bot resources. Saved
-credentials stay hidden. These controls manage Dovo resources. Installed harnesses can also load
-native or global tools and skills. They do not restrict host file access for a full-access agent.
-This feature needs the runtime's top-level `botResourcesSupported` flag.
+Use **Bot MCP servers** or **Bot skills** to add, edit or remove definitions for this Bot. The sheet
+shows inherited definitions and Bot overrides. Disable an inherited resource for this Bot, or
+restore it, without changing the shared definition. Use **Reset to inherited** to remove an override
+and restore inheritance. This can enable the shared resource again. Use the separate inherited
+disable control to keep it off for this Bot. These edits stay in the Bot draft. Select **Save Bot**
+to apply the role and resources with one revision check. Switching harness keeps these Bot
+resources. Saved credentials stay hidden. These controls manage Dovo resources. Installed harnesses
+can also load native or global tools and skills. They do not restrict host file access for a
+full-access agent. This feature needs the runtime's top-level `botResourcesSupported` flag.
 
 An agent can use `dovo_task thread_prepare` to propose a new thread. The mobile conversation shows a
 native Dovo card after that turn. Select **Review new thread**. Edit the prompt, harness and model,
@@ -114,3 +114,12 @@ browser. They do not establish native sheet behavior or a live device-to-runtime
 native build, install or deployment is part of these checks. `check-mobile-bots-browser.mjs` also
 renders the real create sheet with the real theme at 390x844. It writes screenshots to
 `/tmp/dovo-bot-create-mobile*.png`.
+
+Bot tools now have separate Settings, MCP servers, Skills, Memory and Routines entries. Use MCP
+Registry or skills.sh to import resources for this Bot. Set or generate a reviewed avatar in
+Settings. Pinned Bots appear first in the avatar row at the top of Threads. Other Bots sort by
+conversation activity. A bubble uses the existing unread state.
+
+Use **Reset context to here** on a finished reply instead of Fork. Later messages stay visible.
+Reset changes future model context only. Files and completed actions stay unchanged. See
+[Bot behavior](../../../docs/bots.md) for avatar generation, reset and background-work limits.

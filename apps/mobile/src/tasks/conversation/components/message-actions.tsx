@@ -1,3 +1,4 @@
+import { botResultSchema, taskIsWorking } from '@dovo/protocol'
 import { loadMobileModelCatalog } from '../../../agents/use-model-catalog'
 import { useEffect, useMemo, useState } from 'react'
 import { AccessibilityInfo, ActionSheetIOS, Alert, Platform, Pressable, View } from 'react-native'
@@ -116,7 +117,7 @@ export function MessageActions({
       })
   }
   const fork = () => {
-    if (!turn || forking || !activeId) return
+    if (!turn || forking || !activeId || task.bot) return
     Alert.alert(
       'Fork from here?',
       'A new task starts with the conversation up to this reply, and this turn’s files in its own worktree.',
@@ -283,7 +284,7 @@ export function MessageActions({
           <Icon name="refresh" size={14} color={colors.muted} />
         </Pressable>
       )}
-      {!!turn && turn.status !== 'running' && (
+      {!!turn && !task.bot && turn.status !== 'running' && (
         <Pressable
           testID="Fork from here"
           accessibilityRole="button"
@@ -302,6 +303,55 @@ export function MessageActions({
         >
           <Icon name="changes" size={14} color={colors.muted} />
         </Pressable>
+      )}
+      {!!turn && task.bot && turn.status !== 'running' && (
+        <View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reset context to here"
+            disabled={
+              !connected ||
+              forking ||
+              !snapshot?.botContextResetSupported ||
+              taskIsWorking(task) ||
+              !!task.queue?.length
+            }
+            onPress={() =>
+              Alert.alert(
+                'Reset Bot context to this reply?',
+                'Future replies will use the conversation up to this point. Later messages stay visible for reference. Files and completed actions stay unchanged.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Reset context',
+                    onPress: () => {
+                      if (!task.bot || forking) return
+                      setForking(true)
+                      void call(
+                        '/api/bots/reset-context',
+                        { id: task.id, turnId: turn.id, expectedRevision: task.bot.revision },
+                        botResultSchema,
+                      )
+                        .catch((error: unknown) =>
+                          Alert.alert(
+                            'Could not reset context',
+                            error instanceof Error ? error.message : String(error),
+                          ),
+                        )
+                        .finally(() => setForking(false))
+                    },
+                  },
+                ],
+              )
+            }
+            style={{ width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Icon name="refresh" size={14} color={colors.muted} />
+          </Pressable>
+          {task.bot.contextResets?.some((reset) => reset.turnId === turn.id) && (
+            <Text>Context reset here</Text>
+          )}
+        </View>
       )}
       {commands.length > 0 && (
         <Pressable

@@ -1096,7 +1096,12 @@ export const nodeDataSchema = mutableStruct({
   execution: Schema.optional(executionSchema),
   linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
   /** Task steps with a Bot post their objective into that Bot's thread, using its settings. */
-  botId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  botId: Schema.optional(
+    maxValue(minValue(Schema.String, 1), 200).annotate({
+      description:
+        'For a Bot job, set data.kind to task and data.botId to the existing Bot thread ID on this computer. The objective runs in its persistent thread with its saved settings; project and agent fields are ignored.',
+    }),
+  ),
 })
 export const flowNodeSchema = mutableStruct({
   id: Schema.String,

@@ -69,6 +69,15 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
   [
     { path: 'react-native', contents: native },
     {
+      path: 'expo-image-picker',
+      contents: 'export const launchImageLibraryAsync=async()=>({canceled:true});',
+    },
+    {
+      path: '../resources/catalog-picker',
+      importer: mobile + 'bots/',
+      contents: 'export const CatalogPicker=()=>null;',
+    },
+    {
       path: '../resources/editor',
       importer: mobile + 'bots/',
       contents: `export const ResourceEditor=()=>null;`,
@@ -253,17 +262,22 @@ try {
     ]
     window.publish()
   })
+  await page.getByRole('button', { name: 'Bot routines', exact: true }).click()
   await page.getByRole('button', { name: 'Release check', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.route), {
     pathname: '/settings/automations/[runtimeId]/[automationId]',
     params: { runtimeId: 'paired-owner', automationId: 'release-check' },
   })
+  await page
+    .getByRole('dialog', { name: 'Bot routines', exact: true })
+    .getByRole('button', { name: 'Close sheet', exact: true })
+    .click()
   await page.getByRole('button', { name: 'Pause Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Pause Bot', exact: true }).waitFor()
   await page.getByLabel('Role', { exact: true }).fill('Senior reviewer')
-  await page.getByRole('button', { name: 'Bot MCP servers and skills', exact: true }).click()
+  await page.getByRole('button', { name: 'Bot skills', exact: true }).click()
   await page
     .getByRole('button', { name: 'Disable inherited skill shared-review', exact: true })
     .click()
@@ -277,7 +291,7 @@ try {
     0,
   )
   await page
-    .getByRole('dialog', { name: 'Bot MCP servers and skills', exact: true })
+    .getByRole('dialog', { name: 'Bot skills', exact: true })
     .getByRole('button', { name: 'Close sheet', exact: true })
     .click()
   await page.getByRole('button', { name: 'Close sheet', exact: true }).click()

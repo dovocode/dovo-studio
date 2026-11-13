@@ -1,7 +1,22 @@
 import { CronDate, CronExpressionParser } from 'cron-parser'
 import { resolveTaskAgent } from '../workspace.js'
 import { supportsAccess } from '../auth/access.js'
-import type { Automation, Workspace } from '../workspace.js'
+import type { Automation, Task, Workspace } from '../workspace.js'
+
+/** Derive Bot job identity from the saved targets, including unavailable Bots. */
+export function automationBotJobSummary(
+  flow: Pick<Automation, 'nodes'>,
+  tasks: readonly Pick<Task, 'id' | 'title' | 'bot'>[],
+): string | null {
+  const jobs = flow.nodes.filter((node) => node.data.kind === 'task' && node.data.botId)
+  if (!jobs.length) return null
+  const ids = new Set(jobs.map((node) => node.data.botId))
+  const names = [...ids].map((id) => {
+    const bot = tasks.find((task) => task.id === id && task.bot)
+    return bot?.title || 'Unavailable Bot'
+  })
+  return `${jobs.length === 1 ? 'Bot job' : 'Bot jobs'} · ${names.join(', ')}`
+}
 
 /** Reject invalid calendar dates and DST gaps instead of silently changing the reminder time. */
 export function automationOnceTime(runAt: string | undefined, timezone: string): number {

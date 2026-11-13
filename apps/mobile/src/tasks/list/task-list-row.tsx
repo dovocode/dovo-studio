@@ -1,3 +1,4 @@
+import { BotAvatar } from '../../bots/bot-avatar'
 import { NestedThreads } from './nested-threads'
 import type { NestedThread } from '@dovo/protocol'
 import { HarnessIcon } from '../../agents/harness-icon'
@@ -282,7 +283,7 @@ function TaskListRowView({
       </View>
     )
   const projectBadge = task.bot ? (
-    <Icon name="bot" size={badgeSize} color={colors.muted} />
+    <BotAvatar avatar={task.bot.avatar} name={task.title} size={badgeSize} />
   ) : (
     projectImage
   )

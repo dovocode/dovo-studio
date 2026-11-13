@@ -175,6 +175,9 @@ export const TaskRowMenu=({testID,task,actions,onDetails,contentOffsetY=0})=>{wi
 ]
 for (const [path, importer] of [
   ['../ui/content/text', 'screens/tasks.tsx'],
+  ['../ui/content/text', 'bots/'],
+  ['../ui/controls/icon', 'bots/'],
+  ['../ui/theme', 'bots/'],
   ['../ui/layout/sheet', 'screens/tasks.tsx'],
   ['../ui/controls/icon', 'screens/tasks.tsx'],
   ['../ui/controls/icon-button', 'screens/tasks.tsx'],
@@ -1933,6 +1936,10 @@ try {
   })
   await page.getByTestId('Task ordinary-neighbor').waitFor()
   assert.equal(await page.getByTestId('Task lasting-bot').count(), 0)
+  const botTile = page.getByRole('button', { name: /^Open Bot Lasting release Bot on / })
+  await botTile.waitFor()
+  await botTile.click()
+  assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'lasting-bot')
   await page.evaluate(() => window.showOverview())
   const botRow = page.getByTestId('Workspace thread Lasting release Bot')
   await botRow.waitFor()

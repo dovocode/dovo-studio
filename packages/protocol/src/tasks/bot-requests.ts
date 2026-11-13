@@ -9,7 +9,13 @@ import {
 } from '../shared/schema.js'
 import { taskSchema } from '../workspace.js'
 import { startsCleanDraft } from './task-message.js'
-import { botResourcesSchema, botResponsibilitiesSchema, botRoleSchema, botSchema } from './bots.js'
+import {
+  botAvatarSchema,
+  botResourcesSchema,
+  botResponsibilitiesSchema,
+  botRoleSchema,
+  botSchema,
+} from './bots.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
 
@@ -31,10 +37,26 @@ export const botUpdateSchema = strictStruct({
   expectedRevision: uuidSchema,
   role: Schema.optional(botRoleSchema),
   responsibilities: Schema.optional(botResponsibilitiesSchema),
+  avatar: Schema.optional(Schema.NullOr(botAvatarSchema)),
   /** Replaces this Bot's own resources. Stored-secret references keep saved values. */
   resources: Schema.optional(botResourcesSchema),
 })
 export type BotUpdate = Schema.Schema.Type<typeof botUpdateSchema>
+export const botAvatarPreviewSchema = mutableStruct({ avatar: botAvatarSchema })
+export const botAvatarUploadSchema = strictStruct({
+  id,
+  data: maxValue(minValue(Schema.String, 1), 8 * 1024 * 1024),
+})
+export const botAvatarGenerateSchema = strictStruct({
+  id,
+  requestId: uuidSchema,
+  prompt: maxValue(minValue(Schema.String, 1), 2000),
+})
+export const botContextResetRequestSchema = strictStruct({
+  id,
+  turnId: id,
+  expectedRevision: uuidSchema,
+})
 export const botLifecycleSchema = strictStruct({
   id,
   action: Schema.Literals(['pause', 'resume']),

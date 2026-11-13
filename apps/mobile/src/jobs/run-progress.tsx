@@ -264,6 +264,7 @@ export function RunProgress({
                         {step.label}
                       </Text>
                       <Text style={step.status === 'failed' ? styles.error : styles.muted}>
+                        {task?.bot ? `Bot job · ${task.title} · ` : ''}
                         {taskNeedsInput(step.taskId)
                           ? 'Needs input'
                           : step.status === 'waiting'
@@ -285,7 +286,7 @@ export function RunProgress({
                     key={step.nodeId}
                     testID={`Job task ${task.id}`}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open task ${task.title}`}
+                    accessibilityLabel={`Open ${task.bot ? 'Bot' : 'task'} ${task.title}`}
                     disabled={!focused}
                     onPress={() => navigate('tasks', task.id, profile?.id)}
                     style={[

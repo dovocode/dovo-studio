@@ -18,6 +18,48 @@ Bots use the normal thread engine. They do not add a second execution engine:
 - **Role and responsibilities:** Bot-only fields. Dovo adds them as standing instructions to every
   turn.
 
+## Conversation and background work
+
+Bots answer short questions directly. When Dovo tools are available, their standing instructions
+favor child agents for substantial work. The Bot starts a child, reports what is running and ends
+its reply so you can keep talking. The existing subagent inbox returns results and resumes the Bot.
+This is model guidance, not a guarantee that every harness will delegate. User and repository
+restrictions still apply. Children keep their own resources and cannot use private Bot memory.
+
+Bots appear above pinned threads in Unified and at the top of the mobile thread overview. Pinned
+Bots come first. Each group sorts by the latest prompt or turn activity. A bubble shows unread
+activity. Use the avatar menu or touch and hold on mobile to pin a Bot. The Bots activity tab
+reopens the last selected Bot on the active computer during this app session.
+
+In a normal thread, type `@` and choose a Bot to insert its name and computer-specific Studio
+reference. This does not send a request, read its private memory or start a Bot turn.
+
+## Settings and avatars
+
+The Bot tools panel has separate Settings, MCP servers, Skills, Memory and Routines entries. MCP
+servers includes MCP Registry. Skills includes skills.sh. Imports apply to this Bot only; review the
+definition before saving it. Mobile exposes the same entries in the conversation menu.
+
+In Settings, choose an avatar image or describe one and select **Generate avatar**. A temporary
+agent uses the Bot's harness, permissions and installed image tools on its computer. Install an
+image-generation tool or skill there first. Generation can incur provider charges. The agent has no
+Dovo coordinator token and does not post to the conversation. Its temporary folder is removed after
+completion, failure or cancellation. Generation times out after five minutes. A retry with the same
+request returns the same preview rather than charging for another run. After an interrupted request,
+use Cancel generation to clear the request before generating another preview.
+
+Select **Use avatar** to apply a preview, **Discard preview** to keep the current avatar, or
+**Remove avatar** to return to the default icon. Uploads accept PNG, JPEG, WebP and GIF up to 5 MB.
+The runtime stores a 128-pixel square WebP thumbnail without image metadata.
+
+## Reset context
+
+Bot replies offer **Reset context to here** instead of Fork. Finish or stop current work and clear
+the queue first. Confirm the reset to start a fresh provider session from that reply. Later messages
+stay visible but do not enter future model context. New messages after the reset do enter context.
+Reset markers and excluded ranges survive runtime restart. Reset does not restore files, repeat
+actions, remove the transcript or change action receipts. It does not undo external work.
+
 ## Who can change a Bot
 
 Only paired human clients can create a Bot or change its role, responsibilities, pause state or
@@ -54,6 +96,13 @@ Deleting the Bot thread deletes its notes. System-wide and project memory still 
 switches.
 
 ## Routines
+
+For Bot jobs, agents use `studio_automations` with a task node whose `data.botId` is the existing
+Bot thread ID on the selected computer. Use `studio_threads` list/read to find that Bot. Set
+`data.objective` to the job instructions. Create, validate and update use the complete automation
+object. If a tool description is incomplete, inspect its input schema before declaring the feature
+unavailable. The automation list, canvas and mobile editor identify these steps as **Bot jobs** and
+show the target Bot. Bot jobs use the same automation engine and run history as other steps.
 
 An automation task step can target a Bot with `botId`. The step posts its instructions into the
 Bot's thread (message source `automation`) and waits for **that message's own turn**:

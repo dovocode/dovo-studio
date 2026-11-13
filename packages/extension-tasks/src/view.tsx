@@ -374,6 +374,10 @@ export default function TasksView({
   const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     'bot-settings': null,
+    'bot-mcp': null,
+    'bot-skills': null,
+    'bot-memory': null,
+    'bot-routines': null,
     'pull-preview': null,
     'linked-pulls': null,
     chat: null,
@@ -392,6 +396,11 @@ export default function TasksView({
   const selectSurface = useCommittedCallback((next: TaskSurface, moveFocus = false) => {
     if (task?.replica && next !== 'chat') return
     for (const id of [
+      'bot-settings',
+      'bot-mcp',
+      'bot-skills',
+      'bot-memory',
+      'bot-routines',
       'pull-preview',
       'linked-pulls',
       'chat',
@@ -1363,17 +1372,31 @@ export default function TasksView({
               >
                 {task.bot && (
                   <div
-                    hidden={surface !== 'bot-settings'}
+                    hidden={!surface.startsWith('bot-')}
                     className="min-h-0 flex-1 overflow-y-auto"
-                    aria-label="Bot settings panel"
+                    aria-label={`${surface === 'bot-mcp' ? 'Bot MCP servers' : surface === 'bot-skills' ? 'Bot skills' : surface === 'bot-memory' ? 'Bot memory' : surface === 'bot-routines' ? 'Bot routines' : 'Bot settings'} panel`}
                     ref={(node) => {
                       panes.current['bot-settings'] = node
+                      panes.current['bot-mcp'] = node
+                      panes.current['bot-skills'] = node
+                      panes.current['bot-memory'] = node
+                      panes.current['bot-routines'] = node
                     }}
                   >
                     <header className="studio-thread-tools-header flex items-center gap-2 border-b px-3 py-2 text-xs">
-                      <h2 className="flex-1 font-medium">Bot settings</h2>
+                      <h2 className="flex-1 font-medium">
+                        {surface === 'bot-mcp'
+                          ? 'MCP servers'
+                          : surface === 'bot-skills'
+                            ? 'Skills'
+                            : surface === 'bot-memory'
+                              ? 'Memory'
+                              : surface === 'bot-routines'
+                                ? 'Routines'
+                                : 'Bot settings'}
+                      </h2>
                       <IconButton
-                        label="Close Bot settings"
+                        label="Close Bot panel"
                         onClick={() => selectSurface('chat', true)}
                       >
                         <X size={14} />
@@ -1382,6 +1405,17 @@ export default function TasksView({
                     <BotSettings
                       key={`${botScope(snapshot?.runtimeId ?? activeRuntimeId, store.connection)}:${task.id}`}
                       task={task}
+                      section={
+                        surface === 'bot-mcp'
+                          ? 'mcp'
+                          : surface === 'bot-skills'
+                            ? 'skill'
+                            : surface === 'bot-memory'
+                              ? 'memory'
+                              : surface === 'bot-routines'
+                                ? 'routines'
+                                : 'settings'
+                      }
                     />
                   </div>
                 )}

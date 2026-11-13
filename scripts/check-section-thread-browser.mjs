@@ -30,7 +30,7 @@ export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} fro
       const [defaults,setDefaults]=useState(null);
       window.configureDefaults=value=>setDefaults(value===null?null:decode(runtimeDefaultsSchema,value));
       window.defaultHarness=defaultTaskHarness('codex');
-      const repositories=[{id:'repo',name:'Project',path:'/project',gitIdentity:'github.com/team/project'}];const [spaces,setSpaces]=useState({mac:{repositories,tasks:[{id:'mac-a',draft:''},{id:'mac-b',draft:''}]},remote:{repositories,tasks:[{id:'remote-a',draft:''}]}});
+      const repositories=[{id:'repo',name:'Project',path:'/project',gitIdentity:'github.com/team/project'}];const [spaces,setSpaces]=useState({mac:{repositories,tasks:[{id:'mac-a',draft:''},{id:'mac-b',draft:''},{id:'mac-bot',draft:'',bot:{role:'Assistant'}}]},remote:{repositories,tasks:[{id:'remote-a',draft:''}]}});
       const switchRuntime=async id=>{if(window.holdSwitch){window.holdSwitch=false;await new Promise(resolve=>window.finishSwitch=resolve)}setRuntimeId(id);window.finishedSwitchId=id};
       window.switchRuntime=switchRuntime;window.spaces=spaces;
       const workspace=spaces[runtimeId];
@@ -80,7 +80,7 @@ const built = await build({
       function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><PipelineAnchor/><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
       function Browser(){const {registerCommand,navigate}=useStudioHost();useEffect(()=>registerCommand({id:'browser.detach',title:'Detach browser',run:()=>{window.detachCalls=(window.detachCalls||0)+1;navigate({viewId:'tasks'})}}),[registerCommand,navigate]);return <p>Embedded browser</p>;}
       function Settings(){return <p>Settings section</p>;}
-      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'pipelines',title:'Pipelines',navigationGroup:'hidden',order:10,load:async()=>({default:Pipelines})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
+      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'bots',title:'Bots',order:5,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'pipelines',title:'Pipelines',navigationGroup:'hidden',order:10,load:async()=>({default:Pipelines})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
       const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} openExternalLink={async url=>{window.externalURL=url}} openBrowserWindow={async()=>{}} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
     `,
   },
@@ -407,6 +407,17 @@ try {
   assert.equal(await page.getByText('PR section', { exact: true }).count(), 1)
   await page.keyboard.press('Escape')
   await pipelineDialog.waitFor({ state: 'hidden' })
+  await section('Threads')
+  await page.getByRole('button', { name: 'Select mac-bot', exact: true }).click()
+  await selected('mac-bot')
+  await section('PRs')
+  await section('Bots')
+  await selected('mac-bot')
+  await page.getByRole('textbox', { name: 'Message' }).fill('Bot draft kept')
+  await section('Settings')
+  await section('Bots')
+  await selected('mac-bot')
+  assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Bot draft kept')
   assert.deepEqual(errors, [])
   assert.equal(
     await page.evaluate(

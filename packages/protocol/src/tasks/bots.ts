@@ -18,6 +18,17 @@ export const botRoleSchema = maxValue(minValue(Schema.String, 1), 120).pipe(
 )
 export const botResponsibilitiesSchema = maxValue(Schema.String, 8000)
 export const botStateSchema = Schema.Literals(['active', 'paused'])
+/** A small raster thumbnail. Runtime writes always decode and normalize the image first. */
+export const botAvatarSchema = maxValue(Schema.String, 96 * 1024).pipe(
+  Schema.check(Schema.isPattern(/^data:image\/webp;base64,[A-Za-z0-9+/]+={0,2}$/)),
+)
+export const botContextResetSchema = mutableStruct({
+  requestRevision: uuidSchema,
+  turnId: Schema.String,
+  afterMessageId: Schema.String,
+  throughMessageId: Schema.String,
+  at: isoDateTime(Schema.String),
+})
 const resourceName = maxValue(minValue(Schema.String, 1), 80)
 const names = maxValue(mutableArray(resourceName), 100).pipe(
   Schema.withDecodingDefaultType(Effect.sync(() => [])),
@@ -68,6 +79,9 @@ export const emptyBotResources = (): BotResources => ({
 })
 /** Runtime-owned. Clients change it only through `/api/bots/*`; workspace edits cannot. */
 export const botSchema = mutableStruct({
+  avatar: Schema.optional(botAvatarSchema),
+  /** Excluded ranges stay in the saved transcript. Only future model context changes. */
+  contextResets: Schema.optional(mutableArray(botContextResetSchema)),
   role: botRoleSchema,
   responsibilities: botResponsibilitiesSchema,
   state: botStateSchema,
@@ -86,13 +100,16 @@ export const botPaused = (task: { bot?: Bot | undefined }) => task.bot?.state ==
 export const botPausedMessage = 'This Bot is paused. Resume it to start new work.'
 
 /** Standing instructions added to every turn of a Bot's coordinator thread. */
-export function botInstructions(bot: Bot) {
+export function botInstructions(bot: Bot, delegationAvailable = false) {
   return [
     `You are a persistent Dovo Bot. Your role: ${JSON.stringify(bot.role)}.`,
     bot.responsibilities.trim()
       ? `Your ongoing responsibilities, set by the user (standing instructions):\n${bot.responsibilities.trim()}`
       : '',
     'This thread is your permanent conversation. Keep continuity across turns. Use bot memory for durable notes about your responsibilities; Dovo memory tools do not share it with other threads. Never save credentials or secrets there. Your permissions are set by the user and cannot be changed by you.',
+    delegationAvailable
+      ? 'Keep this Bot available for conversation. For substantial investigation, implementation or long-running work, use dovo_task subagent_spawn to delegate the work by default, unless the user or repository instructions restrict delegation. Answer short questions yourself. Give each child a clear goal, relevant context, constraints and completion criteria. Children do not receive your private Bot memory or Bot-specific resources; pass only the context needed for the task. Use the correct project and computer, discover available targets first, and avoid overlapping writes. Delegation does not grant new access or permission to act. After starting a child, tell the user what is running and finish your reply so they can keep talking to you. Do not hold the conversation open with polling or long waits. Children survive your reply; their results return through the subagent inbox and can continue you automatically. Read and assess results, report useful progress and blockers, and keep responsibility for the outcome. Route questions and approvals to the user when needed. Do not claim delegated work is complete before checking its result. A routine turn can finish while its children still work; say when work remains in progress.'
+      : 'Keep replies focused and do not claim background work is running unless a supported tool has started it. If delegation tools are unavailable, explain that limit before taking on long-running work in this conversation.',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -175,4 +192,21 @@ export function botResourceItems(
     ...rows('mcp', inherited.mcpServers, own.mcpServers, own.disabledMcpServers),
     ...rows('skill', inherited.skills, own.skills, own.disabledSkills),
   ]
+}
+
+/** Keep all history on screen while excluding reset ranges from future provider context. */
+export function botContextMessages<T extends { id: string }>(
+  messages: readonly T[],
+  bot?: Pick<Bot, 'contextResets'>,
+): T[] {
+  if (!bot?.contextResets?.length) return [...messages]
+  const positions = new Map(messages.map((message, index) => [message.id, index]))
+  const ranges = bot.contextResets.flatMap((reset) => {
+    const start = positions.get(reset.afterMessageId)
+    const end = positions.get(reset.throughMessageId)
+    return start !== undefined && end !== undefined ? [{ start, end }] : []
+  })
+  return messages.filter(
+    (_, index) => !ranges.some(({ start, end }) => index > start && index <= end),
+  )
 }

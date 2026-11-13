@@ -123,7 +123,7 @@ export function RunDetails({
   )
   const openTask = (id: string) =>
     host.navigate({
-      viewId: 'tasks',
+      viewId: workspace.tasks.find((task) => task.id === id)?.bot ? 'bots' : 'tasks',
       entityId: id,
     })
   return (
@@ -199,7 +199,9 @@ export function RunDetails({
               {pendingTaskInput(snapshot, inputTaskId)}
             </p>
             <Button size="sm" className="mt-3" onClick={() => openTask(inputTaskId)}>
-              Open thread
+              {workspace.tasks.find((task) => task.id === inputTaskId)?.bot
+                ? 'Open Bot'
+                : 'Open thread'}
             </Button>
           </div>
         )}
@@ -292,6 +294,11 @@ export function RunDetails({
                     {step.label}
                   </button>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {task?.bot && (
+                      <span className="text-[0.6875rem] text-muted-foreground">
+                        Bot job · {task.title}
+                      </span>
+                    )}
                     <StepStatus
                       step={step}
                       needsInput={
@@ -334,7 +341,10 @@ export function RunDetails({
               className="flex w-full min-w-0 items-center justify-between gap-2 text-left text-xs hover:text-primary"
               onClick={() => openTask(task.id)}
             >
-              <span className="min-w-0 truncate">{task.title}</span>
+              <span className="min-w-0 truncate">
+                {task.bot ? 'Bot job · ' : ''}
+                {task.title}
+              </span>
               <span className="shrink-0 text-[0.6875rem] text-muted-foreground">{task.status}</span>
               <ArrowUpRight className="size-3.5 shrink-0" />
             </button>

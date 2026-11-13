@@ -30,6 +30,7 @@ export function CachedAutomation({
         description={
           <>
             <Monitor className="size-3" /> {row.runtimeName} · saved history
+            {row.botJob && <span className="truncate"> · {row.botJob}</span>}
           </>
         }
         leading={

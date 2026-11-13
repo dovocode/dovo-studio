@@ -8,6 +8,10 @@ import { StepStatus } from './run-details'
 export type FlowNode = Node<AutomationData & { runStep?: RunStep }, 'automation'>
 export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
   const { snapshot } = useWorkspace()
+  const bot =
+    data.kind === 'task' && data.botId
+      ? snapshot?.workspace.tasks.find((task) => task.id === data.botId && task.bot)
+      : undefined
   const Icon = data.kind === 'trigger' ? Zap : data.kind === 'task' ? Bot : CircleCheck
   return (
     <div
@@ -19,9 +23,14 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
       {data.kind !== 'trigger' && <Handle type="target" position={Position.Left} />}
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <Icon size={14} />
-        {data.kind === 'task' ? 'thread' : data.kind}
+        {data.kind === 'task' ? (data.botId ? 'Bot job' : 'thread') : data.kind}
       </div>
       <div className="break-all text-sm font-medium">{data.label}</div>
+      {data.kind === 'task' && data.botId && (
+        <p className="mt-1 truncate text-xs text-muted-foreground">
+          {bot?.title || 'Unavailable Bot'}
+        </p>
+      )}
       <p className="mt-2 truncate text-xs text-muted-foreground">
         {data.kind === 'trigger'
           ? data.trigger === 'once'

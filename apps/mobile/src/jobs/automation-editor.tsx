@@ -386,7 +386,11 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                       {node.data.label || 'Untitled step'}
                     </Text>
                     <Text style={styles.muted}>
-                      {node.data.kind === 'review' ? 'Approval gate' : 'Agent task'}
+                      {node.data.kind === 'review'
+                        ? 'Approval gate'
+                        : node.data.botId
+                          ? `Bot job · ${snapshot?.workspace.tasks.find((task) => task.id === node.data.botId && task.bot)?.title || 'Unavailable Bot'}`
+                          : 'Agent task'}
                     </Text>
                   </View>
                   <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />

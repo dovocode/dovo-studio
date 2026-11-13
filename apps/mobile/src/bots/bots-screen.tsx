@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { compareBotActivity } from '@dovo/protocol'
 import { FlatList, View } from 'react-native'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
@@ -29,14 +30,20 @@ export default function BotsScreen() {
     () => taskListProjection(runtime.overviews, Date.now()),
     [runtime.overviews],
   )
-  const rows = [...projection.values()].filter(
-    ({ row }) =>
-      row.task.bot &&
-      !row.task.archivedAt &&
-      `${row.task.title} ${row.task.bot.role} ${row.runtimeName}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
-  )
+  const rows = [...projection.values()]
+    .filter(
+      ({ row }) =>
+        row.task.bot &&
+        !row.task.archivedAt &&
+        !row.task.delegation &&
+        !row.task.replica &&
+        `${row.task.title} ${row.task.bot.role} ${row.runtimeName}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+    )
+    .sort(
+      (a, b) => compareBotActivity(a.row.task, b.row.task) || a.row.key.localeCompare(b.row.key),
+    )
   const task = settings
     ? runtime.overviews
         .find((owner) => owner.profile.id === settings.runtimeId)

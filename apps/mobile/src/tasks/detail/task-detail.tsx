@@ -809,7 +809,9 @@ function TaskDetailContent({
   }, [focused, native, pane])
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
-  const [botSettings, setBotSettings] = useState(false)
+  const [botSettings, setBotSettings] = useState<
+    'settings' | 'mcp' | 'skill' | 'memory' | 'routines'
+  >()
   const [artifactsOpen, setArtifactsOpen] = useState(false)
   const [sideChanges, setSideChanges] = useState(false)
   const [projectInfo, setProjectInfo] = useState(false)
@@ -929,12 +931,20 @@ function TaskDetailContent({
                   [
                     ...(task.bot
                       ? [
-                          {
-                            label: 'Bot settings',
+                          ...(
+                            [
+                              ['settings', 'Bot settings'],
+                              ['mcp', 'Bot MCP servers'],
+                              ['skill', 'Bot skills'],
+                              ['memory', 'Bot memory'],
+                              ['routines', 'Bot routines'],
+                            ] as const
+                          ).map(([section, label]) => ({
+                            label,
                             icon: 'bot' as const,
                             group: 'Tools',
-                            onPress: () => setBotSettings(true),
-                          },
+                            onPress: () => setBotSettings(section),
+                          })),
                         ]
                       : []),
                     {
@@ -1149,7 +1159,12 @@ function TaskDetailContent({
             alignItems: 'center',
           }}
         >
-          <Action label="Bot settings" icon="bot" secondary onPress={() => setBotSettings(true)} />
+          <Action
+            label="Bot settings"
+            icon="bot"
+            secondary
+            onPress={() => setBotSettings('settings')}
+          />
           <Text style={{ flex: 1 }}>
             {task.bot.role}
             {task.bot.state === 'paused'
@@ -1172,7 +1187,11 @@ function TaskDetailContent({
       )}
       {botSettings && task.bot && (
         <Suspense fallback={<ActivityIndicator />}>
-          <BotSettings task={task} onClose={() => setBotSettings(false)} />
+          <BotSettings
+            task={task}
+            initialSection={botSettings}
+            onClose={() => setBotSettings(undefined)}
+          />
         </Suspense>
       )}
       {projectInfo && !native && !task.bot && (

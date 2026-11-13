@@ -1,6 +1,8 @@
+import { BotAvatar } from '@dovo/studio-ui'
 import { botCreateHosts, botPairing } from './bot-create-host'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, Plus } from 'lucide-react'
+import { compareBotActivity } from '@dovo/protocol'
 import { useStudioHost, useWorkspace, type StudioViewProps } from '@dovo/studio-core'
 import { Button, Input, SidebarHeader, useNavigationSidebar } from '@dovo/studio-ui'
 import TasksView from '../view'
@@ -43,10 +45,15 @@ export default function BotsView({ entityId }: StudioViewProps) {
   )
   const bots = useMemo(
     () =>
-      collectTasks(sources).filter(
-        (entry) =>
-          entry.task.bot && !entry.task.delegation && !entry.task.replica && !entry.task.archivedAt,
-      ),
+      collectTasks(sources)
+        .filter(
+          (entry) =>
+            entry.task.bot &&
+            !entry.task.delegation &&
+            !entry.task.replica &&
+            !entry.task.archivedAt,
+        )
+        .sort((a, b) => compareBotActivity(a.task, b.task) || a.key.localeCompare(b.key)),
     [sources],
   )
   useEffect(() => {
@@ -143,7 +150,13 @@ export default function BotsView({ entityId }: StudioViewProps) {
                   terminals={0}
                   editable={false}
                   disabled={busy}
-                  titleIcon={<Bot className="size-3.5" />}
+                  titleIcon={
+                    <BotAvatar
+                      avatar={entry.task.bot?.avatar}
+                      name={entry.task.title}
+                      className="size-6 rounded-lg [&_svg]:size-3.5"
+                    />
+                  }
                 />
                 {entry.task.bot?.state === 'paused' && (
                   <p className="px-3 py-1 text-xs text-muted-foreground">Paused</p>

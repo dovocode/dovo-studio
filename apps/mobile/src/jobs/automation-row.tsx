@@ -1,4 +1,4 @@
-import type { Automation, RuntimeSnapshot } from '@dovo/protocol'
+import { automationBotJobSummary, type Automation, type RuntimeSnapshot } from '@dovo/protocol'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { Icon } from '../ui/controls/icon'
@@ -22,6 +22,7 @@ export function AutomationRow({
   online?: boolean
 }) {
   const { colors, styles } = useTheme()
+  const botJob = automationBotJobSummary(flow, snapshot.workspace.tasks)
 
   const { latest } = automationRuns(flow.id, snapshot.runs)
   const summary = latest
@@ -47,7 +48,7 @@ export function AutomationRow({
     <Pressable
       testID={`Automation row ${flow.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`${flow.name}. ${runtimeName ? `${runtimeName}${online ? '' : ', offline'}. ` : ''}${status}. ${triggerSummary(flow)}${paused ? ', paused' : ''}. ${progress}`}
+      accessibilityLabel={`${flow.name}. ${botJob ? `${botJob}. ` : ''}${runtimeName ? `${runtimeName}${online ? '' : ', offline'}. ` : ''}${status}. ${triggerSummary(flow)}${paused ? ', paused' : ''}. ${progress}`}
       accessibilityHint="Open automation runs and controls."
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -82,6 +83,11 @@ export function AutomationRow({
           </Text>
           <Text style={[styles.muted, { color, fontSize: 13 }]}>{status}</Text>
         </View>
+        {botJob && (
+          <Text numberOfLines={2} style={styles.muted}>
+            {botJob}
+          </Text>
+        )}
         <Text numberOfLines={1} style={styles.muted}>
           {triggerSummary(flow)}
           {paused ? ' · Paused' : ''}

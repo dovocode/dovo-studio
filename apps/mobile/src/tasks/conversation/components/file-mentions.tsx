@@ -3,6 +3,9 @@ import { Pressable, ScrollView } from 'react-native'
 import { Schema } from 'effect'
 import {
   modelMentionsSchema,
+  botMentionSuggestions,
+  insertBotMention,
+  runtimeComputerName,
   insertModelMention,
   type ModelMention,
   commandSuggestions,
@@ -19,10 +22,12 @@ import {
 import { useRuntime } from '../../../runtime/connection/provider'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
+import { BotAvatar } from '../../../bots/bot-avatar'
 
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot'
+  avatar?: string
   value: string
   name?: string
   detail: string
@@ -57,7 +62,7 @@ export function FileMentions({
 }) {
   const { colors } = useTheme()
 
-  const { call, connected, activeId, connection, snapshot } = useRuntime()
+  const { call, connected, activeId, connection, snapshot, overviews } = useRuntime()
   const [lookup, setLookup] = useState<{ key: string; call: typeof call; files: string[] }>()
   const [modelLookup, setModelLookup] = useState<{
     key: string
@@ -127,6 +132,23 @@ export function FileMentions({
   }, [trigger, query, connected, modelsSupported, call, taskId, key])
   if (!mention) return null
   const suggestions: Suggestion[] = [
+    ...(mention.trigger === '@'
+      ? botMentionSuggestions(
+          overviews.map((owner) => ({
+            runtimeId:
+              owner.snapshot?.runtimeId ?? owner.profile.connection.runtimeId ?? owner.profile.id,
+            name: runtimeComputerName(owner),
+            tasks: owner.snapshot?.workspace.tasks ?? [],
+          })),
+          mention.query,
+        ).map((bot) => ({
+          kind: 'bot' as const,
+          value: bot.reference,
+          name: bot.name,
+          detail: bot.detail,
+          avatar: bot.avatar,
+        }))
+      : []),
     ...(modelsSupported && modelLookup?.key === key
       ? modelLookup.models.map((model) => ({
           kind: 'model' as const,
@@ -200,7 +222,7 @@ export function FileMentions({
         const label =
           item.kind === 'file'
             ? item.value.slice(item.value.lastIndexOf('/') + 1)
-            : item.kind === 'model'
+            : item.kind === 'model' || item.kind === 'bot'
               ? item.name
               : item.kind === 'command'
                 ? `/${item.value}`
@@ -216,10 +238,19 @@ export function FileMentions({
                 ? `Command ${item.value}: ${item.detail}`
                 : item.kind === 'prompt'
                   ? `Insert saved prompt ${item.name}`
-                  : `Mention ${item.kind === 'file' ? 'file' : item.kind === 'mcp' ? 'MCP server' : item.kind === 'model' ? 'model' : 'skill'} ${item.value}`
+                  : item.kind === 'bot'
+                    ? `Mention Bot ${item.name}: ${item.detail}`
+                    : `Mention ${item.kind === 'file' ? 'file' : item.kind === 'mcp' ? 'MCP server' : item.kind === 'model' ? 'model' : 'skill'} ${item.value}`
             }
             onPress={() => {
-              if (item.kind === 'model')
+              if (item.kind === 'bot')
+                onChange(
+                  insertBotMention(text, mention.start, caret, {
+                    name: item.name ?? 'Bot',
+                    reference: item.value,
+                  }).text,
+                )
+              else if (item.kind === 'model')
                 onChange(insertModelMention(text, mention.start, caret, item.value).text)
               else if (item.kind === 'prompt') {
                 const prompt = prompts.find((entry) => entry.id === item.value)
@@ -249,6 +280,9 @@ export function FileMentions({
               opacity: pressed ? 0.6 : item.muted ? 0.75 : 1,
             })}
           >
+            {item.kind === 'bot' && (
+              <BotAvatar avatar={item.avatar} name={item.name ?? 'Bot'} size={24} />
+            )}
             <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13 }}>
               {label}
             </Text>

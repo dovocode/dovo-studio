@@ -282,6 +282,7 @@ function WorkbenchContent({
   const settingsConfirmation = useRef(confirmSettingsNavigation)
   settingsConfirmation.current = confirmSettingsNavigation
   const threadSelections = useRef(new Map<string | null, string>())
+  const botSelections = useRef(new Map<string | null, string>())
   const settingsNavigation = useRef({ target, extensions })
   settingsNavigation.current = { target, extensions }
   const history = useRef<Array<{ target: StudioNavigation; runtimeId: string | null }>>([])
@@ -420,7 +421,11 @@ function WorkbenchContent({
       navigate({
         viewId,
         entityId:
-          viewId === 'tasks' ? threadSelections.current.get(runtimeRegistry.activeId) : undefined,
+          viewId === 'tasks'
+            ? threadSelections.current.get(runtimeRegistry.activeId)
+            : viewId === 'bots'
+              ? botSelections.current.get(runtimeRegistry.activeId)
+              : undefined,
       })
     if (viewId === 'browser' && browser && !browserWindowId) {
       const attempt = ++navigationAttempt.current
@@ -440,10 +445,17 @@ function WorkbenchContent({
   // Section history is local to this session and computer; explicit navigation
   // to a fresh composer still clears it. Ignore an old computer's pending target.
   useEffect(() => {
-    if (target.viewId !== 'tasks') return
-    if (!target.entityId) threadSelections.current.delete(runtimeRegistry.activeId)
-    else if (workspace.tasks.some((task) => task.id === target.entityId))
-      threadSelections.current.set(runtimeRegistry.activeId, target.entityId)
+    if (target.viewId !== 'tasks' && target.viewId !== 'bots') return
+    const selections = target.viewId === 'bots' ? botSelections.current : threadSelections.current
+    if (!target.entityId) selections.delete(runtimeRegistry.activeId)
+    else if (
+      workspace.tasks.some(
+        (task) => task.id === target.entityId && (target.viewId !== 'bots' || task.bot),
+      )
+    )
+      selections.set(runtimeRegistry.activeId, target.entityId)
+    if (target.entityId && workspace.tasks.some((task) => task.id === target.entityId && task.bot))
+      botSelections.current.set(runtimeRegistry.activeId, target.entityId)
   }, [target, runtimeRegistry.activeId, workspace.tasks])
   const openNotification = useCallback(
     (destination: NotificationTarget | (StudioNavigation & { runtimeId: string })) => {

@@ -1,10 +1,14 @@
-import { useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { Schema } from 'effect'
-import { FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
+import { Bot, FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
   modelMentionsSchema,
+  botMentionSuggestions,
+  insertBotMention,
+  runtimeComputerName,
   insertModelMention,
   type ModelMention,
+  type BotMention,
   commandSuggestions,
   composerMention,
   insertMention,
@@ -16,15 +20,31 @@ import {
   resourceSuggestions,
   type ResourceSettings,
 } from '@dovo/protocol'
-import { cn } from '@dovo/studio-ui'
-import { sameWorkspaceFields, useAppPreferences, useWorkspaceSelector } from '@dovo/studio-core'
+import { BotAvatar, cn } from '@dovo/studio-ui'
+import {
+  sameWorkspaceFields,
+  useAppPreferences,
+  useWorkspaceSelector,
+  type WorkspaceContextValue,
+} from '@dovo/studio-core'
 import { composerSelection, selectComposerInput } from './composer-input'
 import { selectConversationConnection } from '../thread/workspace-selection'
 import type { RichComposerHandle } from './rich-composer-editor'
 
+const sameBotMentions = (a: BotMention[], b: BotMention[]) =>
+  a.length === b.length &&
+  a.every(
+    (item, i) =>
+      item.reference === b[i]?.reference &&
+      item.name === b[i]?.name &&
+      item.detail === b[i]?.detail &&
+      item.avatar === b[i]?.avatar,
+  )
+
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot'
+  avatar?: string
   /** Prompt suggestions: shown name, while `detail` previews the text. */
   name?: string
   value: string
@@ -39,6 +59,7 @@ const icons = {
   command: SquareSlash,
   prompt: Hash,
   model: Sparkles,
+  bot: Bot,
 }
 type MentionKey = {
   key: string
@@ -48,7 +69,7 @@ type MentionKey = {
   isComposing?: boolean
 }
 
-/** Composer mentions like other agent apps: "@" for files and MCP servers, "$" for skills
+/** Composer mentions like other agent apps: "@" for Bots, files and MCP servers, "$" for skills
  * anywhere, and "/" for skills at the start of a line. Arrow keys and Enter or Tab pick;
  * Escape dismisses. */
 export function useFileMentions({
@@ -105,6 +126,39 @@ export function useFileMentions({
   const mention = composerMention(source, caret)
   const trigger = mention?.trigger
   const query = mention?.query
+  const selectBots = useCallback(
+    (state: WorkspaceContextValue) =>
+      trigger === '@'
+        ? botMentionSuggestions(
+            [
+              {
+                runtimeId: state.snapshot?.runtimeId ?? state.connection?.runtimeId ?? 'local',
+                name:
+                  (state.runtimes ?? []).find((owner) => owner.profile.id === state.activeRuntimeId)
+                    ?.profile.name ?? 'This computer',
+                tasks: state.workspace.tasks,
+              },
+              ...(state.runtimes ?? []).flatMap((owner) =>
+                owner.profile.id !== state.activeRuntimeId && owner.snapshot
+                  ? [
+                      {
+                        runtimeId:
+                          owner.snapshot.runtimeId ??
+                          owner.profile.connection.runtimeId ??
+                          owner.profile.id,
+                        name: runtimeComputerName(owner),
+                        tasks: owner.snapshot.workspace.tasks,
+                      },
+                    ]
+                  : [],
+              ),
+            ],
+            query ?? '',
+          )
+        : [],
+    [trigger, query],
+  )
+  const bots = useWorkspaceSelector(selectBots, sameBotMentions)
   const resourceItems: Suggestion[] = mention
     ? resourceSuggestions(resources, mention.trigger, mention.query)
         .filter((item) => mention.trigger !== '/' || showSkillsInSlashMenu || item.kind !== 'skill')
@@ -164,6 +218,13 @@ export function useFileMentions({
     modelMentionsSupported && modelLookup?.key === lookupKey ? modelLookup.error : ''
   const searching = trigger === '@' && connected && lookup?.key !== lookupKey
   const suggestions: Suggestion[] = [
+    ...bots.map((bot) => ({
+      kind: 'bot' as const,
+      value: bot.reference,
+      name: bot.name,
+      detail: bot.detail,
+      avatar: bot.avatar,
+    })),
     ...(modelMentionsSupported && modelLookup?.key === lookupKey
       ? modelLookup.models.map((model) => ({
           kind: 'model' as const,
@@ -279,6 +340,15 @@ export function useFileMentions({
   }
   const choose = (item: Suggestion | undefined) => {
     if (!mention || !item) return
+    if (item.kind === 'bot') {
+      apply(
+        insertBotMention(source, mention.start, caret, {
+          name: item.name ?? 'Bot',
+          reference: item.value,
+        }),
+      )
+      return
+    }
     if (item.kind === 'model') {
       apply(insertModelMention(source, mention.start, caret, item.value), true)
       return
@@ -332,7 +402,7 @@ export function useFileMentions({
       role="listbox"
       aria-label={
         trigger === '@'
-          ? 'Files, models and MCP servers'
+          ? 'Bots, files, models and MCP servers'
           : trigger === '/'
             ? 'Commands and skills'
             : trigger === '#'
@@ -347,7 +417,7 @@ export function useFileMentions({
         const label =
           item.kind === 'file'
             ? item.value.slice(slash + 1)
-            : item.kind === 'model'
+            : item.kind === 'model' || item.kind === 'bot'
               ? item.name
               : item.kind === 'command'
                 ? `/${item.value}`
@@ -372,7 +442,15 @@ export function useFileMentions({
               item.muted && 'opacity-70',
             )}
           >
-            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+            {item.kind === 'bot' ? (
+              <BotAvatar
+                avatar={item.avatar}
+                name={item.name ?? 'Bot'}
+                className="size-6 rounded-lg [&_svg]:size-3.5"
+              />
+            ) : (
+              <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+            )}
             <span className="shrink-0 font-medium">{label}</span>
             {detail && <span className="min-w-0 truncate text-muted-foreground">{detail}</span>}
           </button>

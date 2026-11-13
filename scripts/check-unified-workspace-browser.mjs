@@ -101,6 +101,7 @@ export {FormField} from '${root}/packages/studio-ui/src/components/form-field';
 export {ComposerSurface,ComposerTextarea,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
 export {ProjectIcon} from '${root}/packages/studio-ui/src/project-icon';
 export {AgentAvatar} from '${root}/packages/studio-ui/src/agent-avatar';
+export {BotAvatar} from '${root}/packages/studio-ui/src/bot-avatar';
 export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon';
 export {Tooltip,TooltipTrigger,TooltipContent,TooltipProvider} from '${root}/packages/studio-ui/src/components/ui/tooltip';
 export const useModelLabel=()=>undefined;
