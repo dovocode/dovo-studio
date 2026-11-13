@@ -162,3 +162,57 @@ credentials and Electron's runtime switch cannot be used as reference sources or
 
 Automated tests use synthetic values and injected commands. Live provider authentication and real
 secret reads have not been verified as part of this implementation.
+
+## ACP v2 rollout
+
+ACP v1 stays enabled by default. Dovo also supports the draft ACP v2 baseline through the existing
+SDK 2.4.0. To try it, add `DOVO_ACP_V2=1` to an ACP agent's environment in Agent settings. The flag
+applies to model discovery, sign-in, session management and conversations on that runtime. You can
+set it on the runtime host instead. An agent value of `DOVO_ACP_V2=0` overrides the host. Start a
+new turn after changing the agent environment. Restart the runtime after changing its host
+environment.
+
+Dovo requests protocol 2. If the agent selects v1, or reports that it supports only v1, Dovo closes
+that process and starts a fresh v1 connection before creating or resuming a session. Authentication
+failures, invalid v2 responses and lost connections do not trigger fallback. A v1 agent that rejects
+v2 without a supported-version response can use the default v1 path by setting the flag to zero.
+Switching protocol versions does not convert stored provider sessions. If the agent cannot resume a
+session through the other protocol, start a new session explicitly.
+
+V2 prompt responses acknowledge insertion. Dovo waits for the foreground idle update to finish a
+turn. It retains partial output when the agent reports a later failure. Message IDs support
+interleaved chunks, whole-message replacement and clearing. Tool updates retain omitted fields,
+clear null fields and patch metadata by key. Exposed thoughts and item plans use the existing
+reasoning and checklist UI. Agent terminal output appears as a display receipt, with no local input
+or process controls. Full v2 payloads remain in provider events, including unknown update variants.
+
+Session resume omits replay because Dovo already stores the transcript. If the agent reports
+unfinished foreground work, Dovo waits for idle before applying configuration or sending another
+prompt. Stop sends cancellation and waits for confirmation. If the agent does not confirm within 1.5
+seconds, Dovo closes its owned process tree. Temporary sessions require deletion support.
+
+V2 model, mode, reasoning and boolean options use typed configuration IDs. Read-only turns require
+an advertised read-only or plan mode. Permission subjects use Dovo's current access policy. Native
+session forms use the existing question flow. URL forms and request-scoped forms are declined. The
+v1 client file and terminal APIs are absent in v2. Client tools must use an MCP transport the agent
+advertises. Dovo does not advertise additional unstable v2 features such as native subagent control
+or MCP-over-ACP.
+
+Run the focused checks with:
+
+```sh
+pnpm exec vp test --maxWorkers=2 packages/runtime/src/agents/providers/acp packages/runtime/src/agents/catalogs/acp.test.ts packages/runtime/src/agents/execution/reasoning-event.test.ts
+pnpm --filter @dovo/runtime typecheck
+```
+
+These tests use real owned Node processes and stdio JSON-RPC. They cover both protocols, fallback,
+completion after acknowledgment, later errors, cancellation, resume, permission decisions, forms,
+configuration, message patches and terminal byte decoding. They do not establish compatibility with
+a live model provider. ACP v2 remains draft and disabled by default.
+
+A live check on Mac Studio with `agy acp` 1.5.6 confirmed that it selects v1 when Dovo requests v2.
+Dovo opened a fresh v1 connection, created a session and sent the prompt. The model request returned
+`503 auth_not_found`, so this check did not verify a model reply or live v2 execution. The test left
+credentials unchanged. This agy version does not advertise session deletion.
+
+Protocol reference: [ACP v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration).

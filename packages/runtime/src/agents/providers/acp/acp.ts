@@ -1,3 +1,5 @@
+import { createAcpV2Adapter } from './acp-v2.js'
+import { acpV2Enabled } from './acp-v2-connection.js'
 import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { acpModelOption, legacyAcpModels } from './acp-models.js'
@@ -52,6 +54,7 @@ type WarmAcp = {
   }
 }
 export function createAcpAdapter(): AgentAdapter {
+  const v2 = createAcpV2Adapter()
   const idle = new IdleProviders<WarmAcp>(
     (value) => close(value),
     (value) => value.native.agents.some(nativeAgentWorking),
@@ -63,7 +66,10 @@ export function createAcpAdapter(): AgentAdapter {
     value.native.owner.onSubagentEvent?.('dovo/session/closed', {}, value.sessionId)
   }
   return {
-    releaseTask: (taskId) => idle.release(taskId),
+    releaseTask: async (taskId) => {
+      await idle.release(taskId)
+      await v2.releaseTask(taskId)
+    },
     models: acpModels,
     probe: async (agent, launch) => ({
       provider: 'acp',
@@ -85,6 +91,19 @@ export function createAcpAdapter(): AgentAdapter {
         env: run.agent.env ?? {},
       }
       const launchKey = JSON.stringify([launch, run.agent, run.tools])
+      const held = run.taskId ? idle.get(run.taskId) : undefined
+      const knownV1 =
+        held &&
+        held.launchKey === launchKey &&
+        held.sessionId === run.sessionId &&
+        held.cwd === run.cwd &&
+        !held.connection.signal.aborted
+      if (acpV2Enabled(launch) && !knownV1) {
+        if (held?.native.agents.some(nativeAgentWorking))
+          throw new Error('Stop native ACP agents before changing protocol versions')
+        if (run.taskId) await idle.release(run.taskId)
+        if (await v2.run(run, launch)) return
+      } else if (run.taskId) await v2.beforeV1(run.taskId)
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
       const reusable =
@@ -654,6 +673,7 @@ export function createAcpAdapter(): AgentAdapter {
       if (cleanupError) throw cleanupError
     },
     dispose: async () => {
+      await v2.dispose()
       const connections = [...idle.values()]
       idle.clear()
       await Promise.all(connections.map(close))

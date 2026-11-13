@@ -215,3 +215,31 @@ it('removes opaque fields from mixed diagnostic events while retaining tool inpu
     },
   })
 })
+
+it('replaces and clears identified ACP v2 thoughts without mixing interleaved messages', () => {
+  const { stream, rows } = recorder('acp')
+  const accept = (update: Record<string, unknown>) => stream.accept('acp/v2/reasoning', { update })
+  accept({
+    sessionUpdate: 'agent_thought_chunk',
+    messageId: 'a',
+    content: { type: 'text', text: 'Draft' },
+  })
+  accept({
+    sessionUpdate: 'agent_thought_chunk',
+    messageId: 'b',
+    content: { type: 'text', text: 'Other' },
+  })
+  accept({
+    sessionUpdate: 'agent_thought',
+    messageId: 'a',
+    content: [{ type: 'text', text: 'Final summary' }],
+  })
+  accept({ sessionUpdate: 'agent_thought', messageId: 'b', content: null })
+  stream.finish()
+  expect(rows).toContainEqual({
+    toolId: 'reasoning:acp:v2:a',
+    status: 'completed',
+    reasoning: { text: 'Final summary' },
+  })
+  expect(rows.some((row) => row.reasoning.text === 'DraftOther')).toBe(false)
+})

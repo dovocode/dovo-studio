@@ -216,6 +216,24 @@ export class ReasoningEvents {
     }
     if (this.provider === 'acp' || this.provider === 'grok') {
       const update = object(data.update)
+      if (name === 'acp/v2/reasoning') {
+        const id = `acp:v2:${string(update.messageId)}`
+        if (update.sessionUpdate === 'agent_thought_chunk') {
+          const content = object(update.content)
+          if (content.type === 'text') this.append(id, string(content.text))
+        } else if (update.content !== undefined) {
+          const content = decodeResult(mutableArray(record), update.content).data ?? []
+          this.set(
+            id,
+            content
+              .filter((item) => item.type === 'text')
+              .map((item) => string(item.text))
+              .join(''),
+            'running',
+          )
+        }
+        return true
+      }
       if (update.sessionUpdate === 'agent_thought_chunk') {
         const content = object(update.content)
         if (!this.acpActive) {

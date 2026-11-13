@@ -1,10 +1,8 @@
+import { withAcpV2, v2AuthMethods } from './acp-v2-services.js'
 import type { AcpClient } from './acp-client.js'
-import { spawn } from 'node:child_process'
-import { basename } from 'node:path'
 import {
   client as acpClient,
   methods,
-  ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
   McpOverAcpProvider,
@@ -14,14 +12,11 @@ import type {
   ClientCapabilities,
   ListSessionsRequest,
 } from '@agentclientprotocol/sdk/unstable'
-import { processEnvironment } from '../../../process.js'
-import { stopAcpChild } from './acp-process.js'
+import { openAcpTransport } from './acp-transport.js'
+export { ACP_MAX_MESSAGE_BYTES } from './acp-transport.js'
 import type { AcpLaunch } from '../../execution/types.js'
 
 export type AcpInitialization = InitializeResponse
-
-// Keep the SDK’s 32 MiB default explicit; large image prompts remain supported.
-export const ACP_MAX_MESSAGE_BYTES = 32 * 1024 * 1024
 
 const required = <T>(handler: T | undefined, method: string): T => {
   if (handler === undefined) throw RequestError.methodNotFound(method)
@@ -39,21 +34,6 @@ export function openAcpConnection(
   signal?: AbortSignal,
   onStderr?: (text: string) => void,
 ) {
-  signal?.throwIfAborted()
-  const env = { ...processEnvironment(), ...launch.env }
-  delete env.DOVO_OWNER_TOKEN
-  delete env.ELECTRON_RUN_AS_NODE
-  const child = spawn(launch.command, launch.args, {
-    windowsHide: true,
-    cwd,
-    env,
-    detached: process.platform !== 'win32',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
-  if (onStderr) {
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', onStderr)
-  } else child.stderr.resume()
   const mcp = new McpOverAcpProvider()
   const app = acpClient({ name: 'dovo-studio' })
     .onRequest(methods.client.mcp.message, mcp.handleRequest)
@@ -88,78 +68,13 @@ export function openAcpConnection(
     .onRequest(methods.client.elicitation.create, ({ params }) =>
       required(client.createElicitation?.bind(client), methods.client.elicitation.create)(params),
     )
-  let inputClosed = false
-  const active = app.connect(
-    ndJsonStream(
-      new WritableStream<Uint8Array>({
-        write: (chunk) =>
-          new Promise<void>((resolve, reject) => {
-            child.stdin.write(chunk, (error) => (error ? reject(error) : resolve()))
-          }),
-      }),
-      new ReadableStream<Uint8Array>({
-        start: (controller) => {
-          child.stdout.on('data', (chunk: Buffer) => {
-            // Buffer is already a Uint8Array; copying each stdout chunk doubles transient
-            // allocation for large ACP messages before the SDK's framing buffer sees it.
-            if (!inputClosed) controller.enqueue(chunk)
-          })
-          child.stdout.on('end', () => {
-            if (!inputClosed) controller.close()
-            inputClosed = true
-          })
-          child.stdout.on('error', (error) => {
-            if (!inputClosed) controller.error(error)
-            inputClosed = true
-          })
-        },
-        cancel: () => {
-          inputClosed = true
-          child.stdout.destroy()
-        },
-      }),
-      { maxMessageBytes: ACP_MAX_MESSAGE_BYTES },
-    ),
-  )
-  const rpc = active.agent
-  let rejectExit: (error: Error) => void = () => {}
-  const exited = new Promise<never>((_, reject) => {
-    rejectExit = reject
-  })
-  void exited.catch(() => {})
-  void active.closed.then(() => {
-    rejectExit(
-      active.signal.reason instanceof Error
-        ? active.signal.reason
-        : new Error('ACP connection closed'),
-    )
-    void close()
-  })
-  child.on('error', rejectExit)
-  // An agent that exits closes stdin; an unobserved pipe 'error' would crash the runtime.
-  child.stdin.on('error', (error) => rejectExit(error))
-  child.on('exit', (code) =>
-    rejectExit(new Error(`ACP ${basename(launch.command)} exited (${code})`)),
-  )
-  const close = () => {
-    signal?.removeEventListener('abort', abort)
-    active.close()
-    return stopAcpChild(child)
-  }
-  const abort = () => {
-    void close()
-  }
-  signal?.addEventListener('abort', abort, { once: true })
+  const transport = openAcpTransport(launch, (stream) => app.connect(stream), cwd, signal, onStderr)
   return {
-    child,
-    rpc,
+    ...transport,
+    rpc: transport.active.agent,
+    signal: transport.active.signal,
+    closed: transport.active.closed,
     mcp,
-    signal: active.signal,
-    closed: active.closed,
-    exited,
-    close,
-    authentication: launch.authentication,
-    apiKey: !!env.XAI_API_KEY,
   }
 }
 
@@ -242,6 +157,16 @@ const noClientServices: AcpClient = {
 }
 
 export async function inspectAcp(launch: AcpLaunch, signal?: AbortSignal) {
+  const v2 = await withAcpV2(
+    launch,
+    async (_connection, initialization) => ({
+      agentInfo: initialization.info,
+      authMethods: v2AuthMethods(initialization),
+      canLogout: !!initialization.authMethods?.length,
+    }),
+    signal,
+  )
+  if (v2.handled) return v2.value
   const connection = openAcpConnection(launch, noClientServices, undefined, signal)
   try {
     const initialization = await initializeAcp(connection, { auth: { terminal: true } })
@@ -261,6 +186,24 @@ export async function authenticateAcp(
   signal?: AbortSignal,
   onOutput?: (text: string) => void,
 ) {
+  const v2 = await withAcpV2(
+    launch,
+    async (connection, initialization) => {
+      const method = initialization.authMethods?.find((method) => method.methodId === methodId)
+      if (!method) throw new Error('ACP authentication method is unavailable')
+      if (method.type === 'terminal')
+        throw new Error('Terminal authentication must run in an interactive terminal')
+      if (method.type !== 'agent') throw new Error('This ACP authentication method is unsupported')
+      await connection.control(
+        connection.rpc.request('auth/login', { methodId }),
+        'authentication',
+        5 * 60_000,
+      )
+    },
+    signal,
+    onOutput,
+  )
+  if (v2.handled) return
   const connection = openAcpConnection(launch, noClientServices, undefined, signal, onOutput)
   try {
     const initialization = await initializeAcp(connection, { auth: { terminal: true } })
@@ -280,6 +223,16 @@ export async function authenticateAcp(
 }
 
 export async function logoutAcp(launch: AcpLaunch, signal?: AbortSignal) {
+  const v2 = await withAcpV2(
+    launch,
+    async (connection, initialization) => {
+      if (!initialization.authMethods?.length)
+        throw new Error('This ACP agent does not support logout')
+      await connection.control(connection.rpc.request('auth/logout', {}), 'logout')
+    },
+    signal,
+  )
+  if (v2.handled) return
   const connection = openAcpConnection(launch, noClientServices, undefined, signal)
   try {
     const initialization = await initializeAcp(connection)
@@ -298,6 +251,22 @@ export async function listAcpSessions(
   input: ListSessionsRequest = {},
   signal?: AbortSignal,
 ) {
+  const v2 = await withAcpV2(
+    launch,
+    async (connection, initialization) => {
+      if (!initialization.capabilities?.session)
+        throw new Error('This ACP agent does not support listing sessions')
+      return {
+        ...(await connection.control(
+          connection.rpc.request('session/list', input),
+          'session list',
+        )),
+        canDelete: !!initialization.capabilities.session.delete,
+      }
+    },
+    signal,
+  )
+  if (v2.handled) return v2.value
   const connection = openAcpConnection(launch, noClientServices, undefined, signal)
   try {
     const initialization = await initializeAcp(connection)
@@ -317,6 +286,19 @@ export async function listAcpSessions(
 }
 
 export async function deleteAcpSession(launch: AcpLaunch, sessionId: string, signal?: AbortSignal) {
+  const v2 = await withAcpV2(
+    launch,
+    async (connection, initialization) => {
+      if (!initialization.capabilities?.session?.delete)
+        throw new Error('This ACP agent does not support deleting sessions')
+      await connection.control(
+        connection.rpc.request('session/delete', { sessionId }),
+        'session deletion',
+      )
+    },
+    signal,
+  )
+  if (v2.handled) return
   const connection = openAcpConnection(launch, noClientServices, undefined, signal)
   try {
     const initialization = await initializeAcp(connection)

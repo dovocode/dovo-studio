@@ -1,3 +1,4 @@
+import { acpV2Models } from '../providers/acp/acp-v2-services.js'
 import { acpModelOption, legacyAcpModels } from '../providers/acp/acp-models.js'
 import { homedir } from 'node:os'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
@@ -29,6 +30,8 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     ...legacyAcpLaunch(agent.endpoint, agent.args ?? []),
     env: agent.env ?? {},
   }
+  const v2 = await acpV2Models(command, agent)
+  if (v2.handled) return v2.value
   let commands: Array<{ name: string; description: string; inputHint?: string }> = []
   let updatedConfig: SessionConfigOption[] | undefined
   const connection = openAcpConnection(command, {
