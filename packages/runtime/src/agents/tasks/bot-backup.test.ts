@@ -110,10 +110,20 @@ it.each(['queued', 'paused', 'settings-changed'] as const)(
   'preserves new input and settings during a provider failure: %s',
   async (mode) => {
     const { f, s, id } = await setupBackup()
+    let providerReleased!: () => void
+    const released = new Promise<void>((resolve) => {
+      providerReleased = resolve
+    })
+    let applyEdit!: () => void
+    const edit = new Promise<void>((resolve) => {
+      applyEdit = resolve
+    })
     if (mode === 'settings-changed') {
       const release = s.tasks.releaseProviderForHandoff.bind(s.tasks)
       vi.spyOn(s.tasks, 'releaseProviderForHandoff').mockImplementation(async (taskId) => {
         await release(taskId)
+        providerReleased()
+        await edit
         s.store.updateTask(taskId, (t) => ({
           ...t,
           bot: t.bot && {
@@ -130,11 +140,16 @@ it.each(['queued', 'paused', 'settings-changed'] as const)(
         s.store.updateTask(id, (t) => ({ ...t, bot: t.bot && { ...t.bot, state: 'paused' } }))
       throw Error('503 Provider unavailable')
     })
-    await s.tasks.send(id, 'original', 'Original request')
-    await waitForRuntime(() => {
-      expect(s.store.task(id).activeRunId).toBeUndefined()
-      expect(s.store.task(id).status).toBe('failed')
-    })
+    s.tasks.queue.add(id, 'original', 'Original request')
+    const { done } = await s.tasks.start(id)
+    if (mode === 'settings-changed') {
+      await released
+      applyEdit()
+    }
+    // Failed status is visible before the backup finalizer checks concurrent human edits.
+    await expect(done).rejects.toThrow('503 Provider unavailable')
+    expect(s.store.task(id).activeRunId).toBeUndefined()
+    expect(s.store.task(id).status).toBe('failed')
     expect(f.inputs).toHaveLength(1)
     expect(resolveTaskAgent(s.store.task(id), s.store.get().agents)?.provider).toBe('codex')
     expect(s.store.task(id).queue?.map((m) => m.text) ?? []).toEqual(
