@@ -11,11 +11,21 @@ export function preparePairingFlow(flow) {
       // single-character command uses the driver's slower path. Its completion
       // can precede UIKit applying the input, so observe each prefix before
       // sending the next character (including the repeated t in http).
+      // CI snapshots can outlive keyboard focus. Restore it only when the
+      // keyboard is gone; repeated taps on a focused field can select its text.
       [
         '- evalScript: ${output.addressCharacter = 0}',
         '- repeat:',
         '    times: ${RUNTIME_ADDRESS.length}',
         '    commands:',
+        '      - runFlow:',
+        '          when:',
+        '            notVisible:',
+        '              id: Dismiss keyboard',
+        '          commands:',
+        '            - tapOn:',
+        '                id: Computer address',
+        '                point: 95%, 50%',
         '      - inputText: ${RUNTIME_ADDRESS.charAt(output.addressCharacter)}',
         '      - assertVisible:',
         '          id: Computer address',

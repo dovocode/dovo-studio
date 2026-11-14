@@ -74,18 +74,33 @@ void test('the native release flow mints its code at input, after driver startup
   assert.ok(mint < prepared.indexOf('- tapOn: Dismiss keyboard'))
 })
 
-void test('native address entry waits for each observed prefix before sending more input', () => {
+void test('native address entry restores focus and observes each prefix before more input', () => {
   const prepared = preparePairingFlow('- inputText: ${RUNTIME_ADDRESS}')
   const commands = parseAllDocuments(prepared)[0].toJS()
-  for (const address of ['http://192.168.64.12:63424', 'http://100.98.12.3:51464']) {
+  for (const [address, loseFocus] of [
+    ['http://192.168.64.12:63424', false],
+    ['http://100.98.12.3:51464', true],
+  ]) {
     const context = { RUNTIME_ADDRESS: address, output: {} }
     const entered = []
     let observed = ''
+    let focused = false
     const evaluate = (expression) => runInNewContext(expression.slice(2, -1), context)
     const execute = (commands) => {
       for (const command of commands) {
         if (command.evalScript) evaluate(command.evalScript)
+        if (command.runFlow) {
+          assert.deepEqual(command.runFlow.when, { notVisible: { id: 'Dismiss keyboard' } })
+          if (!focused) execute(command.runFlow.commands)
+        }
+        if (command.tapOn) {
+          assert.equal(focused, false, 'Do not select text by retapping a focused input')
+          assert.equal(command.tapOn.id, 'Computer address')
+          assert.equal(command.tapOn.point, '95%, 50%')
+          focused = true
+        }
         if (command.inputText) {
+          assert.equal(focused, true, 'Target the input even after a snapshot loses focus')
           assert.equal(observed, entered.join(''), 'Wait for UIKit before the next input')
           entered.push(evaluate(command.inputText))
         }
@@ -93,6 +108,7 @@ void test('native address entry waits for each observed prefix before sending mo
           assert.equal(command.assertVisible.id, 'Computer address')
           observed = evaluate(command.assertVisible.text)
           assert.equal(observed, entered.join(''))
+          if (loseFocus) focused = false
         }
         if (command.repeat)
           for (let index = 0; index < evaluate(command.repeat.times); index++)

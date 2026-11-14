@@ -1,15 +1,12 @@
 appId: com.dovo.studio
 ---
-# UIKit's icon-only back button does not consistently expose a text label on iOS 26.
-# Exercise the supported native pop gesture and verify the destination explicitly.
-# Send becoming available only marks the turn settled. Native layout/scroll animations
-# can still be finishing, so wait for the screen to be idle before starting a pop.
+# UIKit exposes BackButton even when its icon-only button has no text label.
+# Target that control instead of relying on a coordinate swipe in the release smoke.
+# navigation.yaml retains the native pop-gesture checks.
 - waitForAnimationToEnd:
     timeout: 10000
-- swipe:
-    start: 1%, 50%
-    end: 90%, 50%
-    duration: 500
+- tapOn:
+    id: BackButton
 - extendedWaitUntil:
     visible:
       id: Task mobile-task

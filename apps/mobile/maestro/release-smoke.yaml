@@ -6,6 +6,8 @@ appId: com.dovo.studio
     visible: Connect a computer
     timeout: 15000
 - tapOn: Connect a computer
+- waitForAnimationToEnd:
+    timeout: 10000
 - tapOn:
     id: Computer address
 - inputText: ${RUNTIME_ADDRESS}
