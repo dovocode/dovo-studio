@@ -122,6 +122,7 @@ export function createDictation(
   driver: DictationDriver | null,
   preferredLocales: () => readonly string[],
   continuous: boolean,
+  voiceProcessing = false,
 ) {
   let state: DictationState = {
     locale: resolveDictationLocale(preferredLocales(), []),
@@ -366,6 +367,7 @@ export function createDictation(
           })
           session.nativeStarted = true
           driver.start({
+            ...(voiceProcessing ? { iosVoiceProcessingEnabled: true } : {}),
             lang: state.locale,
             interimResults: true,
             continuous,

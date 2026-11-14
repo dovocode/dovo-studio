@@ -260,6 +260,29 @@ export function RunningTaskPreferences({
           />
         </SettingRow>
       </SettingsGroup>
+      <SettingsGroup title="Scheduled workers">
+        <SettingRow
+          label="Worker capacity"
+          description="Scheduled jobs wait when this computer reaches the threshold. One slot stays available for conversation work. Direct messages and children needed by active work can exceed it. Running work is never stopped."
+        >
+          <Select
+            value={String(value?.maxConcurrentWorkers ?? 0)}
+            disabled={disabled}
+            onValueChange={(next) => save({ maxConcurrentWorkers: Number(next) })}
+          >
+            <SelectTrigger aria-label="Worker capacity">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[0, 2, 4, 8, 16, 32].map((limit) => (
+                <SelectItem key={limit} value={String(limit)}>
+                  {limit === 0 ? 'Automatic' : String(limit)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Child agents">
         <ChildAgentLimit
           value={value?.maxActiveChildAgents}
@@ -539,10 +562,24 @@ export function ArtifactPreferences() {
 /** Settings → Computers → Activity: how long this computer keeps its history. */
 export function ActivityRetention() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
+  const { snapshot } = useWorkspace()
   return (
     <>
       <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup title="Retention">
+        {snapshot?.freezeProfilesSupported && (
+          <SettingRow
+            label="Capture repeated freezes"
+            description="After two busy stalls, sample CPU work for two seconds. Keep up to three summaries in this runtime. At most once per ten minutes. No source paths or user code. Included only when you share diagnostics. Off by default."
+          >
+            <Toggle
+              label="Capture repeated freezes"
+              checked={value?.enableFreezeProfiles ?? false}
+              disabled={disabled}
+              onChange={(enableFreezeProfiles) => save({ enableFreezeProfiles })}
+            />
+          </SettingRow>
+        )}
         <SettingRow
           label="Keep activity history"
           description={`Older requests, tool details and message history are deleted from this computer in the background. Thread conversations themselves are kept. CLI diagnostics and raw provider events expire after ${DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever. Successful Git and GitHub reads are not recorded.`}

@@ -1,3 +1,5 @@
+import { applyBotBackup } from './agents/tasks/bot-backup.js'
+import { applyPendingHarness } from './agents/tasks/pending-harness.js'
 import { BotMemoryReview } from './memory/bot-review.js'
 import { BotAvatars } from './agents/tasks/bot-avatar.js'
 import { RuntimeDictation } from './speech/runtime-dictation.js'
@@ -251,6 +253,7 @@ export function createServices(
   const modelSelection = new ModelSelection(db, store, agents, titles, () =>
     acpInstallations.list(),
   )
+  const mcpApps = new McpApps(db, store, activity, approvals)
   const tasks = new Tasks(
       store,
       git,
@@ -275,10 +278,25 @@ export function createServices(
       () => preferences.get().enableLinkedProjectsTool,
       () => preferences.get().enablePullRequestBabysitting,
     ),
-    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy, {
-      defaults,
-      memory,
-    })
+    jobs = new Jobs(
+      db,
+      store,
+      tasks,
+      activity,
+      (text) => titles.generate({ text }),
+      git,
+      policy,
+      {
+        defaults,
+        memory,
+        mcpApps,
+        checkouts,
+      },
+      runtimeId,
+    )
+  const automaticWorkerLimit = tasks.workerLimit
+  tasks.workerLimit = () =>
+    Math.max(2, preferences.get().maxConcurrentWorkers || automaticWorkerLimit())
   const botMemoryReview = new BotMemoryReview(db, { store, memory, titles, tasks, activity })
   const botAvatars = new BotAvatars({
     store,
@@ -295,7 +313,6 @@ export function createServices(
   )
   tasks.setSecureInputs(secureInputs)
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })
-  const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
   tasks.setServerEnvironment((id) => threadServers.environment(id, 'agent'))
   mcpApps.setSendMessage((taskId, messageId, text) =>
@@ -519,6 +536,15 @@ export function createServices(
       // The database may already be closed by a short-lived runtime; the log above remains.
     }
   })
+  tasks.onTurnFailed = (id, turnId) => applyBotBackup(services, id, turnId)
+  const pendingChanges = new Map<string, Promise<void>>()
+  tasks.onBeforeStart = (id) => {
+    const existing = pendingChanges.get(id)
+    if (existing) return existing
+    const work = applyPendingHarness(services, id).finally(() => pendingChanges.delete(id))
+    pendingChanges.set(id, work)
+    return work
+  }
   const services: Services = {
     dictation: new RuntimeDictation(db.name === ':memory:' ? tmpdir() : dirname(resolve(db.name))),
     policy,

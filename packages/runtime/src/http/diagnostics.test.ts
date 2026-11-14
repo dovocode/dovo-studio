@@ -1,4 +1,5 @@
-import { expect, it } from 'vite-plus/test'
+import { memoryAttribution } from '../diagnostics/memory-attribution.js'
+import { expect, it, vi } from 'vite-plus/test'
 import { decode, runtimeDiagnosticsSchema } from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { runtimeDiagnostics } from './diagnostics'
@@ -115,6 +116,40 @@ it('keeps execution ready when an unused legacy thread archive is damaged', asyn
     )
     expect(s.db.prepare('SELECT value FROM thread_state_log').pluck().get()).toBe('invalid json')
   } finally {
+    await runtime.close()
+  }
+})
+
+it('keeps captured function summaries out of agent health and includes them only in owner diagnostics', async () => {
+  const token = 'freeze-owner-diagnostics-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const attribution = memoryAttribution(runtime.services)
+  const report = attribution.report.bind(attribution)
+  const spy = vi.spyOn(attribution, 'report').mockImplementation(async () => ({
+    ...(await report()),
+    freezes: {
+      enabled: true,
+      profiles: [
+        {
+          at: new Date().toISOString(),
+          durationMs: 2000,
+          samples: 10,
+          functions: [{ name: 'runtimeFunction', samples: 10 }],
+        },
+      ],
+    },
+  }))
+  try {
+    expect((await runtimeDiagnostics(runtime.services)).memory?.freezes?.profiles).toEqual([])
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/runtime/diagnostics`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(response.status).toBe(200)
+    const value = decode(runtimeDiagnosticsSchema, await response.json())
+    expect(value.memory?.freezes?.profiles[0].functions[0].name).toBe('runtimeFunction')
+  } finally {
+    spy.mockRestore()
     await runtime.close()
   }
 })

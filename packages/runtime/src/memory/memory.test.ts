@@ -37,6 +37,45 @@ async function setup() {
   return { s, create, post, runtime }
 }
 
+it('keeps ten dated replacements, excludes expired notes from agents and removes versions on delete', async () => {
+  const { s, create, post } = await setup()
+  const task = create()
+  s.memory.configure({ scope: 'project', repositoryId: 'repo', enabled: true })
+  const scope = { scope: 'project' as const, repositoryId: 'repo', key: 'current-fact' }
+  let note = s.memory.write({ ...scope, content: 'First fact', expiresAt: '2000-01-01T00:00:00Z' })
+  expect(s.memory.list(scope).total).toBe(1)
+  expect(s.memory.list(scope, true).entries).toEqual([])
+  expect(
+    (await post('agent/read', { taskId: task.id, scope: 'project', key: scope.key })).status,
+  ).toBe(404)
+  expect(s.memory.read(scope).content).toBe('First fact')
+  const oldRevision = note.revision
+  for (let i = 0; i < 12; i++)
+    note = s.memory.write({
+      ...scope,
+      content: `Replacement ${i}`,
+      expectedRevision: note.revision,
+    })
+  expect(s.memory.versions(scope).entries).toHaveLength(10)
+  expect(s.memory.versions(scope).entries[0].content).toBe('Replacement 10')
+  expect(() =>
+    s.memory.write({ ...scope, content: 'Stale', expectedRevision: oldRevision }),
+  ).toThrow('changed')
+  note = s.memory.write({
+    ...scope,
+    content: note.content,
+    expectedRevision: note.revision,
+    expiresAt: null,
+  })
+  expect(s.memory.list(scope, true).total).toBe(1)
+  expect(
+    (await post('agent/read', { taskId: task.id, scope: 'project', key: scope.key })).status,
+  ).toBe(200)
+  s.memory.remove({ ...scope, expectedRevision: note.revision })
+  s.memory.write({ ...scope, content: 'New unrelated fact' })
+  expect(s.memory.versions(scope).entries).toEqual([])
+})
+
 it('starts all scopes off, configures projects independently, and immediately blocks disabled scopes without erasing notes', async () => {
   const { s, create, post } = await setup()
   const task = create()

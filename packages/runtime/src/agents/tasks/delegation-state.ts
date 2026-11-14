@@ -58,12 +58,17 @@ export function projectDelegatedAgents(tasks: TaskSummary[], agents: Agent[]) {
         name: child.title,
         status,
         prompt: child.history.firstUserText,
+        queued: child.status === 'draft' && !child.activeRunId ? true : undefined,
         model: agent?.model,
         reasoning: agent?.reasoning,
         activity:
           child.error ??
           child.activity ??
-          (status === 'working' && child.status === 'review' ? 'Waiting for children' : undefined),
+          (status === 'working' && child.status === 'review'
+            ? 'Waiting for workers or results'
+            : child.status === 'draft' && !child.activeRunId
+              ? 'Queued'
+              : undefined),
         startedAt: child.createdAt,
         updatedAt: old?.updatedAt ?? child.createdAt,
         finishedAt,

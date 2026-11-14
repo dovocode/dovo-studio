@@ -56,11 +56,12 @@ const driver: DictationDriver | null = native
       },
     }
   : null
-export function createMobileDictation() {
+export function createMobileDictation(voiceProcessing = false) {
   return createDictation(
     driver,
     preferredLocales,
     Platform.OS === 'ios' || Number(Platform.Version) >= 33,
+    voiceProcessing,
   )
 }
 export function useDictation(callbacks: DictationCallbacks) {

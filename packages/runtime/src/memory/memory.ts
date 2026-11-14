@@ -2,6 +2,8 @@ import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import {
+  botContextMessages,
+  searchTaskMessages,
   decode,
   memoryEntrySchema,
   memoryEvidenceSchema,
@@ -24,11 +26,12 @@ import { HttpError } from '../errors.js'
 
 const rowSchema = mutableStruct({
   ...memoryEntrySchema.fields,
+  expiresAt: Schema.NullOr(Schema.String),
   repositoryId: Schema.String,
 })
 const countSchema = mutableStruct({ total: Schema.Number })
 const columns =
-  'scope, repository_id AS repositoryId, key, content, revision, created_at AS createdAt, updated_at AS updatedAt'
+  'scope, repository_id AS repositoryId, key, content, revision, created_at AS createdAt, updated_at AS updatedAt, (SELECT expires_at FROM memory_retention WHERE scope=memories.scope AND repository_id=memories.repository_id AND key=memories.key) AS expiresAt'
 
 /** Local, explicitly saved notes. Project identity comes from the registered project, never a worktree path. */
 export class Memory {
@@ -45,9 +48,25 @@ export class Memory {
     );
     CREATE TABLE IF NOT EXISTS bot_memory_evidence (bot_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(bot_id,key));
     CREATE TABLE IF NOT EXISTS bot_memory_forgotten (bot_id TEXT NOT NULL, key TEXT NOT NULL, PRIMARY KEY(bot_id,key));`)
+    db.exec(`CREATE TABLE IF NOT EXISTS memory_retention (
+      scope TEXT NOT NULL, repository_id TEXT NOT NULL, key TEXT NOT NULL, expires_at TEXT NOT NULL,
+      PRIMARY KEY(scope, repository_id, key));
+      CREATE TABLE IF NOT EXISTS memory_versions (
+      scope TEXT NOT NULL, repository_id TEXT NOT NULL, key TEXT NOT NULL, revision TEXT NOT NULL,
+      saved_at TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(scope, repository_id, key, revision));`)
   }
   settings(): MemorySettings {
     return this.preferences.get().memory
+  }
+  /** Only the coordinator can recall its own retained context. Reset ranges stay excluded. */
+  searchBotHistory(taskId: string, query: string) {
+    this.agentScope(taskId, 'bot')
+    const task = this.store.task(taskId)
+    return searchTaskMessages(
+      [{ ...task, messages: botContextMessages(task.messages, task.bot) }],
+      query,
+      20,
+    )
   }
   projects() {
     const projects = this.store
@@ -125,6 +144,7 @@ export class Memory {
         : undefined
     return decode(memoryEntrySchema, {
       ...row,
+      expiresAt: row.expiresAt ?? undefined,
       evidence:
         typeof evidence === 'string'
           ? decode(memoryEvidenceSchema, JSON.parse(evidence))
@@ -134,12 +154,16 @@ export class Memory {
         : { repositoryId: repositoryId || undefined }),
     })
   }
-  list(input: MemoryListRequest) {
+  list(input: MemoryListRequest, activeOnly = false) {
     const repositoryId = this.repository(input)
     const query = input.query?.trim() ?? ''
     const where =
-      'scope=? AND repository_id=? AND (instr(lower(key),lower(?))>0 OR instr(lower(content),lower(?))>0)'
+      'scope=? AND repository_id=? AND (instr(lower(key),lower(?))>0 OR instr(lower(content),lower(?))>0)' +
+      (activeOnly
+        ? ' AND NOT EXISTS (SELECT 1 FROM memory_retention r WHERE r.scope=memories.scope AND r.repository_id=memories.repository_id AND r.key=memories.key AND r.expires_at<=?)'
+        : '')
     const params = [input.scope, repositoryId, query, query]
+    if (activeOnly) params.push(new Date().toISOString())
     return {
       entries: this.db
         .prepare(`SELECT ${columns} FROM memories WHERE ${where} ORDER BY key LIMIT ? OFFSET ?`)
@@ -161,6 +185,8 @@ export class Memory {
   }
   write(input: MemoryWrite) {
     const repositoryId = this.repository(input)
+    if (typeof input.expiresAt === 'string' && !Number.isFinite(Date.parse(input.expiresAt)))
+      throw new HttpError(400, 'Enter a valid expiry date.')
     return this.db.transaction(() => {
       const key = input.key.trim()
       const row = this.db
@@ -173,12 +199,24 @@ export class Memory {
       if (previous?.revision !== input.expectedRevision)
         throw new HttpError(409, 'Memory changed. Read its current revision before saving.')
       const now = new Date().toISOString()
+      if (previous) {
+        this.db
+          .prepare('INSERT INTO memory_versions VALUES (?,?,?,?,?,?)')
+          .run(input.scope, repositoryId, key, previous.revision, now, JSON.stringify(previous))
+        this.db
+          .prepare(`DELETE FROM memory_versions WHERE scope=? AND repository_id=? AND key=? AND revision NOT IN
+          (SELECT revision FROM memory_versions WHERE scope=? AND repository_id=? AND key=? ORDER BY saved_at DESC, rowid DESC LIMIT 10)`)
+          .run(input.scope, repositoryId, key, input.scope, repositoryId, key)
+      }
+      const expiresAt =
+        input.expiresAt === undefined ? previous?.expiresAt : (input.expiresAt ?? undefined)
       const entry = decode(memoryEntrySchema, {
         ...input,
         key,
         repositoryId: input.scope === 'project' ? repositoryId : undefined,
         botId: input.scope === 'bot' ? repositoryId : undefined,
         evidence: undefined,
+        expiresAt,
         revision: randomUUID(),
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
@@ -200,6 +238,14 @@ export class Memory {
           .prepare('DELETE FROM bot_memory_evidence WHERE bot_id=? AND key=?')
           .run(repositoryId, key)
       }
+      if (expiresAt)
+        this.db
+          .prepare('INSERT OR REPLACE INTO memory_retention VALUES (?,?,?,?)')
+          .run(input.scope, repositoryId, key, expiresAt)
+      else
+        this.db
+          .prepare('DELETE FROM memory_retention WHERE scope=? AND repository_id=? AND key=?')
+          .run(input.scope, repositoryId, key)
       return entry
     })()
   }
@@ -211,6 +257,10 @@ export class Memory {
         .run(input.scope, repositoryId, input.key.trim(), input.expectedRevision)
       if (!result.changes)
         throw new HttpError(409, 'Memory changed or was removed. Refresh before deleting it.')
+      for (const table of ['memory_versions', 'memory_retention'])
+        this.db
+          .prepare(`DELETE FROM ${table} WHERE scope=? AND repository_id=? AND key=?`)
+          .run(input.scope, repositoryId, input.key.trim())
       if (input.scope === 'bot') {
         this.db
           .prepare('DELETE FROM bot_memory_evidence WHERE bot_id=? AND key=?')
@@ -228,6 +278,22 @@ export class Memory {
       .prepare(`SELECT ${columns} FROM memories WHERE scope='bot' AND repository_id=? ORDER BY key`)
       .all(botId)
       .map((row) => this.decodeRow(row))
+      .filter((note) => !note.expiresAt || Date.parse(note.expiresAt) > Date.now())
+  }
+  versions(input: MemoryScopeRequest & { key: string }) {
+    const repositoryId = this.repository(input)
+    this.read(input)
+    const rows = this.db
+      .prepare(
+        'SELECT value FROM memory_versions WHERE scope=? AND repository_id=? AND key=? ORDER BY saved_at DESC, rowid DESC LIMIT 10',
+      )
+      .pluck()
+      .all(input.scope, repositoryId, input.key.trim())
+    return {
+      entries: rows.map((value) =>
+        decode(memoryEntrySchema, JSON.parse(decode(Schema.String, value))),
+      ),
+    }
   }
   forgotten(botId: string, key: string) {
     return !!this.db
@@ -241,12 +307,18 @@ export class Memory {
   }
   clearBot(botId: string) {
     this.repository({ scope: 'bot', botId }, true)
-    for (const note of this.botNotes(botId))
+    for (const raw of this.db
+      .prepare("SELECT key FROM memories WHERE scope='bot' AND repository_id=?")
+      .all(botId)) {
+      const note = decode(mutableStruct({ key: Schema.String }), raw)
       this.db
         .prepare('INSERT OR IGNORE INTO bot_memory_forgotten VALUES (?,?)')
         .run(botId, note.key)
+    }
     this.db.prepare("DELETE FROM memories WHERE scope='bot' AND repository_id=?").run(botId)
     this.db.prepare('DELETE FROM bot_memory_evidence WHERE bot_id=?').run(botId)
+    for (const table of ['memory_versions', 'memory_retention'])
+      this.db.prepare(`DELETE FROM ${table} WHERE scope='bot' AND repository_id=?`).run(botId)
   }
   private projectForTask(taskId: string) {
     let task = this.store.taskSummary(taskId)
@@ -263,6 +335,11 @@ export class Memory {
   }
   /** Deleting a Bot removes its private notes with it. */
   removeBot(botId: string) {
+    this.db
+      .prepare('DELETE FROM documents WHERE id>=? AND id<?')
+      .run(`bot-routine-finding:${botId}:`, `bot-routine-finding:${botId};`)
+    for (const table of ['memory_versions', 'memory_retention'])
+      this.db.prepare(`DELETE FROM ${table} WHERE scope='bot' AND repository_id=?`).run(botId)
     this.db
       .prepare('DELETE FROM documents WHERE id >= ? AND id < ?')
       .run('bot-skill-proposal:' + botId + ':', 'bot-skill-proposal:' + botId + ';')

@@ -246,6 +246,20 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
           )}
           {show('tasks') && (
             <Section title="Running tasks">
+              <Choice
+                label="Scheduled worker capacity"
+                value={String(value?.maxConcurrentWorkers ?? 0)}
+                disabled={disabled}
+                items={[0, 2, 4, 8, 16, 32].map((limit) => ({
+                  id: String(limit),
+                  name: limit === 0 ? 'Automatic' : String(limit),
+                }))}
+                onChange={(limit) => save({ maxConcurrentWorkers: Number(limit) })}
+              />
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Scheduled jobs wait at this threshold. One slot stays available for conversation
+                work. Direct messages and needed children can exceed it. Running work is kept.
+              </Text>
               <ChildAgentLimit
                 value={value?.maxActiveChildAgents}
                 disabled={disabled}
@@ -753,6 +767,21 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
           )}
           {show('activity') && (
             <Section title="Activity">
+              {snapshot?.freezeProfilesSupported && (
+                <View style={{ gap: 6 }}>
+                  <SettingsSwitchRow
+                    label="Capture repeated freezes"
+                    value={value?.enableFreezeProfiles ?? false}
+                    disabled={disabled}
+                    onValueChange={(enableFreezeProfiles) => save({ enableFreezeProfiles })}
+                  />
+                  <Text style={styles.muted}>
+                    After two busy stalls, sample CPU work for two seconds. Keep three local
+                    summaries without source paths or user code. At most once per ten minutes. Off
+                    by default.
+                  </Text>
+                </View>
+              )}
               <View style={{ gap: 6 }}>
                 <Choice
                   label="Keep activity history"

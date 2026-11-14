@@ -1,3 +1,4 @@
+import { Choice } from '../ui/controls/choice'
 import { taskHref } from '../shell/task-route'
 import { BotSkillProposals } from './bot-skill-proposals'
 import { BotAvatarEditor } from './bot-avatar-editor'
@@ -91,6 +92,8 @@ function BotSettingsEditor({
         name: task.title,
         role: bot.role,
         responsibilities: bot.responsibilities,
+        backupAgentId: bot.backupAgentId ?? '',
+        originalBackupAgentId: bot.backupAgentId ?? '',
         expectedRevision: bot.revision,
         resources: bot.resources ?? emptyBotResources(),
         originalName: task.title,
@@ -134,6 +137,8 @@ function BotSettingsEditor({
         if (
           JSON.stringify(value.resources) !==
             JSON.stringify(baseline.current?.resources ?? emptyBotResources()) ||
+          value.backupAgentId !==
+            (value.originalBackupAgentId ?? baseline.current?.backupAgentId ?? '') ||
           value.role !== (value.originalRole ?? baseline.current?.role) ||
           value.responsibilities !==
             (value.originalResponsibilities ?? baseline.current?.responsibilities)
@@ -147,6 +152,9 @@ function BotSettingsEditor({
                 role: value.role,
                 ...(snapshot?.botResourcesSupported ? { resources: value.resources } : {}),
                 responsibilities: value.responsibilities,
+                ...(snapshot?.botBackupSupported
+                  ? { backupAgentId: value.backupAgentId || null }
+                  : {}),
               },
               botResultSchema,
             ),
@@ -157,6 +165,7 @@ function BotSettingsEditor({
             expectedRevision: result.bot.revision,
             originalRole: result.bot.role,
             originalResponsibilities: result.bot.responsibilities,
+            originalBackupAgentId: result.bot.backupAgentId ?? '',
           })
         }
       }}
@@ -191,6 +200,7 @@ function BotSettingsEditor({
                     draft.expectedRevision === bot.revision &&
                     result.bot.role === bot.role &&
                     result.bot.responsibilities === bot.responsibilities &&
+                    result.bot.backupAgentId === bot.backupAgentId &&
                     JSON.stringify(result.bot.resources ?? emptyBotResources()) ===
                       JSON.stringify(bot.resources ?? emptyBotResources())
                   )
@@ -201,6 +211,28 @@ function BotSettingsEditor({
             <Text>
               Pause holds new work. The current turn can finish. Use Stop in the chat to cancel it.
             </Text>
+            {snapshot?.botBackupSupported && (
+              <>
+                <Choice
+                  label="Automatic backup"
+                  value={draft.backupAgentId || 'none'}
+                  disabled={!connected || busy}
+                  items={[
+                    { id: 'none', name: 'No backup' },
+                    ...(snapshot?.workspace.agents ?? []).map((agent) => ({
+                      id: agent.id,
+                      name: `${agent.name} · ${agent.model}`,
+                    })),
+                  ]}
+                  onChange={(id) => retain({ backupAgentId: id === 'none' ? '' : id })}
+                />
+                <Text>
+                  Use this saved agent after a quota or provider outage, only before work starts.
+                  Access stays the same. The backup becomes the current model and can have different
+                  costs.
+                </Text>
+              </>
+            )}
             <Action label="Avatar" secondary onPress={() => setAvatar(true)} />
             <Action
               label="Harness, model and tool permissions"

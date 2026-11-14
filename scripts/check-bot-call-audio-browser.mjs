@@ -33,7 +33,7 @@ const built = await bundleBrowser(
     stdin: {
       resolveDir: root,
       loader: 'ts',
-      contents: `import{browserBotCallAudio}from'./packages/extension-tasks/src/bots/bot-call-audio';window.errors=[];window.transcribed=[];window.feeds=0;window.finished=0;const get=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async options=>{const stream=await get(options);window.tracks=stream.getTracks();return stream};const bridge={start:async()=>{},feed:async(_,pcm)=>{window.feeds+=pcm.byteLength},finish:async()=>{window.finished++;return 'Recognized request'},cancel:async()=>{},status:async()=>({engine:true,model:true}),install:async()=>{},subscribe:()=>()=>{}};const audio=browserBotCallAudio(bridge,'auto');window.start=async()=>{window.signal=new AbortController();await audio.listen(window.signal.signal,{preview:()=>{},finish:text=>window.transcribed.push(text),error:e=>window.errors.push(e.message)})};`,
+      contents: `import{browserBotCallAudio}from'./packages/extension-tasks/src/bots/bot-call-audio';window.errors=[];window.transcribed=[];window.feeds=0;window.finished=0;const get=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async options=>{const stream=await get(options);window.tracks=stream.getTracks();window.captures=(window.captures??0)+1;return stream};const bridge={start:async()=>{window.starts=(window.starts??0)+1},feed:async(_,pcm)=>{window.feeds+=pcm.byteLength},finish:async()=>{window.finished++;if(window.holdTranscript){window.holdTranscript=false;await new Promise(resolve=>window.releaseTranscript=resolve)}return 'Recognized request'},cancel:async()=>{},status:async()=>({engine:true,model:true}),install:async()=>{},subscribe:()=>()=>{}};const audio=browserBotCallAudio(bridge,'auto');window.start=async()=>{window.signal=new AbortController();await audio.listen(window.signal.signal,{preview:()=>{},finish:text=>window.transcribed.push(text),error:e=>window.errors.push(e.message)})};window.overlap=async()=>{window.holdTranscript=true;window.overlapResults=[];window.first=new AbortController();await audio.listen(window.first.signal,{preview:()=>{},released:()=>{window.second=new AbortController();void audio.listen(window.second.signal,{preview:()=>{},finish:text=>window.overlapResults.push('second:'+text),error:e=>window.errors.push(e.message)})},finish:text=>window.overlapResults.push('first:'+text),error:e=>window.errors.push(e.message)})};`,
     },
     bundle: true,
     write: false,
@@ -75,6 +75,27 @@ try {
   await page.evaluate(() => window.start())
   await page.evaluate(() => window.signal.abort())
   await page.waitForFunction(() => window.tracks.every((track) => track.readyState === 'ended'))
+  const before = await page.evaluate(() => ({ captures: window.captures, starts: window.starts }))
+  await page.evaluate(() => window.overlap())
+  await page.waitForFunction(
+    (before) => window.captures >= before.captures + 2 && !!window.releaseTranscript,
+    before,
+  )
+  assert.equal(
+    await page.evaluate(() => window.starts),
+    before.starts + 1,
+    'Next microphone records while the previous decoder remains active',
+  )
+  await page.evaluate(() => window.releaseTranscript())
+  await page.waitForFunction(() => window.overlapResults.length === 2)
+  assert.deepEqual(await page.evaluate(() => window.overlapResults), [
+    'first:Recognized request',
+    'second:Recognized request',
+  ])
+  await page.evaluate(() => {
+    window.first.abort()
+    window.second.abort()
+  })
   assert.deepEqual(await page.evaluate(() => window.errors), [])
   assert.deepEqual(errors, [])
   console.log(

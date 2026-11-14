@@ -48,6 +48,10 @@ export const botMemoryStatusSchema = mutableStruct({
   running: Schema.Boolean,
 })
 export const botMemoryRequestSchema = mutableStruct({ botId: uuidSchema })
+export const botHistorySearchSchema = mutableStruct({
+  taskId: maxValue(minValue(Schema.String, 1), 200),
+  query: maxValue(minValue(Schema.String, 1), 200),
+})
 export const botMemoryConfigureSchema = mutableStruct({
   ...botMemoryRequestSchema.fields,
   expectedRevision: uuidSchema,
@@ -67,6 +71,7 @@ export const memoryEntrySchema = mutableStruct({
   evidence: Schema.optional(memoryEvidenceSchema),
   createdAt: Schema.String,
   updatedAt: Schema.String,
+  expiresAt: Schema.optional(Schema.String),
 })
 export const memoryMetadataSchema = mutableStruct(
   Struct.omit(memoryEntrySchema.fields, ['content']),
@@ -76,7 +81,15 @@ export const memoryWriteSchema = mutableStruct({
   ...memoryReadSchema.fields,
   content: memoryEntrySchema.fields.content,
   expectedRevision: Schema.optional(revision),
+  expiresAt: Schema.optional(
+    Schema.NullOr(
+      Schema.String.pipe(
+        Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/)),
+      ),
+    ),
+  ),
 })
+export const memoryVersionsSchema = mutableStruct({ entries: mutableArray(memoryEntrySchema) })
 export const memoryDeleteSchema = mutableStruct({
   ...memoryReadSchema.fields,
   expectedRevision: revision,

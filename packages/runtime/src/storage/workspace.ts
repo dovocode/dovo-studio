@@ -1467,6 +1467,7 @@ export class WorkspaceStore {
           record.checkoutLocked !== undefined ||
           record.providerLock !== undefined ||
           record.harnessHandoff !== undefined ||
+          record.pendingHarness !== undefined ||
           record.machineHandoff !== undefined ||
           record.worktreeSetupComplete !== undefined ||
           record.worktreeInitialSnapshot !== undefined ||

@@ -46,14 +46,24 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
     [snapshot?.defaults, workspace.repositories, workspace.agents, task.repositoryId, task.bot],
   )
   const providerLock = lockedTaskProvider(task, agents)
+  const canDefer = !!task.bot && snapshot?.pendingBotHarnessSupported === true
   const handoff = useInlineHarnessHandoff(task, !disabled)
   const installationLock = lockedAcpInstallationId(task, agents)
   const value = useMemo(() => {
+    if (task.pendingHarness) return task.pendingHarness.harness
     const resolved = resolveTaskAgent(task, agents)
     return resolved
       ? decode(taskHarnessSchema, resolved)
       : defaultTaskHarness(providerLock ?? 'codex')
-  }, [task.id, task.agentId, task.agentOverrides, task.harness, agents, providerLock])
+  }, [
+    task.id,
+    task.agentId,
+    task.agentOverrides,
+    task.harness,
+    task.pendingHarness,
+    agents,
+    providerLock,
+  ])
   const [connection, setConnection] = useApplicationState(false)
   const [saving, setSaving] = useApplicationState(false)
   const savingRef = useRef(false)
@@ -100,7 +110,8 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
     }
     if (
       handoff.available &&
-      (harness.provider !== value.provider ||
+      ((canDefer && (task.status === 'running' || task.pendingHarness)) ||
+        harness.provider !== value.provider ||
         (harness.provider === 'acp' &&
           (harness.acpInstallationId ?? '') !== (value.acpInstallationId ?? '')))
     )
@@ -108,7 +119,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
     return save((current, agents) => changeTaskHarness(current, agents, harness, standalone))
   }
   const customAgent = task.agentId ? agents.find((agent) => agent.id === task.agentId) : undefined
-  const locked = disabled || saving || handoff.busy || task.status === 'running'
+  const locked = disabled || saving || handoff.busy || (!canDefer && task.status === 'running')
   return (
     <>
       <ComposerSettingsControls
@@ -149,7 +160,8 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
           const agent = agents.find((entry) => entry.id === agentId)
           return agent &&
             handoff.available &&
-            (agent.provider !== value.provider ||
+            ((canDefer && (task.status === 'running' || task.pendingHarness)) ||
+              agent.provider !== value.provider ||
               (agent.provider === 'acp' &&
                 (agent.acpInstallationId ?? '') !== (value.acpInstallationId ?? '')))
             ? apply(decode(taskHarnessSchema, agent), true)

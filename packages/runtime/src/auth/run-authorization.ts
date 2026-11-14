@@ -10,6 +10,7 @@ const allowed = new Set([
   '/api/studio/tools',
   '/api/linked-projects',
   '/api/agent/question',
+  '/api/agent/help',
   '/api/agent/todos',
   '/api/agent/workflow',
   '/api/agent/secure-input',
@@ -24,6 +25,7 @@ const allowed = new Set([
   '/api/subagents/wait',
   '/api/subagents/cancel',
   '/api/memory/agent/list',
+  '/api/memory/agent/history',
   '/api/memory/agent/read',
   '/api/memory/agent/write',
   '/api/memory/agent/delete',
@@ -145,6 +147,10 @@ export function authorizeRunRoute(
     return grant
   }
   if (path.startsWith('/api/memory/')) {
+    if (path === '/api/memory/agent/history') {
+      if (!grant.memoryScopes.includes('bot')) denied()
+      return grant
+    }
     if (!grant.memoryScopes.some((scope) => scope === input.scope)) denied()
     if (grant.readOnly && !['/api/memory/agent/list', '/api/memory/agent/read'].includes(path))
       denied()

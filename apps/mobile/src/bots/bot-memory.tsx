@@ -6,6 +6,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import {
   memoryListSchema,
   memoryEntrySchema,
+  memoryVersionsSchema,
   mutableStruct,
   responses,
   type MemoryEntry,
@@ -19,7 +20,12 @@ import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 
-const drafts = createDetailDrafts<{ key: string; content: string; expectedRevision?: string }>()
+const drafts = createDetailDrafts<{
+  key: string
+  content: string
+  expectedRevision?: string
+  expiresAt: string
+}>()
 export function BotMemory(props: { taskId: string; onClose: () => void }) {
   const { profile } = useRuntime()
   return (
@@ -228,11 +234,13 @@ function MemoryNote({
       key: note?.key ?? '',
       content: note?.content ?? '',
       expectedRevision: note?.revision,
+      expiresAt: note?.expiresAt ?? '',
     }),
   )
   const { act, busy, error } = useAction()
   const scope = { scope: 'bot' as const, botId: taskId, key: draft.key }
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [versions, setVersions] = useState<MemoryEntry[]>([])
   return (
     <Sheet title={note ? 'Edit memory note' : 'New memory note'} busy={busy} onClose={onClose}>
       <Text style={styles.muted}>
@@ -269,6 +277,42 @@ function MemoryNote({
           {error}
         </Text>
       )}
+      {snapshot?.botMemoryVersionsSupported && (
+        <Field
+          label="Expires at (UTC, optional)"
+          placeholder="2026-12-01T12:00:00Z"
+          hint="Expired notes stay here for review. Agents cannot use them."
+          value={draft.expiresAt}
+          editable={connected && !busy}
+          onChangeText={(value) => setField('expiresAt', value)}
+        />
+      )}
+      {note && snapshot?.botMemoryVersionsSupported && (
+        <Action
+          secondary
+          label="Read previous versions"
+          disabled={!connected || busy}
+          onPress={() =>
+            act(async () => {
+              const result = await runClientEffect(
+                callEffect('/api/memory/versions', scope, memoryVersionsSchema),
+              )
+              setVersions(result.entries)
+            })
+          }
+        />
+      )}
+      {versions.map((version) => (
+        <View key={version.revision} style={{ gap: 8 }}>
+          <Text style={styles.muted}>{new Date(version.updatedAt).toLocaleString()}</Text>
+          <Text selectable>{version.content}</Text>
+          <Action
+            secondary
+            label="Use this text in draft"
+            onPress={() => setField('content', version.content)}
+          />
+        </View>
+      ))}
       <Action
         label="Save memory note"
         disabled={!connected || busy || !draft.key.trim() || !draft.content.trim()}
@@ -277,7 +321,14 @@ function MemoryNote({
             await runClientEffect(
               callEffect(
                 '/api/memory/write',
-                { ...scope, content: draft.content, expectedRevision: draft.expectedRevision },
+                {
+                  ...scope,
+                  content: draft.content,
+                  expectedRevision: draft.expectedRevision,
+                  ...(snapshot?.botMemoryVersionsSupported
+                    ? { expiresAt: draft.expiresAt.trim() || null }
+                    : {}),
+                },
                 mutableStruct({ memory: memoryEntrySchema }),
               ),
             )

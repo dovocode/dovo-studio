@@ -4,13 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   memoryEntrySchema,
   memoryListSchema,
+  memoryVersionsSchema,
   mutableStruct,
   type MemoryEntry,
 } from '@dovo/protocol'
 import { responses, useConfirmation, useWorkspace } from '@dovo/studio-core'
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 
-type NoteDraft = { key: string; content: string; revision?: string }
+type NoteDraft = { key: string; content: string; revision?: string; expiresAt?: string }
 const drafts = new Map<string, NoteDraft>()
 const blank: NoteDraft = { key: '', content: '' }
 
@@ -24,6 +25,7 @@ export function BotMemory({ taskId }: { taskId: string }) {
   const [notes, setNotes] = useState<MemoryEntry[]>([])
   const [total, setTotal] = useState(0)
   const [query, setQuery] = useState('')
+  const [versions, setVersions] = useState<MemoryEntry[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -68,6 +70,7 @@ export function BotMemory({ taskId }: { taskId: string }) {
   const clear = () => {
     drafts.delete(scope)
     setDraft(blank)
+    setVersions([])
   }
   const choose = async (note?: MemoryEntry) => {
     if (
@@ -82,7 +85,13 @@ export function BotMemory({ taskId }: { taskId: string }) {
       return
     if (note) {
       drafts.delete(scope)
-      setDraft({ key: note.key, content: note.content, revision: note.revision })
+      setDraft({
+        key: note.key,
+        content: note.content,
+        revision: note.revision,
+        expiresAt: note.expiresAt,
+      })
+      setVersions([])
     } else clear()
   }
   const run = async (operation: () => Promise<void>) => {
@@ -270,6 +279,9 @@ export function BotMemory({ taskId }: { taskId: string }) {
                 key: draft.key.trim(),
                 content: draft.content,
                 expectedRevision: draft.revision,
+                ...(snapshot?.botMemoryVersionsSupported
+                  ? { expiresAt: draft.expiresAt?.trim() || null }
+                  : {}),
               },
               mutableStruct({ memory: memoryEntrySchema }),
             )
@@ -305,6 +317,54 @@ export function BotMemory({ taskId }: { taskId: string }) {
               onChange={(event) => change({ ...draft, content: event.target.value })}
             />
           </FormField>
+          {snapshot?.botMemoryVersionsSupported && (
+            <FormField label="Expires at (UTC, optional)">
+              <Input
+                aria-label="Memory expiry"
+                placeholder="2026-12-01T12:00:00Z"
+                value={draft.expiresAt ?? ''}
+                onChange={(event) => change({ ...draft, expiresAt: event.target.value })}
+              />
+            </FormField>
+          )}
+          {snapshot?.botMemoryVersionsSupported && (
+            <p className="text-xs text-muted-foreground">
+              Expired notes stay available here. Agents cannot use them until you update the expiry.
+            </p>
+          )}
+          {draft.revision && snapshot?.botMemoryVersionsSupported && (
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() =>
+                void run(async () => {
+                  const result = await request(
+                    '/api/memory/versions',
+                    { scope: 'bot', botId: taskId, key: draft.key },
+                    memoryVersionsSchema,
+                  )
+                  setVersions(result.entries)
+                })
+              }
+            >
+              Read previous versions
+            </Button>
+          )}
+          {versions.map((version) => (
+            <details key={version.revision} className="rounded border p-2 text-xs">
+              <summary>{new Date(version.updatedAt).toLocaleString()}</summary>
+              <p className="my-2 whitespace-pre-wrap">{version.content}</p>
+              <Button
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => change({ ...draft, content: version.content })}
+              >
+                Use this text in draft
+              </Button>
+            </details>
+          ))}
           <p className="text-xs text-muted-foreground">
             {draft.content.length.toLocaleString()} / 16,000 characters
           </p>

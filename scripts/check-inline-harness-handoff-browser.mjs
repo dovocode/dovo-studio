@@ -82,9 +82,9 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';impor
 import {defaultTaskHarness} from '@dovo/protocol';import {${isMobile ? 'HarnessSettings' : variant === 'turn' ? 'TurnModelControls' : 'ComposerHarnessControls'} as Controls} from '${entry}';
 window.calls=[];window.flushes=0;window.fail=false;window.hold=false;window.settings=null;window.closes=0;window.deferDismissal=false;
 const original={...(${isBot}?{bot:{role:'Helper',responsibilities:'Keep context',state:'active',revision:'11111111-1111-4111-8111-111111111111',createdAt:'',updatedAt:''}}:{}),id:'thread',title:'Thread',agentId:'',harness:defaultTaskHarness('codex'),providerLock:'codex',status:'review',checkoutLocked:true,createdAt:'',messages:[{id:'m',role:'user',text:'Saved context'}],files:[],draft:'Unsent draft'};
-function App(){const[open,setOpen]=useState(true),[task,setTask]=useState(original),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true),[scope,setScope]=useState('owner');window.task=task;window.setTask=patch=>setTask(t=>({...t,...patch}));window.setConnected=setConnected;window.setSupported=setSupported;window.setScope=setScope;window.reset=()=>{setOpen(true);window.settings=null;window.calls=[];setTask({...original});setScope('owner');setConnected(true);setSupported(true)};
-const request=async(path,input)=>{window.calls.push({path,input:structuredClone(input),scope});if(window.hold)await new Promise(resolve=>window.release=resolve);if(window.fail){window.fail=false;setTask(t=>({...t,status:'review'}));throw Error('Reply lost')}setTask(t=>({...t,harness:input.harness,providerLock:input.harness.provider,status:'review'}));return{ok:true}};
-const workspace={tasks:[task],agents:[],repositories:[]};const snapshot={workspace,threadHandoffsSupported:supported,permissionPolicySupported:true,acpInstallations:[]};
+function App(){const[pendingSupport,setPendingSupport]=useState(false);window.setPendingSupport=setPendingSupport;const[open,setOpen]=useState(true),[task,setTask]=useState(original),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true),[scope,setScope]=useState('owner');window.task=task;window.setTask=patch=>setTask(t=>({...t,...patch}));window.setConnected=setConnected;window.setSupported=setSupported;window.setScope=setScope;window.reset=()=>{setPendingSupport(false);setOpen(true);window.settings=null;window.calls=[];setTask({...original});setScope('owner');setConnected(true);setSupported(true)};
+const request=async(path,input)=>{window.calls.push({path,input:structuredClone(input),scope});if(window.hold)await new Promise(resolve=>window.release=resolve);if(window.fail){window.fail=false;setTask(t=>({...t,status:'review'}));throw Error('Reply lost')}if(path.endsWith('/pending-harness')){setTask(t=>({...t,pendingHarness:input.harness?{id:input.requestId,harness:input.harness}:undefined}));return{ok:true}}setTask(t=>({...t,harness:input.harness,providerLock:input.harness.provider,status:'review'}));return{ok:true}};
+const workspace={tasks:[task],agents:[],repositories:[]};const snapshot={workspace,threadHandoffsSupported:supported,pendingBotHarnessSupported:pendingSupport,permissionPolicySupported:true,acpInstallations:[]};
 window.store={snapshot,workspace,connected,activeRuntimeId:scope,profile:{id:scope,connection:{address:'http://'+scope+'.local'}},connection:{address:'http://'+scope+'.local'},request,flush:async()=>{window.flushes++},setWorkspace:change=>{const next=change(workspace);setTask(next.tasks[0])},callEffect:(path,input)=>Effect.tryPromise({try:()=>request(path,input),catch:e=>e})};
 return <>{(!${isMobile}||open)&&<Controls task={task} turn={!${isBot}&&task.status==='running'?{value:null,onChange:value=>window.settings=value}:undefined} agent={{...task.harness,id:'task',name:'Codex'}} disabled={false} value={window.settings} onChange={value=>window.settings=value} onClose={()=>{window.closes++;if(window.deferDismissal)window.finishDismissal=()=>setOpen(false);else setOpen(false)}} inline={${variant !== 'mobile-sheet'}}/>}<textarea aria-label="Message" value={task.draft} onChange={event=>setTask(task=>({...task,draft:event.target.value}))}/><output aria-label="Draft">{task.draft}</output><output aria-label="Provider">{task.harness.provider}</output></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -225,6 +225,27 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     else {
       await choose.click()
       assert.equal(await page.evaluate(() => window.calls.length), 0)
+    }
+    if (isBot) {
+      await page.evaluate(() => {
+        window.reset()
+        window.setPendingSupport(true)
+        window.setTask({ status: 'running', bot: { ...window.task.bot, revision: 'bot-revision' } })
+      })
+      await page.waitForFunction(
+        () => window.store.snapshot.pendingBotHarnessSupported && window.task.status === 'running',
+      )
+      await choose.click()
+      await page.waitForFunction(() => window.task.pendingHarness?.harness.provider === 'claude')
+      assert.equal(await page.getByLabel('Provider').textContent(), 'codex')
+      assert.equal(await page.evaluate(() => window.task.status), 'running')
+      assert.equal(await page.evaluate(() => window.calls[0].path), '/api/tasks/pending-harness')
+      assert.equal(await page.getByLabel('Draft').textContent(), 'Unsent draft')
+      if (!isMobile) {
+        await page.getByRole('button', { name: 'Cancel pending change', exact: true }).click()
+        await page.waitForFunction(() => !window.task.pendingHarness)
+        assert.equal(await page.evaluate(() => window.calls.at(-1).input.harness), null)
+      }
     }
     assert.deepEqual(errors, [])
     await page.close()

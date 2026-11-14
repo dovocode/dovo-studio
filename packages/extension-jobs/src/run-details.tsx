@@ -1,5 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
+import { RunAudit } from './run-audit'
 import {
   ArrowUpRight,
   Check,
@@ -80,7 +81,7 @@ export function RunDetails({
   actions: JobActions
   onStep: (id: string) => void
 }) {
-  const { workspace, connected, syncError, snapshot } = useWorkspace()
+  const { workspace, connected, syncError, snapshot, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   const [now, setNow] = useApplicationState(Date.now)
   const active = !!run && liveRun(run)
@@ -128,7 +129,23 @@ export function RunDetails({
     })
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
+      {snapshot?.runAuditSupported && (
+        <RunAudit key={`${activeRuntimeId}:${run.id}`} runId={run.id} />
+      )}
       <div className="space-y-3 border-b p-4">
+        {run.scheduledFor && (
+          <p className="text-xs text-muted-foreground">
+            Due {formatDateTime(run.scheduledFor)} · Enqueued {formatDateTime(run.createdAt)}
+            {' · '}
+            {run.scheduleTimezone ?? 'UTC'}
+            {' · '}
+            {Math.max(
+              0,
+              Math.floor((Date.parse(run.createdAt) - Date.parse(run.scheduledFor)) / 1000),
+            )}
+            s late
+          </p>
+        )}
         <ChoicePicker
           aria-label="Automation run"
           value={run.id}

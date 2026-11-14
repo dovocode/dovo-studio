@@ -20,6 +20,7 @@ export type BotCallState = {
   reply: string
   error: string
   retrySend: boolean
+  continuous: boolean
 }
 export type BotCallAudio = {
   listen(
@@ -28,6 +29,8 @@ export type BotCallAudio = {
       preview: (text: string) => void
       finish: (text: string) => void
       error: (error: Error) => void
+      speechStarted?: () => void
+      released?: () => void
     },
   ): Promise<void>
   speak(text: string, signal: AbortSignal): Promise<void>
@@ -46,6 +49,7 @@ export function createBotCall(
     reply: '',
     error: '',
     retrySend: false,
+    continuous: false,
   }
   const subscribers = new Set<() => void>()
   let active = false,
@@ -53,6 +57,9 @@ export function createBotCall(
     capture: AbortController | undefined,
     speech: AbortController | undefined
   let sending: { id: string; text: string } | undefined
+  let delivering = false
+  const queued: { id: string; text: string }[] = []
+  const processing = new Set<AbortController>()
   const pending = new Set<string>()
   const completed = new Map<string, BotCallReply>()
   let needsInput = false
@@ -72,6 +79,8 @@ export function createBotCall(
     if (!active) return
     epoch++
     stopCapture()
+    for (const controller of processing) controller.abort()
+    processing.clear()
     stopSpeech()
     update({
       phase: 'error',
@@ -84,8 +93,9 @@ export function createBotCall(
       !active ||
       state.muted ||
       capture ||
-      speech ||
-      sending ||
+      (!state.continuous && (speech || sending)) ||
+      queued.length >= 4 ||
+      processing.size >= 4 ||
       needsInput ||
       state.phase === 'error'
     )
@@ -93,31 +103,53 @@ export function createBotCall(
     const own = new AbortController(),
       generation = epoch
     capture = own
-    update({ phase: 'starting' })
+    if (!speech && !sending) update({ phase: 'starting' })
     try {
       await audio.listen(own.signal, {
+        released: () => {
+          if (capture !== own || !active || !state.continuous) return
+          capture = undefined
+          processing.add(own)
+          if (!speech && !sending) update({ phase: 'waiting' })
+          void listen()
+        },
+        speechStarted: () => {
+          if (capture === own && state.continuous) {
+            stopSpeech()
+            if (!sending) update({ phase: 'listening' })
+          }
+        },
         preview: (text) => {
           if (capture === own) update({ heard: text })
         },
         finish: (text) => {
-          if (capture !== own || !active) return
-          stopCapture()
+          if ((capture !== own && !processing.has(own)) || !active) return
+          processing.delete(own)
+          if (capture === own) stopCapture()
+          else own.abort()
           const value = text.trim()
           if (value.length > 12000) {
             fail(new Error('This voice message is too long. Use the chat to send it.'))
             return
           }
-          if (value) {
-            sending = { id: newId(), text: value }
+          // Speech recognizers can emit punctuation for room noise or silence.
+          if (/[\p{L}\p{N}]/u.test(value)) {
+            queued.push({ id: newId(), text: value })
             update({ heard: value })
-            void deliver()
-          } else pump()
+            if (!sending) {
+              sending = queued.shift()
+              void deliver()
+            } else pump()
+          } else {
+            update({ heard: '' })
+            pump()
+          }
         },
         error: (error) => {
-          if (capture === own) fail(error)
+          if (capture === own || processing.has(own)) fail(error)
         },
       })
-      if (capture === own && generation === epoch)
+      if (capture === own && generation === epoch && !speech && !sending)
         update({ phase: pending.size ? 'waiting' : 'listening' })
     } catch (error) {
       if (capture === own && !own.signal.aborted) fail(error)
@@ -126,23 +158,36 @@ export function createBotCall(
   const deliver = async () => {
     const item = sending,
       generation = epoch
-    if (!item || !active) return
+    if (!item || !active || delivering || needsInput) return
+    delivering = true
     update({ phase: 'sending', error: '', retrySend: false })
+    if (state.continuous) void listen()
     try {
       await send(item.id, item.text)
+      delivering = false
       if (!active || generation !== epoch || sending !== item) return
       pending.add(item.id)
-      sending = undefined
+      sending = queued.shift()
+      if (sending) {
+        void deliver()
+        return
+      }
       pump()
     } catch (error) {
+      delivering = false
       if (active && generation === epoch) fail(error)
     }
   }
   const pump = () => {
-    if (!active || state.phase === 'error' || sending || speech) return
+    if (!active || state.phase === 'error') return
     if (needsInput) {
       stopCapture()
       update({ phase: 'needs-input' })
+      return
+    }
+    if (sending || speech) {
+      if (sending && !delivering) void deliver()
+      if (state.continuous) void listen()
       return
     }
     const next = [...pending]
@@ -155,7 +200,7 @@ export function createBotCall(
         fail(new Error(next.error || 'The Bot stopped. Review the conversation before continuing.'))
         return
       }
-      stopCapture()
+      if (!state.continuous) stopCapture()
       const text = next.text?.trim()
       if (!text) {
         pump()
@@ -176,6 +221,7 @@ export function createBotCall(
           if (speech === own && !own.signal.aborted) fail(error)
         },
       )
+      if (state.continuous) void listen()
       return
     }
     if (state.muted) {
@@ -189,10 +235,13 @@ export function createBotCall(
     active = false
     epoch++
     stopCapture()
+    for (const controller of processing) controller.abort()
+    processing.clear()
     stopSpeech()
     pending.clear()
     completed.clear()
     sending = undefined
+    queued.length = 0
     if (owner === end) owner = undefined
     update({ phase: 'ended', retrySend: false })
   }
@@ -204,7 +253,16 @@ export function createBotCall(
       }
     },
     getSnapshot: () => state,
-    requests: () => [...pending, ...(sending ? [sending.id] : [])],
+    requests: () => [
+      ...pending,
+      ...(sending ? [sending.id] : []),
+      ...queued.map((item) => item.id),
+    ],
+    setContinuous(enabled: boolean) {
+      stopCapture()
+      update({ continuous: enabled })
+      if (active) pump()
+    },
     start() {
       if (active) return
       owner?.()

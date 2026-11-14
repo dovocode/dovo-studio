@@ -1096,3 +1096,39 @@ it('groups side chats beneath their parent and keeps only the matching branch du
   expect(matchingThreadChildren(children, { query: 'missing', keys: new Set() })).toEqual([])
   expect(children).toHaveLength(2)
 })
+
+it('hides isolated scheduled Bot workers and their descendants from overview roots while keeping navigation', () => {
+  for (const withBot of [true, false]) {
+    const entries = collectTasks([
+      source('desktop', [
+        ...(withBot
+          ? [
+              task('bot', {
+                bot: {
+                  role: 'Helper',
+                  responsibilities: '',
+                  state: 'active',
+                  revision: '11111111-1111-4111-8111-111111111111',
+                  createdAt: '2026-11-01T00:00:00Z',
+                  updatedAt: '2026-11-01T00:00:00Z',
+                },
+              }),
+            ]
+          : []),
+        task('job', {
+          botJob: { botId: 'bot', runId: 'scheduled-run' },
+          pinned: true,
+          status: 'running',
+        }),
+        task('child', { delegation: { parentTaskId: 'job', parentRunId: 'run', key: 'child' } }),
+        task('normal'),
+      ]),
+    ])
+    const tree = buildThreadTree(entries, undefined, () => true)
+    expect(tree.roots.map((entry) => entry.task.id).sort()).toEqual(
+      withBot ? ['bot', 'normal'] : ['normal'],
+    )
+    expect(tree.nodes.has(key('desktop', 'job'))).toBe(true)
+    expect(tree.nodes.get(key('desktop', 'job'))?.children[0].threadId).toBe('child')
+  }
+})

@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { Automation, GithubTrigger } from '@dovo/protocol'
 import { GithubEvents, githubDeliverySchema } from './github-events.js'
@@ -32,7 +33,15 @@ export class GithubTriggers {
     private flows: () => Automation[],
     private start: (id: string, key: string, payload: unknown) => unknown,
     private report: (id: string, message: string) => void,
+    private pollingSeed = '',
   ) {}
+  private nextPoll(id: string, now: number) {
+    if (!this.pollingSeed) return now + 60_000
+    const offset =
+      createHash('sha256').update(`${this.pollingSeed}:${id}`).digest().readUInt32BE() % 60_000
+    const next = Math.floor(now / 60_000) * 60_000 + offset
+    return next > now ? next : next + 60_000
+  }
   private save(id: string, state: State) {
     this.states.delete(id)
     this.db
@@ -123,9 +132,10 @@ export class GithubTriggers {
               heads: {},
             }
             this.save(flow.id, state)
+            if (this.pollingSeed) this.next.set(flow.id, this.nextPoll(flow.id, now))
           }
           if ((this.next.get(flow.id) ?? 0) <= now) {
-            this.next.set(flow.id, now + 60_000)
+            this.next.set(flow.id, this.nextPoll(flow.id, now))
             try {
               await this.poll(flow.id, config, state, now)
               this.errors.delete(flow.id)

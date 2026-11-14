@@ -9,6 +9,7 @@ import { memoryAttribution } from '../diagnostics/memory-attribution.js'
 export async function runtimeDiagnostics(
   s: Services,
   now = Date.now(),
+  includeFreezeProfiles = false,
 ): Promise<RuntimeDiagnostics> {
   const warnings: string[] = []
   const storage: RuntimeDiagnostics['storage'] = { available: true, freeBytes: null, error: null }
@@ -100,6 +101,9 @@ export async function runtimeDiagnostics(
   }
   if (backups.failure) warnings.push(`Backup: ${backups.failure.message}`)
   const memory = await memoryAttribution(s).report()
+  // Agent health checks do not export captured profiles. Only the owner diagnostics
+  // endpoint includes these local summaries for the existing review/copy controls.
+  if (memory.freezes && !includeFreezeProfiles) memory.freezes.profiles = []
   memory.protection = s.tasks.memoryProtection.report()
   const spike = memory.spikes[0]
   if (spike && now - Date.parse(spike.at) < 10 * 60_000)

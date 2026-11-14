@@ -66,6 +66,19 @@ export function isContextRejection(error: unknown) {
   )
 }
 
+/** Require the exact resumed identity, so an unrelated tool's missing session cannot replay work. */
+export function isMissingProviderSession(error: unknown, sessionId: string) {
+  const message = errorMessage(error)
+  return (
+    !!sessionId &&
+    message.includes(sessionId) &&
+    (/(?:session|thread).{0,100}(?:not found|does not exist|no longer exists|missing)/i.test(
+      message,
+    ) ||
+      /Failed to read session/i.test(message))
+  )
+}
+
 /** Only retry a resumed prompt explicitly rejected before acceptance or any interaction. */
 export function recoverContext(
   adapter: Pick<AgentAdapter, 'run'>,
@@ -128,12 +141,12 @@ export function recoverContext(
           input.goal ||
           accepted ||
           input.signal.aborted ||
-          !isContextRejection(error)
+          !(isContextRejection(error) || isMissingProviderSession(error, input.sessionId))
         )
           throw error
         if (blocked())
           throw new NativeSessionBusyError(
-            'The provider context is full, but native agents or background commands are still active. Wait for them to finish or stop them before recovering the session.',
+            'The provider session needs recovery, but native agents or background commands are still active. Wait for them to finish or stop them before recovering the session.',
           )
         const recovered = await fresh(input)
         input.signal.throwIfAborted()

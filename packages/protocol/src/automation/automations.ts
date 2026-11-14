@@ -41,9 +41,20 @@ export function automationIssues(
   const errors: string[] = []
   if (flow.monitor) {
     try {
-      routineMonitorUrl(flow.monitor.url)
+      if (flow.monitor.mcp) {
+        if (flow.monitor.url) throw new Error('Choose one monitoring source.')
+        const targets = new Set(
+          flow.nodes.filter((node) => node.data.kind === 'task').map((node) => node.data.botId),
+        )
+        if (targets.size !== 1 || ![...targets][0])
+          throw new Error('MCP monitoring needs one Bot target.')
+        if (!flow.monitor.mcp.server.trim() || !flow.monitor.mcp.uri.trim())
+          throw new Error('Choose an MCP server and resource URI.')
+      } else routineMonitorUrl(flow.monitor.url)
     } catch {
-      errors.push('Enter an HTTP or HTTPS monitoring URL without credentials or a fragment.')
+      errors.push(
+        'Choose an HTTP or HTTPS source without credentials, or an MCP resource for one Bot target.',
+      )
     }
   }
   if (flow.policy?.quietHours) {

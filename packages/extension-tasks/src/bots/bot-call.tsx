@@ -136,8 +136,9 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
           )}
           {!state.heard && !state.reply && (
             <p>
-              Your messages and full replies stay in the chat. The microphone pauses during playback
-              to avoid echo.
+              Your messages and full replies stay in the chat. Continuous listening lets speech
+              interrupt a reply. It is experimental. Use headphones if playback causes false
+              interruptions.
             </p>
           )}
         </div>
@@ -150,6 +151,13 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
           <p>Update this Bot’s computer before calling.</p>
         )}
         <div className="flex flex-wrap justify-center gap-2">
+          <Button
+            variant="outline"
+            aria-pressed={state.continuous}
+            onClick={() => call.setContinuous(!state.continuous)}
+          >
+            {state.continuous ? 'Continuous listening on' : 'Continuous listening off'}
+          </Button>
           {state.phase === 'idle' || state.phase === 'ended' ? (
             <Button disabled={!available || needsInput} onClick={() => call.start()}>
               Start call

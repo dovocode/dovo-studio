@@ -83,6 +83,43 @@ async function setup(overrides: Partial<RunPolicy> = {}) {
   return { s, runtime, taskId, otherId, runId, policy, token, controller, post }
 }
 
+it('serves installed help through read-only scoped MCP and rejects foreign ownership', async () => {
+  const { runtime, taskId, runId, otherId, token, post } = await setup({ readOnly: true })
+  const config = taskToolsServer(taskId, runtime.port, token, '127.0.0.1', true, false, runId)
+  const client = new Client({ name: 'installed-help-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: config.command,
+    args: config.args,
+    env: config.envValues,
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    const result = await client.callTool({
+      name: 'dovo_help',
+      arguments: { action: 'search', query: 'Bot routines' },
+    })
+    expect(result.isError).not.toBe(true)
+    expect(JSON.stringify(result.content)).toContain('docs/')
+    expect(
+      (
+        await post('/api/agent/help', {
+          taskId: otherId,
+          parentRunId: runId,
+          action: 'search',
+          query: 'Bot',
+        })
+      ).status,
+    ).toBe(403)
+    expect((await post('/api/agent/help', { taskId, action: 'search', query: 'Bot' })).status).toBe(
+      403,
+    )
+  } finally {
+    await client.close()
+    await transport.close()
+  }
+})
+
 it('allows task artifact and enabled memory tools over raw HTTP, preserving human authentication', async () => {
   const { s, taskId, runId, otherId, post } = await setup()
   const created = await post('/api/artifacts/create', {
@@ -847,4 +884,42 @@ it('snapshots skill content in the grant and admits scoped reads in read-only ru
   expect((await post('/api/agent/skill', { ...input, name: 'unknown' })).status).toBe(404)
   controller.abort()
   expect((await post('/api/agent/skill', input)).status).toBe(401)
+})
+
+it('limits read-only history recall to the owning Bot and denies run audit management', async () => {
+  const { s, taskId, otherId, runId, controller, post } = await setup({
+    readOnly: true,
+    memoryScopes: ['bot'],
+  })
+  const now = new Date().toISOString()
+  for (const id of [taskId, otherId])
+    s.store.updateTaskHistory(id, (task) => ({
+      ...task,
+      bot: {
+        role: 'Helper',
+        responsibilities: '',
+        state: 'active',
+        revision: randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+      },
+      messages: [
+        {
+          id: randomUUID(),
+          role: 'user',
+          text: id === taskId ? 'Owner-only research note' : 'Foreign private research note',
+        },
+      ],
+    }))
+  const response = await post('/api/memory/agent/history', { taskId, query: 'research' })
+  expect(response.status).toBe(200)
+  const text = JSON.stringify(await response.json())
+  expect(text).toContain('Owner-only')
+  expect(text).not.toContain('Foreign private')
+  expect(
+    (await post('/api/memory/agent/history', { taskId: otherId, query: 'research' })).status,
+  ).toBe(403)
+  expect((await post('/api/jobs/audit', { id: runId })).status).toBe(403)
+  controller.abort()
+  expect((await post('/api/memory/agent/history', { taskId, query: 'research' })).status).toBe(401)
 })

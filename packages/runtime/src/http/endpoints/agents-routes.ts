@@ -31,6 +31,8 @@ import { runtimeDefaultsSchema } from '@dovo/protocol'
 import { acpRoute } from './acp-routes.js'
 import { handoffTask } from '../../scm/tasks/task-handoff.js'
 import { continueHarnessSchema } from '@dovo/protocol'
+import { pendingHarnessSchema } from '@dovo/protocol'
+import { savePendingHarness } from '../../agents/tasks/pending-harness.js'
 import { continueHarness } from '../../agents/tasks/thread-handoff.js'
 import { uncommittedChanges } from '../../scm/work/change-summary.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
@@ -1239,6 +1241,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           continueHarness(s, decode(continueHarnessSchema, yield* serviceResult(body(request)))),
         )
       }
+      if (method === 'POST' && path === '/api/tasks/pending-harness')
+        return savePendingHarness(
+          s,
+          decode(pendingHarnessSchema, yield* serviceResult(body(request))),
+        )
       if (method === 'POST' && path === '/api/tasks/checkouts/save') {
         const input = decode(
           mutableStruct({

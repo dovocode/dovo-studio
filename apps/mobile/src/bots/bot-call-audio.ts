@@ -28,7 +28,7 @@ function microphoneStopped(dictation: ReturnType<typeof createMobileDictation>) 
   })
 }
 export function mobileBotCallAudio(): BotCallAudio {
-  const dictation = createMobileDictation()
+  const dictation = createMobileDictation(true)
   return {
     async listen(signal, events) {
       signal.throwIfAborted()
@@ -49,6 +49,7 @@ export function mobileBotCallAudio(): BotCallAudio {
       await dictation.start({
         onResult: (text) => {
           if (signal.aborted) return
+          if (/[\p{L}\p{N}]/u.test(text)) events.speechStarted?.()
           events.preview(text)
           clearTimeout(silence)
           silence = setTimeout(() => dictation.stop(), 1100)
@@ -103,7 +104,7 @@ export function mobileBotCallAudio(): BotCallAudio {
             onDone: () => done(),
             onStopped: () => done(),
             onError: (error) => done(error),
-            useApplicationAudioSession: false,
+            useApplicationAudioSession: true,
             language: dictation.getSnapshot().locale,
           })
         } catch (error) {

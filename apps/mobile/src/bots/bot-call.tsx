@@ -96,7 +96,8 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
       <View style={{ gap: 12 }}>
         <Text style={styles.muted}>
           Uses this Bot’s conversation and permissions, with this device’s speech service. Keep Dovo
-          open. The microphone pauses during playback to avoid echo. Select Interrupt to speak.
+          open. Continuous listening lets speech interrupt a reply. It is experimental. Use
+          headphones if playback causes false interruptions.
         </Text>
         {!!state.heard && (
           <Text style={styles.text} selectable>
@@ -137,6 +138,11 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
             )}
           </>
         )}
+        <Action
+          secondary
+          label={state.continuous ? 'Continuous listening on' : 'Continuous listening off'}
+          onPress={() => call.setContinuous(!state.continuous)}
+        />
         <Action label="End call" onPress={close} />
         {needsInput && <Action secondary label="Review in chat" onPress={close} />}
         <Text style={styles.muted}>

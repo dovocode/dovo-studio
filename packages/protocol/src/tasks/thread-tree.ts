@@ -381,7 +381,8 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   return {
     contextKeys,
     roots: entries
-      .filter((entry) => !parents.has(entry.key))
+      // Routine workers stay addressable in nodes and Bot history, never as overview roots.
+      .filter((entry) => !entry.task.botJob && !parents.has(entry.key))
       .map((entry) =>
         !entry.needsInput &&
         threadDescendants(nodes.get(entry.key)?.children ?? []).some(

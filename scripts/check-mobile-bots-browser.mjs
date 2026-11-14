@@ -40,7 +40,7 @@ window.requests.push({owner:window.runtime.profile.id,path,input});let result;
 if(path==='/api/bots/create'){decode(botCreateSchema,input);if(window.failCreate)throw Error('Temporary runtime outage');result={id:input.createTask.id,bot:{...window.botTask.bot,role:input.role,responsibilities:input.responsibilities},revision:1,runtimeInstanceId:'runtime-a'}}
 else if(path==='/api/workspace'){if(window.rejectRename)result={revision:2,runtimeInstanceId:'runtime-a',outcome:'rejected'};else{window.botTask={...window.botTask,title:input.changes.title.after};result={revision:2,runtimeInstanceId:'runtime-a',outcome:'applied'}}}
 else if(path==='/api/tasks/lifecycle'){if(window.rejectBotDelete)throw Error('Stop child work before deleting this Bot.');result={ok:true}}
-else if(path==='/api/bots/update'){decode(botUpdateSchema,input);if(window.failBotUpdate)throw Error('Bot save failed after rename');if(window.strictCas && input.expectedRevision!==window.botTask.bot.revision)throw new RuntimeRequestError({kind:'response',status:409,mutationRejected:true,message:'Settings changed. Reopen after resolving your draft.'});window.botTask={...window.botTask,bot:{...window.botTask.bot,role:input.role,responsibilities:input.responsibilities,resources:input.resources}};result={id:'bot-a',bot:window.botTask.bot,revision:2,runtimeInstanceId:'runtime-a'}}
+else if(path==='/api/bots/update'){decode(botUpdateSchema,input);if(window.failBotUpdate)throw Error('Bot save failed after rename');if(window.strictCas && input.expectedRevision!==window.botTask.bot.revision)throw new RuntimeRequestError({kind:'response',status:409,mutationRejected:true,message:'Settings changed. Reopen after resolving your draft.'});window.botTask={...window.botTask,bot:{...window.botTask.bot,role:input.role,responsibilities:input.responsibilities,resources:input.resources,...('backupAgentId' in input?{backupAgentId:input.backupAgentId??undefined}:{})}};result={id:'bot-a',bot:window.botTask.bot,revision:2,runtimeInstanceId:'runtime-a'}}
 else if(path==='/api/bots/lifecycle'){decode(botLifecycleSchema,input);if(window.lifecycleNoopExternal)window.botTask={...window.botTask,bot:{...window.botTask.bot,role:'External role',revision:'33333333-3333-4333-8333-333333333333'}};window.botTask={...window.botTask,bot:{...window.botTask.bot,state:input.action==='pause'?'paused':'active'}};window.publish();result={id:'bot-a',bot:window.botTask.bot,revision:2,runtimeInstanceId:'runtime-a'}}
 else if(path==='/api/memory/list')result={entries:window.notes,total:window.notes.length};
 else if(path==='/api/memory/write'){decode(memoryWriteSchema,input);if(window.failMemory)throw Error('Memory changed. Refresh before saving.');const note={...input,revision:rev,createdAt:stamp,updatedAt:stamp};window.notes=[...window.notes.filter(note=>note.key!==input.key),note];result={memory:note}}
@@ -350,10 +350,20 @@ try {
     }
     window.showMode('settings')
   })
+  assert.equal(await page.getByLabel('Automatic backup', { exact: true }).count(), 0)
+  await page.evaluate(() => {
+    window.runtime.snapshot.botBackupSupported = true
+    window.runtime.snapshot.workspace.agents = [
+      { id: 'backup', name: 'Backup', model: 'backup-model' },
+    ]
+    window.publish()
+  })
+  await page.getByLabel('Automatic backup', { exact: true }).selectOption('backup')
   assert.equal(await page.getByLabel('Role', { exact: true }).inputValue(), 'Senior reviewer')
   await page.getByRole('button', { name: 'Save Bot', exact: true }).click()
   await page.getByRole('dialog').waitFor({ state: 'detached' })
   assert.equal(await page.evaluate(() => window.botTask.bot.role), 'Senior reviewer')
+  assert.equal(await page.evaluate(() => window.botTask.bot.backupAgentId), 'backup')
   assert.deepEqual(
     await page.evaluate(
       () =>

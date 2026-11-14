@@ -134,6 +134,9 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
           <RoutineOptions
             key={draft.id}
             flow={draft}
+            jsonMonitoringSupported={snapshot?.routineJsonMonitoringSupported}
+            mcpMonitoringSupported={snapshot?.routineMcpMonitoringSupported}
+            findingGroupsSupported={snapshot?.routineFindingGroupsSupported}
             disabled={busy}
             onSave={(options) => setDraft((current) => ({ ...current, ...options }))}
           />

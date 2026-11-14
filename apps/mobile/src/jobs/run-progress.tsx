@@ -11,6 +11,7 @@ import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { formatDateTime } from '../ui/content/format-date'
 import { automationRunSummary } from './automation-summary'
+import { RunAudit } from './run-audit'
 export function RunProgress({
   run,
   anotherActive = false,
@@ -71,6 +72,9 @@ export function RunProgress({
         gap: 6,
       }}
     >
+      {expanded && snapshot?.runAuditSupported && (
+        <RunAudit key={`${profile?.id}:${run.id}`} runId={run.id} />
+      )}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${status} · ${progress}`}
@@ -231,6 +235,17 @@ export function RunProgress({
             {formatDateTime(run.createdAt)}
             {(run.attempt ?? 1) > 1 ? ` · Attempt ${run.attempt}` : ''}
           </Text>
+          {run.scheduledFor && (
+            <Text style={styles.muted}>
+              Due {formatDateTime(run.scheduledFor)} · {run.scheduleTimezone ?? 'UTC'}
+              {' · '}
+              {Math.max(
+                0,
+                Math.floor((Date.parse(run.createdAt) - Date.parse(run.scheduledFor)) / 1000),
+              )}
+              s late
+            </Text>
+          )}
           {steps
             ? steps.map((step, index) => {
                 const task = snapshot?.workspace.tasks.find((item) => item.id === step.taskId)

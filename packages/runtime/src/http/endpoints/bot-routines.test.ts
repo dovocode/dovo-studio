@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
+import { createServer } from 'node:http'
 import { botResultSchema, decode, type Automation, type AutomationData } from '@dovo/protocol'
 import { waitForRuntime } from '../../testing/integration'
 import { setupBotRuntime, type BotRunInput } from '../../testing/bots'
@@ -98,6 +99,57 @@ async function configure(
 }
 const terminal = async (b: Awaited<ReturnType<typeof bot>>, id: string, status = 'completed') =>
   waitForRuntime(() => expect(b.s().jobs.detail(id).status).toBe(status))
+
+it('queues scheduled roots per computer while direct conversation stays available', async () => {
+  const b = await bot()
+  b.s().preferences.save({ maxConcurrentWorkers: 2 })
+  b.g.hold('FIRST-WORK')
+  b.s().store.update((w) => ({
+    ...w,
+    automations: [routine('first', b.id, 'FIRST-WORK'), routine('second', b.id, 'SECOND-WORK')],
+  }))
+  const first = b.s().jobs.start('first')
+  await waitForRuntime(() => expect(b.g.started.has('FIRST-WORK')).toBe(true))
+  const second = b.s().jobs.start('second')
+  await waitForRuntime(() => {
+    const workerId = b.s().jobs.detail(second).taskIds[0]
+    expect(workerId).toBeTruthy()
+    expect(b.s().store.taskSummary(workerId).activity).toContain('Waiting for capacity')
+  })
+  expect(b.f.inputs.filter((input) => input.prompt.includes('SECOND-WORK'))).toHaveLength(0)
+  await b.send('Direct question while workers wait')
+  await waitForRuntime(() => expect(b.s().store.task(b.id).status).toBe('review'))
+  b.g.release('FIRST-WORK')
+  await terminal(b, first)
+  await terminal(b, second)
+  expect(b.f.inputs.filter((input) => input.prompt.includes('SECOND-WORK'))).toHaveLength(1)
+})
+
+it('keeps identical successful findings in run history without repeating a notification', async () => {
+  const b = await bot()
+  await configure(b, 'Check one stable matter')
+  b.f.runtime.run.mockImplementation(async (input) => input.onText('The release is unchanged.'))
+  const first = b.s().jobs.start('routine-a')
+  await terminal(b, first)
+  const second = b.s().jobs.start('routine-a')
+  await terminal(b, second)
+  expect(b.s().jobs.list()).toHaveLength(2)
+  expect(
+    b
+      .s()
+      .store.task(b.id)
+      .messages.filter((message) => message.source?.kind === 'automation'),
+  ).toHaveLength(1)
+  b.f.runtime.run.mockImplementation(async (input) => input.onText('A new release is available.'))
+  const third = b.s().jobs.start('routine-a')
+  await terminal(b, third)
+  expect(
+    b
+      .s()
+      .store.task(b.id)
+      .messages.filter((message) => message.source?.kind === 'automation'),
+  ).toHaveLength(2)
+})
 
 it('runs isolated Bot workers alongside the person and reports once without consuming drafts', async () => {
   const b = await bot()
@@ -471,3 +523,144 @@ it.each(['tokens', 'costUsd'] as const)(
     await waitForRuntime(() => expect(b.s().store.taskSummary(worker).status).toBe('cancelled'))
   },
 )
+
+it('groups identical findings across routines only with an explicit shared matter', async () => {
+  const b = await bot()
+  b.s().store.update((w) => ({
+    ...w,
+    automations: [
+      { ...routine('one', b.id, 'Check release'), policy: { matter: 'release' } },
+      { ...routine('two', b.id, 'Check release'), policy: { matter: 'release' } },
+    ],
+  }))
+  b.f.runtime.run.mockImplementation(async (input) => input.onText('Release 1 is ready.'))
+  await terminal(b, b.s().jobs.start('one'))
+  await terminal(b, b.s().jobs.start('two'))
+  expect(
+    b
+      .s()
+      .store.task(b.id)
+      .messages.filter((m) => m.source?.kind === 'automation'),
+  ).toHaveLength(1)
+  b.f.runtime.run.mockImplementation(async (input) => input.onText('Release 2 is ready.'))
+  await terminal(b, b.s().jobs.start('two'))
+  expect(
+    b
+      .s()
+      .store.task(b.id)
+      .messages.filter((m) => m.source?.kind === 'automation'),
+  ).toHaveLength(2)
+})
+
+it('audits only a selected run, pages events and loads redacted output on request', async () => {
+  const b = await bot()
+  await configure(b)
+  b.f.runtime.run.mockImplementation(async (input) => input.onText('Done'))
+  const run = b.s().jobs.start('routine-a')
+  await terminal(b, run)
+  const worker = step(b, run)?.taskId
+  if (!worker) throw Error('Missing worker')
+  b.s().activity.add('tool', b.id, 'Private coordinator event', { output: 'PRIVATE-BOT' })
+  b.s().activity.add('tool', 'foreign', 'Foreign event', { output: 'PRIVATE-OTHER' })
+  for (let i = 0; i < 105; i++)
+    b.s().activity.add('tool', worker, `Command ${i}`, {
+      password: 'DO-NOT-EXPORT',
+      exitCode: 0,
+      output: 'done',
+    })
+  b.s()
+    .db.prepare('UPDATE activity SET time=? WHERE scope=?')
+    .run(b.s().jobs.detail(run).createdAt, worker)
+  b.s().activity.add('tool', worker, 'Later unrelated work', { output: 'POST-RUN-PRIVATE' })
+  const summary = await b.f.request('/api/jobs/audit', { id: run })
+  expect(summary.status).toBe(200)
+  const page = await summary.json()
+  expect(page.threads.map((t: { id: string }) => t.id)).toEqual([worker])
+  expect(page.events).toHaveLength(100)
+  expect(page.nextOffset).toBe(100)
+  expect(page.events.every((event: { payload?: string }) => event.payload === undefined)).toBe(true)
+  const output = await (
+    await b.f.request('/api/jobs/audit', { id: run, offset: 100, output: true })
+  ).json()
+  expect(output.events.length).toBeGreaterThan(0)
+  expect(JSON.stringify(output)).toContain('exitCode')
+  expect(JSON.stringify(output)).not.toMatch(
+    /PRIVATE-BOT|PRIVATE-OTHER|DO-NOT-EXPORT|POST-RUN-PRIVATE/,
+  )
+  expect((await b.f.request('/api/jobs/audit', { id: 'missing' })).status).toBe(404)
+  expect((await b.f.request('/api/jobs/audit', { id: run, offset: -1 })).status).toBe(400)
+})
+
+it('retries the saved source batch after failure instead of losing it to a newer version', async () => {
+  let source = '{"version":1,"events":["first"]}'
+  const server = createServer((_request, response) => response.end(source))
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw Error('No source address')
+    const b = await bot()
+    b.s().store.update((w) => ({
+      ...w,
+      automations: [
+        {
+          ...routine('batch', b.id, 'Process saved events'),
+          monitor: { url: `http://127.0.0.1:${address.port}` },
+        },
+      ],
+    }))
+    b.f.runtime.run.mockRejectedValueOnce(new Error('Provider unavailable'))
+    const run = b.s().jobs.start('batch')
+    await terminal(b, run, 'failed')
+    source = '{"version":2,"events":["second"]}'
+    b.f.runtime.run.mockImplementation(async (input) => input.onText('Processed'))
+    b.s().jobs.retry(run)
+    await terminal(b, run)
+    expect(b.f.inputs.at(-1)?.prompt).toContain('"first"')
+    expect(b.f.inputs.at(-1)?.prompt).not.toContain('"second"')
+    const newer = b.s().jobs.start('batch', 'schedule:next-batch')
+    await terminal(b, newer)
+    expect(b.f.inputs.at(-1)?.prompt).toContain('"second"')
+    expect(b.f.inputs.at(-1)?.prompt).toContain('Previous successful source')
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+it('cancels a queued scheduled worker without starting its provider', async () => {
+  const b = await bot()
+  b.s().preferences.save({ maxConcurrentWorkers: 2 })
+  b.g.hold('FIRST-WORK')
+  b.s().store.update((w) => ({
+    ...w,
+    automations: [routine('first', b.id, 'FIRST-WORK'), routine('second', b.id, 'SECOND-WORK')],
+  }))
+  const first = b.s().jobs.start('first')
+  await waitForRuntime(() => expect(b.g.started.has('FIRST-WORK')).toBe(true))
+  const second = b.s().jobs.start('second')
+  await waitForRuntime(() => {
+    const worker = step(b, second)?.taskId
+    expect(worker && b.s().store.taskSummary(worker).activity).toContain('Waiting for capacity')
+  })
+  await b.s().jobs.cancel(second)
+  b.g.release('FIRST-WORK')
+  await terminal(b, first)
+  expect(b.s().jobs.detail(second).status).toBe('cancelled')
+  expect(b.f.inputs.some((input) => input.prompt.includes('SECOND-WORK'))).toBe(false)
+})
+
+it('reports recovery after a failed check even when the successful answer is unchanged', async () => {
+  const b = await bot()
+  await configure(b)
+  b.f.runtime.run.mockImplementation(async (input) => input.onText('Service healthy'))
+  await terminal(b, b.s().jobs.start('routine-a'))
+  b.f.runtime.run.mockRejectedValueOnce(new Error('Connection failed'))
+  await terminal(b, b.s().jobs.start('routine-a'), 'failed')
+  b.f.runtime.run.mockImplementation(async (input) => input.onText('Service healthy'))
+  await terminal(b, b.s().jobs.start('routine-a'))
+  expect(
+    b
+      .s()
+      .store.task(b.id)
+      .messages.filter((message) => message.source?.kind === 'automation'),
+  ).toHaveLength(3)
+})

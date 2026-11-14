@@ -1,3 +1,4 @@
+import { createServer } from 'node:http'
 import { GithubTriggers } from './github-triggers.js'
 import { GithubEvents } from './github-events.js'
 import type { GitService } from '../scm/git/git.js'
@@ -1120,6 +1121,10 @@ it('runs one-time reminders after downtime and never repeats accepted deliveries
   runtime.services.jobs.dispose()
   runtime.services.jobs.tick(due + 60_000)
   await waitForJob(() => expect(runtime.services.jobs.list()[0]?.status).toBe('waiting'))
+  expect(runtime.services.jobs.list()[0]).toMatchObject({
+    scheduledFor: '2026-10-28T08:30:00.000Z',
+    scheduleTimezone: 'Europe/Amsterdam',
+  })
   expect(runtime.services.store.get().automations[0].enabled).toBe(false)
   const id = runtime.services.jobs.list()[0].id
   await runtime.services.jobs.cancel(id)
@@ -1216,4 +1221,64 @@ it('records skipped recurring occurrences with due time, without creating a run 
     0,
   )
   expect(s.activity.list('', 'job-skipped', 0).events).toEqual([])
+})
+
+it('watches selected JSON values through the real scheduler and keeps the successful baseline on errors', async () => {
+  let content = '{"release":{"version":1},"clock":1}'
+  const source = createServer((_req, res) => res.end(content))
+  await new Promise<void>((resolve) => source.listen(0, '127.0.0.1', resolve))
+  cleanups.push(() => new Promise<void>((resolve) => source.close(() => resolve())))
+  const address = source.address()
+  if (!address || typeof address === 'string') throw Error('Missing source address')
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'monitor-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  const flow = {
+    ...createFlow(),
+    monitor: { url: `http://127.0.0.1:${address.port}`, jsonPointer: '/release' },
+  }
+  flow.nodes = flow.nodes.filter((n) => n.id !== 'review')
+  flow.edges = flow.edges.filter((e) => e.target !== 'review')
+  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  const prompts: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (input) => {
+      prompts.push(input.prompt)
+      input.onText('Done')
+    },
+  })
+  const first = s.jobs.start('flow', 'schedule:first')
+  await waitForJob(() => expect(s.jobs.detail(first).status).toBe('completed'))
+  content = '{"clock":2,"release":{"version":1}}'
+  const unchanged = s.jobs.start('flow', 'schedule:second')
+  await waitForJob(() =>
+    expect(s.jobs.detail(unchanged)).toMatchObject({ status: 'completed', outcome: 'unchanged' }),
+  )
+  expect(prompts).toHaveLength(1)
+  content = '{"clock":3}'
+  const missing = s.jobs.start('flow', 'schedule:missing')
+  await waitForJob(() => expect(s.jobs.detail(missing).status).toBe('failed'))
+  content = '{"release":{"version":2}}'
+  const changed = s.jobs.start('flow', 'schedule:changed')
+  await waitForJob(() => expect(s.jobs.detail(changed).status).toBe('completed'))
+  expect(prompts).toHaveLength(2)
+  expect(prompts[1]).toContain('"version":2')
+  expect(prompts[1]).toContain('Previous successful source')
+  expect(prompts[1]).toContain('"version":1')
+  content = '{"release":{"version":2},"alias":{"version":2}}'
+  s.store.update((w) => ({
+    ...w,
+    automations: [{ ...flow, monitor: { ...flow.monitor, jsonPointer: '/alias' } }],
+  }))
+  const newPointer = s.jobs.start('flow', 'schedule:new-pointer')
+  await waitForJob(() => expect(s.jobs.detail(newPointer).status).toBe('completed'))
+  expect(prompts).toHaveLength(3)
+  expect(prompts[2]).not.toContain('Previous successful source')
 })

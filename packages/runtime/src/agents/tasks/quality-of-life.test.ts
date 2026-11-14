@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
-import { runtimeIntegration } from '../../testing/integration'
+import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
 import { exec } from '../../process'
 import { randomUUID } from 'node:crypto'
 
@@ -469,6 +469,12 @@ it('adds a mentioned skill to that turn’s prompt even when it is not enabled',
   expect(prompts[0]).toContain('Group changes by user impact.')
   // Disabled skills stay out of the agent's standing instructions.
   expect(instructions[0]).not.toContain('Group changes by user impact.')
+  // A fresh provider session receives saved history, but must not reactivate an old skill.
+  s.store.updateTask(task.id, (current) => ({ ...current, sessionId: undefined }))
+  await s.tasks.send(task.id, 'new-input', 'Explain the result without invoking that skill')
+  await waitForRuntime(() => expect(s.store.task(task.id).activeRunId).toBeUndefined())
+  expect(prompts[1]).toContain('/release-notes for this week')
+  expect(prompts[1]).not.toContain('Group changes by user impact.')
   expect(f.directory).toBeTruthy()
 })
 

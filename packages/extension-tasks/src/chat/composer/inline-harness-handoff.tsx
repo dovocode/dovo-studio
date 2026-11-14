@@ -13,11 +13,34 @@ export function useInlineHarnessHandoff(task: Task, enabled = true) {
       await flush()
       return request('/api/tasks/continue-harness', input, responses.ok)
     },
+    defer:
+      task.bot && snapshot?.pendingBotHarnessSupported
+        ? async (input) => {
+            await flush()
+            return request('/api/tasks/pending-harness', input, responses.ok)
+          }
+        : undefined,
   })
   return {
     ...handoff,
     notice: (
       <>
+        {task.pendingHarness && (
+          <div className="w-full rounded-lg border p-3 text-xs" role="status">
+            After this turn:{' '}
+            {providers[task.pendingHarness.harness.provider]?.short ??
+              task.pendingHarness.harness.provider}{' '}
+            · {task.pendingHarness.harness.model || 'Default model'}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!connected || handoff.busy}
+              onClick={() => void handoff.cancelDeferred()}
+            >
+              Cancel pending change
+            </Button>
+          </div>
+        )}
         {handoff.pending && (
           <div className="w-full space-y-2 rounded-lg border bg-muted/30 p-3 text-xs" role="status">
             <p>

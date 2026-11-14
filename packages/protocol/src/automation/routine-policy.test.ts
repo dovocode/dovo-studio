@@ -30,3 +30,31 @@ it('keeps HTTP sources and validates optional budgets and quiet-hour fields cons
   ])
     expect(() => parseRoutineOptions({ ...fields, ...invalid })).toThrow(Error)
 })
+it('validates and preserves optional JSON pointers on both clients', () => {
+  const fields = routineOptionFields({
+    monitor: { url: 'http://lan/source', jsonPointer: '/a~1b/0' },
+  })
+  expect(parseRoutineOptions(fields).monitor).toEqual({
+    url: 'http://lan/source',
+    jsonPointer: '/a~1b/0',
+  })
+  for (const jsonPointer of ['release', '/bad~', '/bad~2'])
+    expect(() => parseRoutineOptions({ ...fields, jsonPointer })).toThrow(Error)
+  expect(() => parseRoutineOptions({ ...fields, url: '' })).toThrow(Error)
+})
+it('configures a versioned MCP text resource without permitting tools or mixed sources', () => {
+  const fields = routineOptionFields({})
+  const configured = {
+    ...fields,
+    mcpServer: 'calendar',
+    mcpUri: 'calendar://events',
+    jsonPointer: '/version',
+  }
+  expect(parseRoutineOptions(configured).monitor).toEqual({
+    url: '',
+    mcp: { server: 'calendar', uri: 'calendar://events' },
+    jsonPointer: '/version',
+  })
+  expect(() => parseRoutineOptions({ ...configured, url: 'http://host/source' })).toThrow('one')
+  expect(() => parseRoutineOptions({ ...configured, mcpUri: '' })).toThrow(Error)
+})

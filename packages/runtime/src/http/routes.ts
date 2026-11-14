@@ -1,3 +1,4 @@
+import { productHelp, productHelpSchema } from '../agent-tools/product-help.js'
 import { proposeBotSkill } from '../agent-tools/bot-skills.js'
 import { workflowTool } from '../agent-tools/workflows.js'
 import { dictationRoute } from './endpoints/dictation-routes.js'
@@ -340,6 +341,10 @@ export function route(
         )
       }
       const agentDeviceAccess = !!run || request.headers['x-dovo-agent-access'] === '1'
+      if (path === '/api/tasks/pending-harness' && agentDeviceAccess)
+        throw new HttpError(403, 'Pending model changes require a paired human client.')
+      if (method === 'POST' && path === '/api/agent/help')
+        return productHelp(decode(productHelpSchema, yield* serviceResult(body(request, 4096))))
       if (method === 'POST' && path === '/api/secure-input/submit') {
         if (agentDeviceAccess)
           throw new HttpError(403, 'Secure input requires a paired human client.')
@@ -382,7 +387,9 @@ export function route(
         if (!device.owner)
           throw new HttpError(403, 'Only the runtime host can manage diagnostics and backups')
         return yield* serviceResult(
-          path === '/api/runtime/backup' ? s.backups.create() : runtimeDiagnostics(s),
+          path === '/api/runtime/backup'
+            ? s.backups.create()
+            : runtimeDiagnostics(s, Date.now(), true),
         )
       }
       if (method === 'POST' && path === '/api/tasks/waiting')

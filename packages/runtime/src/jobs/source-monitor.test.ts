@@ -54,3 +54,31 @@ it('reads real HTTP sources, follows bounded redirects, rejects large bodies and
     await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())))
   }
 })
+it('compares selected JSON values and rejects missing or invalid data', async () => {
+  let body = '{"release":{"version":"1","name":"First"},"clock":1}'
+  const server = createServer((_req, res) => res.end(body))
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw Error('No address')
+  const url = `http://127.0.0.1:${address.port}`
+  const read = (pointer?: string) => readRoutineSource(url, AbortSignal.timeout(5000), pointer)
+  try {
+    const original = await read('/release')
+    body = '{"clock":2,"release":{"name":"First","version":"1"}}'
+    expect((await read('/release')).hash).toBe(original.hash)
+    body = '{"release":{"version":"2","name":"First"}}'
+    expect((await read('/release')).hash).not.toBe(original.hash)
+    expect((await read('/release/version')).text).toBe('"2"')
+    body = '{"a/b":{"~key":[null,false,0]}}'
+    expect((await read('/a~1b/~0key/0')).text).toBe('null')
+    expect((await read('/a~1b/~0key/1')).text).toBe('false')
+    await expect(read('/a~1b/~0key/01')).rejects.toThrow(/not found/)
+    await expect(read('/constructor')).rejects.toThrow(/not found/)
+    await expect(read('/missing')).rejects.toThrow(/not found/)
+    await expect(read('/invalid~2')).rejects.toThrow(Error)
+    body = 'invalid json'
+    await expect(read('/release')).rejects.toThrow(Error)
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})

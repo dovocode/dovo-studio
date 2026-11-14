@@ -890,6 +890,16 @@ export const taskSchema = mutableStruct({
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),
+  /** Human-selected change for the next turn. Current execution keeps its original settings. */
+  pendingHarness: Schema.optional(
+    mutableStruct({
+      id: Schema.String,
+      harness: taskHarnessSchema,
+      botRevision: Schema.String,
+      from: Schema.String,
+      createdAt: Schema.String,
+    }),
+  ),
   /** Runtime-owned fresh provider segment. Historical turns retain their original provider. */
   harnessHandoff: Schema.optional(
     mutableStruct({

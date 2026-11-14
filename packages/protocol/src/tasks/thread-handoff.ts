@@ -8,6 +8,13 @@ export const continueHarnessSchema = mutableStruct({
   harness: taskHarnessSchema,
   stop: Schema.Boolean,
 })
+export const pendingHarnessSchema = mutableStruct({
+  id: Schema.String,
+  requestId: continueHarnessSchema.fields.requestId,
+  expectedBotRevision: Schema.String,
+  expectedPendingId: Schema.optional(Schema.String),
+  harness: Schema.NullOr(taskHarnessSchema),
+})
 
 /** An allowlist: native sessions, tool state, credentials and local paths never enter a handoff. */
 export const portableThreadSchema = mutableStruct({

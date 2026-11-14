@@ -13,6 +13,19 @@ export function jobsRoute(request: IncomingMessage, path: string, owner: () => v
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/jobs/audit') {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            offset: Schema.optional(
+              maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isInt())), 0), 1000000),
+            ),
+            output: Schema.optional(Schema.Boolean),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* serviceResult(s.jobs.audit(input.id, input.offset, input.output))
+      }
       if (method === 'POST' && path === '/api/jobs/delete') {
         const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
         s.jobs.remove(id)

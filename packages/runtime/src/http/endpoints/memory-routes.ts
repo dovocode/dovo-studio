@@ -5,6 +5,7 @@ import {
   strictStruct,
   memoryConfigureSchema,
   botMemoryRequestSchema,
+  botHistorySearchSchema,
   botMemoryConfigureSchema,
   botMemoryClearSchema,
   memoryDeleteSchema,
@@ -24,6 +25,11 @@ export function memoryRoute(request: IncomingMessage, path: string, owner: boole
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const input = yield* serviceResult(body(request, 100_000))
+      if (path === '/api/memory/agent/history') {
+        if (!owner) throw new HttpError(403, 'Agent memory access requires the runtime owner token')
+        const value = decode(botHistorySearchSchema, input)
+        return s.memory.searchBotHistory(value.taskId, value.query)
+      }
       if (path.startsWith('/api/memory/bot-review/')) {
         if (path.endsWith('/save')) {
           const value = decode(botMemoryConfigureSchema, input)
@@ -59,7 +65,7 @@ export function memoryRoute(request: IncomingMessage, path: string, owner: boole
             input,
           )
           const scope = s.memory.agentScope(value.taskId, value.scope)
-          const result = s.memory.list({ ...scope, query: value.query, offset: value.offset })
+          const result = s.memory.list({ ...scope, query: value.query, offset: value.offset }, true)
           return {
             ...result,
             entries: result.entries.map((entry) => decode(memoryMetadataSchema, entry)),
@@ -67,12 +73,16 @@ export function memoryRoute(request: IncomingMessage, path: string, owner: boole
         }
         if (operation === 'read') {
           const value = decode(strictStruct({ ...base, key: memoryReadSchema.fields.key }), input)
-          return {
-            memory: s.memory.read({
-              ...s.memory.agentScope(value.taskId, value.scope),
-              key: value.key,
-            }),
-          }
+          const memory = s.memory.read({
+            ...s.memory.agentScope(value.taskId, value.scope),
+            key: value.key,
+          })
+          if (memory.expiresAt && Date.parse(memory.expiresAt) <= Date.now())
+            throw new HttpError(
+              404,
+              'This note has expired. Ask the human to review it before reuse.',
+            )
+          return { memory }
         }
         if (operation === 'write') {
           const value = decode(
@@ -81,6 +91,7 @@ export function memoryRoute(request: IncomingMessage, path: string, owner: boole
               key: memoryWriteSchema.fields.key,
               content: memoryWriteSchema.fields.content,
               expectedRevision: memoryWriteSchema.fields.expectedRevision,
+              expiresAt: memoryWriteSchema.fields.expiresAt,
             }),
             input,
           )
@@ -109,6 +120,7 @@ export function memoryRoute(request: IncomingMessage, path: string, owner: boole
       if (path === '/api/memory/list') return s.memory.list(decode(memoryListRequestSchema, input))
       if (path === '/api/memory/read')
         return { memory: s.memory.read(decode(memoryReadSchema, input)) }
+      if (path === '/api/memory/versions') return s.memory.versions(decode(memoryReadSchema, input))
       if (path === '/api/memory/write')
         return { memory: s.memory.write(decode(memoryWriteSchema, input)) }
       if (path === '/api/memory/delete') return s.memory.remove(decode(memoryDeleteSchema, input))

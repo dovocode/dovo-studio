@@ -61,6 +61,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export {Button} from '@dovo/web-ui/button';
     export const IconButton=({children,label,className,...props})=><button aria-label={label} title={label} {...props}>{children}</button>;
     export {Input} from '@dovo/web-ui/input';
+    export {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@dovo/web-ui/select';
     import {ChoicePicker as NativeChoicePicker} from './src/choice-picker';export const ChoicePicker=props=>props['aria-label']==='Bot computer'?<NativeChoicePicker {...props}/>:<select {...props} onChange={event=>props.onValueChange(event.target.value)}>{props.children}</select>;
     export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit})=><form className="relative z-10" onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}</form>;
     export const ComposerSubmit=props=><button {...props}/>;
@@ -175,7 +176,7 @@ window.calls=[];window.failCreate=false;window.failUpdate=false;window.commands=
 const harness={provider:'codex',model:'model',permission:'workspace-write',endpoint:'',args:[],instructions:'',skills:[],mcpServers:[],reasoning:''};
 const metadata=()=>({role:'Release assistant',responsibilities:'Review releases',state:'active',revision:randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
 const task=(id,title,bot)=>({...createTask({title,objective:'',agentId:'',repositoryId:'scratch',harness}),id,status:'review',draft:'',...(bot?{bot:metadata()}:{})});
-const workspace=owner=>({version:1,runtimeAddress:'http://'+owner+'.lan',tasks:[task('bot','Release Bot '+owner,true),task('chat','Normal chat '+owner,false),{...task('child','Delegated work '+owner,false),delegation:{parentTaskId:'bot',parentRunId:'run',key:'child',fingerprint:'x'}}],agents:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}],automations:[]});
+const workspace=owner=>({version:1,runtimeAddress:'http://'+owner+'.lan',tasks:[task('bot','Release Bot '+owner,true),task('chat','Normal chat '+owner,false),{...task('child','Delegated work '+owner,false),delegation:{parentTaskId:'bot',parentRunId:'run',key:'child',fingerprint:'x'}}],agents:[{...harness,id:'backup',name:'Backup',model:'backup-model'}],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}],automations:[]});
 const initial={one:workspace('one'),two:workspace('two')};
 function OwnerProbe(){const scope=useWorkspace();window.ownerProbe={id:scope.activeRuntimeId,read:()=>scope.request('/api/fixture/agent',{},Schema.Unknown)};return null}
 // Hold the context commit separately from switchRuntime's promise, as React can do.
@@ -220,7 +221,7 @@ function App(){
    if(window.failUpdate){window.failUpdate=false;throw Error('Settings conflict. Draft kept.')}
    if(window.noopResource && input.resources){window.noopResource=false;return {id:found.id,bot,revision:1,runtimeInstanceId:target}}
    if(input.expectedRevision!==bot.revision)throw Error('Bot revision changed. Draft kept.');
-   const next={...bot,...(path.endsWith('update')?{...('avatar' in input?{avatar:input.avatar??undefined}:{}),...('role' in input?{role:input.role}:{}),...('responsibilities' in input?{responsibilities:input.responsibilities}:{}),...('resources' in input?{resources:input.resources}:{})}:{state:input.action==='pause'?'paused':'active'}),revision:randomUUID()};
+   const next={...bot,...(path.endsWith('update')?{...('backupAgentId' in input?{backupAgentId:input.backupAgentId??undefined}:{}),...('avatar' in input?{avatar:input.avatar??undefined}:{}),...('role' in input?{role:input.role}:{}),...('responsibilities' in input?{responsibilities:input.responsibilities}:{}),...('resources' in input?{resources:input.resources}:{})}:{state:input.action==='pause'?'paused':'active'}),revision:randomUUID()};
    setAll(before=>({...before,[target]:{...before[target],tasks:before[target].tasks.map(t=>t.id===found.id?{...t,bot:next}:t)}}));return {id:found.id,bot:next,revision:1,runtimeInstanceId:target};
   }
   if(path==='/api/workspace'){
@@ -235,7 +236,7 @@ function App(){
  const request=useCallback((...args)=>rpc(owner,...args),[rpc,owner]);
  window.updateHost=(id,changes)=>{window.hostOptions??={};window.hostOptions[id]={...window.hostOptions[id],...changes};setAll(before=>({...before}))};
  const profiles=['one','two'].filter(id=>!window.hostOptions?.[id]?.removed).map(id=>({id,name:id,connection:{address:window.hostOptions?.[id]?.address??'http://'+id+'.lan',token:'paired'+(window.pairVersion??'')+(window.hostOptions?.[id]?.credential??''),runtimeId:id,...window.hostOptions?.[id]?.routes}}));
- const snapshot={runtimeId:owner,messageSetupSupported:window.messageSetupSupported,planModeSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,botsSupported:supported?true:undefined,botResourcesSupported:true,botAvatarsSupported:true,botAvatarHarnessSelectionSupported:true,permissionPolicySupported:true,questions:[],approvals:[],defaults:{},workspace:current};
+ const snapshot={runtimeId:owner,messageSetupSupported:window.messageSetupSupported,planModeSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,botsSupported:supported?true:undefined,botBackupSupported:supported?true:undefined,botResourcesSupported:true,botAvatarsSupported:true,botAvatarHarnessSelectionSupported:true,permissionPolicySupported:true,questions:[],approvals:[],defaults:{},workspace:current};
  const runtimes=profiles.map(profile=>({profile,connected:!(window.hostOptions?.[profile.id]?.offline??offline),snapshot:{...snapshot,botsSupported:window.hostOptions?.[profile.id]?.unsupported?undefined:snapshot.botsSupported,runtimeId:profile.id,defaults:{fixtureModel:profile.id+'-model'},workspace:all[profile.id]}}));
  const readRuntime=async(profile,...args)=>{if(!resolveRuntimeTarget(window.latestProfiles,profile))throw Error('Runtime pairing changed');window.explicitOwners??=[];window.explicitOwners.push({id:profile.id,address:profile.connection.address,token:profile.connection.token});const result=await rpc(profile.id,...args);if(!resolveRuntimeTarget(window.latestProfiles,profile))throw Error('Runtime pairing changed');if(args[0]==='/api/bots/create'){window.createReturned??=[];window.createReturned.push(args[1].requestId)}return result};
  const store={workspace:current,setWorkspace,snapshot:{...snapshot,...runtimes.find(r=>r.profile.id===owner)?.snapshot},activeRuntimeId:owner,localRuntimeId:'one',connection:profiles.find(p=>p.id===owner)?.connection,connected:runtimes.find(r=>r.profile.id===owner)?.connected??false,runtimes,runtimeRegistry:{profiles},switchRuntime:async id=>{if(window.deferSwitch)await new Promise(resolve=>window.releaseSwitch=resolve);setOwner(id);window.switchBeforeRender=window.owner!==id},mutationStatus:profile=>({pending:window.savedActions?.[profile.id]?.length??0,error:null,actions:window.savedActions?.[profile.id]??[]}),discardMutations:async(profile,id)=>{if(!id)throw Error("Fixture requires review of a single action");window.discardedActions??=[];window.discardedActions.push(id);window.savedActions[profile.id]=window.savedActions[profile.id].filter(action=>action.id!==id);setAll(before=>({...before}))},retryMutations:async()=>{throw Error("Fixture saved actions require explicit review")},request,readRuntime,readRuntimeEffect:(profile,...args)=>Effect.tryPromise({try:()=>readRuntime(profile,...args),catch:cause=>cause}),runtimeReadCache:()=>({read:async()=>null}),flush:async()=>{window.calls.push({owner,path:'flush'})},readCache:{read:async()=>null},refreshRuntime:async()=>{if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}},refreshRuntimes:async()=>{},previewTask:(_connection,_id,_updates,action)=>action()};
@@ -410,6 +411,8 @@ try {
       .bot.resources?.skills.some((s) => s.name === 'bot-skill'),
   )
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Automatic backup', exact: true }).click()
+  await page.getByRole('option', { name: 'Backup · backup-model', exact: true }).click()
   await page.evaluate(() => (window.failUpdate = true))
   await page.getByRole('button', { name: 'Save settings', exact: true }).click()
   await page.getByText('Settings conflict. Draft kept.', { exact: true }).waitFor()
@@ -420,6 +423,10 @@ try {
     await page.evaluate(() => window.all.one.tasks.find((t) => t.id === 'bot').bot.role),
     'Unsaved role',
     'Own resource save advances only the local draft revision',
+  )
+  assert.equal(
+    await page.evaluate(() => window.all.one.tasks.find((t) => t.id === 'bot').bot.backupAgentId),
+    'backup',
   )
   await page.getByLabel('Bot role', { exact: true }).fill('Stale role draft')
   await page.evaluate(() => window.externalRole())

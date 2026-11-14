@@ -192,6 +192,9 @@ export function AutomationDetail({
             <RoutineOptions
               key={flow.id}
               flow={flow}
+              jsonMonitoringSupported={snapshot?.routineJsonMonitoringSupported}
+              mcpMonitoringSupported={snapshot?.routineMcpMonitoringSupported}
+              findingGroupsSupported={snapshot?.routineFindingGroupsSupported}
               disabled={!connected || actions.busy || !!active}
               onSave={(options) => update((current) => ({ ...current, ...options }))}
             />

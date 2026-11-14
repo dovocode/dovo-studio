@@ -30,7 +30,7 @@ window.calls=[];window.memoryState={enabled:true,revision:'revision-a',running:f
 window.task={id:'bot-a',title:'Assistant',bot:{revision:'revision-a',updatedAt:'2026-11-13T00:00:00Z',skillProposals:[{id:'proposal-a',skill:{name:'review',description:'Review builds',content:'Check status'},patch:'+Check status',status:'pending'}]}};
 const request=async(path,input)=>{window.calls.push({path,input});if(window.fail){window.fail=false;throw Error('Connection lost; retry safely')}if(path.endsWith('/read'))return window.memoryState;if(path.endsWith('/save'))return window.memoryState={...window.memoryState,enabled:input.enabled,revision:'revision-b'};if(path.endsWith('/run'))return window.memoryState={...window.memoryState,lastReviewedAt:'2026-11-13T01:00:00Z'};if(path.endsWith('/clear'))return window.memoryState={...window.memoryState,revision:'revision-c'};if(path.endsWith('/decide'))return {id:window.task.id,bot:{...window.task.bot,updatedAt:'2026-11-13T01:00:00Z',revision:'revision-b',skillProposals:window.task.bot.skillProposals.map(p=>({...p,status:input.accept?'applied':'rejected'}))}};throw Error(path)};
 window.store={request,connected:true,snapshot:{botMemoryReviewSupported:true}};window.runtime={...window.store,callEffect:(path,input)=>Effect.tryPromise(()=>request(path,input))};
-function App(){const [mode,setMode]=useState('desktop-memory');window.mode=setMode;const props={taskId:'bot-a',onChanged:()=>window.changes++};return <main key={mode}>{mode==='desktop-memory'?<DesktopMemory {...props}/>:mode==='mobile-memory'?<MobileMemory {...props}/>:mode==='desktop-skills'?<DesktopSkills task={window.task}/>:mode==='mobile-skills'?<MobileSkills task={window.task}/>:mode==='desktop-options'?<DesktopOptions flow={{id:'routine'}} disabled={false} onSave={value=>window.saved=value}/>:<MobileOptions flow={{id:'routine'}} disabled={false} onSave={value=>window.saved=value}/>}</main>}
+function App(){const [mode,setMode]=useState('desktop-memory');const [monitorSupport,setMonitorSupport]=useState(false);window.mode=mode=>{setMode(mode);setMonitorSupport(false)};window.enableMonitor=()=>setMonitorSupport(true);const props={taskId:'bot-a',onChanged:()=>window.changes++};return <main key={mode}>{mode==='desktop-memory'?<DesktopMemory {...props}/>:mode==='mobile-memory'?<MobileMemory {...props}/>:mode==='desktop-skills'?<DesktopSkills task={window.task}/>:mode==='mobile-skills'?<MobileSkills task={window.task}/>:mode==='desktop-options'?<DesktopOptions flow={{id:'routine'}} jsonMonitoringSupported={monitorSupport} disabled={false} onSave={value=>window.saved=value}/>:<MobileOptions flow={{id:'routine'}} jsonMonitoringSupported={monitorSupport} disabled={false} onSave={value=>window.saved=value}/>}</main>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -109,6 +109,16 @@ try {
     await page.evaluate((mode) => window.mode(mode), platform + '-options')
     if (platform === 'desktop')
       await page.getByText('Monitoring and limits', { exact: true }).click()
+    assert.equal(
+      await page
+        .getByLabel('JSON pointer (optional, e.g. /release/version)', { exact: true })
+        .count(),
+      0,
+    )
+    await page.evaluate(() => window.enableMonitor())
+    await page
+      .getByLabel('JSON pointer (optional, e.g. /release/version)', { exact: true })
+      .fill('/release/version')
     await page.getByLabel('Monitor source URL', { exact: true }).fill('http://computer.lan/status')
     await page.getByLabel('Estimated cost limit (USD)', { exact: true }).fill('0.25')
     await page.getByLabel('Quiet hours start', { exact: true }).fill('22:00')
@@ -117,6 +127,16 @@ try {
     await page.getByRole('button', { name: 'Save monitoring and limits', exact: true }).click()
     await page.waitForFunction(() => window.saved?.policy?.costUsd === 0.25)
     assert.equal(await page.evaluate(() => window.saved.monitor.url), 'http://computer.lan/status')
+    assert.equal(await page.evaluate(() => window.saved.monitor.jsonPointer), '/release/version')
+    await page
+      .getByLabel('JSON pointer (optional, e.g. /release/version)', { exact: true })
+      .fill('invalid')
+    await page.getByRole('button', { name: 'Save monitoring and limits', exact: true }).click()
+    await page.getByRole('alert').waitFor()
+    assert.equal(await page.evaluate(() => window.saved.monitor.jsonPointer), '/release/version')
+    await page
+      .getByLabel('JSON pointer (optional, e.g. /release/version)', { exact: true })
+      .fill('/release/version')
     await page.getByLabel('Token limit', { exact: true }).fill('-1')
     await page.getByRole('button', { name: 'Save monitoring and limits', exact: true }).click()
     await page.getByRole('alert').waitFor()

@@ -82,6 +82,27 @@ it('starts with new events, overlaps polls without duplicate deliveries, and per
   expect(f.collect.mock.calls.at(-1)?.[1]).toBe(new Date(epoch).toISOString())
   expect(f.start).toHaveBeenCalledTimes(1)
 })
+it('spreads internal reads with a stable computer offset while retaining enrollment time', async () => {
+  const f = setup()
+  const poller = new GithubTriggers(
+    f.db,
+    { collect: f.collect },
+    () => [f.flow],
+    f.start,
+    f.report,
+    'computer-a',
+  )
+  await poller.tick(epoch)
+  expect(f.collect).not.toHaveBeenCalled()
+  await poller.tick(epoch + 60_000)
+  expect(f.collect).toHaveBeenCalledWith(
+    f.config,
+    new Date(epoch).toISOString(),
+    new Date(epoch + 60_000).toISOString(),
+    {},
+  )
+  expect(f.start).not.toHaveBeenCalled()
+})
 it('retains events while a run is active, drains them even after polling fails, and recovers after restart', async () => {
   const f = setup(),
     poller = f.create()

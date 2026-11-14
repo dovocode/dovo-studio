@@ -183,7 +183,7 @@ export class McpApps {
       })
     })
   }
-  private current(taskId: string, name: string): Scope {
+  private current(taskId: string, name: string, directory?: string): Scope {
     const task = this.store.taskSummary(taskId)
     const agent = resolveTaskAgent(task, this.store.get().agents)
     if (!agent) throw new HttpError(409, 'The thread no longer has an agent')
@@ -210,6 +210,7 @@ export class McpApps {
             .get(taskId, name, fingerprint(server)),
         ).cwd
     const cwd =
+      directory ??
       scope?.cwd ??
       (typeof savedCwd === 'string' ? savedCwd : undefined) ??
       task.existingWorktreePath ??
@@ -536,6 +537,37 @@ export class McpApps {
       )
     } finally {
       this.release(reviewed.session)
+    }
+  }
+  /** Saved monitoring sources can read resources, never call tools or expand the Bot's scope. */
+  async readMonitoringResource(
+    taskId: string,
+    server: string,
+    uri: string,
+    directory: string,
+    signal: AbortSignal,
+  ) {
+    const scope = this.current(taskId, server, directory)
+    const session = await this.lease(scope)
+    try {
+      const result = await session.client.readResource({ uri }, { signal, timeout: 15000 })
+      if (result.contents.some((item) => !('text' in item)))
+        throw new HttpError(400, 'Monitoring accepts text MCP resources only.')
+      const text = result.contents.map((item) => ('text' in item ? item.text : '')).join('\n')
+      if (!text || Buffer.byteLength(text) > 512 * 1024)
+        throw new HttpError(
+          400,
+          'Monitoring resource must contain between 1 byte and 512 KiB of text.',
+        )
+      // Recheck enabled scope after the remote read. Source content grants no access.
+      if (fingerprint(this.current(taskId, server, directory).server) !== fingerprint(scope.server))
+        throw new HttpError(
+          409,
+          'MCP configuration changed during the source read. Retry the check.',
+        )
+      return Buffer.from(text)
+    } finally {
+      this.release(session)
     }
   }
   /** The returned session stays leased; callers must release it. */

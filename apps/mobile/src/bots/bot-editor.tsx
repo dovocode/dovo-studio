@@ -13,6 +13,8 @@ export type BotText = {
   name: string
   role: string
   responsibilities: string
+  backupAgentId?: string
+  originalBackupAgentId?: string
   resources?: BotResources
   expectedRevision?: string
   originalName?: string
@@ -76,6 +78,7 @@ export function BotEditor({
                 !latest ||
                 (latest.name === draft.name &&
                   latest.role === draft.role &&
+                  latest.backupAgentId === draft.backupAgentId &&
                   latest.responsibilities === draft.responsibilities &&
                   JSON.stringify(latest.resources) === JSON.stringify(draft.resources))
               )

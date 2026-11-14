@@ -160,6 +160,8 @@ export const jobRunStepSchema = mutableStruct({
   error: Schema.optional(Schema.String),
 })
 export const jobRunSchema = mutableStruct({
+  scheduledFor: Schema.optional(Schema.String),
+  scheduleTimezone: Schema.optional(Schema.String),
   outcome: Schema.optional(Schema.Literals(['unchanged'])),
   reportDeferred: Schema.optional(Schema.Boolean),
   id: Schema.String,
@@ -273,11 +275,19 @@ export const snapshotSchema = mutableStruct({
   threadStartSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/bots/*`, `Task.bot`, bot memory and automation Bot steps. */
   botsSupported: Schema.optional(Schema.Literal(true)),
+  botBackupSupported: Schema.optional(Schema.Literal(true)),
+  pendingBotHarnessSupported: Schema.optional(Schema.Literal(true)),
+  routineJsonMonitoringSupported: Schema.optional(Schema.Literal(true)),
+  routineMcpMonitoringSupported: Schema.optional(Schema.Literal(true)),
+  freezeProfilesSupported: Schema.optional(Schema.Literal(true)),
+  runAuditSupported: Schema.optional(Schema.Literal(true)),
+  routineFindingGroupsSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.bot.resources` and `/api/bots/update` `resources`. */
   botResourcesSupported: Schema.optional(Schema.Literal(true)),
   botAvatarsSupported: Schema.optional(Schema.Literal(true)),
   botAvatarHarnessSelectionSupported: Schema.optional(Schema.Literal(true)),
   botMemoryReviewSupported: Schema.optional(Schema.Literal(true)),
+  botMemoryVersionsSupported: Schema.optional(Schema.Literal(true)),
   botContextResetSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.threadActions`, the `thread_prepare` agent tool and `/api/thread-actions/*`. */
   threadActionsSupported: Schema.optional(Schema.Literal(true)),
@@ -671,6 +681,17 @@ export const runtimePreferencesSchema = mutableStruct({
   ),
   browserProfiles: browserProfilesSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(defaultBrowserProfiles)),
+  ),
+  /** Admission threshold for scheduled worker roots; zero selects a memory-based default. */
+  maxConcurrentWorkers: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 128 })),
+    Schema.check(Schema.makeFilter((value) => value !== 1)),
+    Schema.withDecodingDefaultType(Effect.sync(() => 0)),
+  ),
+  /** Local bounded CPU summaries after repeated stalls. Off until enabled by the owner. */
+  enableFreezeProfiles: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
   /** Maximum active child families per parent thread; existing children are never stopped. */
   maxActiveChildAgents: Schema.Number.pipe(

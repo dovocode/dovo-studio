@@ -1,7 +1,7 @@
 import type { Automation } from '../workspace.js'
 import type { JobRun } from '../runtime/connection/runtime.js'
 import type { TaskMetadata } from './task-summary.js'
-import { taskSubagents } from './delegation.js'
+import { taskSubagents, indexTaskFamilyWorking } from './delegation.js'
 import { automationScheduleChoices } from '../automation/triggers.js'
 
 export const botRunStatusLabels = {
@@ -110,39 +110,74 @@ export function botWorkInbox(
   const workers = tasks.filter((t) => t.botJob?.botId === task.id || children.includes(t.id))
   const ids = new Set(workers.flatMap((t) => (t.botJob ? [t.botJob.runId] : [])))
   const flows = new Set(botRoutines(task.id, automations, []).map((r) => r.flow.id))
+  const familyWorking = indexTaskFamilyWorking(tasks)
+  const relevantRuns = runs.filter((r) => ids.has(r.id) || flows.has(r.automationId))
+  const matters = new Map<string, JobRun[]>()
+  for (const run of relevantRuns) {
+    const flow = automations.find((item) => item.id === run.automationId)
+    const key = flow?.policy?.matter?.trim()
+      ? `matter:${flow.policy.matter.trim()}`
+      : `routine:${run.automationId}`
+    const group = matters.get(key) ?? []
+    group.push(run)
+    matters.set(key, group)
+  }
   const items = [
-    ...runs
-      .filter((r) => ids.has(r.id) || flows.has(r.automationId))
-      .map((r) => ({
+    ...[...matters].map(([matter, group]) => {
+      const ordered = [...group].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      const r =
+        ordered.find((run) => run.status === 'waiting' || run.status === 'running') ?? ordered[0]
+      const queued = workers.find(
+        (worker) =>
+          worker.botJob?.runId === r.id && worker.activity?.startsWith('Waiting for capacity'),
+      )
+      return {
         key: 'run:' + r.id,
-        title: automations.find((f) => f.id === r.automationId)?.name ?? 'Routine run',
-        status: r.outcome === 'unchanged' ? 'No change' : botRunStatusLabels[r.status],
+        title: `${matter.startsWith('matter:') ? matter.slice(7) : (automations.find((f) => f.id === r.automationId)?.name ?? 'Routine run')}${group.length > 1 ? ` · ${group.length} runs` : ''}`,
+        status:
+          r.status === 'running' && queued?.activity
+            ? queued.activity
+            : r.outcome === 'unchanged'
+              ? 'No change'
+              : botRunStatusLabels[r.status],
         attention: r.status === 'failed' || r.status === 'waiting',
         at: r.updatedAt ?? r.createdAt,
         runId: r.id,
         automationId: r.automationId,
         taskId: undefined as string | undefined,
+      }
+    }),
+    ...workers
+      .filter(
+        (worker) =>
+          !worker.botJob ||
+          !relevantRuns.some((run) => run.id === worker.botJob?.runId) ||
+          pendingTaskIds.includes(worker.id),
+      )
+      .map((t) => ({
+        key: 'worker:' + t.id,
+        title: t.title,
+        status: pendingTaskIds.includes(t.id)
+          ? 'Needs input'
+          : t.status === 'running'
+            ? t.activity?.startsWith('Waiting for capacity')
+              ? t.activity
+              : 'Working'
+            : t.status === 'review' || t.status === 'done'
+              ? familyWorking(t.id)
+                ? 'Waiting for workers or results'
+                : 'Completed'
+              : t.status === 'cancelled'
+                ? 'Cancelled'
+                : t.error
+                  ? 'Failed'
+                  : 'Queued',
+        attention: !!(pendingTaskIds.includes(t.id) || t.error),
+        at: t.updatedAt ?? t.createdAt,
+        taskId: t.id,
+        runId: undefined as string | undefined,
+        automationId: undefined as string | undefined,
       })),
-    ...workers.map((t) => ({
-      key: 'worker:' + t.id,
-      title: t.title,
-      status: pendingTaskIds.includes(t.id)
-        ? 'Needs input'
-        : t.status === 'running'
-          ? 'Working'
-          : t.status === 'review' || t.status === 'done'
-            ? 'Completed'
-            : t.status === 'cancelled'
-              ? 'Cancelled'
-              : t.error
-                ? 'Failed'
-                : 'Queued',
-      attention: !!(pendingTaskIds.includes(t.id) || t.error),
-      at: t.updatedAt ?? t.createdAt,
-      taskId: t.id,
-      runId: undefined as string | undefined,
-      automationId: undefined as string | undefined,
-    })),
   ]
   return items
     .sort((a, b) => Number(b.attention) - Number(a.attention) || b.at.localeCompare(a.at))

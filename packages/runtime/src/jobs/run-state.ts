@@ -4,6 +4,8 @@ import { Schema } from 'effect'
 export const storedRunSchema = mutableStruct({
   ...jobRunSchema.fields,
   sourceHash: Schema.optional(Schema.String),
+  sourceJsonPointer: Schema.optional(Schema.String),
+  previousSourceText: Schema.optional(Schema.String),
   sourceUrl: Schema.optional(Schema.String),
   sourceText: Schema.optional(Schema.String),
   sourceChecked: Schema.optional(Schema.Boolean),

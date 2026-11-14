@@ -510,3 +510,19 @@ it('keeps side chats searchable under their parent while surfacing input and orp
     true,
   )
 })
+
+it('keeps scheduled Bot workers out of mobile overview roots even when pinned or archived', () => {
+  const source = overview()
+  const worker = { ...task('routine-worker'), botJob: { botId: 'bot', runId: 'run' }, pinned: true }
+  const child = {
+    ...task('routine-child'),
+    delegation: { parentTaskId: worker.id, parentRunId: 'run', key: 'child' },
+  }
+  for (const archivedAt of [undefined, '2026-11-14T00:00:00Z']) {
+    source.snapshot!.workspace.tasks = [task('normal'), { ...worker, archivedAt }, child]
+    const rows = taskListProjection([source], now)
+    const tree = mobileThreadTree(rows, [source])
+    expect(tree.roots.map((entry) => entry.task.id)).toEqual(['normal'])
+    expect([...rows.values()].some(({ row }) => row.task.id === worker.id)).toBe(true)
+  }
+})

@@ -14,7 +14,17 @@ import {
   type Task,
 } from '@dovo/protocol'
 import { useConfirmation, useWorkspace } from '@dovo/studio-core'
-import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
+import {
+  Button,
+  FormField,
+  Input,
+  Textarea,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@dovo/studio-ui'
 import { ComposerHarnessControls } from '../chat/composer/composer-harness-controls'
 import { taskActionClient, taskRowPatch } from '../list/task-row-actions'
 import { BotMemory } from './bot-memory'
@@ -25,6 +35,8 @@ type Draft = {
   originalName: string
   originalRole: string
   originalResponsibilities: string
+  backupAgentId: string
+  originalBackupAgentId: string
   role: string
   responsibilities: string
   revision: string
@@ -66,6 +78,8 @@ export function BotSettings({
     originalName: task.title,
     originalRole: hostBot.role,
     originalResponsibilities: hostBot.responsibilities,
+    backupAgentId: hostBot.backupAgentId ?? '',
+    originalBackupAgentId: hostBot.backupAgentId ?? '',
     role: hostBot.role,
     responsibilities: hostBot.responsibilities,
     revision: hostBot.revision,
@@ -139,7 +153,8 @@ export function BotSettings({
                   draft.revision === hostBot.revision &&
                   drafts.get(scope) === draft &&
                   result.bot.role === draft.originalRole &&
-                  result.bot.responsibilities === draft.originalResponsibilities
+                  result.bot.responsibilities === draft.originalResponsibilities &&
+                  (result.bot.backupAgentId ?? '') === draft.originalBackupAgentId
                 ) {
                   const next = { ...draft, revision: result.bot.revision }
                   drafts.set(scope, next)
@@ -161,7 +176,8 @@ export function BotSettings({
               draft.revision === hostBot.revision &&
               drafts.get(scope) === draft &&
               result.bot.role === draft.originalRole &&
-              result.bot.responsibilities === draft.originalResponsibilities
+              result.bot.responsibilities === draft.originalResponsibilities &&
+              (result.bot.backupAgentId ?? '') === draft.originalBackupAgentId
             ) {
               const next = { ...draft, revision: result.bot.revision }
               drafts.set(scope, next)
@@ -183,6 +199,9 @@ export function BotSettings({
                   expectedRevision: value.revision,
                   role: value.role.trim(),
                   responsibilities: value.responsibilities,
+                  ...(store.snapshot?.botBackupSupported
+                    ? { backupAgentId: value.backupAgentId || null }
+                    : {}),
                 },
                 botResultSchema,
               )
@@ -192,6 +211,7 @@ export function BotSettings({
                 revision: result.bot.revision,
                 originalRole: result.bot.role,
                 originalResponsibilities: result.bot.responsibilities,
+                originalBackupAgentId: result.bot.backupAgentId ?? '',
               }
               if (drafts.get(scope) === draft) drafts.set(scope, acknowledged)
               setDraft(acknowledged)
@@ -218,6 +238,32 @@ export function BotSettings({
           }}
         >
           <fieldset disabled={disabled} className="grid min-w-0 gap-3">
+            {store.snapshot?.botBackupSupported && (
+              <FormField label="Automatic backup">
+                <Select
+                  value={value.backupAgentId || 'none'}
+                  disabled={disabled}
+                  onValueChange={(id) => change({ backupAgentId: id === 'none' ? '' : id })}
+                >
+                  <SelectTrigger aria-label="Automatic backup">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No backup</SelectItem>
+                    {store.workspace.agents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name} · {agent.model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Use this saved agent after a quota or provider outage, only before work starts.
+                  Access stays the same. The backup becomes the current model and can have different
+                  costs.
+                </p>
+              </FormField>
+            )}
             <FormField label="Name">
               <Input
                 aria-label="Bot name"
@@ -371,7 +417,8 @@ export function BotSettings({
                     draft.revision === value.revision &&
                     drafts.get(scope) === draft &&
                     result.bot.role === draft.originalRole &&
-                    result.bot.responsibilities === draft.originalResponsibilities
+                    result.bot.responsibilities === draft.originalResponsibilities &&
+                    (result.bot.backupAgentId ?? '') === draft.originalBackupAgentId
                   ) {
                     const next = { ...draft, revision: result.bot.revision }
                     drafts.set(scope, next)
@@ -397,7 +444,8 @@ export function BotSettings({
               draft.revision === hostBot.revision &&
               drafts.get(scope) === draft &&
               result.bot.role === draft.originalRole &&
-              result.bot.responsibilities === draft.originalResponsibilities
+              result.bot.responsibilities === draft.originalResponsibilities &&
+              (result.bot.backupAgentId ?? '') === draft.originalBackupAgentId
             ) {
               const next = { ...draft, revision: result.bot.revision }
               drafts.set(scope, next)

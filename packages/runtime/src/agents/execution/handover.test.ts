@@ -210,3 +210,46 @@ it('surfaces fresh-session rejection without a retry loop', async () => {
   ).rejects.toThrow('context_length_exceeded')
   expect(run).toHaveBeenCalledTimes(2)
 })
+
+it.each(['missing', 'different-session', 'accepted', 'tool', 'busy'] as const)(
+  'recovers a missing session only before acceptance with exact ownership: %s',
+  async (mode) => {
+    const calls: AgentRun[] = []
+    const fresh = vi.fn<(run: AgentRun) => Promise<AgentRun>>(async (run) => ({
+      ...run,
+      sessionId: undefined,
+      prompt: 'Saved context',
+    }))
+    const adapter = recoverContext(
+      {
+        run: async (run) => {
+          calls.push(run)
+          if (!run.sessionId) {
+            run.onText('Recovered')
+            return
+          }
+          if (mode === 'accepted') run.onPromptAccepted?.()
+          if (mode === 'tool') run.onEvent?.('tool.started', {})
+          throw new Error(
+            `Session ${mode === 'different-session' ? 'other' : run.sessionId} not found`,
+          )
+        },
+      },
+      fresh,
+      () => mode === 'busy',
+    )
+    const failure = await adapter.run(input()).then(
+      () => undefined,
+      (error: unknown) => String(error),
+    )
+    expect(failure).toEqual(
+      mode === 'missing'
+        ? undefined
+        : expect.stringContaining(mode === 'busy' ? 'background commands' : 'not found'),
+    )
+    expect(calls).toHaveLength(mode === 'missing' ? 2 : 1)
+    expect(calls[1]?.sessionId).toBeUndefined()
+    expect(calls[1]?.prompt).toBe(mode === 'missing' ? 'Saved context' : undefined)
+    expect(fresh).toHaveBeenCalledTimes(mode === 'missing' ? 1 : 0)
+  },
+)

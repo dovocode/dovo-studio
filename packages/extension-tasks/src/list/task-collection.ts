@@ -141,7 +141,9 @@ export function hiddenSideDraft(entry: Pick<TaskEntry, 'task' | 'needsInput' | '
 
 /** Delegated threads remain navigable, but belong to their parent in list views. */
 export function mainTaskEntries(entries: readonly TaskEntry[]): TaskEntry[] {
-  return entries.filter((entry) => !entry.task.delegation && !hiddenSideDraft(entry))
+  return entries.filter(
+    (entry) => !entry.task.delegation && !entry.task.botJob && !hiddenSideDraft(entry),
+  )
 }
 
 /** Reuse the previous owner while every row-facing fact is unchanged. */

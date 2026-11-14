@@ -47,6 +47,7 @@ function result(s: Services, id: string): BotResult {
 type BotFields = Pick<Bot, 'role' | 'responsibilities' | 'state'> & {
   resources?: BotResources | undefined
   avatar?: string | undefined
+  backupAgentId?: string | undefined
 }
 
 /** Change one Bot under compare-and-set. A replay whose outcome already holds succeeds. */
@@ -59,12 +60,13 @@ function change(
   s.store.transaction(() => {
     const bot = s.store.get().tasks.find((task) => task.id === id)?.bot
     if (!bot) throw new HttpError(404, 'Bot not found', { mutationRejected: true })
-    const wanted = next(bot)
+    const wanted = { backupAgentId: bot.backupAgentId, ...next(bot) }
     if (
       wanted.role === bot.role &&
       wanted.responsibilities === bot.responsibilities &&
       wanted.state === bot.state &&
       wanted.avatar === bot.avatar &&
+      wanted.backupAgentId === bot.backupAgentId &&
       isDeepStrictEqual(wanted.resources ?? null, bot.resources ?? null)
     )
       return
@@ -221,7 +223,14 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
             : input.avatar
         return yield* runtimeOperation(() => {
           // Stored-secret references in resources become the saved values again.
+          if (
+            input.backupAgentId &&
+            !s.store.get().agents.some((agent) => agent.id === input.backupAgentId)
+          )
+            throw new HttpError(400, 'Choose an existing backup agent.')
           change(s, input.id, input.expectedRevision, (bot) => ({
+            backupAgentId:
+              input.backupAgentId === null ? undefined : (input.backupAgentId ?? bot.backupAgentId),
             role: input.role ?? bot.role,
             responsibilities: input.responsibilities ?? bot.responsibilities,
             state: bot.state,

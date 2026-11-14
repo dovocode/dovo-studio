@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { randomUUID, type Task, type TaskHarness, type continueHarnessSchema } from '@dovo/protocol'
+import {
+  randomUUID,
+  type Task,
+  type TaskHarness,
+  type continueHarnessSchema,
+  type pendingHarnessSchema,
+} from '@dovo/protocol'
 
 /** UI adapter for the existing checkpointed, idempotent harness handoff endpoint. */
 export function useHarnessHandoff({
@@ -8,24 +14,30 @@ export function useHarnessHandoff({
   supported,
   connected,
   request,
+  defer,
 }: {
   task: Task
   scope: string
   supported: boolean
   connected: boolean
   request: (input: typeof continueHarnessSchema.Type) => Promise<unknown>
+  defer?: (input: typeof pendingHarnessSchema.Type) => Promise<unknown>
 }) {
   const [pending, setPending] = useState<TaskHarness | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const attempt = useRef<{ key: string; payload: typeof continueHarnessSchema.Type } | null>(null)
+  const deferredAttempt = useRef<{ key: string; payload: typeof pendingHarnessSchema.Type } | null>(
+    null,
+  )
   const running = useRef(false)
   const identity = JSON.stringify([scope, task.id])
   const latest = useRef(identity)
   latest.current = identity
   useEffect(() => {
     attempt.current = null
+    deferredAttempt.current = null
     setPending(null)
     setError('')
     setNotice('')
@@ -74,14 +86,49 @@ export function useHarnessHandoff({
       setBusy(false)
     }
   }
+  const schedule = async (harness: TaskHarness | null) => {
+    if (!available || !connected || running.current || !defer || !task.bot) return false
+    const key = JSON.stringify([identity, harness, task.bot.revision])
+    if (deferredAttempt.current?.key !== key)
+      deferredAttempt.current = {
+        key,
+        payload: {
+          id: task.id,
+          requestId: randomUUID(),
+          harness,
+          expectedBotRevision: task.bot.revision,
+          expectedPendingId: task.pendingHarness?.id,
+        },
+      }
+    running.current = true
+    setBusy(true)
+    setError('')
+    try {
+      await defer(deferredAttempt.current.payload)
+      if (latest.current !== identity) return false
+      deferredAttempt.current = null
+      setPending(null)
+      return true
+    } catch (cause) {
+      if (latest.current === identity)
+        setError(cause instanceof Error ? cause.message : String(cause))
+      return false
+    } finally {
+      running.current = false
+      setBusy(false)
+    }
+  }
   return {
     available,
     pending,
     busy,
     error,
     notice,
+    cancelDeferred: () => schedule(null),
     choose: async (harness: TaskHarness) => {
       if (!available || !connected || running.current) return false
+      if (defer && task.bot && (task.status === 'running' || task.pendingHarness))
+        return schedule(harness)
       setNotice('')
       if (task.status === 'running') {
         setPending(harness)

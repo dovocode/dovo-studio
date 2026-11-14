@@ -71,3 +71,8 @@ it('returns the same parent object when nothing changed', () => {
   const plain = projectDelegatedAgents([task('solo')], agents)
   expect(plain[0].subagents).toBeUndefined()
 })
+it('labels an admitted draft child as queued instead of actively running', () => {
+  const child = { ...task('child', 'parent'), status: 'draft' as const }
+  const projected = projectDelegatedAgents([task('parent'), child], agents)
+  expect(projected[0].subagents?.[0]).toMatchObject({ queued: true, activity: 'Queued' })
+})

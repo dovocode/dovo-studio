@@ -200,6 +200,37 @@ async function setup(
     notify: () => upstream.sendToolListChanged(),
   }
 }
+it('reads a monitored text resource through real MCP without calling a tool and checks enabled scope', async () => {
+  const f = await setup()
+  const bridge = f.runtime.services.mcpApps
+  const bytes = await bridge.readMonitoringResource(
+    f.task.id,
+    'fixture',
+    'fixture://version',
+    f.f.directory,
+    AbortSignal.timeout(5000),
+  )
+  expect(bytes.toString()).toBe('<h1>Chart</h1>')
+  expect(f.calls()).toBe(0)
+  expect(f.resources()).toBe(1)
+  f.runtime.services.store.update((w) => ({
+    ...w,
+    agents: w.agents.map((agent) => ({
+      ...agent,
+      resources: { ...agent.resources, mcpServers: [], skills: [] },
+    })),
+  }))
+  await expect(
+    bridge.readMonitoringResource(
+      f.task.id,
+      'fixture',
+      'fixture://version',
+      f.f.directory,
+      AbortSignal.timeout(5000),
+    ),
+  ).rejects.toThrow('no longer enabled')
+})
+
 it('closes MCP sessions and revokes proxy scopes when a thread is auto-settled', async () => {
   const s = await setup(),
     bridge = s.runtime.services.mcpApps

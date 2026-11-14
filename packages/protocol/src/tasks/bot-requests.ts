@@ -38,6 +38,7 @@ export const botUpdateSchema = strictStruct({
   role: Schema.optional(botRoleSchema),
   responsibilities: Schema.optional(botResponsibilitiesSchema),
   avatar: Schema.optional(Schema.NullOr(botAvatarSchema)),
+  backupAgentId: Schema.optional(Schema.NullOr(id)),
   /** Replaces this Bot's own resources. Stored-secret references keep saved values. */
   resources: Schema.optional(botResourcesSchema),
 })

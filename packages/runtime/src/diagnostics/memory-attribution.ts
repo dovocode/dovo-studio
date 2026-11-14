@@ -1,4 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises'
+import { FreezeProfiles } from './freeze-profiles.js'
 import { getHeapStatistics } from 'node:v8'
 import { performance, PerformanceObserver } from 'node:perf_hooks'
 import type { RuntimeMemoryDiagnostics } from '@dovo/protocol'
@@ -55,10 +56,15 @@ export class MemoryAttribution {
   private observer?: PerformanceObserver
   private gc = { collections: 0, durationMs: 0 }
   private loopStart = performance.eventLoopUtilization()
+  private loopSample = performance.eventLoopUtilization()
+  private freezes: FreezeProfiles
   constructor(
     private readings: MemoryReadings = processReadings,
     private warn: (message: string) => void = (message) => console.warn(message),
-  ) {}
+    profileEnabled: () => boolean = () => false,
+  ) {
+    this.freezes = new FreezeProfiles(profileEnabled)
+  }
   start(intervalMs = SAMPLE_INTERVAL_MS) {
     if (this.started) return
     this.started = true
@@ -85,6 +91,9 @@ export class MemoryAttribution {
     clearTimeout(this.timer)
     this.timerAt = due
     this.timer = setTimeout(() => {
+      const elapsed = performance.eventLoopUtilization(this.loopSample)
+      this.loopSample = performance.eventLoopUtilization()
+      this.freezes.sample(this.readings.now() - due, elapsed.utilization)
       this.timer = undefined
       this.timerAt = undefined
       this.sample()
@@ -102,6 +111,7 @@ export class MemoryAttribution {
     this.open.clear()
     this.recent = []
     this.samples = []
+    this.freezes.dispose()
   }
   /** Starts timing an expensive operation. Call the returned function exactly once. */
   begin(name: string) {
@@ -205,6 +215,7 @@ export class MemoryAttribution {
       arrayBufferBytes: this.readings.arrayBuffers(),
       gc: { ...this.gc },
       eventLoopUtilization: performance.eventLoopUtilization(this.loopStart).utilization,
+      freezes: this.freezes.snapshot(),
       children: await children().catch(() => null),
       recent: this.recent
         .map(({ name, endedAt, durationMs, heapGrowthBytes }) => ({
@@ -281,10 +292,16 @@ async function hasChildrenFile(proc: string, pid: number) {
 
 const attributions = new WeakMap<object, MemoryAttribution>()
 /** The sampler for one runtime, started when first used and stopped with the runtime. */
-export function memoryAttribution(owner: object) {
+export function memoryAttribution(
+  owner: object & { preferences?: { get(): { enableFreezeProfiles?: boolean } } },
+) {
   let attribution = attributions.get(owner)
   if (!attribution) {
-    attribution = new MemoryAttribution()
+    attribution = new MemoryAttribution(
+      undefined,
+      undefined,
+      () => owner.preferences?.get().enableFreezeProfiles === true,
+    )
     attribution.start()
     attributions.set(owner, attribution)
   }

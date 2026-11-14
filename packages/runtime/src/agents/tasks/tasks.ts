@@ -1,3 +1,6 @@
+import { WorkerCapacity } from './worker-capacity.js'
+import { totalmem } from 'node:os'
+import { ToolLoopStop } from '../execution/tool-loop.js'
 import { MemoryProtection, MemoryPressureStop } from '../execution/memory-protection.js'
 import { isAbsolute, relative, sep } from 'node:path'
 import { taskInputOwner, planModeAgent, planModeRequested, goalCommand } from '@dovo/protocol'
@@ -104,6 +107,7 @@ const delegatedAnswer = (task: Task) => {
 }
 
 type Running = {
+  waitingForCapacity?: boolean
   id: string
   runId: string
   retiring?: boolean
@@ -126,6 +130,8 @@ function checkoutPathsOverlap(first: string, second: string) {
 
 export class Tasks {
   onStopChildren?: (parentId: string) => void
+  onTurnFailed?: (id: string, turnId: string) => Promise<void>
+  onBeforeStart?: (id: string) => Promise<void>
   private scheduleTimer?: ReturnType<typeof setInterval>
   private checkingSchedule = false
   private scheduleWork?: Promise<void>
@@ -137,6 +143,16 @@ export class Tasks {
   private sideThreadCreations = new Map<string, Promise<{ id: string }>>()
   private checkoutEdits = new Map<string, number>()
   private running = new Map<string, Running>()
+  workerLimit = () => Math.max(2, Math.min(16, Math.floor(totalmem() / (2 * 1024 ** 3))))
+  private workerCapacity = new WorkerCapacity(() => {
+    const foreground = [...this.running.values()].filter((run) => !run.waitingForCapacity).length
+    const native = [...this.nativeSessions.keys()].reduce(
+      (count, id) =>
+        count + (this.store.taskSummary(id).subagents?.filter(nativeAgentWorking).length ?? 0),
+      0,
+    )
+    return foreground + native < this.workerLimit() - 1
+  })
   private nativeSessions = new Map<
     string,
     { sessionId: string; control: NativeAgentSession; directories: string[] }
@@ -1862,6 +1878,34 @@ export class Tasks {
     directMessageId?: string,
     preparation: 'ready' | 'accepted' = 'ready',
   ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
+    const before =
+      this.store.taskSummary(id).pendingHarness &&
+      !continuingRunId &&
+      !retryFailed &&
+      this.onBeforeStart
+    return (before ? runtimeOperation(() => before(id)) : Effect.void).pipe(
+      Effect.flatMap(() =>
+        this.startAdmittedEffect(
+          id,
+          pauseQueue,
+          admit,
+          continuingRunId,
+          retryFailed,
+          directMessageId,
+          preparation,
+        ),
+      ),
+    )
+  }
+  private startAdmittedEffect(
+    id: string,
+    pauseQueue = false,
+    admit?: () => boolean,
+    continuingRunId?: string,
+    retryFailed = false,
+    directMessageId?: string,
+    preparation: 'ready' | 'accepted' = 'ready',
+  ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
     return Effect.suspend(() => {
       if (this.store.taskSummary(id).machineHandoff)
         return Effect.fail(
@@ -2076,6 +2120,7 @@ export class Tasks {
               (recoveringTurn ? task.runAttempt?.runId : undefined) ??
               randomUUID(),
             controller: new AbortController(),
+            waitingForCapacity: !!task.botJob,
           }
           this.store.updateTask(
             id,
@@ -2123,6 +2168,26 @@ export class Tasks {
           )
           this.running.set(id, run)
           const work = Effect.gen({ self: this }, function* () {
+            if (run.waitingForCapacity) {
+              let lastPosition = 0
+              yield* runtimeOperation(() =>
+                this.workerCapacity.acquire(
+                  run.controller.signal,
+                  () => {
+                    run.waitingForCapacity = false
+                  },
+                  (position) => {
+                    if (position === lastPosition) return
+                    lastPosition = position
+                    this.store.updateTask(id, (current) => ({
+                      ...current,
+                      activity: `Waiting for capacity · ${position} in queue`,
+                    }))
+                  },
+                ),
+              )
+              this.store.updateTask(id, (current) => ({ ...current, activity: 'Starting agent' }))
+            }
             // Selection belongs to the admitted run, so Send can finish and Stop can
             // cancel its utility model before checkout or coding work starts.
             if (preparation === 'accepted') yield* selectModel(run.controller.signal)
@@ -2313,6 +2378,7 @@ export class Tasks {
               run.retiring = true
               yield* this.drainChildren(id, run.id)
             } while (
+              !this.store.taskSummary(id).pendingHarness &&
               !this.store.taskSummary(id).queuePaused &&
               hasAgentInput(this.store.taskSummary(id))
             )
@@ -2340,7 +2406,8 @@ export class Tasks {
                 this.store.updateTaskHistory(id, (task) => {
                   const cancelled =
                     run.controller.signal.aborted &&
-                    !(run.controller.signal.reason instanceof TurnStoreFailure)
+                    !(run.controller.signal.reason instanceof TurnStoreFailure) &&
+                    !(run.controller.signal.reason instanceof ToolLoopStop)
                   const continuation =
                     cancelled && task.quotaContinuation?.turnId === run.id
                       ? task.quotaContinuation
@@ -2452,6 +2519,21 @@ export class Tasks {
                   }
                   this.releaseRun(id, run)
                 }
+                const failedBot = this.store.taskSummary(id)
+                const onTurnFailed = this.onTurnFailed
+                if (
+                  failedBot.bot &&
+                  failedBot.status === 'failed' &&
+                  !this.stopping &&
+                  !run.controller.signal.aborted &&
+                  !run.shutdownUnconfirmed &&
+                  onTurnFailed
+                )
+                  yield* runtimeOperation(() => onTurnFailed(id, run.id)).pipe(
+                    Effect.catch((error) =>
+                      Effect.logError('Could not apply configured Bot backup', error),
+                    ),
+                  )
                 this.deliverCompletions(true, id)
                 const next = this.store.taskSummary(id)
                 if (
@@ -2623,6 +2705,7 @@ export class Tasks {
       )
     })
     this.running.delete(id)
+    this.workerCapacity.drain()
     // A parent that consumed a question but ended without resolving it must not hide it forever.
     const parent = this.store.taskSummary(id)
     for (const question of this.questions.list()) {

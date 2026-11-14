@@ -692,6 +692,7 @@ it('keeps read-only providers from sending task terminal or device input', async
   try {
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      'dovo_help',
       'ask_question',
       'thread_prepare',
       'response_prepare',

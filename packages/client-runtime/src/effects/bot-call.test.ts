@@ -145,3 +145,89 @@ it('keeps speech bounded and leaves code and links in chat', () => {
   expect(botCallSpeech('x'.repeat(1000000)).length).toBeLessThan(3500)
   expect(botCallSpeech('```unfinished code')).not.toContain('unfinished code')
 })
+it('ignores punctuation-only noise and accepts words across languages', async () => {
+  const f = setup()
+  f.call.start()
+  await flush()
+  for (const noise of ['...', '？！', '🎵', '   ']) {
+    f.recordings.at(-1)!.events.finish(noise)
+    await flush()
+    expect(f.send).not.toHaveBeenCalled()
+    expect(f.call.getSnapshot().phase).toBe('listening')
+    expect(f.call.getSnapshot().heard).toBe('')
+  }
+  f.recordings.at(-1)!.events.finish('你好')
+  await flush()
+  expect(f.send).toHaveBeenCalledExactlyOnceWith('message-1', '你好')
+})
+
+it('keeps capture through playback and interrupts only speech when voice starts', async () => {
+  const f = setup()
+  f.call.setContinuous(true)
+  f.call.start()
+  await flush()
+  f.recordings[0].events.finish('First')
+  await flush()
+  const capture = f.recordings.at(-1)!
+  f.call.sync([{ id: 'message-1', status: 'completed', text: 'A long answer' }], {
+    available: true,
+    needsInput: false,
+  })
+  expect(capture.signal.aborted).toBe(false)
+  expect(f.spoken).toHaveLength(1)
+  capture.events.speechStarted?.()
+  expect(f.spoken[0].signal.aborted).toBe(true)
+  expect(capture.signal.aborted).toBe(false)
+  capture.events.finish('Actually, change that')
+  await flush()
+  expect(f.send).toHaveBeenLastCalledWith('message-2', 'Actually, change that')
+})
+
+it('queues speech during a slow send, preserves order and never sends it twice', async () => {
+  let release: (() => void) | undefined
+  const send = vi.fn<(id: string, text: string) => Promise<void>>(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+  })
+  const f = setup(send)
+  f.call.setContinuous(true)
+  f.call.start()
+  await flush()
+  f.recordings[0].events.finish('First')
+  await flush()
+  f.recordings.at(-1)!.events.finish('Second')
+  await flush()
+  expect(send).toHaveBeenCalledTimes(1)
+  expect(f.call.requests()).toEqual(['message-1', 'message-2'])
+  release?.()
+  await flush()
+  expect(send).toHaveBeenCalledTimes(2)
+  expect(send).toHaveBeenLastCalledWith('message-2', 'Second')
+  release?.()
+  await flush()
+  f.call.sync([], { available: true, needsInput: false })
+  expect(send).toHaveBeenCalledTimes(2)
+})
+
+it('records the next utterance during transcription and keeps the new microphone alive', async () => {
+  const f = setup()
+  f.call.setContinuous(true)
+  f.call.start()
+  await flush()
+  const first = f.recordings[0]
+  first.events.released?.()
+  await flush()
+  const second = f.recordings[1]
+  expect(first.signal.aborted).toBe(false)
+  first.events.finish('Transcribed first')
+  await flush()
+  expect(second.signal.aborted).toBe(false)
+  expect(f.send).toHaveBeenCalledWith('message-1', 'Transcribed first')
+  second.events.released?.()
+  await flush()
+  f.call.end()
+  expect(second.signal.aborted).toBe(true)
+  second.events.finish('Late transcription after End')
+  expect(f.send).toHaveBeenCalledTimes(1)
+})

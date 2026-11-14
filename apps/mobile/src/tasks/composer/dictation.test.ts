@@ -7,7 +7,7 @@ import {
   type DictationEvents,
 } from './dictation'
 
-function fixture() {
+function fixture(voiceProcessing = false) {
   let events: DictationEvents | undefined
   const driver: DictationDriver = {
     available: vi.fn<DictationDriver['available']>(() => true),
@@ -31,7 +31,7 @@ function fixture() {
     onFinish: vi.fn<DictationCallbacks['onFinish']>(),
     onError: vi.fn<(message: string) => void>(),
   }
-  const dictation = createDictation(driver, () => ['en-US'], true)
+  const dictation = createDictation(driver, () => ['en-US'], true, voiceProcessing)
   const result = (text: string, isFinal = false) =>
     events?.result({
       isFinal,
@@ -284,3 +284,15 @@ describe('native dictation lifecycle', () => {
     expect(missing.getSnapshot().error).toContain('latest app build')
   })
 })
+
+it.each([false, true])(
+  'enables iOS voice processing only for call capture: %s',
+  async (enabled) => {
+    const f = fixture(enabled)
+    await f.dictation.start(f.callbacks)
+    expect(vi.mocked(f.driver.start).mock.calls[0][0].iosVoiceProcessingEnabled).toBe(
+      enabled ? true : undefined,
+    )
+    f.events().end()
+  },
+)

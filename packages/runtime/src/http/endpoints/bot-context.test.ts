@@ -32,6 +32,8 @@ it('resets only future model context and preserves files, actions and the saved 
   expect(after.threadActions).toEqual(before.threadActions)
   expect(after.turns).toEqual(before.turns)
   expect(after.sessionId).toBeUndefined()
+  expect(s.memory.searchBotHistory(created.id, 'Keep this context').hits).toHaveLength(1)
+  expect(s.memory.searchBotHistory(created.id, 'Exclude this context').hits).toEqual([])
   expect(after.consumedMessageIds).toBeUndefined()
   expect(
     botContextMessages(after.messages, after.bot).some((m) => m.text === 'Exclude this context'),

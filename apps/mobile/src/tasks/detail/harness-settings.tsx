@@ -84,6 +84,10 @@ export function HarnessSettings({
     connected,
     request: (input) =>
       runClientEffect(callEffect('/api/tasks/continue-harness', input, responses.ok)),
+    defer:
+      task.bot && snapshot?.pendingBotHarnessSupported
+        ? (input) => runClientEffect(callEffect('/api/tasks/pending-harness', input, responses.ok))
+        : undefined,
   })
   useEffect(() => {
     // A completed switch returns to the composer. Do not leave a success panel over input.
@@ -113,14 +117,23 @@ export function HarnessSettings({
     id: 'task',
     name: 'Codex',
   }
-  const defaultAgent =
-    turn && snapshot?.persistentTurnModelsSupported
+  const defaultAgent = task.pendingHarness
+    ? { ...threadAgent, ...task.pendingHarness.harness }
+    : turn && snapshot?.persistentTurnModelsSupported
       ? queuedModelAgent(threadAgent, task.queue, turn.beforeMessageId)
       : threadAgent
   const agent = applyTurnSettings(defaultAgent, turn?.value ?? undefined)
-  const selectionTask = turn?.value
-    ? { ...task, agentId: '', agentOverrides: undefined, harness: agent, modelSelection: undefined }
-    : task
+  const selectionTask = task.pendingHarness
+    ? { ...task, agentId: '', harness: task.pendingHarness.harness, agentOverrides: undefined }
+    : turn?.value
+      ? {
+          ...task,
+          agentId: '',
+          agentOverrides: undefined,
+          harness: agent,
+          modelSelection: undefined,
+        }
+      : task
   const selection = taskHarnessSelection(selectionTask)
   const pickerTask = handoff.available
     ? harnessHandoffSelectionTask(selectionTask, agent)
@@ -142,9 +155,26 @@ export function HarnessSettings({
     (choice) => choice.id === selection && choice.provider === agent.provider,
   )
   const controlsDisabled =
-    busy || handoff.busy || (!turn && task.status === 'running') || !!task.archivedAt || !connected
+    busy ||
+    handoff.busy ||
+    (!turn && task.status === 'running' && !(task.bot && snapshot?.pendingBotHarnessSupported)) ||
+    !!task.archivedAt ||
+    !connected
   const save = (next: Agent, nextSelection = selection) => {
     if (controlsDisabled) return
+    if (
+      task.bot &&
+      snapshot?.pendingBotHarnessSupported &&
+      (task.status === 'running' || task.pendingHarness)
+    ) {
+      const issue = permissionPolicyUIIssue(next, snapshot?.permissionPolicySupported === true)
+      if (issue) {
+        setTurnError(issue)
+        return
+      }
+      void handoff.choose(decode(taskHarnessSchema, next))
+      return
+    }
     if (
       handoff.available &&
       (next.provider !== defaultAgent.provider ||
@@ -215,6 +245,20 @@ export function HarnessSettings({
   }
   const content = (
     <>
+      {task.pendingHarness && (
+        <View style={{ gap: 8 }}>
+          <Text>
+            After this turn: {task.pendingHarness.harness.provider} ·{' '}
+            {task.pendingHarness.harness.model || 'Default model'}
+          </Text>
+          <Action
+            secondary
+            label="Cancel pending change"
+            disabled={busy || handoff.busy || !connected}
+            onPress={() => void handoff.cancelDeferred()}
+          />
+        </View>
+      )}
       {/* The selection mode decides whether the picker below applies, so it leads. */}
       {!turn && canChangeTaskCheckout(task) && !task.delegation && (
         <Choice
