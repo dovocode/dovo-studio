@@ -53,7 +53,7 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
     jsx: 'automatic',
     conditions: ['development'],
     alias: {
-      '@dovo/studio-core': root + 'packages/studio-core/src/index.ts',
+      '@dovo/studio-core': root + 'packages/studio-core/src',
       '@dovo/studio-core/repository-open': root + 'packages/studio-core/src/repository-open.ts',
       '@dovo/studio-core/themes': root + 'packages/studio-core/src/themes.ts',
       '@dovo/studio-ui/sharing-people': root + 'packages/studio-ui/src/sharing-people.tsx',
@@ -66,7 +66,6 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
       '@dovo/studio-ui/search-field': root + 'packages/studio-ui/src/search-field.tsx',
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
       '@dovo/studio-ui/image-viewer': root + 'packages/studio-ui/src/image-viewer.tsx',
-      '@dovo/studio-ui/clipboard': root + 'packages/studio-ui/src/clipboard.ts',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
     },
     nodePaths: [
