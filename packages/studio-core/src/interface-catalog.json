@@ -4269,7 +4269,9 @@
     "Delete selected tasks": "Delete selected tasks",
     "{value0} tokens": "{value0} tokens",
     "Pinned": "Pinned",
-    "Waiting": "Waiting"
+    "Waiting": "Waiting",
+    "Access paired computers": "Access paired computers",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local."
   },
   "nl": {
     "Settings": "Instellingen",
@@ -8541,7 +8543,9 @@
     "Delete selected tasks": "Geselecteerde taken verwijderen",
     "{value0} tokens": "{value0} tokens",
     "Pinned": "Vastgemaakt",
-    "Waiting": "Wachten"
+    "Waiting": "Wachten",
+    "Access paired computers": "Toegang tot gekoppelde computers",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Gebruik opgeslagen verbindingen van gekoppelde Studio-clients. Uitschakelen trekt externe machtigingen in. UI-bediening blijft lokaal."
   },
   "de": {
     "Settings": "Einstellungen",
@@ -12813,7 +12817,9 @@
     "Delete selected tasks": "Ausgewählte Aufgaben löschen",
     "{value0} tokens": "{value0} Token",
     "Pinned": "Angeheftet",
-    "Waiting": "Wartend"
+    "Waiting": "Wartend",
+    "Access paired computers": "Auf gekoppelte Computer zugreifen",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Gespeicherte Verbindungen gekoppelter Studio-Clients verwenden. Beim Ausschalten werden Fernzugriffsrechte entzogen. Die UI-Steuerung bleibt lokal."
   },
   "el": {
     "Settings": "Ρυθμίσεις",
@@ -17085,7 +17091,9 @@
     "Delete selected tasks": "Διαγραφή επιλεγμένων εργασιών",
     "{value0} tokens": "{value0} token",
     "Pinned": "Καρφιτσωμένο",
-    "Waiting": "Σε αναμονή"
+    "Waiting": "Σε αναμονή",
+    "Access paired computers": "Πρόσβαση σε συνδεδεμένους υπολογιστές",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Χρησιμοποιήστε αποθηκευμένες συνδέσεις από συνδεδεμένους πελάτες Studio. Η απενεργοποίηση ανακαλεί τις απομακρυσμένες άδειες. Ο έλεγχος του UI παραμένει τοπικός."
   },
   "it": {
     "Settings": "Impostazioni",
@@ -21357,7 +21365,9 @@
     "Delete selected tasks": "Elimina le attività selezionate",
     "{value0} tokens": "{value0} token",
     "Pinned": "Fissato",
-    "Waiting": "In attesa"
+    "Waiting": "In attesa",
+    "Access paired computers": "Accedi ai computer associati",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Usa le connessioni salvate dai client Studio associati. Disattivando questa opzione si revocano le autorizzazioni remote. Il controllo dell'interfaccia resta locale."
   },
   "es": {
     "Settings": "Ajustes",
@@ -25629,7 +25639,9 @@
     "Delete selected tasks": "Eliminar tareas seleccionadas",
     "{value0} tokens": "{value0} tokens",
     "Pinned": "Fijado",
-    "Waiting": "En espera"
+    "Waiting": "En espera",
+    "Access paired computers": "Acceder a equipos vinculados",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Usa las conexiones guardadas de los clientes Studio vinculados. Al desactivar esta opción se revocan los permisos remotos. El control de la interfaz sigue siendo local."
   },
   "fr": {
     "Settings": "Paramètres",
@@ -29901,7 +29913,9 @@
     "Delete selected tasks": "Supprimer les tâches sélectionnées",
     "{value0} tokens": "{value0} jetons",
     "Pinned": "Épinglé",
-    "Waiting": "En attente"
+    "Waiting": "En attente",
+    "Access paired computers": "Accéder aux ordinateurs associés",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Utilisez les connexions enregistrées des clients Studio associés. La désactivation révoque les autorisations distantes. Le contrôle de l'interface reste local."
   },
   "pl": {
     "Settings": "Ustawienia",
@@ -34173,7 +34187,9 @@
     "Delete selected tasks": "Usuń wybrane zadania",
     "{value0} tokens": "{value0} tokenów",
     "Pinned": "Przypięte",
-    "Waiting": "Oczekuje"
+    "Waiting": "Oczekuje",
+    "Access paired computers": "Dostęp do sparowanych komputerów",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Używaj zapisanych połączeń ze sparowanych klientów Studio. Wyłączenie cofa uprawnienia zdalne. Sterowanie interfejsem pozostaje lokalne."
   },
   "pt": {
     "Settings": "Definições",
@@ -38445,7 +38461,9 @@
     "Delete selected tasks": "Excluir tarefas selecionadas",
     "{value0} tokens": "{value0} tokens",
     "Pinned": "Fixado",
-    "Waiting": "Aguardando"
+    "Waiting": "Aguardando",
+    "Access paired computers": "Aceder a computadores emparelhados",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Use ligações guardadas de clientes Studio emparelhados. Desativar esta opção revoga as permissões remotas. O controlo da interface permanece local."
   },
   "tr": {
     "Settings": "Ayarlar",
@@ -42717,7 +42735,9 @@
     "Delete selected tasks": "Seçili görevleri sil",
     "{value0} tokens": "{value0} jeton",
     "Pinned": "Sabitlendi",
-    "Waiting": "Bekliyor"
+    "Waiting": "Bekliyor",
+    "Access paired computers": "Eşleştirilmiş bilgisayarlara erişim",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Eşleştirilmiş Studio istemcilerinin kayıtlı bağlantılarını kullanın. Bu seçeneği kapatmak uzak erişim izinlerini iptal eder. Arayüz denetimi yerel kalır."
   },
   "ar": {
     "Settings": "الإعدادات",
@@ -46989,7 +47009,9 @@
     "Delete selected tasks": "حذف المهام المحددة",
     "{value0} tokens": "{value0} رمز",
     "Pinned": "مثبّت",
-    "Waiting": "قيد الانتظار"
+    "Waiting": "قيد الانتظار",
+    "Access paired computers": "الوصول إلى أجهزة الكمبيوتر المقترنة",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "استخدم الاتصالات المحفوظة من عملاء Studio المقترنين. يؤدي إيقاف هذا الخيار إلى إلغاء أذونات الوصول عن بُعد. يظل التحكم في الواجهة محليًا."
   },
   "bg": {
     "Settings": "Настройки",
@@ -51261,7 +51283,9 @@
     "Delete selected tasks": "Изтриване на избраните задачи",
     "{value0} tokens": "{value0} токена",
     "Pinned": "Закачено",
-    "Waiting": "Изчаква"
+    "Waiting": "Изчаква",
+    "Access paired computers": "Достъп до сдвоени компютри",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Използвайте запазените връзки от сдвоени клиенти на Studio. Изключването отнема отдалечените разрешения. Управлението на интерфейса остава локално."
   },
   "zh": {
     "Settings": "设置",
@@ -55533,7 +55557,9 @@
     "Delete selected tasks": "删除所选任务",
     "{value0} tokens": "{value0} 个 token",
     "Pinned": "已固定",
-    "Waiting": "等待中"
+    "Waiting": "等待中",
+    "Access paired computers": "访问已配对的电脑",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "使用已配对 Studio 客户端保存的连接。关闭后将撤销远程授权。界面控制仍限于本机。"
   },
   "hr": {
     "Settings": "Postavke",
@@ -59805,7 +59831,9 @@
     "Delete selected tasks": "Izbriši odabrane zadatke",
     "{value0} tokens": "{value0} tokena",
     "Pinned": "Prikvačeno",
-    "Waiting": "Na čekanju"
+    "Waiting": "Na čekanju",
+    "Access paired computers": "Pristup uparenim računalima",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Koristite spremljene veze uparenih klijenata Studio. Isključivanje opoziva udaljena dopuštenja. Upravljanje sučeljem ostaje lokalno."
   },
   "cs": {
     "Settings": "Nastavení",
@@ -64077,7 +64105,9 @@
     "Delete selected tasks": "Smazat vybrané úkoly",
     "{value0} tokens": "{value0} tokenů",
     "Pinned": "Připnuto",
-    "Waiting": "Čeká"
+    "Waiting": "Čeká",
+    "Access paired computers": "Přístup ke spárovaným počítačům",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Použijte uložená připojení ze spárovaných klientů Studio. Vypnutí odebere vzdálená oprávnění. Ovládání rozhraní zůstane místní."
   },
   "da": {
     "Settings": "Indstillinger",
@@ -68349,7 +68379,9 @@
     "Delete selected tasks": "Slet valgte opgaver",
     "{value0} tokens": "{value0} tokens",
     "Pinned": "Fastgjort",
-    "Waiting": "Venter"
+    "Waiting": "Venter",
+    "Access paired computers": "Adgang til parrede computere",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Brug gemte forbindelser fra parrede Studio-klienter. Deaktivering tilbagekalder fjerntilladelser. Styring af brugerfladen forbliver lokal."
   },
   "et": {
     "Settings": "Seaded",
@@ -72621,7 +72653,9 @@
     "Delete selected tasks": "Kustuta valitud ülesanded",
     "{value0} tokens": "{value0} tokenit",
     "Pinned": "Kinnitatud",
-    "Waiting": "Ootel"
+    "Waiting": "Ootel",
+    "Access paired computers": "Juurdepääs seotud arvutitele",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Kasuta seotud Studio klientide salvestatud ühendusi. Väljalülitamine tühistab kaugjuurdepääsu õigused. Kasutajaliidese juhtimine jääb kohalikuks."
   },
   "fi": {
     "Settings": "Asetukset",
@@ -76893,7 +76927,9 @@
     "Delete selected tasks": "Poista valitut tehtävät",
     "{value0} tokens": "{value0} tunnusta",
     "Pinned": "Kiinnitetty",
-    "Waiting": "Odottaa"
+    "Waiting": "Odottaa",
+    "Access paired computers": "Käytä pariliitettyjä tietokoneita",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Käytä pariliitettyjen Studio-asiakkaiden tallennettuja yhteyksiä. Poiskytkentä peruu etäkäyttöoikeudet. Käyttöliittymän hallinta pysyy paikallisena."
   },
   "hi": {
     "Settings": "सेटिंग्स",
@@ -81165,7 +81201,9 @@
     "Delete selected tasks": "चुने गए कार्यों को हटाएं",
     "{value0} tokens": "{value0} टोकन",
     "Pinned": "पिन किया गया",
-    "Waiting": "प्रतीक्षा में"
+    "Waiting": "प्रतीक्षा में",
+    "Access paired computers": "पेयर किए गए कंप्यूटरों तक पहुँच",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "पेयर किए गए Studio क्लाइंट के सहेजे गए कनेक्शन इस्तेमाल करें। इसे बंद करने से दूरस्थ अनुमतियाँ रद्द होती हैं। इंटरफ़ेस का नियंत्रण स्थानीय रहता है।"
   },
   "hu": {
     "Settings": "Beállítások",
@@ -85437,7 +85475,9 @@
     "Delete selected tasks": "Kijelölt feladatok törlése",
     "{value0} tokens": "{value0} token",
     "Pinned": "Rögzítve",
-    "Waiting": "Várakozik"
+    "Waiting": "Várakozik",
+    "Access paired computers": "Párosított számítógépek elérése",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Használja a párosított Studio-kliensek mentett kapcsolatait. A kikapcsolás visszavonja a távoli engedélyeket. A felület vezérlése helyi marad."
   },
   "ja": {
     "Settings": "設定",
@@ -89709,7 +89749,9 @@
     "Delete selected tasks": "選択したタスクを削除",
     "{value0} tokens": "{value0} トークン",
     "Pinned": "ピン留め済み",
-    "Waiting": "待機中"
+    "Waiting": "待機中",
+    "Access paired computers": "ペア設定済みのコンピューターにアクセス",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "ペア設定済みの Studio クライアントに保存された接続を使用します。オフにするとリモートの許可が取り消されます。UI の操作はローカルのままです。"
   },
   "ko": {
     "Settings": "설정",
@@ -93981,7 +94023,9 @@
     "Delete selected tasks": "선택한 작업 삭제",
     "{value0} tokens": "{value0} 토큰",
     "Pinned": "고정됨",
-    "Waiting": "대기 중"
+    "Waiting": "대기 중",
+    "Access paired computers": "페어링된 컴퓨터에 접근",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "페어링된 Studio 클라이언트의 저장된 연결을 사용합니다. 이 옵션을 끄면 원격 권한이 취소됩니다. UI 제어는 로컬로 유지됩니다."
   },
   "nb": {
     "Settings": "Innstillinger",
@@ -98253,7 +98297,9 @@
     "Delete selected tasks": "Slett valgte oppgaver",
     "{value0} tokens": "{value0} tokener",
     "Pinned": "Festet",
-    "Waiting": "Venter"
+    "Waiting": "Venter",
+    "Access paired computers": "Tilgang til sammenkoblede datamaskiner",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Bruk lagrede tilkoblinger fra sammenkoblede Studio-klienter. Deaktivering opphever eksterne tillatelser. Styring av grensesnittet forblir lokal."
   },
   "ro": {
     "Settings": "Setări",
@@ -102525,7 +102571,9 @@
     "Delete selected tasks": "Șterge sarcinile selectate",
     "{value0} tokens": "{value0} de tokenuri",
     "Pinned": "Fixat",
-    "Waiting": "În așteptare"
+    "Waiting": "În așteptare",
+    "Access paired computers": "Acces la computere asociate",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Folosiți conexiunile salvate de clienții Studio asociați. Dezactivarea revocă permisiunile la distanță. Controlul interfeței rămâne local."
   },
   "ru": {
     "Settings": "Настройки",
@@ -106797,7 +106845,9 @@
     "Delete selected tasks": "Удалить выбранные задачи",
     "{value0} tokens": "{value0} токенов",
     "Pinned": "Закреплено",
-    "Waiting": "Ожидание"
+    "Waiting": "Ожидание",
+    "Access paired computers": "Доступ к сопряжённым компьютерам",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Используйте сохранённые подключения сопряжённых клиентов Studio. Отключение отзывает разрешения удалённого доступа. Управление интерфейсом остаётся локальным."
   },
   "sk": {
     "Settings": "Nastavenia",
@@ -111069,7 +111119,9 @@
     "Delete selected tasks": "Odstrániť vybrané úlohy",
     "{value0} tokens": "{value0} tokenov",
     "Pinned": "Pripnuté",
-    "Waiting": "Čaká"
+    "Waiting": "Čaká",
+    "Access paired computers": "Prístup k spárovaným počítačom",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Použite uložené pripojenia spárovaných klientov Studio. Vypnutie zruší vzdialené oprávnenia. Ovládanie rozhrania zostane miestne."
   },
   "sv": {
     "Settings": "Inställningar",
@@ -115341,7 +115393,9 @@
     "Delete selected tasks": "Ta bort markerade uppgifter",
     "{value0} tokens": "{value0} token",
     "Pinned": "Fäst",
-    "Waiting": "Väntar"
+    "Waiting": "Väntar",
+    "Access paired computers": "Åtkomst till parkopplade datorer",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Använd sparade anslutningar från parkopplade Studio-klienter. Avstängning återkallar fjärrbehörigheter. Gränssnittsstyrning förblir lokal."
   },
   "uk": {
     "Settings": "Налаштування",
@@ -119613,7 +119667,9 @@
     "Delete selected tasks": "Видалити вибрані завдання",
     "{value0} tokens": "{value0} токенів",
     "Pinned": "Закріплено",
-    "Waiting": "Очікування"
+    "Waiting": "Очікування",
+    "Access paired computers": "Доступ до сполучених комп'ютерів",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Використовуйте збережені підключення сполучених клієнтів Studio. Вимкнення скасовує дозволи віддаленого доступу. Керування інтерфейсом залишається локальним."
   },
   "vi": {
     "Settings": "Cài đặt",
@@ -123885,6 +123941,8 @@
     "Delete selected tasks": "Xóa các tác vụ đã chọn",
     "{value0} tokens": "{value0} token",
     "Pinned": "Đã ghim",
-    "Waiting": "Đang chờ"
+    "Waiting": "Đang chờ",
+    "Access paired computers": "Truy cập máy tính đã ghép nối",
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Dùng kết nối đã lưu từ các ứng dụng Studio đã ghép nối. Tắt tùy chọn này sẽ thu hồi quyền truy cập từ xa. Điều khiển giao diện vẫn chỉ ở máy cục bộ."
   }
 }

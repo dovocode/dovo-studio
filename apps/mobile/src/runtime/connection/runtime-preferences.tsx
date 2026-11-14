@@ -10,6 +10,7 @@ import { Effect } from 'effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import {
   studioToolSettings,
+  studioPeerAccessSetting,
   normalizeBranchPrefix,
   runtimePreferencesSchema,
   taskModelSelectionSchema,
@@ -634,6 +635,24 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
           )}
           {show('tools') && (
             <Section title={uiText('Studio Tools (experimental)')}>
+              {snapshot?.studioPeerRegistrationEnabled !== undefined && (
+                <View style={{ gap: 6 }}>
+                  <SettingsSwitchRow
+                    first
+                    label={uiText(studioPeerAccessSetting.label)}
+                    value={
+                      value?.enableStudioPeerRegistration ?? snapshot.studioPeerRegistrationEnabled
+                    }
+                    disabled={disabled}
+                    onValueChange={(enableStudioPeerRegistration) =>
+                      save({ enableStudioPeerRegistration })
+                    }
+                  />
+                  <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                    <InterfaceText>{studioPeerAccessSetting.description}</InterfaceText>
+                  </Text>
+                </View>
+              )}
               {studioToolSettings.map(({ key, label, description }) => (
                 <View key={key} style={{ gap: 6 }}>
                   <SettingsSwitchRow

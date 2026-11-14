@@ -993,7 +993,9 @@ it('retains durable thread control after the desktop lease expires and removes i
   expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(404)
   // Retrieval-only registration still supports read-only watch snapshots.
   source.s.retrievalPeers.register('owner', { sessionId: 'retrieval', peers: [pairing.peer] })
-  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(404)
+  const missingGrant = await source.post('threads', { action: 'list' }, pairing.peer.id)
+  expect(missingGrant.status).toBe(403)
+  expect(await missingGrant.text()).toContain('Access paired computers')
   expect(JSON.stringify(source.s.store.taskSummary(source.parent.id).threadWatches)).not.toContain(
     pairing.token,
   )
@@ -1398,4 +1400,73 @@ it('rearms a completed child for a new message and rejects pre-message snapshots
   release(oldSnapshot)
   await pending
   expect(source.s.threadWatch.list(source.parent.id)[0].status).toBe('watching')
+})
+
+it('forwards through a remote grant and revokes it without changing pairings', async () => {
+  const source = await setup()
+  const target = await setup()
+  const token = randomUUID()
+  target.s.devices.add('Paired human', token)
+  const peer = {
+    id: 'remote',
+    name: 'Remote',
+    connection: { address: target.origin, token, runtimeId: target.s.runtimeId },
+  }
+  source.s.retrievalPeers.registerStudio(
+    'owner',
+    { sessionId: 'remote-client', peers: [peer] },
+    'remote',
+  )
+  const discovery = await source.post('discover', {})
+  expect(await discovery.text()).toContain(target.s.runtimeId)
+  expect(
+    (
+      await source.post(
+        'threads',
+        { action: 'create', title: 'Remote grant child', repositoryId: 'repo' },
+        peer.id,
+      )
+    ).status,
+  ).toBe(200)
+  const changed = await fetch(source.origin + '/api/runtime/preferences/save', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer studio-tools-test-owner-token-at-least-32-chars',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ enableStudioPeerRegistration: false }),
+  })
+  expect(changed.status).toBe(200)
+  expect(
+    (
+      await source.post(
+        'threads',
+        { action: 'create', title: 'Revoked child', repositoryId: 'repo' },
+        peer.id,
+      )
+    ).status,
+  ).toBe(403)
+  expect(target.s.store.get().tasks.some((task) => task.title === 'Revoked child')).toBe(false)
+  expect(source.s.retrievalPeers.list()).toHaveLength(1)
+})
+it('rejects Studio pairing grants and grant-setting changes from device-backed agent requests', async () => {
+  const source = await setup()
+  const token = randomUUID()
+  source.s.devices.add('Agent device', token)
+  for (const [path, input] of [
+    ['/api/studio/peers', { sessionId: 'agent', peers: [] }],
+    ['/api/runtime/preferences/save', { enableStudioPeerRegistration: true }],
+  ]) {
+    const response = await fetch(source.origin + path, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Dovo-Agent-Access': '1',
+      },
+      body: JSON.stringify(input),
+    })
+    expect(response.status).toBe(403)
+    expect(await response.text()).toContain('human clients')
+  }
 })

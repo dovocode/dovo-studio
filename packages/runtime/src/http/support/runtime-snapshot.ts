@@ -347,6 +347,7 @@ export function runtimeSnapshot(
       projectTransfers: s.projectTransfers.list(),
       worktreeDeletionOverrideSupported: true,
       studioTools: enabledStudioTools(preferences),
+      studioPeerRegistrationEnabled: preferences.enableStudioPeerRegistration,
       remoteDesktopEnabled: preferences.enableRemoteDesktop,
       remoteDesktopSession: s.remoteDesktop.status(),
       artifactsEnabled: preferences.enableArtifacts,

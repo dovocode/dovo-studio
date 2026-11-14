@@ -136,3 +136,31 @@ it('resolves built-in and scoped agent model references with the same settings a
   )
   expect(composerModelReference('model:agent%3Awork/gpt', overridden)?.provider).toBe('claude')
 })
+
+const dory = '@Dory (`studio:host-a:thread:dory`)'
+it('projects complete Bot mentions with exact source offsets and stable targets', () => {
+  const source =
+    `🚀 Ask @docs and ${dory} then @Dory van 🌷 (` + '`studio:host-b:thread:other`' + ')'
+  const references = messageReferences(source, resources)
+  expect(
+    references.map(({ kind, label, start, end }) => [kind, label, source.slice(start, end)]),
+  ).toEqual([
+    ['mcp', 'docs', '@docs'],
+    ['bot', '@Dory', dory],
+    ['bot', '@Dory van 🌷', '@Dory van 🌷 (`studio:host-b:thread:other`)'],
+  ])
+  expect(composerReferences(dory, resources)[0]?.kind).toBe('bot')
+  expect(composerReferenceIcon({ kind: 'bot', label: '@Dory' })).toBe('model')
+})
+it('keeps Bot examples, links, browser targets and incomplete mentions as source', () => {
+  for (const source of [
+    `# ${dory}`,
+    '```text\n' + dory + '\n```',
+    '``example ' + dory + '``',
+    `[${dory}](https://example.com)`,
+    '@Dory (`studio:host:browser:tab`)',
+    '@Dory (`studio:host:thread:`)',
+    '@Dory (`studio:host:thread:dory`',
+  ])
+    expect(composerReferences(source, resources).filter((r) => r.kind === 'bot')).toEqual([])
+})

@@ -9,6 +9,12 @@ import {
   taskModelSchema,
 } from '../workspace.js'
 
+export const studioPeerAccessSetting = {
+  label: 'Access paired computers',
+  description:
+    'Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.',
+} as const
+
 export const studioToolSettings = [
   {
     part: 'threads',

@@ -127,6 +127,21 @@
   overflow-wrap: anywhere;
   user-select: all;
 }
+.dovo-composer-reference[data-reference-kind='bot'] {
+  align-items: center;
+  max-width: min(100%, 18em);
+  border-radius: 999px;
+  padding-inline: 0.55em;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dovo-composer-reference[data-reference-kind='bot'] .dovo-composer-reference-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .dovo-composer-reference-icon {
   display: inline-block;
   width: 1em;

@@ -47,12 +47,14 @@ public class DovoComposerInputModule: Module {
 }
 
 final class ReferenceAttachment: NSTextAttachment {
+  let kind: String
   let source: String
   let label: String
   let icon: String
   let iconTemplate: Bool
   init(source: String, label: String, foreground: UIColor, background: UIColor, font: UIFont,
-    icon: String = "", iconTemplate: Bool = true) {
+    icon: String = "", iconTemplate: Bool = true, kind: String = "") {
+    self.kind = kind
     self.source = source
     self.label = label
     self.icon = icon
@@ -68,7 +70,7 @@ final class ReferenceAttachment: NSTextAttachment {
     let size = CGSize(width: width, height: height)
     image = UIGraphicsImageRenderer(size: size).image { _ in
       background.setFill()
-      UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 5).fill()
+      UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: kind == "bot" ? height / 2 : 5).fill()
       if let glyph {
         let image = iconTemplate ? glyph.withTintColor(foreground, renderingMode: .alwaysOriginal) : glyph
         image.draw(in: CGRect(x: 7, y: (height - 16) / 2, width: 16, height: 16))
@@ -246,7 +248,7 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
       let range = NSRange(location: reference.start, length: reference.end - reference.start)
       let source = (content.text as NSString).substring(with: range)
       let chip = ReferenceAttachment(source: source, label: reference.label,
-        foreground: foreground, background: chipColor, font: font, icon: reference.icon, iconTemplate: reference.iconTemplate)
+        foreground: foreground, background: chipColor, font: font, icon: reference.icon, iconTemplate: reference.iconTemplate, kind: reference.kind)
       // UIKit inherits attributes from the adjacent attachment when moving the caret.
       // Give the attachment the same base style as text, even though it draws its own image.
       let attachment = NSMutableAttributedString(attachment: chip)
@@ -288,14 +290,14 @@ final class DovoComposerInputView: ExpoView, UITextViewDelegate {
     }
   }
   private func matches(_ references: [ComposerReferenceRecord]) -> Bool {
-    var actual: [(Int, Int, String, String, Bool)] = []
+    var actual: [(Int, Int, String, String, Bool, String)] = []
     input.textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: input.textStorage.length)) { value, range, _ in
       if let chip = value as? ReferenceAttachment {
-        actual.append((input.sourceOffset(range.location), input.sourceOffset(NSMaxRange(range)), chip.label, chip.icon, chip.iconTemplate))
+        actual.append((input.sourceOffset(range.location), input.sourceOffset(NSMaxRange(range)), chip.label, chip.icon, chip.iconTemplate, chip.kind))
       }
     }
     return actual.count == references.count && zip(actual, references).allSatisfy { value, reference in
-      value.0 == reference.start && value.1 == reference.end && value.2 == reference.label && value.3 == reference.icon && value.4 == reference.iconTemplate
+      value.0 == reference.start && value.1 == reference.end && value.2 == reference.label && value.3 == reference.icon && value.4 == reference.iconTemplate && value.5 == reference.kind
     }
   }
   func refreshStyle() {

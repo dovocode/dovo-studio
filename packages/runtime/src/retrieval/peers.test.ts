@@ -115,3 +115,55 @@ it('prefers the requesting device and otherwise uses the most recently changed r
     db.close()
   }
 })
+
+it('persists remote grants separately, revokes them on disable and preserves local grants', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const devices = new Devices(db, 'owner')
+    const remote = devices.add('Remote Studio', 'remote-token')
+    const local = devices.add('Local Studio', 'local-token')
+    let enabled = true
+    const peers = new RetrievalPeers(db, devices, () => enabled)
+    const peer = {
+      id: 'server',
+      name: 'Server',
+      connection: {
+        address: 'http://server:4317',
+        token: 'private-paired-computer-token-at-least-20',
+      },
+    }
+    const input = { sessionId: 'desktop', peers: [peer] }
+    peers.register(remote, input)
+    expect(peers.list(true)).toEqual([])
+    peers.registerStudio(remote, input, 'remote')
+    expect(new RetrievalPeers(db, devices, () => enabled).list(true)).toEqual([peer])
+    expect(
+      JSON.stringify(db.prepare('SELECT * FROM studio_remote_peer_grants').all()),
+    ).not.toContain(peer.connection.token)
+    peers.registerStudio(local, { ...input, peers: [{ ...peer, id: 'local-grant' }] })
+    enabled = false
+    expect(peers.list(true).map((p) => p.id)).toEqual(['local-grant'])
+    expect(() => peers.registerStudio(remote, input, 'remote')).toThrow('disabled')
+    enabled = true
+    expect(peers.list(true).map((p) => p.id)).toEqual(['local-grant'])
+    peers.registerStudio(remote, input, 'remote')
+    peers.register(remote, {
+      ...input,
+      peers: [
+        {
+          ...peer,
+          connection: { ...peer.connection, token: 'changed-paired-computer-token-at-least-20' },
+        },
+      ],
+    })
+    expect(peers.list(true).map((p) => p.id)).toEqual(['local-grant'])
+    peers.register(remote, input)
+    expect(peers.list(true).map((p) => p.id)).toEqual(['local-grant'])
+    peers.registerStudio(remote, input, 'remote')
+    devices.revoke(remote)
+    expect(peers.list(true).map((p) => p.id)).toEqual(['local-grant'])
+    expect(db.prepare('SELECT COUNT(*) FROM studio_remote_peer_grants').pluck().get()).toBe(0)
+  } finally {
+    db.close()
+  }
+})

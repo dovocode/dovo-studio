@@ -4,6 +4,7 @@ import { Effect } from 'effect'
 import { SlidersHorizontal, WandSparkles } from 'lucide-react'
 import {
   studioToolSettings,
+  studioPeerAccessSetting,
   normalizeBranchPrefix,
   runtimePreferencesSchema,
   taskModelSelectionSchema,
@@ -855,6 +856,7 @@ function ChildAgentLimit({
 }
 
 export function StudioToolsPreferences() {
+  const { snapshot } = useWorkspace()
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
@@ -863,6 +865,21 @@ export function StudioToolsPreferences() {
         title="Studio Tools (experimental)"
         description="Choose which parts of this computer agents can use. Changes apply immediately to active tools; newly enabled tools appear on the next agent turn. All parts are disabled by default. UI interaction controls live desktop/web sessions on this computer only (localhost)."
       >
+        {snapshot?.studioPeerRegistrationEnabled !== undefined && (
+          <SettingRow
+            label={studioPeerAccessSetting.label}
+            description={studioPeerAccessSetting.description}
+          >
+            <Toggle
+              label={studioPeerAccessSetting.label}
+              checked={
+                value?.enableStudioPeerRegistration ?? snapshot.studioPeerRegistrationEnabled
+              }
+              disabled={disabled}
+              onChange={(enableStudioPeerRegistration) => save({ enableStudioPeerRegistration })}
+            />
+          </SettingRow>
+        )}
         {studioToolSettings.map(({ key, label, description }) => (
           <SettingRow key={key} label={label} description={description}>
             <Toggle

@@ -1,4 +1,4 @@
-import { commandFields, studioToolSettings } from '@dovo/protocol'
+import { commandFields, studioPeerAccessSetting, studioToolSettings } from '@dovo/protocol'
 import type { StudioView } from '@dovo/studio-core'
 
 export const runtimeSettings: readonly StudioView[] = [
@@ -142,7 +142,10 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'studio-tools-settings',
-    settingsFields: studioToolSettings.map(({ label }) => label),
+    settingsFields: [
+      studioPeerAccessSetting.label,
+      ...studioToolSettings.map(({ label }) => label),
+    ],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Studio Tools',
@@ -150,7 +153,7 @@ export const runtimeSettings: readonly StudioView[] = [
     order: 2.8,
     settingsSection: 'agents',
     keywords:
-      'experimental agent tools threads automations browsers ui interaction diagnostics debug',
+      'experimental agent tools threads automations browsers ui interaction diagnostics debug paired computers headless remote',
     load: () => import('./studio-tools-settings-view'),
   },
   {

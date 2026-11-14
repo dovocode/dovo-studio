@@ -201,7 +201,7 @@ function MessageReference({ reference }: { reference: ComposerReference & { sour
           }}
         />
       )}
-      {reference.label}
+      <span className="dovo-composer-reference-label">{reference.label}</span>
     </span>
   )
 }

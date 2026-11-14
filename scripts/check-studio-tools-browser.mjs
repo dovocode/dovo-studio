@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Effect}from'effect';import{StudioToolsBridge}from'${root}packages/studio-shell/src/studio-tools-bridge';import{StudioPairedComputersBridge}from'${root}packages/studio-shell/src/studio-paired-computers-bridge';import{StudioToolsPreferences}from'${root}packages/extension-runtime/src/runtime-preferences';window.studio={connected:true,connection:window.connection,snapshot:{studioTools:{ui:true,threads:true}},runtimeRegistry:{profiles:[window.paired]},runtimes:[],requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{const response=await fetch(window.connection.address+path,{method:'POST',headers:{Authorization:'Bearer '+window.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});if(!response.ok)throw new Error(await response.text());return await response.json()},catch:error=>error instanceof Error?error:new Error(String(error))})};function App(){const[revision,setRevision]=useState(0);window.refreshStudio=()=>setRevision(value=>value+1);const[text,setText]=useState(''),[saved,setSaved]=useState('');return <><StudioToolsBridge/><StudioPairedComputersBridge/><h1>Studio tools fixture</h1><StudioToolsPreferences/><label>Prompt<textarea aria-label="Prompt" value={text} onChange={event=>setText(event.target.value)}/></label><button data-save-prompt onClick={()=>setSaved(text)}>Save prompt</button><output>{saved}</output><div data-studio-human-only><button onClick={()=>window.approved=true}>Approve test gate</button></div></>}createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Effect}from'effect';import{StudioToolsBridge}from'${root}packages/studio-shell/src/studio-tools-bridge';import{StudioPairedComputersBridge}from'${root}packages/studio-shell/src/studio-paired-computers-bridge';import{StudioToolsPreferences}from'${root}packages/extension-runtime/src/runtime-preferences';window.studio={connected:true,connection:window.connection,snapshot:{studioTools:{ui:true,threads:true},studioPeerRegistrationEnabled:true},runtimeRegistry:{profiles:[window.paired]},runtimes:[],requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{const response=await fetch(window.connection.address+path,{method:'POST',headers:{Authorization:'Bearer '+window.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});if(!response.ok)throw new Error(await response.text());return await response.json()},catch:error=>error instanceof Error?error:new Error(String(error))})};function App(){const[revision,setRevision]=useState(0);window.refreshStudio=()=>setRevision(value=>value+1);const[text,setText]=useState(''),[saved,setSaved]=useState('');return <><StudioToolsBridge/><StudioPairedComputersBridge/><h1>Studio tools fixture</h1><StudioToolsPreferences/><label>Prompt<textarea aria-label="Prompt" value={text} onChange={event=>setText(event.target.value)}/></label><button data-save-prompt onClick={()=>setSaved(text)}>Save prompt</button><output>{saved}</output><div data-studio-human-only><button onClick={()=>window.approved=true}>Approve test gate</button></div></>}createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root + 'packages/studio-core',
       loader: 'tsx',
     },
@@ -66,7 +66,11 @@ remote.services.devices.add('Paired Studio', pairedToken)
 const paired = {
   id: 'paired-computer',
   name: 'Paired computer',
-  connection: { address: `http://127.0.0.1:${remote.port}`, token: pairedToken },
+  connection: {
+    address: `http://127.0.0.1:${remote.port}`,
+    token: pairedToken,
+    runtimeId: remote.services.runtimeId,
+  },
 }
 const s = runtime.services
 s.preferences.save({
@@ -218,7 +222,7 @@ try {
   await call('browsers', { action: 'snapshot', id: opened.id }, 404)
   await call('browsers', { action: 'close', id: second.id })
   const discovery = await call('discover', {})
-  assert.ok(discovery.computers.some((computer) => computer.id === paired.id))
+  assert.ok(discovery.computers.some((computer) => computer.id === remote.services.runtimeId))
   assert.ok(!JSON.stringify(discovery).includes(pairedToken))
   await call('diagnostics', { action: 'health' }, 200, paired.id)
   await call('ui', { action: 'list' }, 403, paired.id)

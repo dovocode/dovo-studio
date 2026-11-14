@@ -17,6 +17,7 @@ export class RetrievalPeers {
   constructor(
     private db: Database.Database,
     private devices: Devices,
+    private remoteStudioAllowed: () => boolean = () => false,
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS retrieval_peers (device TEXT PRIMARY KEY, value TEXT NOT NULL)',
@@ -25,13 +26,24 @@ export class RetrievalPeers {
     db.exec(
       'CREATE TABLE IF NOT EXISTS studio_peer_grants (device TEXT PRIMARY KEY, value TEXT NOT NULL)',
     )
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS studio_remote_peer_grants (device TEXT PRIMARY KEY, value TEXT NOT NULL)',
+    )
   }
-  registerStudio(device: string, value: unknown) {
+  revokeRemoteStudio() {
+    if (this.db.prepare('SELECT 1 FROM studio_remote_peer_grants LIMIT 1').get())
+      this.db.prepare('DELETE FROM studio_remote_peer_grants').run()
+  }
+  registerStudio(device: string, value: unknown, scope: 'local' | 'remote' = 'local') {
+    if (scope === 'remote' && !this.remoteStudioAllowed())
+      throw new HttpError(403, 'Remote Studio peer registration is disabled')
     const input = decode(studioPeerRegistrationSchema, value)
     return this.db.transaction(() => {
       this.register(device, input)
       this.db
-        .prepare('INSERT OR REPLACE INTO studio_peer_grants VALUES (?,?)')
+        .prepare(
+          `INSERT OR REPLACE INTO ${scope === 'remote' ? 'studio_remote_peer_grants' : 'studio_peer_grants'} VALUES (?,?)`,
+        )
         .run(device, JSON.stringify(input.peers.map(peerKey)))
       return { ok: true }
     })()
@@ -58,25 +70,29 @@ export class RetrievalPeers {
       .get(device)
     if (previous !== serialized)
       this.db.prepare('INSERT OR REPLACE INTO retrieval_peers VALUES (?,?)').run(device, serialized)
-    const grant = this.studioGrant(device)
-    if (grant) {
-      const current = new Set(input.peers.map(peerKey))
-      this.db
-        .prepare('UPDATE studio_peer_grants SET value=? WHERE device=?')
-        .run(JSON.stringify(grant.filter((key) => current.has(key))), device)
+    for (const table of ['studio_peer_grants', 'studio_remote_peer_grants'] as const) {
+      const grant = this.studioGrant(device, table)
+      if (grant) {
+        const current = new Set(input.peers.map(peerKey))
+        this.db
+          .prepare(`UPDATE ${table} SET value=? WHERE device=?`)
+          .run(JSON.stringify(grant.filter((key) => current.has(key))), device)
+      }
     }
     return { ok: true }
   }
-  private studioGrant(device: string) {
-    const value = this.db
-      .prepare('SELECT value FROM studio_peer_grants WHERE device=?')
-      .pluck()
-      .get(device)
+  private studioGrant(
+    device: string,
+    table: 'studio_peer_grants' | 'studio_remote_peer_grants' = 'studio_peer_grants',
+  ) {
+    const value = this.db.prepare(`SELECT value FROM ${table} WHERE device=?`).pluck().get(device)
     return typeof value === 'string'
       ? decode(Schema.Array(Schema.String), JSON.parse(value))
       : undefined
   }
   list(studioOnly = false, preferredDevice?: string) {
+    const remoteAllowed = this.remoteStudioAllowed()
+    if (!remoteAllowed) this.revokeRemoteStudio()
     const valid = new Set([
       'owner',
       ...this.devices
@@ -98,10 +114,18 @@ export class RetrievalPeers {
       if (!valid.has(row.device)) {
         this.db.prepare('DELETE FROM retrieval_peers WHERE device=?').run(row.device)
         this.db.prepare('DELETE FROM studio_peer_grants WHERE device=?').run(row.device)
+        this.db.prepare('DELETE FROM studio_remote_peer_grants WHERE device=?').run(row.device)
         continue
       }
       const registration = decode(studioPeerRegistrationSchema, JSON.parse(row.value))
-      const grant = studioOnly ? new Set(this.studioGrant(row.device) ?? []) : undefined
+      const grant = studioOnly
+        ? new Set([
+            ...(this.studioGrant(row.device) ?? []),
+            ...(remoteAllowed
+              ? (this.studioGrant(row.device, 'studio_remote_peer_grants') ?? [])
+              : []),
+          ])
+        : undefined
       for (const peer of registration.peers)
         if (!grant || grant.has(peerKey(peer)))
           peers.set(peer.connection.runtimeId ?? peer.id, peer)

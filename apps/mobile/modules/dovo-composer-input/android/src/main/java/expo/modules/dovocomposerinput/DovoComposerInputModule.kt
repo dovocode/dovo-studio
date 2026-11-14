@@ -84,7 +84,7 @@ class DovoComposerInputModule : Module() {
 
 class ReferenceSpan(private val title: String, private val background: Int, private val foreground: Int,
   private val maximumWidth: () -> Float, private val density: Float,
-  icon: String = "", private val iconTemplate: Boolean = true) : ReplacementSpan() {
+  icon: String = "", private val iconTemplate: Boolean = true, private val kind: String = "") : ReplacementSpan() {
   private val glyph = if (icon.isEmpty()) null else {
     val bytes = Base64.decode(icon, Base64.DEFAULT)
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -97,7 +97,8 @@ class ReferenceSpan(private val title: String, private val background: Int, priv
     val color = paint.color
     val width = width(paint)
     paint.color = background
-    canvas.drawRoundRect(RectF(x, y + paint.ascent() - 2 * density, x + width, y + paint.descent() + 2 * density), 5 * density, 5 * density, paint)
+    val radius = if (kind == "bot") (paint.descent() - paint.ascent() + 4 * density) / 2 else 5 * density
+    canvas.drawRoundRect(RectF(x, y + paint.ascent() - 2 * density, x + width, y + paint.descent() + 2 * density), radius, radius, paint)
     paint.color = foreground
     glyph?.let { image ->
       val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -340,7 +341,7 @@ class DovoComposerInputView(context: Context, appContext: AppContext) : ExpoView
       if (reference.start >= end && reference.end > reference.start && reference.end <= value.length) {
         value.setSpan(ReferenceSpan(reference.label, chipColor, input.currentTextColor,
           { max(30f * density, input.width - input.paddingLeft - input.paddingRight.toFloat()) }, density,
-          reference.icon, reference.iconTemplate), reference.start, reference.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+          reference.icon, reference.iconTemplate, reference.kind), reference.start, reference.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         end = reference.end
       }
     }

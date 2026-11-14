@@ -1,5 +1,6 @@
 import {
   composerModelReference,
+  composerReferences,
   composerTextReferences,
   harnessIconData,
   providerSchema,
@@ -21,6 +22,43 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
     if (!block.isTextblock) return true
     // Headings and code blocks deliberately accept text only.
     if (!block.type.contentMatch.matchType(richSchema.nodes.context_reference)) return false
+    if (block.textContent.includes('studio:')) {
+      let botRun = ''
+      let botOffsets: number[] = []
+      const flushBots = () => {
+        for (const reference of composerReferences(botRun, resources).filter(
+          (reference) => reference.kind === 'bot',
+        ))
+          matches.push({
+            ...reference,
+            start: botOffsets[reference.start],
+            end: botOffsets[reference.end],
+          })
+        botRun = ''
+        botOffsets = []
+      }
+      block.forEach((node, offset) => {
+        if (!node.isText || node.marks.some((mark) => mark.type === richSchema.marks.link)) {
+          flushBots()
+          return
+        }
+        const start = position + 1 + offset
+        const code = node.marks.some((mark) => mark.type === richSchema.marks.code)
+        if (!botOffsets.length) botOffsets.push(start)
+        if (code) {
+          botRun += '`'
+          botOffsets.push(start)
+        }
+        const text = node.text ?? ''
+        botRun += text
+        for (let i = 0; i < text.length; i++) botOffsets.push(start + i + 1)
+        if (code) {
+          botRun += '`'
+          botOffsets.push(start + text.length)
+        }
+      })
+      flushBots()
+    }
     let run = ''
     let runStart = 0
     const flush = () => {
@@ -61,7 +99,12 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
   const tr = state.tr
   for (const { position, node, provider } of updates)
     tr.setNodeMarkup(position, undefined, { ...node.attrs, provider: provider ?? null })
-  for (const match of matches.reverse())
+  const bots = matches.filter((match) => match.kind === 'bot')
+  const distinct = matches.filter(
+    (match) =>
+      match.kind === 'bot' || !bots.some((bot) => match.start < bot.end && match.end > bot.start),
+  )
+  for (const match of distinct.sort((a, b) => b.start - a.start))
     tr.replaceWith(
       match.start,
       match.end,
@@ -134,7 +177,13 @@ export function referenceNodeView(node: Node) {
   }
   if (!provider) {
     const kind = node.attrs.kind
-    if (kind === 'file' || kind === 'skill' || kind === 'mcp' || kind === 'model') {
+    if (
+      kind === 'file' ||
+      kind === 'skill' ||
+      kind === 'mcp' ||
+      kind === 'model' ||
+      kind === 'bot'
+    ) {
       const key = composerReferenceIcon({ kind, label: String(node.attrs.label) })
       const icon = document.createElement('span')
       icon.className = 'dovo-composer-reference-icon'
@@ -147,6 +196,9 @@ export function referenceNodeView(node: Node) {
       dom.append(icon)
     }
   }
-  dom.append(document.createTextNode(String(node.attrs.label)))
+  const label = document.createElement('span')
+  label.className = 'dovo-composer-reference-label'
+  label.textContent = String(node.attrs.label)
+  dom.append(label)
   return { dom }
 }

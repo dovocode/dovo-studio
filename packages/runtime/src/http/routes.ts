@@ -15,7 +15,7 @@ import { remoteDesktopRequestSchema, remoteDesktopUnlockSchema } from '@dovo/pro
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
 import { pullPeerScopeSchema } from '../retrieval/pulls.js'
-import { requireLocalStudioUI } from '../studio/local-ui.js'
+import { requireLocalStudioUI, requireStudioPeerRegistration } from '../studio/local-ui.js'
 import { studioTool } from '../studio/tools.js'
 import { studioPeers, routedStudioTool } from '../studio/peers.js'
 import { studioForwardPolicySchema } from '@dovo/protocol'
@@ -758,12 +758,18 @@ export function route(
         return { ok: true }
       }
       if (method === 'POST' && path === '/api/studio/peers') {
-        requireLocalStudioUI(remoteAddress)
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Only paired human clients can register Studio computer access')
+        const scope = requireStudioPeerRegistration(
+          remoteAddress,
+          s.preferences.get().enableStudioPeerRegistration,
+        )
         const registration = yield* serviceResult(body(request, 256 * 1024))
-        studioPeers(s).register(device.id, registration, () => {
-          s.devices.authenticate(token)
-        })
-        return s.retrievalPeers.registerStudio(device.id, registration)
+        if (scope === 'local')
+          studioPeers(s).register(device.id, registration, () => {
+            s.devices.authenticate(token)
+          })
+        return s.retrievalPeers.registerStudio(device.id, registration, scope)
       }
       if (
         method === 'POST' &&
@@ -1605,6 +1611,13 @@ export function route(
         return yield* serviceResult(s.preferences.get())
       if (method === 'POST' && path === '/api/runtime/preferences/save') {
         const input = yield* serviceResult(body(request))
+        if (
+          agentDeviceAccess &&
+          input &&
+          typeof input === 'object' &&
+          'enableStudioPeerRegistration' in input
+        )
+          throw new HttpError(403, 'Only paired human clients can change Studio computer access')
         if (input && typeof input === 'object' && 'memory' in input)
           throw new HttpError(400, 'Configure memory through its scope settings')
         const settings = s.preferences.save(input)
@@ -1612,6 +1625,7 @@ export function route(
           input && typeof input === 'object' && 'browserProfiles' in input
             ? yield* serviceResult(s.browsers.applyProfiles())
             : {}
+        if (!settings.enableStudioPeerRegistration) s.retrievalPeers.revokeRemoteStudio()
         s.approvals.applyWebRules()
         s.artifacts.prune()
         if (!settings.enableRemoteDesktop) yield* serviceResult(s.remoteDesktop.stop())

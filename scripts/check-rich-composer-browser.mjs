@@ -374,6 +374,40 @@ try {
   await source.press('ControlOrMeta+Shift+m')
   await editor.locator('[data-reference-kind="file"]').waitFor()
   assert.equal(await text(), chipDraft)
+  const botDraft =
+    'Ask @Dory van 🌷 (`studio:host-a:thread:dory`) and @Dory (`studio:host-b:thread:dory`) please'
+  await setDraft(botDraft)
+  await editor.locator('[data-reference-kind="bot"]').nth(1).waitFor()
+  assert.deepEqual(await editor.locator('[data-reference-kind="bot"]').allTextContents(), [
+    '@Dory van 🌷',
+    '@Dory',
+  ])
+  assert.equal(await text(), botDraft)
+  await editor.press('ControlOrMeta+a')
+  assert.equal(
+    await editor.evaluate((element) => {
+      const clipboardData = new DataTransfer()
+      element.dispatchEvent(
+        new ClipboardEvent('copy', { clipboardData, bubbles: true, cancelable: true }),
+      )
+      return clipboardData.getData('text/plain')
+    }),
+    botDraft,
+  )
+  const botStart = botDraft.indexOf('@Dory')
+  const botEnd = botDraft.indexOf(')') + 1
+  await page.evaluate((end) => window.selectSource(end), botEnd)
+  await editor.press('Backspace')
+  assert.equal(await text(), botDraft.slice(0, botStart) + botDraft.slice(botEnd))
+  await editor.press('ControlOrMeta+z')
+  assert.equal(await text(), botDraft)
+  await page.getByRole('button', { name: /Markdown source/ }).click()
+  await source.waitFor()
+  assert.equal(await source.inputValue(), botDraft)
+  await source.press('ControlOrMeta+Shift+m')
+  await editor.locator('[data-reference-kind="bot"]').nth(1).waitFor()
+  await setDraft('``example @Dory (`studio:host:thread:dory`)``')
+  assert.equal(await editor.locator('[data-reference-kind="bot"]').count(), 0)
   const punctuatedPath = 'Read @src/__tests__/my_file.ts please'
   await setDraft(punctuatedPath)
   await editor.locator('[data-reference-kind="file"]').waitFor()

@@ -1,3 +1,4 @@
+import { parseStudioReference } from '../../runtime/studio-reference.js'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { providerSchema, type Agent, type TaskHarness } from '../../workspace.js'
 import { fileIconKind } from '../../scm/repositories/file-tree.js'
@@ -11,7 +12,7 @@ export type ComposerReferenceResources = {
 export type ComposerReference = {
   start: number
   end: number
-  kind: 'file' | 'model' | 'skill' | 'mcp'
+  kind: 'file' | 'model' | 'skill' | 'mcp' | 'bot'
   label: string
   provider?: TaskHarness['provider']
 }
@@ -24,7 +25,23 @@ export type ComposerReferenceIcon =
 export const composerReferenceIcon = (
   reference: Pick<ComposerReference, 'kind' | 'label'>,
 ): ComposerReferenceIcon =>
-  reference.kind === 'file' ? `file-${fileIconKind(reference.label)}` : reference.kind
+  reference.kind === 'file'
+    ? `file-${fileIconKind(reference.label)}`
+    : reference.kind === 'bot'
+      ? 'model'
+      : reference.kind
+
+/** Recognize the saved mention format without requiring a live Bot catalog. */
+function composerBotReferences(text: string): ComposerReference[] {
+  const found: ComposerReference[] = []
+  for (const match of text.matchAll(/(^|\s)@([^@\n\r`]+?) \(`(studio:[^`\s]+)`\)/g)) {
+    const target = parseStudioReference(match[3])
+    if (target?.kind !== 'thread' || !match[2].trim()) continue
+    const start = match.index! + match[1].length
+    found.push({ start, end: match.index! + match[0].length, kind: 'bot', label: `@${match[2]}` })
+  }
+  return found
+}
 
 export function composerTextReferences(
   text: string,
@@ -96,7 +113,7 @@ export function composerReferences(
 ): ComposerReference[] {
   if (!/[@$`]/.test(text)) return []
   const found: ComposerReference[] = []
-  const excluded: { start: number; end: number }[] = []
+  const excluded: { start: number; end: number; code: boolean }[] = []
   const visit = (node: ReturnType<typeof fromMarkdown>['children'][number]): void => {
     const start = node.position?.start.offset
     const end = node.position?.end.offset
@@ -112,7 +129,7 @@ export function composerReferences(
           'imageReference',
         ].includes(node.type)
       )
-        excluded.push({ start, end })
+        excluded.push({ start, end, code: node.type === 'inlineCode' })
       if (node.type === 'inlineCode') {
         const reference = composerModelReference(node.value, resources.agents)
         if (reference) found.push({ ...reference, start, end })
@@ -124,10 +141,23 @@ export function composerReferences(
     if ('children' in node) for (const child of node.children) visit(child)
   }
   for (const node of fromMarkdown(text).children) visit(node)
+  for (const reference of composerBotReferences(text))
+    if (
+      !excluded.some(
+        (range) =>
+          reference.start < range.end &&
+          reference.end > range.start &&
+          !(range.code && range.start > reference.start && range.end < reference.end),
+      )
+    )
+      found.push(reference)
   // File paths can contain Markdown punctuation such as __tests__. Match the complete
   // source token, then exclude code and links rather than splitting the path at style marks.
   for (const reference of composerTextReferences(text, resources))
-    if (!excluded.some((range) => reference.start < range.end && reference.end > range.start))
+    if (
+      !excluded.some((range) => reference.start < range.end && reference.end > range.start) &&
+      !found.some((range) => reference.start < range.end && reference.end > range.start)
+    )
       found.push(reference)
   return found.sort((a, b) => a.start - b.start)
 }

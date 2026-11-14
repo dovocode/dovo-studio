@@ -75,7 +75,7 @@
     "test:composer-command-recovery:browser": "node scripts/check-composer-command-recovery-browser.mjs",
     "test:composer-providers:browser": "node scripts/check-composer-providers-browser.mjs",
     "test:mobile-metro-modules": "node scripts/check-mobile-metro-modules.mjs",
-    "test:studio-tools:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-studio-tools-browser.mjs",
+    "test:studio-tools:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-studio-tools-browser.mjs && node scripts/check-studio-peer-registration-browser.mjs",
     "test:ui-audit:browser": "node scripts/check-desktop-audit-layout-browser.mjs && node scripts/check-mobile-audit-navigation-browser.mjs",
     "test:ui-visuals:browser": "node scripts/check-layout-stability-browser.mjs && node scripts/check-mobile-sheet-layout-browser.mjs && node scripts/check-search-fields-browser.mjs && node scripts/check-ui-visuals-browser.mjs && node scripts/check-pipeline-list-browser.mjs && node scripts/check-pull-list-layout-browser.mjs",
     "test:ui-controls:browser": "pnpm --filter @dovo/desktop build && node scripts/check-ui-controls-browser.mjs && node scripts/check-shared-controls-appearance-browser.mjs",

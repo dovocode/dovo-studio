@@ -166,6 +166,20 @@ try {
         eventCount: 9,
         references: [],
       })
+      await page.evaluate(() =>
+        window.external(
+          'Ask @Dory (' +
+            String.fromCharCode(96) +
+            'studio:host:thread:dory' +
+            String.fromCharCode(96) +
+            ')',
+        ),
+      )
+      const bot = await page.evaluate(() => window.nativeProps.content.references[0])
+      assert.equal(bot.kind, 'bot')
+      assert.equal(bot.label, '@Dory')
+      assert.ok(bot.icon.startsWith('iVBOR'))
+      assert.equal(bot.iconTemplate, true)
       await page.evaluate(() => window.showMessage())
       await page.waitForFunction(() => window.nativeProps.displayOnly === true)
       assert.equal(await page.evaluate(() => window.nativeProps.editable), false)

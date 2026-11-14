@@ -20,16 +20,24 @@ agents and agentId for its available model catalog. Project, thread, browser and
 pagination cursors belong to the selected computer. Existing browser and Device Hub tools remain
 independently available.
 
-Connect Studio to its local runtime once to authorize its saved computer pairings for durable Studio
-Tools forwarding. These grants survive desktop disconnects and runtime restarts. Credentials remain
-in the private pairing registry; grants store fingerprints only. Retrieval-only registrations cannot
-enable control. Forgetting a connection, changing its credentials or revoking the registering device
-removes its grant; reauthorizing requires a local Studio connection. Tokens stay private and are
-never returned by discovery. Tools must be enabled on both the calling and destination runtime;
-scoped agents retain read-only access and enabled parts at the destination. Both runtimes must
-support paired Studio forwarding; older destination runtimes reject the dedicated forwarding
-endpoint before any tool action executes. HTTP LAN/VPN addresses remain supported. UI interaction
-has no computer selector and cannot be forwarded.
+Paired desktop and mobile Studio clients share their saved computer connections with the runtime.
+**Access paired computers** is on by default in the runtime's Studio Tools settings. It supports
+headless runtimes over HTTP LAN, VPN and existing Connect connections. Each Studio Tools part still
+defaults to off. Enable the required parts on both the calling and destination computers. Agents
+retain their access limits at the destination.
+
+Remote grants survive client disconnects and runtime restarts. The mobile client publishes only
+while the app is active, when connections change or the app returns. It adds no background timer.
+Turn off **Access paired computers** to revoke grants from remote clients. Local Studio grants
+remain active. Turning it on again requires a connected client to publish its pairings again.
+Forgetting a connection, changing its credentials or revoking its registering device removes its
+grant. Retrieval-only registrations cannot enable control.
+
+Credentials stay in the private pairing registry. Grants store fingerprints, and discovery never
+returns tokens. Both runtimes must support paired Studio forwarding. Older destination runtimes
+reject the dedicated forwarding endpoint before any tool action executes. Older clients need an
+update to publish pairings to a remote runtime. UI interaction stays on the runtime's own computer
+through a loopback connection. It has no computer selector and cannot be forwarded.
 
 Most tools accept a command object containing an action and its arguments. Thread creation makes a
 draft by default. Set `start:true` with a prompt to create and start together, or use resume to

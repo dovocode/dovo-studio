@@ -3,6 +3,7 @@ import { Schema } from 'effect'
 import {
   decode,
   randomUUID,
+  projectTransferPeers,
   mutableArray,
   mutableStruct,
   connectionSchema,
@@ -18,7 +19,7 @@ const local = (connection: RuntimeConnection) => {
 const enabled = (tools?: StudioTools) =>
   tools && (tools.threads || tools.automations || tools.browsers || tools.diagnostics)
 
-/** Share the authenticated fleet for retrieval. Studio Tools forwarding stays local-only. */
+/** Share saved pairings. Remote Studio grants require the target runtime’s setting. */
 export function StudioPairedComputersBridge() {
   const { connection, connected, snapshot, runtimeRegistry, runtimes } = useWorkspace()
   const targets = new Map<string, RuntimeConnection>()
@@ -27,23 +28,28 @@ export function StudioPairedComputersBridge() {
       targets.set(runtime.profile.connection.address, runtime.profile.connection)
   if (connection && connected) targets.set(connection.address, connection)
   const registrations = JSON.stringify(
-    [...targets.values()].map((target) => ({
-      target,
-      studio:
-        local(target) &&
-        !!enabled(
-          runtimes.find((runtime) => runtime.profile.connection.address === target.address)
-            ?.snapshot?.studioTools ?? snapshot?.studioTools,
+    [...targets.values()].map((target) => {
+      const targetSnapshot =
+        runtimes.find((runtime) => runtime.profile.connection.address === target.address)
+          ?.snapshot ?? (connection?.address === target.address ? snapshot : undefined)
+      return {
+        target,
+        studio:
+          (local(target) || !!targetSnapshot?.studioPeerRegistrationEnabled) &&
+          !!enabled(targetSnapshot?.studioTools),
+        peers: projectTransferPeers(
+          runtimeRegistry.profiles.filter(
+            (profile) =>
+              profile.connection.address !== target.address &&
+              !runtimeRegistry.pendingPairings?.some(
+                (pending) => pending.profile.id === profile.id,
+              ),
+          ),
+          runtimes,
+          targetSnapshot?.runtimeId ?? target.runtimeId,
         ),
-      peers: runtimeRegistry.profiles
-        .filter(
-          (profile) =>
-            profile.connection.address !== target.address &&
-            !(target.runtimeId && profile.connection.runtimeId === target.runtimeId) &&
-            !runtimeRegistry.pendingPairings?.some((pending) => pending.profile.id === profile.id),
-        )
-        .map(({ id, name, connection }) => ({ id, name, connection })),
-    })),
+      }
+    }),
   )
   useEffect(() => {
     const sources = decode(

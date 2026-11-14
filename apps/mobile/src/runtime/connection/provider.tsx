@@ -1,3 +1,4 @@
+import { useStudioPairedComputers } from './studio-paired-computers'
 import { mobileSharedStateStorage } from './shared-state-storage'
 import { randomUUID } from 'expo-crypto'
 import {
@@ -141,7 +142,7 @@ type CallEffect = <T extends Schema.Codec<unknown, unknown>>(
   method?: string,
   options?: { defer?: boolean },
 ) => Effect.Effect<T['Type'], Error>
-type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
+export type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
   path: string,
   input: unknown,
@@ -1670,6 +1671,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       networkConnected,
     ],
   )
+  useStudioPairedComputers(overviews, registry, appActive, readRuntimeEffect)
   const [presetSyncError, setPresetSyncError] = useApplicationState('')
   const {
     sharedScopedSettings,

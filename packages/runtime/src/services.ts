@@ -373,7 +373,11 @@ export function createServices(
         })),
     ]
   })
-  const retrievalPeers = new RetrievalPeers(db, devices)
+  const retrievalPeers = new RetrievalPeers(
+    db,
+    devices,
+    () => preferences.get().enableStudioPeerRegistration,
+  )
   const retrieval = new SharedRetrieval(
     db,
     () => ({

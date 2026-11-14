@@ -18,6 +18,8 @@ import { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './bac
 import { acquireProcessLock } from './process-lock'
 import { exportRuntimeRecovery } from './recovery'
 import { rotateRuntimeLogs } from './log-rotation'
+import { Devices } from '../auth/devices'
+import { RetrievalPeers } from '../retrieval/peers'
 import { WorkspaceStore } from './workspace'
 import type { Task } from '@dovo/protocol'
 import * as backup from './backup'
@@ -375,5 +377,41 @@ it('waits for every staged unlink before releasing the restore lock and retains 
     release()
     await outcome
     vi.mocked(fs.rm).mockReset()
+  }
+})
+
+it('keeps current remote Studio revocations when restoring an older backup', async () => {
+  const f = await setup()
+  f.db
+    .prepare('INSERT INTO documents VALUES (?, ?)')
+    .run('runtime-identity', JSON.stringify('same-runtime'))
+  const devices = new Devices(f.db, 'owner')
+  const device = devices.add('Remote Studio', 'remote-studio-token')
+  const peers = new RetrievalPeers(f.db, devices, () => true)
+  const registration = {
+    sessionId: 'remote',
+    peers: [
+      {
+        id: 'target',
+        name: 'Target',
+        connection: {
+          address: 'http://target:51464',
+          token: 'private-paired-token-at-least-20-characters',
+        },
+      },
+    ],
+  }
+  peers.registerStudio(device, registration, 'remote')
+  const snapshot = await f.backups.create()
+  peers.revokeRemoteStudio()
+  f.db.close()
+  await restoreRuntimeBackup(f.path, snapshot.path)
+  const restored = openDatabase(f.path)
+  try {
+    const current = new RetrievalPeers(restored, new Devices(restored, 'owner'), () => true)
+    expect(current.list()).toHaveLength(1)
+    expect(current.list(true)).toEqual([])
+  } finally {
+    restored.close()
   }
 })

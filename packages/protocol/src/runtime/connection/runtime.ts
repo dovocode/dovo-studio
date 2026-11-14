@@ -235,6 +235,7 @@ export const snapshotSchema = mutableStruct({
   /** Computer-wide web approval rule, derived from its persisted preferences. */
   allowWebRequests: Schema.optional(Schema.Boolean),
   studioTools: Schema.optional(studioToolsSchema),
+  studioPeerRegistrationEnabled: Schema.optional(Schema.Boolean),
   artifactsEnabled: Schema.optional(Schema.Boolean),
   codeReviewsEnabled: Schema.optional(Schema.Boolean),
   autoProjectSelectionEnabled: Schema.optional(Schema.Boolean),
@@ -664,6 +665,10 @@ export const runtimePreferencesSchema = mutableStruct({
   ),
   /** Let agents discover and stage linked projects for their own thread. */
   enableLinkedProjectsTool: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => true)),
+  ),
+  /** Allow paired human clients to authorize this runtime's access to their saved computers. */
+  enableStudioPeerRegistration: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => true)),
   ),
   enableStudioThreads: Schema.Boolean.pipe(

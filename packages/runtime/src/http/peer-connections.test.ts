@@ -523,6 +523,7 @@ it('pairs remotely, carries authenticated HTTP and live WebSockets, then revokes
   ).toBe(401)
 
   // Tunneled sockets arrive from loopback, but must not satisfy local-only Studio UI checks.
+  runtime.services.preferences.save({ enableStudioPeerRegistration: false })
   const local = `http://127.0.0.1:${runtime.port}`
   for (const [path, input] of [
     ['/api/studio/peers', {}],
@@ -540,6 +541,34 @@ it('pairs remotely, carries authenticated HTTP and live WebSockets, then revokes
     })
     expect((await genuine.json()).error ?? '').not.toContain('only on this machine')
   }
+  // Paired human clients can grant non-UI forwarding, including through a real peer tunnel.
+  runtime.services.preferences.save({ enableStudioPeerRegistration: true })
+  const registration = {
+    sessionId: 'phone-studio',
+    peers: [
+      {
+        id: 'target',
+        name: 'Target',
+        connection: {
+          address: 'http://100.64.0.20:51464',
+          token: 'private-target-token-at-least-20-characters',
+          runtimeId: 'target-runtime',
+        },
+      },
+    ],
+  }
+  expect((await peer.request('/api/studio/peers', registration, claim.token)).status).toBe(200)
+  expect(runtime.services.retrievalPeers.list(true).map((p) => p.id)).toEqual(['target'])
+  expect((await peer.request('/api/studio/session', {}, claim.token)).status).toBe(403)
+  const saved = await peer.request(
+    '/api/runtime/preferences/save',
+    { enableStudioPeerRegistration: false },
+    claim.token,
+  )
+  expect(saved.status).toBe(200)
+  expect(runtime.services.retrievalPeers.list(true)).toEqual([])
+  expect(runtime.services.retrievalPeers.list()).toHaveLength(1)
+  expect((await peer.request('/api/studio/peers', registration, claim.token)).status).toBe(403)
   // Forwarding headers cannot claim local provenance either.
   const forged = await fetch(peer.address + '/api/studio/session', {
     method: 'POST',

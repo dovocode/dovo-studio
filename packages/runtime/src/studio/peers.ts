@@ -254,6 +254,15 @@ export async function routedStudioTool(
     }
   }
   const peer = computer?.peer
+  if (
+    !peer &&
+    !studioComputer(s, runtimeId) &&
+    studioComputer(s, runtimeId, undefined, availablePeers(s, s.retrievalPeers.list()))
+  )
+    throw new HttpError(
+      403,
+      'This computer is paired for retrieval, but Studio Tools access is not granted. Open a current Studio client connected to this computer to refresh its saved connections. Check "Access paired computers" in Studio Tools settings.',
+    )
   if (!peer)
     throw new HttpError(
       404,

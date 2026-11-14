@@ -177,6 +177,33 @@ try {
     await page.evaluate(() => window.opened.at(-1)),
     'https://github.com/team/repo/pull/42',
   )
+  const botSource =
+    'Ask @Dory van 🌷 (`studio:host-a:thread:dory`) and @Dory (`studio:host-b:thread:dory`)'
+  await show(botSource)
+  await desktop.locator('[data-reference-kind="bot"]').nth(1).waitFor()
+  assert.deepEqual(await desktop.locator('[data-reference-kind="bot"]').allTextContents(), [
+    '@Dory van 🌷',
+    '@Dory',
+  ])
+  assert.equal(
+    await desktop.locator('[data-reference-kind="bot"]').first().getAttribute('title'),
+    '@Dory van 🌷 (`studio:host-a:thread:dory`)',
+  )
+  await page.waitForFunction(() => window.messageNativeProps.text.startsWith('Ask @Dory'))
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.messageNativeProps.references.map(({ kind, label, start, end }) => [
+        kind,
+        label,
+        window.messageNativeProps.text.slice(start, end),
+      ]),
+    ),
+    [
+      ['bot', '@Dory van 🌷', '@Dory van 🌷 (`studio:host-a:thread:dory`)'],
+      ['bot', '@Dory', '@Dory (`studio:host-b:thread:dory`)'],
+    ],
+  )
+  await desktop.screenshot({ path: '/tmp/dovo-bot-message-chips.png' })
   assert.deepEqual(referenceRequests, [])
   assert.deepEqual(errors, [])
   console.log(

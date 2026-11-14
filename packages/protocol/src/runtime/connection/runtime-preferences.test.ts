@@ -20,6 +20,7 @@ it('defaults new preferences and accepts only Git-safe branch prefixes', () => {
     enablePullRequestBabysitting: false,
     enablePipelineWatching: false,
     enableLinkedProjectsTool: true,
+    enableStudioPeerRegistration: true,
     enableStudioThreads: false,
     enableStudioAutomations: false,
     enableStudioBrowsers: false,

@@ -64,7 +64,7 @@ function preservePairings(staged: Database.Database, databasePath: string) {
       const add = staged.prepare('INSERT INTO provisional_devices VALUES (?,?)')
       for (const row of provisional) add.run(row.device_id, row.expires_at)
     }
-    for (const table of ['retrieval_peers', 'studio_peer_grants']) {
+    for (const table of ['retrieval_peers', 'studio_peer_grants', 'studio_remote_peer_grants']) {
       if (!current.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
         continue
       const registrations = decode(

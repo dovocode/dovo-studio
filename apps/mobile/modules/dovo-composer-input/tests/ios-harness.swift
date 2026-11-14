@@ -45,6 +45,32 @@ struct EventDispatcher {
     view.frame = CGRect(x: 16, y: 120, width: 350, height: 144)
     surface.addSubview(view)
     view.layoutIfNeeded()
+    let botView = DovoComposerInputView()
+    botView.frame = CGRect(x: 16, y: 300, width: 350, height: 120)
+    surface.addSubview(botView)
+    let botSource = "🚀 Ask @Dory van 🌷 (`studio:host-a:thread:dory`) please"
+    let botRange = (botSource as NSString).range(of: "@Dory van 🌷 (`studio:host-a:thread:dory`)")
+    let botRecord = ComposerReferenceRecord(start: botRange.location, end: NSMaxRange(botRange), kind: "bot", label: "@Dory van 🌷", icon: "__REFERENCE_ICON_model__")
+    botView.receive(ComposerContentRecord(text: botSource, revision: "bot", eventCount: 0, references: [botRecord]))
+    let botInput = botView.input
+    let botChip = botInput.textStorage.attribute(.attachment, at: botInput.displayOffset(botRange.location), effectiveRange: nil) as? ReferenceAttachment
+    expect(botChip?.kind == "bot" && botChip?.image != nil, "Bot chip did not receive kind or image")
+    expect(botInput.source() == botSource, "Bot projection changed source")
+    botInput.selectedRange = NSRange(location: botInput.displayOffset(botRange.location), length: 1)
+    botInput.copy(nil)
+    expect(UIPasteboard.general.string == (botSource as NSString).substring(with: botRange), "Bot copy lost target")
+    expect(botInput.sourceOffset(botInput.displayOffset(NSMaxRange(botRange))) == NSMaxRange(botRange), "Bot UTF-16 mapping failed")
+    botInput.becomeFirstResponder()
+    botInput.selectedRange = NSRange(location: botInput.displayOffset(NSMaxRange(botRange)), length: 0)
+    botInput.undoManager?.removeAllActions()
+    botInput.deleteBackward()
+    expect(botInput.source() == (botSource as NSString).replacingCharacters(in: botRange, with: ""), "Bot backspace did not delete the whole chip")
+    botInput.undoManager?.undo()
+    expect(botInput.source() == botSource, "Bot undo lost target")
+    expect(botView.readText()["text"] as? String == botSource, "Bot send snapshot lost target")
+    botView.setDisplayOnly(true)
+    expect(botInput.source() == botSource && !botInput.isEditable, "Sent Bot message lost source")
+    botView.removeFromSuperview()
     let source = "🚀 Read @src/file.ts and `model:codex/gpt` please"
     let nsSource = source as NSString
     let fileRange = nsSource.range(of: "@src/file.ts")
@@ -235,7 +261,7 @@ struct EventDispatcher {
           label.text = "\(checks) checks · \(failures.count) failures"
           label.textColor = failures.isEmpty ? .systemGreen : .systemRed
           surface.addSubview(label)
-          let preview = "Review @src/App.tsx and @package.json with $review and @docs using `model:harness%3Acodex/gpt-6.1-sol`"
+          let preview = "Review @src/App.tsx and @package.json with $review and @docs using `model:harness%3Acodex/gpt-6.1-sol` with @Dory (`studio:host:thread:dory`)"
           view.foreground = .label
           let previewText = preview as NSString
           let examples = [
@@ -244,6 +270,7 @@ struct EventDispatcher {
             ("$review", "skill", "review", "__REFERENCE_ICON_skill__"),
             ("@docs", "mcp", "docs", "__REFERENCE_ICON_mcp__"),
             ("`model:harness%3Acodex/gpt-6.1-sol`", "model", "gpt-6.1-sol", "__HARNESS_ICON_PNG__"),
+            ("@Dory (`studio:host:thread:dory`)", "bot", "@Dory", "__REFERENCE_ICON_model__"),
           ]
           let references = examples.map { token, kind, title, icon in
             let range = previewText.range(of: token)
