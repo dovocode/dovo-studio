@@ -10,8 +10,8 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
-window.requests=[];window.fail=true;window.finish=null;
-window.request=(path,input,_schema,_method,options)=>window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
+window.requests=[];window.historyRequests=[];window.fail=true;window.finish=null;
+window.request=(path,input,_schema,_method,options)=>path==='/api/tasks/composer-history'?Effect.sync(()=>{window.historyRequests.push(input);return {messages:[{id:'previous',role:'user',text:'Earlier request'}],hasMore:false}}):window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
 function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'review',archived:true,draft:'',messages:[{id:'previous',role:'user',text:'Earlier request'}],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <><textarea aria-label="Message" value={actions.draft.text} disabled={!!task.archivedAt||actions.busy} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/><button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root,
@@ -87,11 +87,13 @@ try {
   await page.waitForFunction(() => window.actions.composerHistory.active)
   assert.equal(await input.inputValue(), 'Earlier request')
   assert.equal(await page.evaluate(() => window.requests.length), 0)
+  assert.deepEqual(await page.evaluate(() => window.historyRequests), [{ id: 'settled' }])
   await page.evaluate(() => window.actions.composerHistory.cancel())
   await page.waitForFunction(() => !window.actions.composerHistory.active)
   assert.equal(await input.inputValue(), 'Unsent history draft')
   await page.evaluate(() => window.actions.composerHistory.begin())
   await page.waitForFunction(() => window.actions.composerHistory.active)
+  assert.equal(await page.evaluate(() => window.historyRequests.length), 2)
   await input.fill('Edited recalled request')
   assert.equal(await page.evaluate(() => window.actions.composerHistory.active), false)
   assert.equal(await input.inputValue(), 'Edited recalled request')
